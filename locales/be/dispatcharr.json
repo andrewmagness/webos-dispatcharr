@@ -29,5 +29,18 @@
   },
   "dispatcharr.setup.channels_failed": "Не ўдалося прачытаць спіс каналаў.",
   "dispatcharr.setup.until_reboot": "Захавана толькі да перазапуску тэлевізара.",
-  "dispatcharr.setup.sign_out": "Выйсці"
+  "dispatcharr.setup.sign_out": "Выйсці",
+  "dispatcharr.guide.title": "Тэлегід",
+  "dispatcharr.guide.account": "Уліковы запіс",
+  "dispatcharr.guide.loading": "Загрузка тэлегіда",
+  "dispatcharr.guide.empty": "Няма каналаў",
+  "dispatcharr.guide.empty_reason": "Дадайце каналы да гэтага ўліковага запісу ў Dispatcharr і вярніцеся.",
+  "dispatcharr.guide.failed": "Не ўдалося загрузіць тэлегід",
+  "dispatcharr.guide.refused": "Сервер больш не прымае ключ гэтага тэлевізара. Увайдзіце зноў.",
+  "dispatcharr.guide.retry": "Паўтарыць",
+  "dispatcharr.guide.sign_in_again": "Увайсці зноў",
+  "dispatcharr.guide.unlisted": "Няма звестак",
+  "dispatcharr.guide.time_range": "{start} – {end}",
+  "dispatcharr.guide.season_episode": "С{season} Э{episode}",
+  "dispatcharr.guide.episode": "Серыя {episode}"
 }

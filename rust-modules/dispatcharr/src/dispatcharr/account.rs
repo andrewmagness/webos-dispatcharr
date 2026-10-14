@@ -55,7 +55,8 @@ struct Stored {
 pub enum Loaded {
     /// No account file anywhere: nobody has signed in on this install.
     None,
-    Signed(Record),
+    /// The stored account, and whether the path it was read from survives a reboot.
+    Signed(Record, Saved),
     /// A file is there and is not a record this build reads (truncated, another format, a bad
     /// address, not owned by this process). Treated as signed out; [`clear`] removes it.
     Unreadable,
@@ -76,10 +77,13 @@ pub struct SaveFailed;
 
 /// The account this install signed in with, from the first candidate that holds a file.
 pub fn load() -> Loaded {
-    for (path, _) in candidates() {
+    for (path, durable) in candidates() {
         match read_owned(&path) {
             Ok(None) => continue,
-            Ok(Some(bytes)) => return parse(&bytes).map_or(Loaded::Unreadable, Loaded::Signed),
+            Ok(Some(bytes)) => {
+                let saved = if durable { Saved::Durable } else { Saved::UntilReboot };
+                return parse(&bytes).map_or(Loaded::Unreadable, |record| Loaded::Signed(record, saved));
+            }
             Err(()) => return Loaded::Unreadable,
         }
     }

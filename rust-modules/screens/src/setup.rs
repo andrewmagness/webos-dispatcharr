@@ -1,6 +1,7 @@
-//! **Setup — signing this television in to a Dispatcharr server.** The app's first page while no
-//! Dispatcharr account is stored, and (until the guide exists) the page that says which server it
-//! is signed in to.
+//! **Setup — signing this television in to a Dispatcharr server.** One screen, two routes
+//! ([`Mode`]): the boot page (`AppArg::Setup`), which hands straight over to the Guide once an
+//! account is stored — found at boot, or just signed in — and the Server page (`AppArg::Server`),
+//! pushed from the Guide's *Account*, which names the server and account and signs out.
 //!
 //! Two faces on one route-family layout:
 //!
@@ -9,8 +10,9 @@
 //!   masked) and *Sign in*, with one status line under it: the spinner while signing in, or why
 //!   the last attempt failed. A failure is a reason in `TEXT_SECONDARY`, never red (product idiom
 //!   4), and it names where to go: the address, the password, or the server's network settings.
-//! * **Connected.** The verdict, the server and account, the channel count when the lineup lands,
-//!   and *Sign out* in the action band.
+//! * **Connected** (the Server page). The verdict, the server and account, the channel count when
+//!   the lineup lands, a note when the account is stored only until a restart, and *Sign out* in
+//!   the action band. Signing out lands on the boot page as the new root.
 //!
 //! **Typing.** The television draws the keyboard (`textinput`); OK on a field raises it, typed
 //! text arrives as `TextEdit`s, and OK on the panel moves on to the next field WITHOUT closing it —
@@ -30,7 +32,7 @@ use plx_dispatcharr::dispatcharr::account::Saved;
 use plx_dispatcharr::dispatcharr::Error;
 use plx_machine::machine::{
     Canon, Cx, Delivery, Edge, Effects, EntryId, FocusKey, Fx, GroupId, Handled, InputEvent,
-    InputKind, InputOwner, InstanceId, Key, LogicalState, Machine, MachineId, TextEdit, Tick,
+    InputKind, InputOwner, InstanceId, Key, LogicalState, Machine, MachineId, NavOp, TextEdit, Tick,
 };
 use plx_machine::present::Provenance;
 use plx_platform::i18n::msg;
@@ -50,6 +52,15 @@ use plx_ui::{theme, Env, Painter, Rect, Spring, View};
 
 use super::registry::{word, AppFx, AppLike, DispatcharrCmd, LoopReq, SetupOutcome};
 
+/// Which of its two routes this screen is mounted as.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// `AppArg::Setup`, the boot page: the form, until an account is stored.
+    Entry,
+    /// `AppArg::Server`, pushed from the Guide: the stored account, and *Sign out*.
+    Server,
+}
+
 /// The form's elements, top to bottom: one column, walked in this order.
 const ADDRESS: u32 = 0;
 const USERNAME: u32 = 1;
@@ -66,7 +77,7 @@ const BLINK_US: u32 = 530_000;
 
 /// The recorded shape of [`SetupScreen`]'s logical state (`registry::SCREEN_SHAPES`). The password
 /// is recorded as its length and caret only: a replay must never carry it.
-pub const SHAPE: &str = "SetupScreen{phase:u8,editing:Option<u32>,address:{text:str,caret:u64},\
+pub const SHAPE: &str = "SetupScreen{mode:u8,phase:u8,editing:Option<u32>,address:{text:str,caret:u64},\
     username:{text:str,caret:u64},password:{len:u64,caret:u64},blink_us:u32,failure:Option<u8>,\
     pending:bool,lineup:u8,saved:u8}";
 
@@ -149,7 +160,7 @@ struct Connected {
     server: String,
     username: String,
     lineup: Lineup,
-    saved: Option<Saved>,
+    saved: Saved,
 }
 
 impl Connected {
@@ -163,7 +174,7 @@ impl Connected {
             Lineup::Channels(n) => lines.push(msg::dispatcharr_setup_channels(n as i64)),
             Lineup::Failed => lines.push(msg::dispatcharr_setup_channels_failed().to_owned()),
         }
-        if self.saved == Some(Saved::UntilReboot) {
+        if self.saved == Saved::UntilReboot {
             lines.push(msg::dispatcharr_setup_until_reboot().to_owned());
         }
         lines
@@ -224,6 +235,7 @@ mod layout {
 
 /// The logical state this page records (`LogicalState`), refreshed after every change.
 struct SetupState {
+    mode: Mode,
     phase: Phase,
     editing: Option<usize>,
     address: (String, usize),
@@ -238,7 +250,7 @@ struct SetupState {
 
 impl LogicalState for SetupState {
     fn write(&self, c: &mut Canon) {
-        c.u8(self.phase as u8);
+        c.u8(self.mode as u8).u8(self.phase as u8);
         c.option(self.editing, |c, i| {
             c.u32(i as u32);
         });
@@ -262,6 +274,7 @@ impl LogicalState for SetupState {
 pub struct SetupScreen {
     entry: EntryId,
     instance: InstanceId,
+    mode: Mode,
     phase: Phase,
     fields: [TextBuffer; FIELDS],
     views: [TextField; FIELDS],
@@ -281,11 +294,12 @@ pub struct SetupScreen {
 }
 
 impl SetupScreen {
-    pub fn new(entry: EntryId, instance: InstanceId) -> Self {
+    pub fn new(entry: EntryId, instance: InstanceId, mode: Mode) -> Self {
         let size = theme::size::TITLE;
         let mut screen = Self {
             entry,
             instance,
+            mode,
             phase: Phase::Loading,
             fields: std::array::from_fn(|_| TextBuffer::new(String::new(), 0)),
             views: [TextField::new(size), TextField::new(size), TextField::new(size).masked()],
@@ -299,6 +313,7 @@ impl SetupScreen {
             spin_ms: 0.0,
             ground: RouteGround::new(),
             state: SetupState {
+                mode,
                 phase: Phase::Loading, editing: None, address: (String::new(), 0),
                 username: (String::new(), 0), password: (0, 0), blink_us: 0, failure: None,
                 pending: false, lineup: 0, saved: 0,
@@ -315,6 +330,7 @@ impl SetupScreen {
     fn sync_state(&mut self) {
         let text = |b: &TextBuffer| (b.text().to_owned(), b.caret());
         self.state = SetupState {
+            mode: self.mode,
             phase: self.phase,
             editing: self.editing,
             address: text(&self.fields[0]),
@@ -324,7 +340,7 @@ impl SetupScreen {
             failure: self.failure.as_ref().map(Failure::disc),
             pending: self.pending.is_some(),
             lineup: self.connected.as_ref().map_or(0, |c| c.lineup.disc()),
-            saved: match self.connected.as_ref().and_then(|c| c.saved) {
+            saved: match self.connected.as_ref().map(|c| c.saved) {
                 None => 0,
                 Some(Saved::Durable) => 1,
                 Some(Saved::UntilReboot) => 2,
@@ -460,6 +476,11 @@ impl SetupScreen {
 
     fn land<H: AppLike>(&mut self, outcome: SetupOutcome, fx: &mut Effects<'_, H>) {
         match outcome {
+            // The Server page has no form: signed out (or the account gone from under it), the
+            // boot page takes over as the root.
+            SetupOutcome::SignedOut if self.mode == Mode::Server => {
+                fx.push(Fx::App(AppFx::Loop(LoopReq::DispatcharrSetup)));
+            }
             SetupOutcome::SignedOut => {
                 if let Some(c) = self.connected.take() {
                     self.prefill(&c.server, &c.username);
@@ -474,8 +495,15 @@ impl SetupScreen {
                 self.fields[2] = TextBuffer::new(String::new(), 0);
                 self.failure = None;
                 self.connected = Some(Connected { server, username: record.username, lineup: Lineup::Pending, saved });
-                self.phase = Phase::Connected;
-                self.reseat(SIGN_OUT, fx);
+                match self.mode {
+                    // The boot page's job is done: the Guide replaces it. The page keeps its
+                    // spinner (or nothing, at boot) for the frame the replacement takes.
+                    Mode::Entry => fx.push(Fx::App(AppFx::Loop(LoopReq::DispatcharrGuide))),
+                    Mode::Server => {
+                        self.phase = Phase::Connected;
+                        self.reseat(SIGN_OUT, fx);
+                    }
+                }
             }
             SetupOutcome::Lineup(result) => {
                 if let Some(c) = &mut self.connected {
@@ -522,7 +550,7 @@ impl SetupScreen {
 
     fn draw_form<H: AppLike>(&mut self, f: &mut DrawFrame<'_, '_, H>, p: Painter, focus: Option<u32>) {
         let layout = RouteLayout::screen();
-        layout.draw_narrative(p, None, msg::dispatcharr_setup_title(), msg::dispatcharr_setup_copy(),
+        layout.draw_narrative(p, self.back_to(), msg::dispatcharr_setup_title(), msg::dispatcharr_setup_copy(),
             theme::size::BODY, f.measure);
         let labels = [msg::dispatcharr_setup_address_c(), msg::dispatcharr_setup_username_c(), msg::dispatcharr_setup_password_c()];
         let placeholders = [msg::dispatcharr_setup_address_example_c(), msg::dispatcharr_setup_empty_field_c(),
@@ -578,12 +606,18 @@ impl SetupScreen {
         }
     }
 
+    /// Where BACK goes, as the crumb names it: the Guide from the Server page, nowhere from the boot
+    /// page.
+    fn back_to(&self) -> Option<&'static str> {
+        (self.mode == Mode::Server).then(msg::dispatcharr_guide_title)
+    }
+
     fn draw_connected<H: AppLike>(&mut self, f: &mut DrawFrame<'_, '_, H>, p: Painter, focus: Option<u32>) {
         let Some(connected) = &self.connected else { return };
         let layout = RouteLayout::screen();
         let lines = connected.lines();
-        let mut y = layout.draw_narrative(p, None, msg::dispatcharr_setup_connected(), &lines[0], theme::size::BODY,
-            f.measure);
+        let mut y = layout.draw_narrative(p, self.back_to(), msg::dispatcharr_setup_connected(), &lines[0],
+            theme::size::BODY, f.measure);
         for line in &lines[1..] {
             y += theme::space::SM;
             let size = theme::size::BODY;
@@ -691,7 +725,8 @@ impl SetupScreen {
             ScreenEvent::Mount => {
                 let (reply, rx) = mpsc::channel();
                 self.pending = Some(rx);
-                fx.push(Fx::App(AppFx::Dispatcharr(DispatcharrCmd::Load { reply })));
+                // Only the Server page shows the lineup; the boot page would throw it away.
+                fx.push(Fx::App(AppFx::Dispatcharr(DispatcharrCmd::Load { lineup: self.mode == Mode::Server, reply })));
             }
             ScreenEvent::Tick(t) => self.tick(*t, cx, fx),
             ScreenEvent::Activate(elem) => self.activate(*elem, fx),
@@ -764,8 +799,11 @@ impl SetupScreen {
                     }
                 }
                 if *key == Key::Back && *edge == Edge::Down {
-                    // There is nowhere inside the app to go back to: hand the screen to the TV.
-                    fx.push(Fx::App(AppFx::Loop(LoopReq::BackAtRoot)));
+                    match self.mode {
+                        // There is nowhere inside the app to go back to: hand the screen to the TV.
+                        Mode::Entry => fx.push(Fx::App(AppFx::Loop(LoopReq::BackAtRoot))),
+                        Mode::Server => fx.push(Fx::Nav(NavOp::Pop)),
+                    }
                     return Handled::Yes;
                 }
                 Handled::No
@@ -783,8 +821,9 @@ impl<H: AppLike> Screen<H> for SetupScreen {
         &self.state
     }
     fn crumb(&self, _cx: &Cx<'_, H>) -> Option<Cow<'_, str>> {
-        // BACK does not go anywhere inside the app from here (`ui/CLAUDE.md`'s route-family rule).
-        None
+        // The boot page: BACK does not go anywhere inside the app (`ui/CLAUDE.md`'s route-family
+        // rule). The Server page: BACK returns to the Guide.
+        self.back_to().map(Cow::Borrowed)
     }
     fn prepare(&mut self, _b: &mut Budget, _cx: &Cx<'_, H>) {}
     fn draw(&mut self, f: &mut DrawFrame<'_, '_, H>) {

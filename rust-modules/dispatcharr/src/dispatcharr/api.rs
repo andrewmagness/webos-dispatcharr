@@ -1,4 +1,5 @@
-//! Reads made with the API key: channels and groups.
+//! Reads made with the API key — channels, groups, the EPG rows and the grid, and the guide built
+//! from them — and the URLs a logo and a stream are served at.
 
 use super::client::{self, Auth, Method, Server};
 use super::error::Error;
@@ -62,6 +63,16 @@ impl Account {
         let epg = self.epg_data()?;
         let programmes = self.epg_grid(window)?;
         Ok(Guide::build(channels, &epg, programmes, window))
+    }
+
+    /// The guide for `channels` around the television's clock now, and the second it was read at —
+    /// the stamp a screen counts on from with its own logical ticks, so the wall clock is read here,
+    /// once per fetch, and never by the UI.
+    pub fn guide_now(&self, channels: &[Channel]) -> Result<(Guide, i64), Error> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        Ok((self.guide(channels, now)?, now))
     }
 
     /// The URL a channel's logo is served at. Needs no credential on the server side.

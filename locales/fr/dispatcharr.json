@@ -28,5 +28,18 @@
   },
   "dispatcharr.setup.channels_failed": "La liste des chaînes n'a pas pu être lue.",
   "dispatcharr.setup.until_reboot": "Enregistré seulement jusqu'au redémarrage du téléviseur.",
-  "dispatcharr.setup.sign_out": "Se déconnecter"
+  "dispatcharr.setup.sign_out": "Se déconnecter",
+  "dispatcharr.guide.title": "Guide",
+  "dispatcharr.guide.account": "Compte",
+  "dispatcharr.guide.loading": "Chargement du guide",
+  "dispatcharr.guide.empty": "Aucune chaîne",
+  "dispatcharr.guide.empty_reason": "Ajoutez des chaînes à ce compte dans Dispatcharr, puis revenez.",
+  "dispatcharr.guide.failed": "Impossible de charger le guide",
+  "dispatcharr.guide.refused": "Le serveur n'accepte plus la clé de ce téléviseur. Reconnectez-vous.",
+  "dispatcharr.guide.retry": "Réessayer",
+  "dispatcharr.guide.sign_in_again": "Se reconnecter",
+  "dispatcharr.guide.unlisted": "Aucune information",
+  "dispatcharr.guide.time_range": "{start} – {end}",
+  "dispatcharr.guide.season_episode": "S{season} É{episode}",
+  "dispatcharr.guide.episode": "Épisode {episode}"
 }

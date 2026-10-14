@@ -25,7 +25,9 @@ use plx_screens::registry::AppArg;
 pub(crate) fn route_word(route: &AppArg) -> &'static str {
     use plx_screens::registry::ContentArg;
     match route {
-        AppArg::Setup => "setup",
+        // The Server page is Setup's screen in its other mode, and answers its word.
+        AppArg::Setup | AppArg::Server => "setup",
+        AppArg::Guide => "guide",
         AppArg::Login => "login",
         AppArg::Profiles => "profiles",
         AppArg::Onboard => "onboard",
@@ -68,11 +70,13 @@ pub(crate) fn route_word(route: &AppArg) -> &'static str {
 /// holds one and asks about it. Its two readers are this module's word derivation and
 /// `app::bridge`'s argument tests, which used to keep a second copy of the same list.
 #[cfg(test)]
-pub(crate) fn every_route() -> [AppArg; 11] {
+pub(crate) fn every_route() -> [AppArg; 13] {
     use plx_screens::registry::ContentArg;
     let sid = plx_plex::plex::ServerId::UNSET;
     [
         AppArg::Setup,
+        AppArg::Guide,
+        AppArg::Server,
         AppArg::Login,
         AppArg::Profiles,
         AppArg::Onboard,

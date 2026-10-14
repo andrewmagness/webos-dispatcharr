@@ -107,11 +107,9 @@ impl Guide {
 
     /// The programme on `channel_id` at `t`.
     pub fn at(&self, channel_id: i64, t: i64) -> Option<&Programme> {
-        let list = self.programmes(channel_id);
         // The last programme starting at or before `t`; overlapping listings resolve to the one
         // that started latest, which is what is actually on.
-        let i = list.partition_point(|p| p.start <= t);
-        list[..i].iter().rev().find(|p| p.airs_at(t))
+        self.index_at(channel_id, t).map(|i| &self.programmes(channel_id)[i])
     }
 
     /// Now and next on `channel_id` at `t`. "Next" is the first programme starting at or after the
@@ -127,4 +125,68 @@ impl Guide {
     pub fn channels_with_programmes(&self) -> usize {
         self.by_channel.values().filter(|l| !l.is_empty()).count()
     }
+}
+
+/// One cell of a channel's lane: a span of the window that is either a listed programme (its index
+/// in [`Guide::programmes`]) or a gap the server lists nothing for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Slot {
+    pub start: i64,
+    pub end: i64,
+    pub programme: Option<usize>,
+}
+
+impl Slot {
+    /// Whether instant `t` falls in this slot (start inclusive, end exclusive).
+    pub fn contains(&self, t: i64) -> bool {
+        self.start <= t && t < self.end
+    }
+}
+
+impl Guide {
+    /// Channel `channel_id`'s lane: the window tiled end to end, with no gaps and no overlaps, so
+    /// every instant in it falls in exactly one slot — what a grid's cursor walks. Each slot is
+    /// what [`Guide::at`] answers for its instants (an overlap goes to the listing that started
+    /// latest, and the earlier one resumes when that ends), merged where neighbours agree; the
+    /// stretches the server lists nothing for are `programme: None`. The first and last slots are
+    /// clipped to the window. An empty guide (never fetched) has no lane at all.
+    pub fn lane(&self, channel_id: i64) -> Vec<Slot> {
+        let Some(window) = self.window else { return Vec::new() };
+        let list = self.programmes(channel_id);
+        let mut edges: Vec<i64> = list
+            .iter()
+            .flat_map(|p| [p.start, p.end])
+            .chain([window.start, window.end])
+            .filter(|t| window.start <= *t && *t <= window.end)
+            .collect();
+        edges.sort_unstable();
+        edges.dedup();
+        let mut lane: Vec<Slot> = Vec::new();
+        for pair in edges.windows(2) {
+            let (start, end) = (pair[0], pair[1]);
+            let programme = self.index_at(channel_id, start);
+            match lane.last_mut() {
+                Some(last) if last.programme == programme => last.end = end,
+                _ => lane.push(Slot { start, end, programme }),
+            }
+        }
+        lane
+    }
+
+    /// [`Guide::at`]'s answer as an index into [`Guide::programmes`].
+    fn index_at(&self, channel_id: i64, t: i64) -> Option<usize> {
+        let list = self.programmes(channel_id);
+        let i = list.partition_point(|p| p.start <= t);
+        (0..i).rev().find(|&j| list[j].airs_at(t))
+    }
+}
+
+/// The slot of `lane` that `t` falls in, clamped to the lane's ends: what a cursor moving up or
+/// down a grid lands on.
+pub fn slot_at(lane: &[Slot], t: i64) -> Option<usize> {
+    if lane.is_empty() {
+        return None;
+    }
+    let i = lane.partition_point(|s| s.end <= t);
+    Some(i.min(lane.len() - 1))
 }

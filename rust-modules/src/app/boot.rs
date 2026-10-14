@@ -550,9 +550,9 @@ pub(crate) enum BootTo {
 }
 
 /// **Does this boot land on Setup?** Every ordinary boot does: Dispatcharr is what this app signs in
-/// to, and Setup is its page until the guide exists — it reads the stored account itself and
-/// shows either the form or the server it is connected to. The Plex session is not activated at
-/// all on that path, so a boot makes no plex.tv request.
+/// to, and Setup reads the stored account itself — showing the form when there is none and handing
+/// over to the Guide when there is. The Plex session is not activated at all on that path, so a
+/// boot makes no plex.tv request.
 ///
 /// The two exceptions are the developer's explicit Plex boots, kept while the Plex screens are
 /// still in the tree so their harness keeps working: `/tmp/plxnative-login` (`forced_login`) and

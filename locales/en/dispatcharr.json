@@ -115,5 +115,68 @@
   "dispatcharr.setup.sign_out": {
     "value": "Sign out",
     "description": "Button: forget the Dispatcharr sign-in"
+  },
+  "dispatcharr.guide.title": {
+    "value": "Guide",
+    "description": "Guide screen heading, top left"
+  },
+  "dispatcharr.guide.account": {
+    "value": "Account",
+    "description": "Guide header button: opens the page naming the Dispatcharr server and account, with Sign out"
+  },
+  "dispatcharr.guide.loading": {
+    "value": "Loading the guide",
+    "description": "Guide status while the channels and programmes are being read"
+  },
+  "dispatcharr.guide.empty": {
+    "value": "No channels",
+    "description": "Guide verdict when the signed-in account can watch no channels"
+  },
+  "dispatcharr.guide.empty_reason": {
+    "value": "Add channels to this account in Dispatcharr, then come back.",
+    "description": "Under the 'No channels' verdict: what to do about it"
+  },
+  "dispatcharr.guide.failed": {
+    "value": "Couldn't load the guide",
+    "description": "Guide verdict when the channels or programmes could not be read"
+  },
+  "dispatcharr.guide.refused": {
+    "value": "The server no longer accepts this TV's key. Sign in again.",
+    "description": "Under the failed guide verdict: the stored API key was refused"
+  },
+  "dispatcharr.guide.retry": {
+    "value": "Try again",
+    "description": "Guide failure action: read the guide again"
+  },
+  "dispatcharr.guide.sign_in_again": {
+    "value": "Sign in again",
+    "description": "Guide failure action when the key was refused: back to the sign-in form"
+  },
+  "dispatcharr.guide.unlisted": {
+    "value": "No information",
+    "description": "A guide cell (and the detail title) for a stretch of time the server lists no programme for"
+  },
+  "dispatcharr.guide.time_range": {
+    "value": "{start} – {end}",
+    "args": {
+      "start": "str",
+      "end": "str"
+    },
+    "description": "A programme's times: {start} and {end} are clock times in the viewer's format"
+  },
+  "dispatcharr.guide.season_episode": {
+    "value": "S{season} E{episode}",
+    "args": {
+      "season": "i64",
+      "episode": "i64"
+    },
+    "description": "A programme's season and episode numbers, abbreviated"
+  },
+  "dispatcharr.guide.episode": {
+    "value": "Episode {episode}",
+    "args": {
+      "episode": "i64"
+    },
+    "description": "A programme's episode number when the listing gives no season"
   }
 }

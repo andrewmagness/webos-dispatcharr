@@ -105,6 +105,10 @@ class MockDispatcharr(unittest.TestCase):
             self.assertTrue(listing, c["name"])
         starts = [p["start_time"] for p in by_key["ch001.mock"]]
         self.assertEqual(starts, ["2026-10-14T11:00:00Z", "2026-10-14T11:30:00Z", "2026-10-14T12:00:00Z", "2026-10-14T12:30:00Z"])
+        # Lengths differ by channel, so a guide has cells of several widths to lay out.
+        lengths = {(mock_dispatcharr.parse_time(p["end_time"]) - mock_dispatcharr.parse_time(p["start_time"])).seconds
+                   for p in grid["data"] if isinstance(p["id"], int)}
+        self.assertGreaterEqual(len(lengths), 3, lengths)
         dummy = next(p for p in grid["data"] if isinstance(p["id"], str))
         self.assertTrue(dummy["start_time"].endswith("+00:00"))
 

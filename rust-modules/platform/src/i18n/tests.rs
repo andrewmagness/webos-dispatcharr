@@ -132,3 +132,26 @@ fn pseudo_locale_exercises_expansion_without_changing_arguments() {
     assert!(!msg::settings_language_contribute_body_in(&cx).contains("github.com"),
         "only the guide caption belongs to the translated catalog, never its address");
 }
+#[test]
+fn a_time_of_day_follows_the_locale_unless_the_clock_setting_names_a_cycle() {
+    let us = LocaleContext::resolve(Preference::En, None, Some("en-US"), None, None);
+    let t = us.time(21, 5).unwrap();
+    assert!(t.starts_with("9:05") && t.ends_with("PM"), "{t:?}");
+    let us24 = LocaleContext::resolve(Preference::En, None, Some("en-US"), Some("24"), None);
+    assert_eq!(us24.time(21, 5).as_deref(), Some("21:05"));
+    let fr = LocaleContext::resolve(Preference::Fr, None, Some("fr-FR"), None, None);
+    assert_eq!(fr.time(21, 5).as_deref(), Some("21:05"));
+    let fr12 = LocaleContext::resolve(Preference::Fr, None, Some("fr-FR"), Some("12"), None);
+    let t = fr12.time(21, 5).unwrap();
+    assert!(t.starts_with("9:05"), "{t:?}");
+    assert_eq!(us.time(24, 0), None);
+}
+#[test]
+fn a_unix_instant_has_a_local_hour_and_minute() {
+    // Whatever the test machine's zone, an instant and the same instant an hour and a minute later
+    // differ by an hour and a minute on its clock (no zone moves its offset by a minute).
+    let t = 1_791_979_200; // 2026-10-14T12:00:00Z
+    let (h0, m0) = local_hour_minute(t).unwrap();
+    let (h1, m1) = local_hour_minute(t + 3660).unwrap();
+    assert_eq!((h0 as u32 * 60 + m0 as u32 + 61) % 1440, h1 as u32 * 60 + m1 as u32);
+}

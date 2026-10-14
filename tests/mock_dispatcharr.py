@@ -11,13 +11,14 @@ What it answers, with the shapes `rust-modules/dispatcharr/src/dispatcharr/model
   GET  /api/channels/channels/summary/    the generated lineup                      (X-API-Key)
   GET  /api/channels/groups/              the generated groups                      (X-API-Key)
   GET  /api/epg/epgdata/                  one EPG row per numbered channel, plus an unused one
-  GET  /api/epg/grid/?start=&end=         half-hour programmes for every EPG row in the window, and
+  GET  /api/epg/grid/?start=&end=         30- to 90-minute programmes for every EPG row in the window, and
                                           4-hour dummy blocks keyed by UUID for numberless channels
 
 Anything else is a 404 and a line on stderr naming it, so extending it is one branch. The lineup is
 generated from --seed, never the clock: two servers started alike answer byte-identically. The
-grid is the one thing that follows the clock, because the client asks for "now": programmes sit on
-a fixed half-hour lattice, so any two answers for the same window are identical.
+grid is the one thing that follows the clock, because the client asks for "now": each channel's
+programmes sit on a fixed lattice from a fixed epoch, so any two answers for the same window are
+identical.
 
     python3 tests/mock_dispatcharr.py --host <this-machine-lan-ip> --port 9192
     printf '%s\n' http://<this-machine-lan-ip>:9192 admin admin > /tmp/plxnative-dispatcharr
@@ -79,15 +80,20 @@ def parse_time(raw):
     return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
+# Programme lengths for EPG channels, by channel id: a guide grid needs cells of several widths,
+# and 45 minutes puts some programmes off the half-hour boundaries the grid's axis is drawn on.
+LENGTHS = (60, 30, 90, 30, 45)
+
+
 def grid(channels, start, end):
-    """Programmes overlapping [start, end): half-hour slots for EPG channels (Django's `Z`
-    spelling, integer ids), 4-hour dummy blocks keyed by UUID for the rest (`isoformat()`
-    spelling, string ids) — the two shapes `apps/epg/api_grid.py` writes."""
+    """Programmes overlapping [start, end): back-to-back programmes of `LENGTHS[id % 5]` minutes
+    for EPG channels (Django's `Z` spelling, integer ids), 4-hour dummy blocks keyed by UUID for the
+    rest (`isoformat()` spelling, string ids) — the two shapes `apps/epg/api_grid.py` writes."""
     out = []
     epoch = datetime(2026, 1, 1, tzinfo=timezone.utc)
     for c in channels:
         real = c["epg_data_id"] is not None
-        step = timedelta(minutes=30) if real else timedelta(hours=4)
+        step = timedelta(minutes=LENGTHS[c["id"] % len(LENGTHS)]) if real else timedelta(hours=4)
         slot = epoch + ((start - epoch) // step) * step
         while slot < end:
             n = int((slot - epoch) / step)

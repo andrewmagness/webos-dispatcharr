@@ -2396,7 +2396,8 @@ path. Never run only this one before a release. `tests/README.md` has the tier t
   from the signed-in session (QR login) or, for automated runs only, `/tmp/plxnative-token` — which
   `tests/run.py` always injects (it reads the owner token from the gitignored
   `src/config.local.h` on the HOST; that macro is never compiled in). An interactive boot lands
-  on the Dispatcharr Setup screen (`screens::setup`) without activating the Plex session; the
+  on the Dispatcharr Setup screen (`screens::setup`), which hands over to the Guide
+  (`screens::guide`) as soon as an account is stored, without activating the Plex session; the
   Plex boot (and, with no Plex session, its QR sign-in screen) is reached only through
   `/tmp/plxnative-login` or that dev token.
 - Normal interactive flow: who's-watching picker (multi-user, unless Automatically Sign In is on) → Home; D-pad/pointer to focus a

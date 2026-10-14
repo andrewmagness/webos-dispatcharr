@@ -28,5 +28,18 @@
   },
   "dispatcharr.setup.channels_failed": "No se pudo leer la lista de canales.",
   "dispatcharr.setup.until_reboot": "Guardado solo hasta que se reinicie el televisor.",
-  "dispatcharr.setup.sign_out": "Cerrar sesión"
+  "dispatcharr.setup.sign_out": "Cerrar sesión",
+  "dispatcharr.guide.title": "Guía",
+  "dispatcharr.guide.account": "Cuenta",
+  "dispatcharr.guide.loading": "Cargando la guía",
+  "dispatcharr.guide.empty": "No hay canales",
+  "dispatcharr.guide.empty_reason": "Añade canales a esta cuenta en Dispatcharr y vuelve.",
+  "dispatcharr.guide.failed": "No se pudo cargar la guía",
+  "dispatcharr.guide.refused": "El servidor ya no acepta la clave de este televisor. Vuelve a iniciar sesión.",
+  "dispatcharr.guide.retry": "Reintentar",
+  "dispatcharr.guide.sign_in_again": "Iniciar sesión de nuevo",
+  "dispatcharr.guide.unlisted": "Sin información",
+  "dispatcharr.guide.time_range": "{start} – {end}",
+  "dispatcharr.guide.season_episode": "T{season} E{episode}",
+  "dispatcharr.guide.episode": "Episodio {episode}"
 }

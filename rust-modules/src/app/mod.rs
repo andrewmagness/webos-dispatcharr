@@ -121,7 +121,7 @@ pub(crate) mod events;
 pub(crate) mod lifecycle;
 pub(crate) mod playback;
 mod preferences;
-mod dispatcharr; // the Setup screen's account work, on workers
+mod dispatcharr; // the Setup and Guide screens' account and server work, on workers
 pub(crate) mod input;
 pub(crate) mod bridge;
 pub(crate) mod chrome;

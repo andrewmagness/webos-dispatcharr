@@ -1,19 +1,19 @@
-//! Live executor for the Setup screen's account work (`AppFx::Dispatcharr`). Every command blocks —
-//! on the account file, on the server, or both — so each runs on its own worker and answers on the
-//! reply channel the screen holds, waking the loop as it does.
+//! Live executor for the Setup and Guide screens' account and server work (`AppFx::Dispatcharr`).
+//! Every command blocks — on the account file, on the server, or both — so each runs on its own
+//! worker and answers on the reply channel the screen holds, waking the loop as it does.
 //!
 //! The event log gets one `dispatcharr:` line per outcome and never the password or the key.
 
 use plx_dispatcharr::dispatcharr::{account, api, auth, Server};
-use plx_screens::registry::{DispatcharrCmd, SetupOutcome};
+use plx_screens::registry::{DispatcharrCmd, GuideOutcome, SetupOutcome};
 use std::sync::mpsc::Sender;
 
 pub(super) fn execute(command: DispatcharrCmd) {
     // A refused spawn drops the reply sender; the screen reads the disconnect as "no answer"
     // rather than waiting on a worker that never started.
     match command {
-        DispatcharrCmd::Load { reply } => {
-            plx_base::task::spawn_small("dispatcharr account", move || load(&reply));
+        DispatcharrCmd::Load { lineup, reply } => {
+            plx_base::task::spawn_small("dispatcharr account", move || load(lineup, &reply));
         }
         DispatcharrCmd::SignIn { address, username, password, reply } => {
             plx_base::task::spawn_small("dispatcharr sign-in", move || sign_in(&address, &username, password, &reply));
@@ -25,15 +25,18 @@ pub(super) fn execute(command: DispatcharrCmd) {
                 answer(&reply, SetupOutcome::SignedOut);
             });
         }
+        DispatcharrCmd::Guide { reply } => {
+            plx_base::task::spawn_small("dispatcharr guide", move || guide(&reply));
+        }
     }
 }
 
-fn answer(reply: &Sender<SetupOutcome>, outcome: SetupOutcome) {
+fn answer<T>(reply: &Sender<T>, outcome: T) {
     let _ = reply.send(outcome);
     plx_machine::idle::invalidate();
 }
 
-fn load(reply: &Sender<SetupOutcome>) {
+fn load(lineup_too: bool, reply: &Sender<SetupOutcome>) {
     match account::load() {
         account::Loaded::None => answer(reply, SetupOutcome::SignedOut),
         account::Loaded::Unreadable => {
@@ -43,11 +46,13 @@ fn load(reply: &Sender<SetupOutcome>) {
             plx_base::eventlog::log("dispatcharr: the stored account was unreadable and has been removed");
             answer(reply, SetupOutcome::SignedOut);
         }
-        account::Loaded::Signed(record) => {
+        account::Loaded::Signed(record, saved) => {
             plx_base::eventlog::log(&format!("dispatcharr: stored account for {}", record.account.server.base()));
             let account = record.account.clone();
-            answer(reply, SetupOutcome::Connected { record, saved: None });
-            lineup(&account, reply);
+            answer(reply, SetupOutcome::Connected { record, saved });
+            if lineup_too {
+                lineup(&account, reply);
+            }
         }
     }
 }
@@ -83,9 +88,8 @@ fn sign_in(address: &str, username: &str, password: String, reply: &Sender<Setup
         signed.version.version,
         if signed.key_generated { "generated" } else { "reused" },
     ));
-    let account = record.account.clone();
-    answer(reply, SetupOutcome::Connected { record, saved: Some(saved) });
-    lineup(&account, reply);
+    // The boot page hands over to the Guide, which reads the lineup itself.
+    answer(reply, SetupOutcome::Connected { record, saved });
 }
 
 /// Read the lineup behind `account` and answer with its size.
@@ -96,4 +100,31 @@ fn lineup(account: &api::Account, reply: &Sender<SetupOutcome>) {
         Err(e) => plx_base::eventlog::log(&format!("dispatcharr: channels failed: {e}")),
     }
     answer(reply, SetupOutcome::Lineup(channels));
+}
+
+/// The stored account's channels and the guide around now.
+fn guide(reply: &Sender<GuideOutcome>) {
+    let record = match account::load() {
+        account::Loaded::Signed(record, _) => record,
+        account::Loaded::None | account::Loaded::Unreadable => return answer(reply, GuideOutcome::SignedOut),
+    };
+    let account = &record.account;
+    let read = account.channels().and_then(|channels| {
+        let (guide, fetched_at) = account.guide_now(&channels)?;
+        Ok((channels, guide, fetched_at))
+    });
+    match read {
+        Ok((channels, guide, fetched_at)) => {
+            plx_base::eventlog::log(&format!(
+                "dispatcharr: guide channels={} with_programmes={}",
+                channels.len(),
+                guide.channels_with_programmes()
+            ));
+            answer(reply, GuideOutcome::Loaded { channels, guide, fetched_at });
+        }
+        Err(e) => {
+            plx_base::eventlog::log(&format!("dispatcharr: guide failed: {e}"));
+            answer(reply, GuideOutcome::Failed(e));
+        }
+    }
 }

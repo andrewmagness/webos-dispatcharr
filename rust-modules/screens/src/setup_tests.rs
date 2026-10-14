@@ -95,11 +95,19 @@ fn record() -> Record {
     }
 }
 
-/// A page on the form, its Load answered with "nobody signed in".
+fn loop_req(out: &[Stamped<SetupHost>]) -> Option<LoopReq> {
+    out.iter().find_map(|s| match &s.fx {
+        Fx::App(AppFx::Loop(req)) => Some(*req),
+        _ => None,
+    })
+}
+
+/// A boot page on the form, its Load answered with "nobody signed in".
 fn form() -> SetupScreen {
-    let mut screen = SetupScreen::new(EntryId(1), InstanceId(1));
+    let mut screen = SetupScreen::new(EntryId(1), InstanceId(1), Mode::Entry);
     let (_, out) = step(&mut screen, ScreenEvent::Mount, None);
-    let Some(DispatcharrCmd::Load { reply }) = command(out) else { panic!("mount asks for the stored account") };
+    let Some(DispatcharrCmd::Load { lineup, reply }) = command(out) else { panic!("mount asks for the stored account") };
+    assert!(!lineup, "the boot page has no use for the lineup");
     reply.send(SetupOutcome::SignedOut).unwrap();
     step(&mut screen, tick(16_000), None);
     assert_eq!(screen.phase, Phase::Form);
@@ -253,50 +261,76 @@ fn an_unreachable_server_seats_on_the_address() {
 }
 
 #[test]
-fn a_successful_sign_in_wipes_the_password_and_shows_the_lineup_when_it_lands() {
+fn a_successful_sign_in_wipes_the_password_and_hands_over_to_the_guide() {
     let mut screen = form();
     type_into(&mut screen, ADDRESS, "192.168.1.10");
     type_into(&mut screen, USERNAME, "andrew");
     type_into(&mut screen, PASSWORD, "hunter2");
     let (_, out) = step(&mut screen, ScreenEvent::Activate(SIGN_IN), Some(SIGN_IN));
     let Some(DispatcharrCmd::SignIn { reply, .. }) = command(out) else { panic!() };
-    reply.send(SetupOutcome::Connected { record: record(), saved: Some(Saved::Durable) }).unwrap();
+    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable }).unwrap();
     let (_, out) = step(&mut screen, tick(16_000), Some(SIGN_IN));
+    assert_eq!(loop_req(&out), Some(LoopReq::DispatcharrGuide));
+    assert_eq!(screen.fields[2].text(), "", "the password is gone once it has signed in");
+    assert_ne!(screen.phase, Phase::Connected, "the boot page never shows the Server page's face");
+}
+
+#[test]
+fn a_stored_account_at_boot_goes_straight_to_the_guide() {
+    let mut screen = SetupScreen::new(EntryId(1), InstanceId(1), Mode::Entry);
+    let (_, out) = step(&mut screen, ScreenEvent::Mount, None);
+    let Some(DispatcharrCmd::Load { reply, .. }) = command(out) else { panic!() };
+    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable }).unwrap();
+    let (_, out) = step(&mut screen, tick(16_000), None);
+    assert_eq!(loop_req(&out), Some(LoopReq::DispatcharrGuide));
+    assert_eq!(screen.phase, Phase::Loading, "nothing is drawn for the frame the hand-over takes");
+}
+
+/// A Server page with the stored account landed.
+fn server_page() -> (SetupScreen, std::sync::mpsc::Sender<SetupOutcome>) {
+    let mut screen = SetupScreen::new(EntryId(1), InstanceId(1), Mode::Server);
+    let (_, out) = step(&mut screen, ScreenEvent::Mount, None);
+    let Some(DispatcharrCmd::Load { lineup, reply }) = command(out) else { panic!() };
+    assert!(lineup, "the Server page shows the lineup");
+    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable }).unwrap();
+    let (_, out) = step(&mut screen, tick(16_000), None);
     assert_eq!(screen.phase, Phase::Connected);
     assert_eq!(reseated_on(&out), Some(SIGN_OUT));
-    assert_eq!(screen.fields[2].text(), "", "the password is gone once it has signed in");
+    (screen, reply)
+}
+
+#[test]
+fn the_server_page_names_the_account_then_the_lineup_when_it_lands() {
+    let (mut screen, reply) = server_page();
     let copy = screen.connected.as_ref().unwrap().lines().join(" | ");
     assert!(copy.contains("http://192.168.1.10:9191") && copy.contains("andrew"), "{copy}");
     assert!(!copy.contains("channel"), "no count before the lineup lands: {copy}");
     reply.send(SetupOutcome::Lineup(Ok(42))).unwrap();
     step(&mut screen, tick(16_000), Some(SIGN_OUT));
     assert_eq!(screen.connected.as_ref().unwrap().lines()[1], "42 channels");
+    // BACK returns to the Guide, and the crumb says so.
+    let m = FixtureMeasure;
+    assert_eq!(<SetupScreen as Screen<SetupHost>>::crumb(&screen, &cx(&m, None)).as_deref(), Some(msg::dispatcharr_guide_title()));
+    let (_, out) = step(&mut screen, key(Key::Back), Some(SIGN_OUT));
+    assert!(out.iter().any(|s| matches!(s.fx, Fx::Nav(NavOp::Pop))));
 }
 
 #[test]
 fn a_save_that_ends_at_reboot_says_so() {
     let c = Connected { server: "http://h:9191".into(), username: "u".into(), lineup: Lineup::Channels(1),
-        saved: Some(Saved::UntilReboot) };
+        saved: Saved::UntilReboot };
     assert_eq!(c.lines()[1], "1 channel");
     assert_eq!(c.lines()[2], msg::dispatcharr_setup_until_reboot());
 }
 
 #[test]
-fn signing_out_returns_to_the_form_ready_for_the_password() {
-    let mut screen = SetupScreen::new(EntryId(1), InstanceId(1));
-    let (_, out) = step(&mut screen, ScreenEvent::Mount, None);
-    let Some(DispatcharrCmd::Load { reply }) = command(out) else { panic!() };
-    reply.send(SetupOutcome::Connected { record: record(), saved: None }).unwrap();
-    step(&mut screen, tick(16_000), None);
-    assert_eq!(screen.phase, Phase::Connected);
+fn signing_out_hands_the_app_back_to_the_boot_page() {
+    let (mut screen, _) = server_page();
     let (_, out) = step(&mut screen, ScreenEvent::Activate(SIGN_OUT), Some(SIGN_OUT));
     let Some(DispatcharrCmd::SignOut { reply }) = command(out) else { panic!("signs out") };
     reply.send(SetupOutcome::SignedOut).unwrap();
     let (_, out) = step(&mut screen, tick(16_000), Some(SIGN_OUT));
-    assert_eq!(screen.phase, Phase::Form);
-    assert_eq!(screen.fields[0].text(), "http://192.168.1.10:9191");
-    assert_eq!(screen.fields[1].text(), "andrew");
-    assert_eq!(reseated_on(&out), Some(PASSWORD));
+    assert_eq!(loop_req(&out), Some(LoopReq::DispatcharrSetup));
 }
 
 #[test]

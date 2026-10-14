@@ -52,7 +52,7 @@ fn nothing_saved_loads_as_none() {
 fn a_saved_record_loads_back_whole() {
     let _c = Candidates::new("roundtrip", 2);
     assert_eq!(account::save(&record("KEY")), Ok(Saved::Durable));
-    assert_eq!(account::load(), Loaded::Signed(record("KEY")));
+    assert_eq!(account::load(), Loaded::Signed(record("KEY"), Saved::Durable));
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn an_unwritable_first_candidate_falls_through_to_the_next() {
     account::save(&record("KEY")).unwrap();
     assert!(!missing.exists());
     assert!(c.paths[1].exists());
-    assert_eq!(account::load(), Loaded::Signed(record("KEY")));
+    assert_eq!(account::load(), Loaded::Signed(record("KEY"), Saved::Durable));
 }
 
 #[test]
@@ -105,6 +105,8 @@ fn a_save_that_lands_only_on_the_reboot_swept_fallback_says_so() {
     let missing = c.dir.join("absent").join("dispatcharr.json");
     account::redirect_for_test(Some(vec![(missing, true), (c.paths[1].clone(), false)]));
     assert_eq!(account::save(&record("KEY")), Ok(Saved::UntilReboot));
+    // And it reads back saying so.
+    assert_eq!(account::load(), Loaded::Signed(record("KEY"), Saved::UntilReboot));
 }
 
 #[test]

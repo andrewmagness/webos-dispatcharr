@@ -8,7 +8,7 @@ use super::auth;
 use super::client::{self, Server};
 use super::error::Error;
 use super::models::{Channel, ServerVersion};
-use super::guide::{Guide, Window};
+use super::guide::{slot_at, Guide, Slot, Window};
 use super::models::{EpgData, Programme};
 use super::test_double::{curl_ready, dispatcharr, spawn, SUMMARY};
 use super::time::{format_iso8601, parse_iso8601};
@@ -316,6 +316,67 @@ fn an_overlapping_listing_resolves_to_the_one_that_started_latest() {
     ], Window::around(T0));
     assert_eq!(guide.at(1, T0 + 2000).unwrap().title, "Inserted");
     assert_eq!(guide.at(1, T0 + 4000).unwrap().title, "Long");
+}
+
+#[test]
+fn a_lane_tiles_the_window_with_gaps_as_unlisted_slots() {
+    let w = Window::around(T0);
+    let channels = [channel(1, "u-1", None)];
+    let guide = Guide::build(&channels, &[], [
+        ("u-1".to_string(), prog(w.start - 600, T0, "Straddles")),
+        ("u-1".to_string(), prog(T0 + 1800, T0 + 3600, "After a gap")),
+        ("u-1".to_string(), prog(w.end - 900, w.end + 900, "Runs past")),
+    ], w);
+    let lane = guide.lane(1);
+    assert_eq!(lane, vec![
+        Slot { start: w.start, end: T0, programme: Some(0) },
+        Slot { start: T0, end: T0 + 1800, programme: None },
+        Slot { start: T0 + 1800, end: T0 + 3600, programme: Some(1) },
+        Slot { start: T0 + 3600, end: w.end - 900, programme: None },
+        Slot { start: w.end - 900, end: w.end, programme: Some(2) },
+    ]);
+    // No programmes at all: one unlisted slot spans the window.
+    assert_eq!(guide.lane(2), vec![Slot { start: w.start, end: w.end, programme: None }]);
+    // A guide that was never fetched has no lanes.
+    assert!(Guide::default().lane(1).is_empty());
+}
+
+#[test]
+fn a_lane_agrees_with_at_where_listings_overlap() {
+    let channels = [channel(1, "u-1", None)];
+    let guide = Guide::build(&channels, &[], [
+        ("u-1".to_string(), prog(T0, T0 + 7200, "Long")),
+        ("u-1".to_string(), prog(T0 + 1800, T0 + 3600, "Inserted")),
+    ], Window::around(T0));
+    let lane = guide.lane(1);
+    for slot in &lane {
+        for t in [slot.start, (slot.start + slot.end) / 2, slot.end - 1] {
+            let at = guide.at(1, t).map(|p| p.title.as_str());
+            let lane_says = slot.programme.map(|i| guide.programmes(1)[i].title.as_str());
+            assert_eq!(lane_says, at, "at {t}");
+        }
+    }
+    let titles: Vec<Option<&str>> =
+        lane.iter().map(|s| s.programme.map(|i| guide.programmes(1)[i].title.as_str())).collect();
+    assert_eq!(titles, [None, Some("Long"), Some("Inserted"), Some("Long"), None]);
+    // Contiguous, end to end.
+    assert!(lane.windows(2).all(|w| w[0].end == w[1].start));
+}
+
+#[test]
+fn slot_at_finds_the_slot_an_instant_falls_in_clamped_to_the_lane() {
+    let lane = [
+        Slot { start: 0, end: 10, programme: None },
+        Slot { start: 10, end: 20, programme: Some(0) },
+        Slot { start: 20, end: 30, programme: None },
+    ];
+    assert_eq!(slot_at(&lane, 0), Some(0));
+    assert_eq!(slot_at(&lane, 10), Some(1));
+    assert_eq!(slot_at(&lane, 19), Some(1));
+    assert_eq!(slot_at(&lane, -5), Some(0));
+    assert_eq!(slot_at(&lane, 99), Some(2));
+    assert_eq!(slot_at(&[], 5), None);
+    assert!(lane[1].contains(10) && !lane[1].contains(20));
 }
 
 #[test]

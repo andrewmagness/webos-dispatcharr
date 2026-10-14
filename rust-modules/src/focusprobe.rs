@@ -87,6 +87,13 @@ pub(crate) enum Screen {
         /// The focused element, or `-1` with nothing focused (the page still loading).
         elem: i32,
     },
+    /// The Dispatcharr guide (`screens::guide`). Its cursor is the engine's, raw, as
+    /// [`Screen::Setup`]'s: a cell is `row << 12 | slot`, the header's *Account* `u32::MAX`, the
+    /// failed read-out's action `u32::MAX - 1`.
+    Guide {
+        /// The focused element, or `-1` with nothing focused (the page still loading).
+        elem: i64,
+    },
     /// The QR sign-in (`screens::login::LoginScreen`), an OWNED screen since phase 6.
     ///
     /// **This screen is not cursor-free, and this variant said so for a while after it stopped
@@ -254,6 +261,9 @@ fn push_fields(ps: &plx_media::route::PlaybackSession, s: &mut String, screen: S
             let _ = write!(s, " phase={phase:?} ctl={}", b(has_control));
         }
         Screen::Setup { elem } => {
+            let _ = write!(s, " elem={elem}");
+        }
+        Screen::Guide { elem } => {
             let _ = write!(s, " elem={elem}");
         }
         Screen::Profiles { elem } => {
@@ -429,6 +439,8 @@ mod tests {
             // a cursor and the still-loading page, as `profiles` above
             ("setup", Screen::Setup { elem: 3 }),
             ("setup", Screen::Setup { elem: -1 }),
+            ("guide", Screen::Guide { elem: (3 << 12) | 2 }),
+            ("guide", Screen::Guide { elem: -1 }),
             // both focus zones, because the two print different values through one grammar
             ("onboard", Screen::Onboard { list: true, row: 0 }),
             ("onboard", Screen::Onboard { list: false, row: -1 }),

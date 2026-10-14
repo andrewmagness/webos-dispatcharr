@@ -479,6 +479,9 @@ fn pre_boot_diagnostics() -> plx_telemetry::telemetry::native::Guard {
     // its GStreamer is lazily initialised, so this is early enough and a later arming would be
     // read by nobody. It is the only instrument that can see inside the closed Dolby Vision chain.
     crate::dev::arm_gst_logging();
+    // If armed, sign in to a Dispatcharr server on a worker and log its channels (milestone 1's
+    // headless probe, before the Setup screen). Never blocks the boot.
+    crate::dev::dispatcharr_probe();
     // Playback tests photograph the television as well as grading its log. This keeps the same
     // ABR/pipeline evidence visible for every automated playback, rather than depending on the
     // previous manual toggle surviving into a new session.

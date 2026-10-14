@@ -1189,7 +1189,7 @@ taught is mostly about what would have gone quiet:
   after the move, and the `test-support` build needed only the three reverts above. Nothing named
   `crate::telemetry` or `crate::diag` except the application's own references, which the script
   rewrote.
-- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_plex -p plx_telemetry`) in the
+- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_plex -p plx_dispatcharr -p plx_telemetry`) in the
   Makefile, the workflow, `tools/build-bench.py` and the tests that pin them, and in the docs that
   quote them; `--src rust-modules/telemetry/src` for the line budget (450,644 lines counted, limit
   485,000); `RUST_INPUTS`; `ci/test_no_host_staticlib.py` holds the crate to `rlib`; and `make

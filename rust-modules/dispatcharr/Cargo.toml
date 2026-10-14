@@ -1,0 +1,28 @@
+[package]
+name = "plx_dispatcharr"
+version = "0.0.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Dispatcharr layer: the typed Dispatcharr REST client (sign-in, API key, channels)."
+repository = "https://github.com/andrewmagness/dispatcharr-webos"
+publish = false
+
+[lib]
+name = "plx_dispatcharr"
+# An rlib the application crate links, never an archive of its own: the one staticlib is the
+# application crate's (ci/test_no_host_staticlib.py holds that line for this crate too).
+crate-type = ["rlib"]
+
+[features]
+default = []
+# The loopback Dispatcharr double (`dispatcharr::test_double`) for the application's tests. Enabled
+# from the dependents' `[dev-dependencies]`; never in a shipped build.
+test-support = []
+
+[dependencies]
+plx_net = { path = "../net" }
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_json = { version = "1", default-features = false, features = ["alloc", "std"] }
+
+[lints]
+workspace = true

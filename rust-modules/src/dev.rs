@@ -206,6 +206,86 @@ pub(crate) fn arm_gst_logging() {
 #[cfg(not(feature = "devtriggers"))]
 pub(crate) fn arm_gst_logging() {}
 
+/// **Sign in to a Dispatcharr server headlessly and log what it serves** —
+/// `/tmp/plxnative-dispatcharr`, three lines: server address, username, password.
+///
+/// The milestone-1 probe, before the Setup screen exists: it runs [`plx_dispatcharr`]'s whole
+/// sign-in (version probe, JWT, existing-or-new API key) and the channel and group reads on a
+/// worker, and writes the outcome to the event log as `dispatcharr:` lines. It never logs the
+/// password or the key. Like `plxnative-servers` it carries a credential, which is why it is not
+/// in [`DIAG`].
+#[cfg(feature = "devtriggers")]
+pub(crate) fn dispatcharr_probe() {
+    use plx_base::eventlog::log;
+    let Some(spec) = plx_base::devtrig::read("dispatcharr") else { return };
+    let mut lines = spec.lines().map(str::trim);
+    let (Some(address), Some(username), Some(password)) = (lines.next(), lines.next(), lines.next()) else {
+        log("dispatcharr: /tmp/plxnative-dispatcharr needs three lines: address, username, password");
+        return;
+    };
+    let server = match plx_dispatcharr::dispatcharr::Server::parse(address) {
+        Ok(server) => server,
+        Err(e) => return log(&format!("dispatcharr: address {address:?}: {e}")),
+    };
+    let (username, password) = (username.to_owned(), password.to_owned());
+    plx_base::task::spawn_small("dispatcharr-probe", move || {
+        for line in dispatcharr_report(&server, &username, &password) {
+            log(&line);
+        }
+    });
+}
+#[cfg(not(feature = "devtriggers"))]
+pub(crate) fn dispatcharr_probe() {}
+
+/// The `dispatcharr:` event-log lines for one sign-in and listing. Split from the trigger so the
+/// formatting is testable against a loopback server without `/tmp`.
+#[cfg(any(feature = "devtriggers", test))]
+fn dispatcharr_report(server: &plx_dispatcharr::dispatcharr::Server, username: &str, password: &str) -> Vec<String> {
+    use plx_dispatcharr::dispatcharr::{api::Account, auth};
+    /// Enough rows to recognise the lineup; the count line says how many there are in all.
+    const LISTED: usize = 25;
+    let mut out = Vec::new();
+    let signed = match auth::sign_in(server, username, password) {
+        Ok(signed) => signed,
+        Err(e) => {
+            out.push(format!("dispatcharr: sign-in to {} failed: {e}", server.base()));
+            return out;
+        }
+    };
+    out.push(format!(
+        "dispatcharr: signed in to {} version={} tested={} key={} plaintext={}",
+        server.base(),
+        signed.version.version,
+        if signed.version.is_tested() { "yes" } else { "no" },
+        if signed.key_generated { "generated" } else { "reused" },
+        server.is_plaintext(),
+    ));
+    let account = Account { server: signed.server, api_key: signed.api_key };
+    let groups = account.groups();
+    match account.channels() {
+        Ok(channels) => {
+            out.push(format!(
+                "dispatcharr: channels={} groups={}",
+                channels.len(),
+                groups.as_ref().map_or_else(|e| format!("error ({e})"), |g| g.len().to_string())
+            ));
+            for c in channels.iter().take(LISTED) {
+                out.push(format!(
+                    "dispatcharr: ch {:>6} {} uuid={} group={} epg={} logo={}",
+                    c.number_label(),
+                    c.name,
+                    c.uuid,
+                    c.channel_group_id.map_or("-".into(), |g| g.to_string()),
+                    c.epg_data_id.map_or("-".into(), |e| e.to_string()),
+                    c.logo_id.map_or("-".into(), |l| l.to_string()),
+                ));
+            }
+        }
+        Err(e) => out.push(format!("dispatcharr: channels failed: {e}")),
+    }
+    out
+}
+
 /// **Turn on libwayland-client's protocol log** — `/tmp/plxnative-wldebug`.
 ///
 /// `WAYLAND_DEBUG` makes the client library print every request it sends and every event it
@@ -831,6 +911,35 @@ pub(crate) fn any_trigger_present() -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dispatcharr_report_lists_the_lineup_and_never_the_credentials() {
+        use plx_dispatcharr::dispatcharr::test_double::{curl_ready, dispatcharr};
+        if !curl_ready() {
+            return;
+        }
+        let (server, _) = dispatcharr(Some("SECRETKEY"));
+        let lines = super::dispatcharr_report(&server, "andrew", "hunter2");
+        assert!(lines[0].starts_with(&format!("dispatcharr: signed in to {} version=0.32.0 tested=yes key=reused", server.base())), "{lines:?}");
+        assert_eq!(lines[1], "dispatcharr: channels=4 groups=1");
+        assert_eq!(lines[2], format!("dispatcharr: ch {:>6} Movies uuid=0b6c1c1e-0000-4000-8000-000000000009 group=2 epg=13 logo=4", "5"));
+        assert_eq!(lines.len(), 6);
+        assert!(lines.iter().all(|l| !l.contains("SECRETKEY") && !l.contains("hunter2")), "{lines:?}");
+    }
+
+    #[test]
+    fn dispatcharr_report_names_a_failed_sign_in() {
+        use plx_dispatcharr::dispatcharr::test_double::{curl_ready, spawn};
+        if !curl_ready() {
+            return;
+        }
+        let (server, _) = spawn(|_, path| match path {
+            "/api/core/version/" => (200, r#"{"version":"0.32.0"}"#.into()),
+            _ => (401, r#"{"detail":"No active account found with the given credentials"}"#.into()),
+        });
+        let lines = super::dispatcharr_report(&server, "andrew", "wrong");
+        assert_eq!(lines, [format!("dispatcharr: sign-in to {} failed: unauthorized (401)", server.base())]);
+    }
+
     #[test]
     fn server_slot_trigger_accepts_only_a_registry_slot() {
         assert_eq!(super::parse_server_slot("0"), Ok(0));

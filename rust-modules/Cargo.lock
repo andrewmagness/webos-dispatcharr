@@ -605,6 +605,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "plx_dispatcharr"
+version = "0.0.0"
+dependencies = [
+ "plx_net",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "plx_gfx"
 version = "0.0.0"
 dependencies = [
@@ -754,6 +763,7 @@ dependencies = [
  "plx_appkit",
  "plx_base",
  "plx_data",
+ "plx_dispatcharr",
  "plx_gfx",
  "plx_machine",
  "plx_media",

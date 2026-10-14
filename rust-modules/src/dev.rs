@@ -210,8 +210,8 @@ pub(crate) fn arm_gst_logging() {}
 /// `/tmp/plxnative-dispatcharr`, three lines: server address, username, password.
 ///
 /// The milestone-1 probe, before the Setup screen exists: it runs [`plx_dispatcharr`]'s whole
-/// sign-in (version probe, JWT, existing-or-new API key) and the channel and group reads on a
-/// worker, and writes the outcome to the event log as `dispatcharr:` lines. It never logs the
+/// sign-in (version probe, JWT, existing-or-new API key), the channel and group reads and the guide
+/// on a worker, and writes the outcome to the event log as `dispatcharr:` lines. It never logs the
 /// password or the key. Like `plxnative-servers` it carries a credential, which is why it is not
 /// in [`DIAG`].
 #[cfg(feature = "devtriggers")]
@@ -229,7 +229,8 @@ pub(crate) fn dispatcharr_probe() {
     };
     let (username, password) = (username.to_owned(), password.to_owned());
     plx_base::task::spawn_small("dispatcharr-probe", move || {
-        for line in dispatcharr_report(&server, &username, &password) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        for line in dispatcharr_report(&server, &username, &password, now) {
             log(&line);
         }
     });
@@ -240,7 +241,7 @@ pub(crate) fn dispatcharr_probe() {}
 /// The `dispatcharr:` event-log lines for one sign-in and listing. Split from the trigger so the
 /// formatting is testable against a loopback server without `/tmp`.
 #[cfg(any(feature = "devtriggers", test))]
-fn dispatcharr_report(server: &plx_dispatcharr::dispatcharr::Server, username: &str, password: &str) -> Vec<String> {
+fn dispatcharr_report(server: &plx_dispatcharr::dispatcharr::Server, username: &str, password: &str, now: i64) -> Vec<String> {
     use plx_dispatcharr::dispatcharr::{api::Account, auth};
     /// Enough rows to recognise the lineup; the count line says how many there are in all.
     const LISTED: usize = 25;
@@ -269,15 +270,36 @@ fn dispatcharr_report(server: &plx_dispatcharr::dispatcharr::Server, username: &
                 channels.len(),
                 groups.as_ref().map_or_else(|e| format!("error ({e})"), |g| g.len().to_string())
             ));
+            let guide = match account.guide(&channels, now) {
+                Ok(guide) => {
+                    let w = guide.window().expect("a built guide has its window");
+                    out.push(format!(
+                        "dispatcharr: guide {}..{} programmes on {} of {} channels",
+                        plx_dispatcharr::dispatcharr::time::format_iso8601(w.start),
+                        plx_dispatcharr::dispatcharr::time::format_iso8601(w.end),
+                        guide.channels_with_programmes(),
+                        channels.len()
+                    ));
+                    Some(guide)
+                }
+                Err(e) => {
+                    out.push(format!("dispatcharr: guide failed: {e}"));
+                    None
+                }
+            };
             for c in channels.iter().take(LISTED) {
+                let (on_now, up_next) = guide.as_ref().map_or((None, None), |g| g.now_next(c.id, now));
+                let title = |p: Option<&plx_dispatcharr::dispatcharr::models::Programme>| p.map_or("-", |p| p.title.as_str()).to_owned();
                 out.push(format!(
-                    "dispatcharr: ch {:>6} {} uuid={} group={} epg={} logo={}",
+                    "dispatcharr: ch {:>6} {} uuid={} group={} epg={} logo={} now={:?} next={:?}",
                     c.number_label(),
                     c.name,
                     c.uuid,
                     c.channel_group_id.map_or("-".into(), |g| g.to_string()),
                     c.epg_data_id.map_or("-".into(), |e| e.to_string()),
                     c.logo_id.map_or("-".into(), |l| l.to_string()),
+                    title(on_now),
+                    title(up_next),
                 ));
             }
         }
@@ -918,11 +940,14 @@ mod tests {
             return;
         }
         let (server, _) = dispatcharr(Some("SECRETKEY"));
-        let lines = super::dispatcharr_report(&server, "andrew", "hunter2");
+        let noon = 1_791_979_200; // 2026-10-14T12:00:00Z, inside the double's grid
+        let lines = super::dispatcharr_report(&server, "andrew", "hunter2", noon);
         assert!(lines[0].starts_with(&format!("dispatcharr: signed in to {} version=0.32.0 tested=yes key=reused", server.base())), "{lines:?}");
         assert_eq!(lines[1], "dispatcharr: channels=4 groups=1");
-        assert_eq!(lines[2], format!("dispatcharr: ch {:>6} Movies uuid=0b6c1c1e-0000-4000-8000-000000000009 group=2 epg=13 logo=4", "5"));
-        assert_eq!(lines.len(), 6);
+        assert_eq!(lines[2], "dispatcharr: guide 2026-10-14T11:00:00Z..2026-10-15T00:00:00Z programmes on 2 of 4 channels");
+        assert_eq!(lines[3], format!("dispatcharr: ch {:>6} Movies uuid=0b6c1c1e-0000-4000-8000-000000000009 group=2 epg=13 logo=4 now=\"-\" next=\"-\"", "5"));
+        assert!(lines[4].ends_with("now=\"Midday News\" next=\"Weather\""), "{lines:?}");
+        assert_eq!(lines.len(), 7);
         assert!(lines.iter().all(|l| !l.contains("SECRETKEY") && !l.contains("hunter2")), "{lines:?}");
     }
 
@@ -936,7 +961,7 @@ mod tests {
             "/api/core/version/" => (200, r#"{"version":"0.32.0"}"#.into()),
             _ => (401, r#"{"detail":"No active account found with the given credentials"}"#.into()),
         });
-        let lines = super::dispatcharr_report(&server, "andrew", "wrong");
+        let lines = super::dispatcharr_report(&server, "andrew", "wrong", 0);
         assert_eq!(lines, [format!("dispatcharr: sign-in to {} failed: unauthorized (401)", server.base())]);
     }
 

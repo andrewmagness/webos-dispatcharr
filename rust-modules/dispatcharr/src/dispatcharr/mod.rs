@@ -16,6 +16,8 @@
 //!   not expire, which is why the app keeps the key and never the password or the JWT.
 //! * `GET /api/channels/channels/summary/` and `GET /api/channels/groups/` are unpaginated lists.
 //!   `channel_number` is a nullable FLOAT (`5.1` is a valid channel number).
+//! * `GET /api/epg/epgdata/` is the whole EPG table, unfiltered; `GET /api/epg/grid/?start=&end=`
+//!   answers `{"data": [...]}`, programmes keyed only by `tvg_id` ([`guide`] says how they map).
 //!
 //! Transport: [`client`] sends every request through libcurl ([`plx_net::net`]) for both schemes,
 //! because sign-in needs a request BODY and the plaintext socket transport has no way to send one.
@@ -26,7 +28,9 @@ pub mod api; // channels/groups reads with the API key
 pub mod auth; // sign-in: version probe, JWT, existing-or-new API key
 pub mod client; // the one request door: URL, auth header, body, status → Error
 pub mod error; // what went wrong, in the terms a Setup screen explains to a person
+pub mod guide; // programmes per channel: the tvg_id mapping and the rolling window
 pub mod models; // the response shapes
+pub mod time; // ISO 8601 <-> Unix seconds, the grid's two spellings
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_double; // a loopback Dispatcharr that records requests, for this crate's and the app's tests

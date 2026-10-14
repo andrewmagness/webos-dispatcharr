@@ -20,6 +20,31 @@ pub const SUMMARY: &str = r#"[
    "channel_number": null, "epg_data_id": null, "channel_group_id": 1}
 ]"#;
 
+/// `GET /api/epg/epgdata/` for [`SUMMARY`]: rows 12 and 13 back "News 24" and "Movies"; 99 is
+/// another source's row nobody uses.
+pub const EPGDATA: &str = r#"[
+  {"id": 12, "tvg_id": "news.example", "name": "News", "icon_url": null, "epg_source": 1},
+  {"id": 13, "tvg_id": "movies.example", "name": "Movies", "icon_url": null, "epg_source": 1},
+  {"id": 99, "tvg_id": "unused.example", "name": "Unused", "icon_url": null, "epg_source": 2}
+]"#;
+
+/// `GET /api/epg/grid/` for 2026-10-14 around 12:00Z, in both spellings the server writes: a real
+/// programme from Django's encoder, a generated dummy one from `isoformat()` keyed by the
+/// numberless channel's UUID, and one row with no key that the guide must drop.
+pub const GRID: &str = r#"{"data":[
+  {"id": 501, "start_time": "2026-10-14T11:30:00Z", "end_time": "2026-10-14T12:30:00Z", "title": "Midday News",
+   "sub_title": null, "description": "Headlines.", "tvg_id": "news.example", "season": null, "episode": null,
+   "is_new": true, "is_live": true, "is_premiere": false, "is_finale": false},
+  {"id": 502, "start_time": "2026-10-14T12:30:00Z", "end_time": "2026-10-14T13:00:00Z", "title": "Weather",
+   "sub_title": "", "description": null, "tvg_id": "news.example", "season": "3", "episode": 12,
+   "is_new": false, "is_live": false, "is_premiere": false, "is_finale": false},
+  {"id": "dummy-3-20261014T080000", "start_time": "2026-10-14T08:00:00+00:00", "end_time": "2026-10-14T12:00:00+00:00",
+   "title": "alpha", "sub_title": null, "description": "alpha", "tvg_id": "0b6c1c1e-0000-4000-8000-000000000003",
+   "custom_properties": null, "season": null, "episode": null, "is_new": false, "is_live": false, "is_premiere": false, "is_finale": false},
+  {"id": 503, "start_time": "2026-10-14T12:00:00Z", "end_time": "2026-10-14T13:00:00Z", "title": "Orphan",
+   "tvg_id": null}
+]}"#;
+
 /// One request the double received: method, path, the header lines, and the body.
 #[derive(Debug, Clone)]
 pub struct Seen {
@@ -102,7 +127,7 @@ pub fn curl_ready() -> bool {
 
 /// A Dispatcharr double whose user starts with `existing_key` (or none).
 pub fn dispatcharr(existing_key: Option<&'static str>) -> (Server, Arc<Mutex<Vec<Seen>>>) {
-    spawn(move |method, path| match (method, path) {
+    spawn(move |method, target| match (method, target.split('?').next().unwrap_or_default()) {
         ("GET", "/api/core/version/") => (200, r#"{"version":"0.32.0","timestamp":null}"#.into()),
         ("POST", "/api/accounts/token/") => (200, r#"{"refresh":"r.r.r","access":"a.a.a"}"#.into()),
         ("GET", "/api/accounts/api-keys/") => match existing_key {
@@ -112,6 +137,8 @@ pub fn dispatcharr(existing_key: Option<&'static str>) -> (Server, Arc<Mutex<Vec
         ("POST", "/api/accounts/api-keys/generate/") => (201, r#"{"key":"NEWKEY","user":{"id":1}}"#.into()),
         ("GET", "/api/channels/channels/summary/") => (200, SUMMARY.into()),
         ("GET", "/api/channels/groups/") => (200, r#"[{"id":2,"name":"News","channel_count":2}]"#.into()),
+        ("GET", "/api/epg/epgdata/") => (200, EPGDATA.into()),
+        ("GET", "/api/epg/grid/") => (200, GRID.into()),
         _ => (404, r#"{"detail":"Not found."}"#.into()),
     })
 }

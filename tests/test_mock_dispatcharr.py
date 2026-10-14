@@ -89,9 +89,33 @@ class MockDispatcharr(unittest.TestCase):
         self.assertEqual(a, b)
         self.assertNotEqual(a, mock_dispatcharr.lineup(8, 30, 4))
 
+    def test_the_grid_keys_real_programmes_by_tvg_id_and_dummies_by_uuid(self):
+        self.start("--key", "K", "--channels", "20")
+        key = {"X-API-Key": "K"}
+        _, channels = self.call("GET", "/api/channels/channels/summary/", key)
+        _, epg = self.call("GET", "/api/epg/epgdata/", key)
+        tvg_of = {row["id"]: row["tvg_id"] for row in epg}
+        status, grid = self.call("GET", "/api/epg/grid/?start=2026-10-14T11:00:00Z&end=2026-10-14T13:00:00Z", key)
+        self.assertEqual(status, 200)
+        by_key = {}
+        for p in grid["data"]:
+            by_key.setdefault(p["tvg_id"], []).append(p)
+        for c in channels:
+            listing = by_key[tvg_of[c["epg_data_id"]]] if c["epg_data_id"] else by_key[c["uuid"]]
+            self.assertTrue(listing, c["name"])
+        starts = [p["start_time"] for p in by_key["ch001.mock"]]
+        self.assertEqual(starts, ["2026-10-14T11:00:00Z", "2026-10-14T11:30:00Z", "2026-10-14T12:00:00Z", "2026-10-14T12:30:00Z"])
+        dummy = next(p for p in grid["data"] if isinstance(p["id"], str))
+        self.assertTrue(dummy["start_time"].endswith("+00:00"))
+
+    def test_the_grid_is_identical_for_the_same_window(self):
+        self.start("--key", "K")
+        q = "/api/epg/grid/?start=2026-10-14T11:00:00Z&end=2026-10-15T00:00:00Z"
+        self.assertEqual(self.call("GET", q, {"X-API-Key": "K"}), self.call("GET", q, {"X-API-Key": "K"}))
+
     def test_unknown_paths_are_404(self):
         self.start()
-        self.assertEqual(self.call("GET", "/api/epg/grid/")[0], 404)
+        self.assertEqual(self.call("GET", "/api/epg/programs/")[0], 404)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,10 @@ use super::auth;
 use super::client::{self, Server};
 use super::error::Error;
 use super::models::{Channel, ServerVersion};
+use super::guide::{Guide, Window};
+use super::models::{EpgData, Programme};
 use super::test_double::{curl_ready, dispatcharr, spawn, SUMMARY};
+use super::time::{format_iso8601, parse_iso8601};
 
 // ---- address parsing ----------------------------------------------------------------------
 
@@ -196,4 +199,157 @@ fn a_redirect_is_reported_and_not_followed() {
     let (server, seen) = spawn(|_, _| (302, String::new()));
     assert_eq!(auth::version(&server), Err(Error::Redirected(302)));
     assert_eq!(seen.lock().unwrap().len(), 1);
+}
+
+// ---- time ---------------------------------------------------------------------------------
+
+#[test]
+fn both_server_spellings_and_offsets_parse_to_the_same_instant() {
+    let noon = 1_791_979_200; // 2026-10-14T12:00:00Z
+    for spelling in [
+        "2026-10-14T12:00:00Z",
+        "2026-10-14T12:00:00+00:00",
+        "2026-10-14T12:00:00.123456Z",
+        "2026-10-14T14:00:00+02:00",
+        "2026-10-14T07:00:00-0500",
+        "2026-10-14 12:00:00",
+    ] {
+        assert_eq!(parse_iso8601(spelling), Some(noon), "{spelling}");
+    }
+    assert_eq!(format_iso8601(noon), "2026-10-14T12:00:00Z");
+    assert_eq!(parse_iso8601("2024-02-29T00:00:00Z"), Some(1_709_164_800));
+    assert_eq!(format_iso8601(1_709_164_800), "2024-02-29T00:00:00Z");
+    assert_eq!(format_iso8601(0), "1970-01-01T00:00:00Z");
+    for bad in ["", "2026-10-14", "2026-13-01T00:00:00Z", "2026-10-14T12:00:00+2", "2026-10-14T12:00:00.Z", "yesterday"] {
+        assert_eq!(parse_iso8601(bad), None, "{bad}");
+    }
+}
+
+#[test]
+fn format_and_parse_round_trip_across_years() {
+    let mut t = -86_400 * 365;
+    while t < 4_102_444_800 {
+        assert_eq!(parse_iso8601(&format_iso8601(t)), Some(t));
+        t += 86_400 * 37 + 3_607;
+    }
+}
+
+// ---- guide --------------------------------------------------------------------------------
+
+fn channel(id: i64, uuid: &str, epg: Option<i64>) -> Channel {
+    Channel { id, uuid: uuid.into(), name: format!("c{id}"), logo_id: None, channel_number: Some(id as f64),
+        epg_data_id: epg, channel_group_id: None }
+}
+
+fn prog(start: i64, end: i64, title: &str) -> Programme {
+    Programme { start, end, title: title.into(), sub_title: None, description: None, season: None,
+        episode: None, is_new: false, is_live: false, is_premiere: false, is_finale: false }
+}
+
+const T0: i64 = 1_791_979_200; // 2026-10-14T12:00:00Z
+
+#[test]
+fn programmes_map_through_epg_rows_and_dummy_uuids() {
+    let channels = [
+        channel(1, "u-1", Some(10)),  // real EPG
+        channel(2, "u-2", Some(10)),  // shares channel 1's EPG row
+        channel(3, "u-3", None),      // no EPG: dummy programmes under its uuid
+        channel(4, "u-4", Some(40)),  // assigned to a DUMMY source: programmes under its uuid
+    ];
+    let epg = [EpgData { id: 10, tvg_id: Some("real.tv".into()) }, EpgData { id: 40, tvg_id: Some("dummy-src".into()) }];
+    let guide = Guide::build(&channels, &epg, [
+        ("real.tv".to_string(), prog(T0, T0 + 1800, "Real")),
+        ("u-3".to_string(), prog(T0, T0 + 14_400, "Dummy3")),
+        ("u-4".to_string(), prog(T0, T0 + 14_400, "Dummy4")),
+        ("nobody".to_string(), prog(T0, T0 + 1800, "Lost")),
+    ], Window::around(T0));
+    assert_eq!(guide.programmes(1)[0].title, "Real");
+    assert_eq!(guide.programmes(2)[0].title, "Real");
+    assert_eq!(guide.programmes(3)[0].title, "Dummy3");
+    assert_eq!(guide.programmes(4)[0].title, "Dummy4");
+    assert_eq!(guide.channels_with_programmes(), 4);
+    assert!(guide.programmes(5).is_empty());
+}
+
+#[test]
+fn listings_are_sorted_deduplicated_and_cut_to_the_window() {
+    let w = Window::around(T0);
+    let channels = [channel(1, "u-1", None)];
+    let guide = Guide::build(&channels, &[], [
+        ("u-1".to_string(), prog(T0 + 1800, T0 + 3600, "B")),
+        ("u-1".to_string(), prog(T0, T0 + 1800, "A")),
+        ("u-1".to_string(), prog(T0, T0 + 1800, "A")), // a second source listing the same slot
+        ("u-1".to_string(), prog(w.end, w.end + 1800, "After")),
+        ("u-1".to_string(), prog(w.start - 3600, w.start, "Before")),
+        ("u-1".to_string(), prog(w.start - 600, w.start + 600, "Straddles")),
+    ], w);
+    let titles: Vec<&str> = guide.programmes(1).iter().map(|p| p.title.as_str()).collect();
+    assert_eq!(titles, ["Straddles", "A", "B"]);
+}
+
+#[test]
+fn now_and_next_follow_the_clock_and_gaps() {
+    let channels = [channel(1, "u-1", None)];
+    let guide = Guide::build(&channels, &[], [
+        ("u-1".to_string(), prog(T0, T0 + 1800, "A")),
+        ("u-1".to_string(), prog(T0 + 1800, T0 + 3600, "B")),
+        ("u-1".to_string(), prog(T0 + 7200, T0 + 9000, "C")), // after a one-hour gap
+    ], Window::around(T0));
+    let titles = |t| {
+        let (now, next) = guide.now_next(1, t);
+        (now.map(|p| p.title.clone()), next.map(|p| p.title.clone()))
+    };
+    assert_eq!(titles(T0), (Some("A".into()), Some("B".into())));
+    assert_eq!(titles(T0 + 1799), (Some("A".into()), Some("B".into())));
+    assert_eq!(titles(T0 + 1800), (Some("B".into()), Some("C".into())));
+    assert_eq!(titles(T0 + 4000), (None, Some("C".into())));
+    assert_eq!(titles(T0 + 9000), (None, None));
+    assert!((guide.at(1, T0 + 900).unwrap().progress(T0 + 900) - 0.5).abs() < 1e-6);
+}
+
+#[test]
+fn an_overlapping_listing_resolves_to_the_one_that_started_latest() {
+    let channels = [channel(1, "u-1", None)];
+    let guide = Guide::build(&channels, &[], [
+        ("u-1".to_string(), prog(T0, T0 + 7200, "Long")),
+        ("u-1".to_string(), prog(T0 + 1800, T0 + 3600, "Inserted")),
+    ], Window::around(T0));
+    assert_eq!(guide.at(1, T0 + 2000).unwrap().title, "Inserted");
+    assert_eq!(guide.at(1, T0 + 4000).unwrap().title, "Long");
+}
+
+#[test]
+fn the_window_is_half_hour_aligned_and_goes_stale() {
+    let w = Window::around(T0 + 1000);
+    assert_eq!((w.start, w.end), (T0 - Window::BACK, T0 + Window::FORWARD));
+    assert!(!w.stale(T0, T0 + 60));
+    assert!(w.stale(T0, T0 + Window::MAX_AGE));
+    assert!(w.stale(T0, w.end - Window::MIN_AHEAD + 1));
+    assert!(w.stale(T0, w.start - 1));
+}
+
+#[test]
+fn the_guide_reads_map_the_doubles_lineup() {
+    if !curl_ready() {
+        return;
+    }
+    let (server, seen) = dispatcharr(Some("K"));
+    let account = Account { server, api_key: "K".into() };
+    let channels = account.channels().unwrap();
+    let programmes = account.epg_grid(Window::around(T0)).unwrap();
+    assert_eq!(programmes.len(), 3, "the keyless row is dropped");
+    let weather = &programmes[1].1;
+    assert_eq!((weather.season, weather.episode, weather.sub_title.as_deref()), (Some(3), Some(12), None));
+    let guide = account.guide(&channels, T0).unwrap();
+    let id = |name: &str| channels.iter().find(|c| c.name == name).unwrap().id;
+    let (now, next) = guide.now_next(id("News 24"), T0);
+    assert_eq!(now.unwrap().title, "Midday News");
+    assert!(now.unwrap().is_live);
+    assert_eq!(next.unwrap().title, "Weather");
+    assert_eq!(guide.at(id("alpha"), T0 - 60).unwrap().title, "alpha");
+    assert!(guide.programmes(id("Movies")).is_empty());
+    let seen = seen.lock().unwrap();
+    let grid = seen.iter().find(|s| s.path.starts_with("/api/epg/grid/")).unwrap();
+    assert_eq!(grid.path, "/api/epg/grid/?start=2026-10-14T11:00:00Z&end=2026-10-15T00:00:00Z");
+    assert_eq!(grid.header("x-api-key"), Some("K"));
 }

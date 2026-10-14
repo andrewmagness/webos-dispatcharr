@@ -91,9 +91,11 @@ pub enum GuideOutcome {
     /// No stored account: the page goes back to Setup.
     SignedOut,
     /// The channels in guide order and their programmes, read at `fetched_at` (Unix seconds by the
-    /// television's clock — the page's only reading of the wall clock).
+    /// television's clock — the page's only reading of the wall clock). `logos` is each channel's
+    /// logo URL, in the same order (`None` for a channel without one).
     Loaded {
         channels: Vec<plx_dispatcharr::dispatcharr::models::Channel>,
+        logos: Vec<Option<String>>,
         guide: plx_dispatcharr::dispatcharr::guide::Guide,
         fetched_at: i64,
     },

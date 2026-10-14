@@ -56,6 +56,10 @@ pub const CELL_RAD: f32 = 10.0;
 pub const NOW_W: f32 = 3.0;
 /// A cell narrower than this carries no text: a sliver with a letter in it reads as a glitch.
 pub const CELL_TEXT_MIN_W: f32 = 56.0;
+/// The logo slot in a row's label, between the number and the name. Reserved whether or not the
+/// row has a logo, so the names line up down the column.
+pub const LOGO_W: f32 = 96.0;
+pub const LOGO_H: f32 = 56.0;
 
 impl TimeGrid {
     /// The lanes: right of the label column, under the axis band.
@@ -199,8 +203,23 @@ pub fn draw_axis(p: Painter, grid: &TimeGrid, view: View, measure: &dyn Measure,
     }
 }
 
-/// One row's label: its number over a fixed column, then its name, elided to the column.
-pub fn draw_row_label(p: Painter, rect: Rect, number: &str, name: &str, hot: f32, measure: &dyn Measure) {
+/// Where a `w`×`h` image stands in the logo slot of a label at `rect`: as large as fits, aspect
+/// kept, centred. `measure` sizes the number column the slot follows.
+pub fn logo_rect(rect: Rect, w: f32, h: f32, measure: &dyn Measure) -> Rect {
+    let slot_x = rect.x + measure.width_str("0000", theme::size::LABEL, true) + CELL_PAD;
+    let slot = Rect::new(slot_x, rect.y + (rect.h - LOGO_H) * 0.5, LOGO_W, LOGO_H);
+    if w <= 0.0 || h <= 0.0 {
+        return slot;
+    }
+    let scale = (slot.w / w).min(slot.h / h);
+    let (dw, dh) = (w * scale, h * scale);
+    Rect::new(slot.x + (slot.w - dw) * 0.5, slot.y + (slot.h - dh) * 0.5, dw, dh)
+}
+
+/// One row's label: its number over a fixed column, its logo (`(texture, w, h)` once resident;
+/// the slot stays empty until then and for a row without one), then its name, elided to the column.
+pub fn draw_row_label(p: Painter, rect: Rect, number: &str, logo: Option<(u32, f32, f32)>, name: &str, hot: f32,
+    measure: &dyn Measure) {
     let size = theme::size::LABEL;
     let ink = theme::cross(theme::TEXT_SECONDARY, theme::TEXT_PRIMARY, hot);
     let number_w = measure.width_str("0000", size, true);
@@ -208,7 +227,10 @@ pub fn draw_row_label(p: Painter, rect: Rect, number: &str, name: &str, hot: f32
         let n = measure.fit_line(number, number_w, size, true);
         Label::new(n.as_ptr(), size, ink).bold().draw(p, Rect::new(rect.x, rect.y, number_w, rect.h));
     }
-    let x = rect.x + number_w + CELL_PAD;
+    if let Some((tex, w, h)) = logo.filter(|l| l.0 != 0) {
+        p.tex(tex, logo_rect(rect, w, h, measure), 0.0, theme::TINT_WHITE);
+    }
+    let x = rect.x + number_w + CELL_PAD + LOGO_W + CELL_PAD;
     let w = (rect.x + rect.w - x).max(0.0);
     let n = measure.fit_line(name, w, size, false);
     Label::new(n.as_ptr(), size, ink).draw(p, Rect::new(x, rect.y, w, rect.h));
@@ -347,6 +369,22 @@ mod tests {
         // Never past the end, and a list shorter than the lanes never scrolls.
         assert_eq!(g.reveal_top(0.0, 9, 10), 6.0);
         assert_eq!(g.reveal_top(0.0, 2, 3), 0.0);
+    }
+
+    #[test]
+    fn a_logo_fits_its_slot_aspect_kept_and_centred() {
+        let m = crate::fixture::FixtureMeasure;
+        let label = Rect::new(100.0, 300.0, 440.0, 84.0);
+        let slot = logo_rect(label, 0.0, 0.0, &m);
+        assert_eq!((slot.w, slot.h), (LOGO_W, LOGO_H));
+        assert_eq!(slot.y, 300.0 + (84.0 - LOGO_H) * 0.5);
+        // A wide logo fills the slot's width; a tall one its height; both centred in it.
+        let wide = logo_rect(label, 400.0, 100.0, &m);
+        assert_eq!((wide.w, wide.h), (LOGO_W, LOGO_W / 4.0));
+        assert!((wide.cy() - slot.cy()).abs() < 1e-3);
+        let tall = logo_rect(label, 100.0, 200.0, &m);
+        assert_eq!((tall.w, tall.h), (LOGO_H / 2.0, LOGO_H));
+        assert!((tall.cx() - slot.cx()).abs() < 1e-3);
     }
 
     #[test]

@@ -102,7 +102,7 @@ mod layout {
     pub fn grid() -> TimeGrid {
         TimeGrid {
             frame: Rect::new(MARGIN_X, GRID_TOP, SCR_W - 2.0 * MARGIN_X, SCR_H - MARGIN_Y - GRID_TOP),
-            label_w: 360.0,
+            label_w: 440.0,
             axis_h: 52.0,
             row_h: 84.0,
             row_gap: 8.0,
@@ -136,6 +136,8 @@ impl Phase {
 /// What a fetch brought: the channels in guide order, their programmes, and each row's lane.
 struct Listing {
     channels: Vec<Channel>,
+    /// Each channel's logo URL (`None` for one without), row for row.
+    logos: Vec<Option<String>>,
     guide: Guide,
     lanes: Vec<Vec<Slot>>,
     /// Each channel's number as a viewer reads it, kept so a frame does not format sixty of them.
@@ -145,9 +147,12 @@ struct Listing {
 }
 
 impl Listing {
-    fn new(mut channels: Vec<Channel>, guide: Guide, fetched_at: i64) -> Option<Self> {
+    fn new(mut channels: Vec<Channel>, mut logos: Vec<Option<String>>, guide: Guide, fetched_at: i64)
+        -> Option<Self> {
         let window = guide.window()?;
         channels.truncate(MAX_ROWS);
+        // Row for row with the channels whatever the answer held: a short list means no logos.
+        logos.resize(channels.len(), None);
         let lanes = channels
             .iter()
             .map(|c| {
@@ -157,7 +162,7 @@ impl Listing {
             })
             .collect();
         let numbers = channels.iter().map(Channel::number_label).collect();
-        Some(Listing { channels, guide, lanes, numbers, window, fetched_at })
+        Some(Listing { channels, logos, guide, lanes, numbers, window, fetched_at })
     }
 
     fn rows(&self) -> usize {
@@ -370,11 +375,11 @@ impl GuideScreen {
                     self.reseat(RETRY, fx);
                 }
             }
-            GuideOutcome::Loaded { channels, guide, fetched_at } => {
+            GuideOutcome::Loaded { channels, logos, guide, fetched_at } => {
                 self.clock = Some(WallClock { unix: fetched_at, ms });
                 self.now = fetched_at;
                 self.drawn_now = fetched_at;
-                let Some(listing) = Listing::new(channels, guide, fetched_at) else {
+                let Some(listing) = Listing::new(channels, logos, guide, fetched_at) else {
                     self.phase = Phase::Failed(Error::BadResponse("guide window".into()));
                     self.reseat(RETRY, fx);
                     return;
@@ -620,7 +625,14 @@ impl GuideScreen {
                 Some((r, hot)) if r == row => hot.pos,
                 _ => 0.0,
             };
-            time_grid::draw_row_label(p, grid.label(row, view), &listing.numbers[row], &channel.name, hot, f.measure);
+            // Resolved on every draw it is drawn on: that is the cache's "on screen" stamp, and a
+            // miss is what starts the fetch.
+            let logo = listing.logos[row].as_deref().map(|url| {
+                plx_ui::tex::resolve_wh_on(plx_ui::tex::DIRECT, url, time_grid::LOGO_W as i32, time_grid::LOGO_H as i32,
+                    true)
+            });
+            time_grid::draw_row_label(p, grid.label(row, view), &listing.numbers[row], logo, &channel.name, hot,
+                f.measure);
             for (i, s) in listing.lanes[row].iter().enumerate() {
                 let Some(rect) = grid.cell(row, s.start, s.end, view) else { continue };
                 let programme = listing.programme(row, s);

@@ -13,6 +13,8 @@ What it answers, with the shapes `rust-modules/dispatcharr/src/dispatcharr/model
   GET  /api/epg/epgdata/                  one EPG row per numbered channel, plus an unused one
   GET  /api/epg/grid/?start=&end=         30- to 90-minute programmes for every EPG row in the window, and
                                           4-hour dummy blocks keyed by UUID for numberless channels
+  GET  /api/channels/logos/<id>/cache/    a generated logo: a PNG in one of three shapes, or an SVG
+                                          for every seventh id (no credential, as on the server)
 
 Anything else is a 404 and a line on stderr naming it, so extending it is one branch. The lineup is
 generated from --seed, never the clock: two servers started alike answer byte-identically. The
@@ -28,9 +30,12 @@ The default binds loopback only, like tests/mock_pms.py; pass the LAN address fo
 import argparse
 import json
 import random
+import re
+import struct
 import sys
 import urllib.parse
 import uuid
+import zlib
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -115,6 +120,42 @@ def grid(channels, start, end):
     return out
 
 
+def png(width, height, pixel):
+    """An RGBA PNG of `pixel(x, y) -> (r, g, b, a)`, written by hand so the mock needs nothing
+    beyond the standard library."""
+    rows = b"".join(b"\x00" + b"".join(bytes(pixel(x, y)) for x in range(width)) for y in range(height))
+
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b""))
+
+
+# Logo shapes by id: a wide bar, a square badge and a tall mark — so a guide's logo slot has to fit
+# all three.
+LOGO_SHAPES = ((240, 96), (128, 128), (80, 120))
+
+
+def logo(logo_id):
+    """(content type, bytes) for `logo_id`: deterministic, distinct per id."""
+    hue = (logo_id * 47) % 360
+    r, g, b = [int(255 * max(0.0, min(1.0, abs(((hue / 60 + k) % 6) - 3) - 1))) for k in (0, 4, 2)]
+    if logo_id % 7 == 0:
+        svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" viewBox="0 0 200 80">'
+               f'<rect x="4" y="4" width="192" height="72" rx="16" fill="rgb({r},{g},{b})"/>'
+               f'<circle cx="40" cy="40" r="22" fill="#ffffff"/></svg>')
+        return "image/svg+xml", svg.encode()
+    w, h = LOGO_SHAPES[logo_id % len(LOGO_SHAPES)]
+    border = max(4, min(w, h) // 10)
+
+    def pixel(x, y):
+        inside = border <= x < w - border and border <= y < h - border
+        return (r, g, b, 255) if inside else (255, 255, 255, 255)
+
+    return "image/png", png(w, h, pixel)
+
+
 class State:
     def __init__(self, args):
         self.user, self.password = args.user, args.password
@@ -155,8 +196,18 @@ def make_handler(state):
         def path_only(self):
             return self.path.split("?", 1)[0]
 
+        def reply_bytes(self, content_type, data):
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self):
             path = self.path_only()
+            m = re.fullmatch(r"/api/channels/logos/(\d+)/cache/", path)
+            if m:
+                return self.reply_bytes(*logo(int(m.group(1))))
             if path == "/api/core/version/":
                 return self.reply(200, {"version": VERSION, "timestamp": None})
             if path == "/api/accounts/api-keys/":

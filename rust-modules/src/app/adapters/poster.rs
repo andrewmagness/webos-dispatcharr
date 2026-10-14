@@ -617,6 +617,9 @@ fn built_key(srv: ServerId, path: &str, w: c_int, h: c_int, png: bool) -> Option
     if path.is_empty() {
         return None;
     }
+    if srv.raw() == tex::DIRECT {
+        return direct_key(path, w, h);
+    }
     let c = plx_plex::plex::client_for(srv)?;
     // SAFETY: main-thread only (every caller is a draw path), and the borrow is consumed by the
     // caller before the memo can be touched again; the `'static` is that discipline, not a fact.
@@ -639,6 +642,112 @@ fn built_key(srv: ServerId, path: &str, w: c_int, h: c_int, png: bool) -> Option
     }
     Some(s)
 }
+
+/// The key for an image on the [`tex::DIRECT`] origin: its URL and the box it is fitted to, in
+/// physical pixels — the box is part of the identity because the fit happens here, not on a server.
+/// No credential is involved, so the memo's generation is constant.
+fn direct_key(url: &str, w: c_int, h: c_int) -> Option<&'static str> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) || w <= 0 || h <= 0 {
+        return None;
+    }
+    // SAFETY: as `built_key`'s — main-thread only, consumed before the memo is touched again.
+    let memo = unsafe {
+        (*std::ptr::addr_of_mut!(KEY_MEMO)).get_or_insert_with(|| KeyMemo { map: std::collections::HashMap::new() })
+    };
+    let n = plx_base::surface::render_scale() as c_int;
+    let s = memo.get_or_build(tex::DIRECT, url, w, h, true, 0, || format!("{url}{DIRECT_FIT}{}x{}", w * n, h * n));
+    if s.len() > KEY_MAX {
+        warn_key_refused(s.len());
+        return None;
+    }
+    Some(s)
+}
+
+/// The separator between a [`tex::DIRECT`] key's URL and its box (`…/cache/#fit=240x120`). A
+/// fragment, so the URL before it is unchanged by it and no server ever sees it.
+const DIRECT_FIT: &str = "#fit=";
+
+/// A [`tex::DIRECT`] key's URL and box, as [`direct_key`] built it.
+fn parse_direct_key(key: &str) -> Option<(&str, u32, u32)> {
+    let (url, fit) = key.rsplit_once(DIRECT_FIT)?;
+    let (w, h) = fit.split_once('x')?;
+    Some((url, w.parse().ok()?, h.parse().ok()?))
+}
+
+/// Fetch and fit one [`tex::DIRECT`] image: disk first (namespaced by the URL's origin, keyed by the
+/// whole key, so each box is its own entry), then the network. Only a response that decodes is
+/// written to disk. `None` art with `transient` set is a failure worth retrying.
+fn load_direct(key_s: &str, cache_gen: u64) -> Loaded<(u32, u32, Vec<u8>)> {
+    let mut out = Loaded { art: None, from_disk: false, stale: None, transient: false };
+    let Some((url, bw, bh)) = parse_direct_key(key_s) else { return out };
+    let decode = |b: &[u8]| img::img_decode_fit(b, bw, bh);
+    let namespace = format!("direct:{}", plx_net::net::origin::split(url).0.base());
+    let disk = if crate::dev::scenarios::imagecache_bypass_armed() {
+        None
+    } else {
+        plx_platform::imgcache::classify(&namespace, key_s)
+    };
+    if let Some(k) = &disk {
+        if let Some(cached) = plx_platform::imgcache::read_at(cache_gen, k) {
+            match decode(&cached.bytes) {
+                // A stale hit is still drawn; a direct image has no grant to refresh it under, and
+                // the next miss after its eviction fetches it afresh.
+                Some(art) => {
+                    out.art = Some(art);
+                    out.from_disk = true;
+                    return out;
+                }
+                None => plx_platform::imgcache::remove_at(cache_gen, k),
+            }
+        }
+    }
+    if cache_gen != plx_platform::imgcache::generation() {
+        return out;
+    }
+    let fetched = fetch_direct(url, bw, bh);
+    if let (Some(_), Some(k), Some(body)) = (&fetched.art, &disk, &fetched.body) {
+        plx_platform::imgcache::write_at(cache_gen, k, body);
+    }
+    out.art = fetched.art;
+    out.transient = fetched.transient;
+    out
+}
+
+/// One [`tex::DIRECT`] fetch, decoded and fitted: the art, the body it came from (what the disk
+/// tier keeps — only when it decoded), and whether a failure is worth retrying.
+struct DirectFetch {
+    art: Option<(u32, u32, Vec<u8>)>,
+    body: Option<Vec<u8>>,
+    transient: bool,
+}
+
+fn fetch_direct(url: &str, bw: u32, bh: u32) -> DirectFetch {
+    FETCHES.fetch_add(1, Ordering::Relaxed);
+    let direct = ServerId::from_raw(tex::DIRECT);
+    let resp = plx_net::net::request(url, &[], "GET", None, plx_net::net::BULK, true, Some(DIRECT_MAX_BYTES), None);
+    match resp {
+        Some(r) if (200..300).contains(&r.status) && !r.body.is_empty() => {
+            let art = img::img_decode_fit(&r.body, bw, bh);
+            if art.is_none() {
+                warn_fetch_failed(direct, ArtFail::Empty);
+            }
+            let body = art.is_some().then_some(r.body);
+            DirectFetch { art, body, transient: false }
+        }
+        Some(r) => {
+            warn_fetch_failed(direct, ArtFail::NoResponse);
+            DirectFetch { art: None, body: None, transient: r.status >= 500 || r.status == 429 }
+        }
+        None => {
+            warn_fetch_failed(direct, ArtFail::NoResponse);
+            DirectFetch { art: None, body: None, transient: true }
+        }
+    }
+}
+
+/// The largest [`tex::DIRECT`] image body read: a channel logo is tens of kilobytes; this refuses a
+/// URL that turns out to serve something else entirely before it is held in memory.
+const DIRECT_MAX_BYTES: usize = 8 * 1024 * 1024;
 
 /// The transcoder request for `path` drawn in a `w`×`h` logical box — the one builder behind
 /// every store key and the fan baker's member fetches, so both name the same bytes on disk.
@@ -1938,7 +2047,15 @@ fn poster_worker() {
         let mut transient = false;
         // Revoked servers cannot use disk as a route around sign-out. Keep this client snapshot
         // for both identity and transport; a later registry repoint must not mix the two.
-        if let Some(client) = plx_plex::plex::client_for(srv)
+        if srv.raw() == tex::DIRECT {
+            let loaded = load_direct(&key_s, cache_gen);
+            if let Some((dw, dh, rgba)) = loaded.art {
+                px = img::img_malloc_copy(&rgba, || format!("{dw}x{dh} direct image"));
+                (w, h) = (dw as c_int, dh as c_int);
+            }
+            trace::disk(idx, gen, if loaded.from_disk { "hit" } else { "net" });
+            transient = loaded.transient;
+        } else if let Some(client) = plx_plex::plex::client_for(srv)
             .filter(|c| cache_gen == plx_platform::imgcache::generation() && c.token_gen() == token_gen)
         {
             if let Some((rk, stamp)) = fan::parse_fan_key(&key_s) {
@@ -2064,6 +2181,66 @@ mod tests {
     //! server in the registry, which is a crate global. They still touch no socket and no GL —
     //! `poster_key` only formats a string.
     use super::*;
+
+    #[test]
+    fn a_direct_key_carries_its_url_and_box_and_reads_back() {
+        let key = format!("http://192.0.2.10:9191/api/channels/logos/7/cache/{DIRECT_FIT}192x112");
+        assert_eq!(parse_direct_key(&key), Some(("http://192.0.2.10:9191/api/channels/logos/7/cache/", 192, 112)));
+        assert_eq!(parse_direct_key("http://h/x.png"), None, "a key without a box is not a direct key");
+        assert_eq!(parse_direct_key(&format!("http://h/x.png{DIRECT_FIT}axb")), None);
+    }
+
+    #[test]
+    fn only_an_http_url_in_a_real_box_makes_a_direct_key() {
+        assert!(direct_key("ftp://h/x.png", 96, 56).is_none());
+        assert!(direct_key("/library/metadata/1/thumb", 96, 56).is_none(), "a server path is not a URL");
+        assert!(direct_key("http://h/x.png", 0, 56).is_none());
+        let key = direct_key("https://h/x.png", 96, 56).expect("builds").to_owned();
+        let (url, w, h) = parse_direct_key(&key).expect("parses");
+        let n = plx_base::surface::render_scale() as u32;
+        assert_eq!((url, w, h), ("https://h/x.png", 96 * n, 56 * n));
+    }
+
+    /// Serve `body` once with `status`, on a loopback port; the URL to fetch it from.
+    fn serve_once(status: u16, content_type: &'static str, body: Vec<u8>) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                let mut buf = [0u8; 4096];
+                let _ = sock.read(&mut buf);
+                let head = format!(
+                    "HTTP/1.1 {status} X\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = sock.write_all(head.as_bytes());
+                let _ = sock.write_all(&body);
+            }
+        });
+        format!("http://127.0.0.1:{port}/api/channels/logos/1/cache/")
+    }
+
+    #[test]
+    fn a_direct_image_is_fetched_without_a_credential_and_fitted_to_its_box() {
+        if !plx_net::net::global_init() {
+            return;
+        }
+        let (w, h) = (300u32, 100u32);
+        let px: Vec<u8> = (0..w * h).flat_map(|_| [200u8, 30, 30, 255]).collect();
+        let png = img::img_encode_png(w, h, &px).unwrap();
+        let got = fetch_direct(&serve_once(200, "image/png", png.clone()), 96, 56);
+        let (fw, fh, rgba) = got.art.expect("fitted");
+        assert_eq!((fw, fh), (96, 32));
+        assert_eq!(rgba.len(), (96 * 32 * 4) as usize);
+        assert_eq!(got.body.as_deref(), Some(&png[..]), "the original bytes are what the disk keeps");
+        // A 404 is final; a 503 is worth another try.
+        assert!(!fetch_direct(&serve_once(404, "text/plain", b"no".to_vec()), 96, 56).transient);
+        assert!(fetch_direct(&serve_once(503, "text/plain", b"busy".to_vec()), 96, 56).transient);
+        // A body that is not an image is not art, and is not kept.
+        let junk = fetch_direct(&serve_once(200, "text/html", b"<html></html>".to_vec()), 96, 56);
+        assert!(junk.art.is_none() && junk.body.is_none());
+    }
 
     /// A failing server owns its own latch whatever its slot number: servers past the first sixteen
     /// used to share one word, so the second of them never got its line.

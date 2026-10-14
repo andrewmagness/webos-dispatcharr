@@ -12,7 +12,7 @@
     "description": "Setup field label: the server's address"
   },
   "dispatcharr.setup.address_example": {
-    "value": "For example, 192.168.1.10:9191",
+    "value": "For example, 192.0.2.10:9191",
     "description": "Placeholder in the empty address field: an example address after a translated lead-in"
   },
   "dispatcharr.setup.username": {
@@ -44,7 +44,7 @@
     "description": "Setup: Sign in pressed with a field left empty"
   },
   "dispatcharr.setup.bad_address": {
-    "value": "That is not a server address. Try one like 192.168.1.10:9191.",
+    "value": "That is not a server address. Try one like 192.0.2.10:9191.",
     "description": "Setup failure: the address typed is not a server address"
   },
   "dispatcharr.setup.unreachable": {

@@ -944,6 +944,12 @@ STORAGE_TDIR = $(RUST_TDIR)-storage
 # generator in build_support/; that is all it names here, so an edit to the UI no longer relinks it. `ci/test_storage_package_isolated.py` holds the
 # "no app library" line.
 STORAGE_INPUTS := $(shell find rust-modules/storage rust-modules/build_support rust-modules/platform/src/storage_service -type f 2>/dev/null) rust-modules/platform/src/storage/state.rs rust-modules/.cargo/config.toml
+# `-C linker-features=-lld`: rustc's `arm-unknown-linux-gnueabi` spec now says `linker-flavor:
+# gnu-lld-cc` with a self-contained linker, so it hands GCC `-B…/gcc-ld -fuse-ld=lld` — and where
+# the rustup toolchain ships that `gcc-ld/ld.lld` shim (x86_64 Linux, measured 2026-10-13 on
+# nightly-2026-07-02) GCC obeys it. The result links, but `ci/arm-cc.py` rejects it: LLD's map has
+# no `LOAD ` lines, so the link evidence cannot be graded. This helper is the only binary rustc
+# links (the app is linked by GCC below), so it is the only place that needs the NDK's GNU ld back.
 STORAGE_BIN = rust-modules/$(STORAGE_TDIR)/$(RUST_TARGET)/$(ARM_PROFILE)/plxnative-storage
 pkg/plxnative-storage: LICENSE $(STORAGE_INPUTS) rust-modules/Cargo.toml rust-modules/Cargo.lock ci/install-identities.json Makefile ci/arm-cc.py ci/check-link-evidence.py
 	cd rust-modules && PATH="$$HOME/.cargo/bin:$$PATH" $(RUST_ENV) \
@@ -951,7 +957,7 @@ pkg/plxnative-storage: LICENSE $(STORAGE_INPUTS) rust-modules/Cargo.toml rust-mo
 	  cargo +$(RUST_NIGHTLY) rustc $(ARM_PROFILE_FLAG) --target $(RUST_TARGET) \
 	    -p plxnative-storage --bin plxnative-storage --target-dir $(STORAGE_TDIR) --no-default-features -- \
 	    -C link-arg=--sysroot=$(SYSROOT) -L native=$(SYSROOT)/usr/lib \
-	    -C link-arg=-Wl,-rpath-link,$(SYSROOT)/usr/lib -C link-arg=-Wl,--build-id=sha1
+	    -C link-arg=-Wl,-rpath-link,$(SYSROOT)/usr/lib -C link-arg=-Wl,--build-id=sha1 -C linker-features=-lld
 	cp $(STORAGE_BIN) $@
 	chmod 755 $@
 	python3 ci/stage-link-evidence.py $(STORAGE_BIN) $@
@@ -1007,21 +1013,42 @@ NDK_REL ?= webos-d7ed7ee.6
 # runs on `ubuntu-24.04-arm`: an x86_64 Linux runner cannot obtain this toolchain at all, and the
 # old hardcoded `darwin-$(uname -m)` name RESOLVED there (downloading a Mach-O toolchain that
 # passed the `test -x` guard below and died later with "Exec format error").
+#
+# linux-x86_64 comes from UPSTREAM openlgtv/buildroot-nc4 instead: its `webos-d7ed7ee` release
+# (2023-09-19) is built from the same buildroot commit webosbrew re-packages as webos-d7ed7ee.6, and
+# its un-suffixed asset is an x86_64 Linux build (verified 2026-10-13: `file` reports x86-64 ELF,
+# `gcc --version` says "Buildroot -gd7ed7ee3-dirty 12.2.0", sysroot libc-2.12.2, all nine LIBS_REAL
+# present). It is a .tar.gz, not a .tar.bz2, hence NDK_TAR_FLAGS. Outside usr/share/ its sysroot is
+# file-for-file the webosbrew one and GCC is the same 12.2.0; the one toolchain difference is ld
+# (binutils 2.39 here, 2.38 there). With it, plxnative-storage keeps a DT_NEEDED on libdl.so.2 for
+# a `dlsym` reference in std that --gc-sections later discards, so `ci/check-elf.sh` reports
+# storage DT_NEEDED drift on an x86_64 build. libdl.so.2 is on every firmware tools/fwcompat.py
+# carries, and CI's canonical build is unaffected, so the expectation file stays as CI sees it.
 NDK_OS   := $(shell uname -s | tr A-Z a-z)
 NDK_HOST := $(shell uname -m)
 ifeq ($(NDK_OS),darwin)
   NDK_PLAT = darwin-$(if $(filter arm64,$(NDK_HOST)),arm64,x86_64)
 else ifeq ($(NDK_HOST),aarch64)
   NDK_PLAT = linux-aarch64
+else ifeq ($(NDK_HOST),x86_64)
+  NDK_PLAT = linux-x86_64
 else
   NDK_PLAT = UNSUPPORTED
 endif
-NDK_TARBALL = arm-webos-linux-gnueabi_sdk-buildroot_$(NDK_PLAT).tar.bz2
-NDK_URL = https://github.com/webosbrew/native-toolchain/releases/download/$(NDK_REL)/$(NDK_TARBALL)
+ifeq ($(NDK_PLAT),linux-x86_64)
+  NDK_URL = https://github.com/openlgtv/buildroot-nc4/releases/download/webos-d7ed7ee/arm-webos-linux-gnueabi_sdk-buildroot.tar.gz
+  NDK_TAR_FLAGS = xzf
+else
+  NDK_TARBALL = arm-webos-linux-gnueabi_sdk-buildroot_$(NDK_PLAT).tar.bz2
+  NDK_URL = https://github.com/webosbrew/native-toolchain/releases/download/$(NDK_REL)/$(NDK_TARBALL)
+  NDK_TAR_FLAGS = xjf
+endif
 # sha256 of the linux-aarch64 tarball (the one CI fetches), verified 2026-08-01. Empty for the
 # darwin assets — `make setup-env` on a dev Mac keeps its existing no-checksum behaviour; CI is
 # where an unverified 156 MB download actually matters.
 NDK_SHA256_linux-aarch64 = 45a2d12ff557457d92cde4fddaa77a6f1090fca03adc43bb74397e5e0c379501
+# sha256 of the openlgtv webos-d7ed7ee x86_64 asset, verified 2026-10-13.
+NDK_SHA256_linux-x86_64 = 32816626e99fb34922a49d0c639f7c8a30356fffb222372d4823027f1382f640
 NDK_SHA256 = $(NDK_SHA256_$(NDK_PLAT))
 # Fetch this checkout's DEV telemetry credentials from GitHub into the gitignored local file.
 #
@@ -1056,15 +1083,15 @@ telemetry-local:
 setup-env:
 	@test "$(NDK_PLAT)" != UNSUPPORTED || { \
 	  echo "no webOS NDK published for $(NDK_OS)-$(NDK_HOST) at $(NDK_REL)."; \
-	  echo "Available: darwin-arm64, darwin-x86_64, linux-aarch64."; exit 1; }
+	  echo "Available: darwin-arm64, darwin-x86_64, linux-aarch64, linux-x86_64."; exit 1; }
 	@test -x $(CC) && { echo "NDK already present at $(WEBOS_SDK)"; exit 0; } || true
 	mkdir -p $(dir $(WEBOS_SDK))
-	curl -fL --retry 3 --retry-all-errors -o $(dir $(WEBOS_SDK))/ndk.tar.bz2 "$(NDK_URL)"
+	curl -fL --retry 3 --retry-all-errors -o $(dir $(WEBOS_SDK))/ndk.tar "$(NDK_URL)"
 	@test -z "$(NDK_SHA256)" || { \
-	  echo "$(NDK_SHA256)  $(dir $(WEBOS_SDK))/ndk.tar.bz2" | $(SHA256SUM) -c -; }
-	tar xjf $(dir $(WEBOS_SDK))/ndk.tar.bz2 -C $(dir $(WEBOS_SDK))
+	  echo "$(NDK_SHA256)  $(dir $(WEBOS_SDK))/ndk.tar" | $(SHA256SUM) -c -; }
+	tar $(NDK_TAR_FLAGS) $(dir $(WEBOS_SDK))/ndk.tar -C $(dir $(WEBOS_SDK))
 	cd $(WEBOS_SDK) && ./relocate-sdk.sh
-	rm -f $(dir $(WEBOS_SDK))/ndk.tar.bz2
+	rm -f $(dir $(WEBOS_SDK))/ndk.tar
 	@echo "NDK ready: $$($(CC) --version | head -1)"
 
 # tmp+mv so deploy works while the old binary is still executing (ETXTBSY)

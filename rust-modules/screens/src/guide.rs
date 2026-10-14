@@ -51,10 +51,11 @@ use plx_ui::{consts, theme, Env, Painter, Rect, Spring, View};
 
 use super::registry::{word, AppFx, AppLike, DispatcharrCmd, GuideOutcome, LoopReq};
 
-/// The header's one control.
-const ACCOUNT: u32 = u32::MAX;
+/// The header's one control. Below `STRIP_BASE`: every element from there up is the shared tab
+/// strip's (`plx_ui::dispatch::PageWithStrip`), and the page is never asked about one.
+const ACCOUNT: u32 = plx_ui::dispatch::STRIP_BASE - 1;
 /// A failed read-out's action (*Try again*, or *Sign in again* for a refused key).
-const RETRY: u32 = u32::MAX - 1;
+const RETRY: u32 = plx_ui::dispatch::STRIP_BASE - 2;
 /// A cell's element: its row above these bits, its slot in them. A lane is capped at
 /// `1 << SLOT_BITS` cells — a 13-hour window of one-minute programmes is 780.
 const SLOT_BITS: u32 = 12;
@@ -735,7 +736,9 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
             edge: [EdgeRule::Stop, EdgeRule::Geometric, EdgeRule::Stop, EdgeRule::Stop],
             extent: account,
             len: 1,
-            elem: ElemKind::Control,
+            // `Bare`: OK on a `Control` arms a press that ends in `PressCommit`, which this page does
+            // not handle; it acts on `Activate`, which OK sends a `Bare` element directly.
+            elem: ElemKind::Bare,
         });
         match &self.phase {
             Phase::Ready => {
@@ -762,7 +765,7 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
                         edge: [EdgeRule::Geometric, EdgeRule::Stop, EdgeRule::Stop, EdgeRule::Stop],
                         extent: rect,
                         len: 1,
-                        elem: ElemKind::Control,
+                        elem: ElemKind::Bare,
                     });
                 }
             }

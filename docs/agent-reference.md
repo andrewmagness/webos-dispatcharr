@@ -206,7 +206,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   (`player::engine::prime_livelock_tests`) sat outside the gate entirely while 1398 default-feature
   tests passed. Cargo keys fingerprints by feature set, so the two coexist in one `target/` and the
   second pass costs seconds warm. See the testing section for what it does and does not cover.
-  **The 14 test binaries run side by side, not one after another.** `cargo test` executes the
+  **The 15 test binaries run side by side, not one after another.** `cargo test` executes the
   binaries it builds serially, so after the workspace split the suite's wall time was the SUM of
   the per-crate times and one slow binary set it: measured 2026-10-05, 78.8 s sequential, of which
   `plx_media` alone was 28.7 s because `route::decision::plan_tests::unconfirmed_profile_5_forbids_copy_before_mde`
@@ -241,7 +241,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
 - `make test-fast [T=filter]` — **opt-in** incremental inner loop: the same default-feature
   `cargo test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_session -p plx_media -p plx_appkit -p plx_screens` as `check-cargo-unit-default` (throwaway runtime root, telemetry env), but
   with `CARGO_INCREMENTAL=1` in its own `rust-modules/target-fast` (gitignored). `T=route::`
-  is the test-name filter, handed to every one of the 14 test binaries; each prints its own libtest
+  is the test-name filter, handed to every one of the 15 test binaries; each prints its own libtest
   `test result:` line (the counts are per crate, never one total), followed by the wrapper's summary line. Use it for a long series of
   small edits in one lane: an edit-rebuild is ~10 s against 31-32 s non-incremental, flat across
   leaf/mid/hub edits (measured 2026-10-01, 5 interleaved rounds; cold is 51.7 s vs 46.2 s, so it

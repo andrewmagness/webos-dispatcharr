@@ -1,8 +1,10 @@
-{"updated":"2026-10-14T20:59:21Z",
+{"updated":"2026-10-14T21:04:38Z",
 "ci":[],
 "sim":[
 {"id":38635451493,"at":"2026-10-14T20:50:34Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"success","attempt":1,"jobs":{"macOS simulator build + launch":246,"macOS tests against bundled FFmpeg and ASS":161,"Windows launcher syntax":33,"Linux simulator build + launch":351}}
 ],
-"nightly":[],
+"nightly":[
+{"id":38635451860,"at":"2026-10-14T20:50:34Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":14},"failed":["ARM build + gates / build + verify"]}
+],
 "cancelled":{},
 "daily":[]}

@@ -545,6 +545,20 @@ pub(crate) enum BootTo {
     Home,
     Login,
     Profiles,
+    /// Dispatcharr sign-in: the page an ordinary boot lands on (`dispatcharr_boot`).
+    Setup,
+}
+
+/// **Does this boot land on Setup?** Every ordinary boot does: Dispatcharr is what this app signs in
+/// to, and Setup is its page until the guide exists — it reads the stored account itself and
+/// shows either the form or the server it is connected to. The Plex session is not activated at
+/// all on that path, so a boot makes no plex.tv request.
+///
+/// The two exceptions are the developer's explicit Plex boots, kept while the Plex screens are
+/// still in the tree so their harness keeps working: `/tmp/plxnative-login` (`forced_login`) and
+/// the `/tmp/plxnative-token` development PMS token.
+fn dispatcharr_boot(forced_login: bool, dev_token: &str) -> bool {
+    !forced_login && dev_token.is_empty()
 }
 
 /// Pure capture boundary shared by actual boot and owner bootstrap regression fixtures.
@@ -1142,7 +1156,12 @@ pub(crate) unsafe fn construct(
     }
     };
     // Controlled Home constructs its App before executing the same bootstrap command path.
-    let boot_to = if controlled { BootTo::Home } else {
+    let boot_to = if controlled {
+        BootTo::Home
+    } else if dispatcharr_boot(forced_login, &dev_token) {
+        log("boot: Dispatcharr setup");
+        BootTo::Setup
+    } else {
         activate_session(&mut bridge, &mut pages, &mut super::recorder::Recplay::Off)
     };
     if !controlled {
@@ -1488,6 +1507,7 @@ pub(crate) unsafe fn construct(
         // soon as the account is authorized — earlier than here, and before the picker.
         BootTo::Login => AppArg::Login,
         BootTo::Profiles => AppArg::Profiles,
+        BootTo::Setup => AppArg::Setup,
     };
     // (dev: /tmp/plxnative-acct used to open the profile menu HERE, beside a
     // `route = Route::Account { over: BarHost::Home }`. The menu is a `ModalStack` surface since

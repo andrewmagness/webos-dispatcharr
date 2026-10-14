@@ -1655,6 +1655,7 @@ impl Bridge {
             AppFx::Search(req) => self.search_reqs.push((from, req, self.effect_return.clone())),
             AppFx::Player(req) => self.player_reqs.push(req),
             AppFx::ItemMenu(req) => self.item_menu_reqs.push(req),
+            AppFx::Dispatcharr(command) => super::dispatcharr::execute(command),
         }
     }
 

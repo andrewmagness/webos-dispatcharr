@@ -1,0 +1,32 @@
+{
+  "dispatcharr.setup.title": "Conectar con Dispatcharr",
+  "dispatcharr.setup.copy": "Introduce la dirección de tu servidor Dispatcharr y el usuario y la contraseña con los que inicias sesión en él. Este televisor guarda una clave de API, nunca tu contraseña.",
+  "dispatcharr.setup.address": "Dirección del servidor",
+  "dispatcharr.setup.address_example": "192.168.1.10:9191",
+  "dispatcharr.setup.username": "Usuario",
+  "dispatcharr.setup.password": "Contraseña",
+  "dispatcharr.setup.empty_field": "Pulsa OK para escribir",
+  "dispatcharr.setup.plaintext": "Sin cifrar en tu red",
+  "dispatcharr.setup.sign_in": "Iniciar sesión",
+  "dispatcharr.setup.signing_in": "Iniciando sesión…",
+  "dispatcharr.setup.missing": "Rellena los tres campos.",
+  "dispatcharr.setup.bad_address": "Eso no es una dirección de servidor. Prueba algo como 192.168.1.10:9191.",
+  "dispatcharr.setup.unreachable": "Nada respondió en esa dirección. Compruébala y que el servidor esté en marcha.",
+  "dispatcharr.setup.not_dispatcharr": "Algo respondió en esa dirección, pero no es Dispatcharr.",
+  "dispatcharr.setup.unauthorized": "Usuario o contraseña incorrectos.",
+  "dispatcharr.setup.forbidden": "El servidor rechazó este televisor. Revisa los ajustes de acceso de red de Dispatcharr.",
+  "dispatcharr.setup.throttled": "Demasiados intentos. Espera un minuto y vuelve a intentarlo.",
+  "dispatcharr.setup.unavailable": "El servidor está ocupado. Vuelve a intentarlo en un momento.",
+  "dispatcharr.setup.unexpected": "El servidor dio una respuesta inesperada ({detail}).",
+  "dispatcharr.setup.save_failed": "Sesión iniciada, pero este televisor no pudo guardarla.",
+  "dispatcharr.setup.connected": "Conectado con Dispatcharr",
+  "dispatcharr.setup.signed_in_as": "{server} · sesión de {username}",
+  "dispatcharr.setup.channels": {
+    "one": "{count} canal",
+    "many": "{count} canales",
+    "other": "{count} canales"
+  },
+  "dispatcharr.setup.channels_failed": "No se pudo leer la lista de canales.",
+  "dispatcharr.setup.until_reboot": "Guardado solo hasta que se reinicie el televisor.",
+  "dispatcharr.setup.sign_out": "Cerrar sesión"
+}

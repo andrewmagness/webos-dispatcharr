@@ -1,0 +1,119 @@
+{
+  "dispatcharr.setup.title": {
+    "value": "Connect to Dispatcharr",
+    "description": "Setup screen title"
+  },
+  "dispatcharr.setup.copy": {
+    "value": "Enter your Dispatcharr server's address and the username and password you sign in to it with. This TV keeps an API key, never your password.",
+    "description": "Setup screen explanation beside the sign-in form"
+  },
+  "dispatcharr.setup.address": {
+    "value": "Server address",
+    "description": "Setup field label: the server's address"
+  },
+  "dispatcharr.setup.address_example": {
+    "value": "192.168.1.10:9191",
+    "description": "Placeholder in the empty address field: an example address, not translated"
+  },
+  "dispatcharr.setup.username": {
+    "value": "Username",
+    "description": "Setup field label"
+  },
+  "dispatcharr.setup.password": {
+    "value": "Password",
+    "description": "Setup field label"
+  },
+  "dispatcharr.setup.empty_field": {
+    "value": "Press OK to type",
+    "description": "Placeholder in an empty username or password field"
+  },
+  "dispatcharr.setup.plaintext": {
+    "value": "Not encrypted on your network",
+    "description": "Note under an http:// address: credentials are not encrypted on the network"
+  },
+  "dispatcharr.setup.sign_in": {
+    "value": "Sign in",
+    "description": "Setup button that signs in"
+  },
+  "dispatcharr.setup.signing_in": {
+    "value": "Signing in…",
+    "description": "Setup status while signing in"
+  },
+  "dispatcharr.setup.missing": {
+    "value": "Fill in all three fields.",
+    "description": "Setup: Sign in pressed with a field left empty"
+  },
+  "dispatcharr.setup.bad_address": {
+    "value": "That is not a server address. Try one like 192.168.1.10:9191.",
+    "description": "Setup failure: the address typed is not a server address"
+  },
+  "dispatcharr.setup.unreachable": {
+    "value": "Nothing answered at that address. Check it, and that the server is running.",
+    "description": "Setup failure: nothing answered at the address"
+  },
+  "dispatcharr.setup.not_dispatcharr": {
+    "value": "Something answered at that address, but it is not Dispatcharr.",
+    "description": "Setup failure: the address answered but is not Dispatcharr"
+  },
+  "dispatcharr.setup.unauthorized": {
+    "value": "Wrong username or password.",
+    "description": "Setup failure: 401"
+  },
+  "dispatcharr.setup.forbidden": {
+    "value": "The server refused this TV. Check Dispatcharr's network access settings.",
+    "description": "Setup failure: 403, the server's network policy refuses this TV"
+  },
+  "dispatcharr.setup.throttled": {
+    "value": "Too many attempts. Wait a minute, then try again.",
+    "description": "Setup failure: 429, too many sign-in attempts"
+  },
+  "dispatcharr.setup.unavailable": {
+    "value": "The server is busy. Try again in a moment.",
+    "description": "Setup failure: 503, the server is up but busy"
+  },
+  "dispatcharr.setup.unexpected": {
+    "value": "The server gave an unexpected answer ({detail}).",
+    "args": {
+      "detail": "str"
+    },
+    "description": "Setup failure: any other answer; {detail} is a short technical description such as HTTP 500"
+  },
+  "dispatcharr.setup.save_failed": {
+    "value": "Signed in, but this TV could not save the sign-in.",
+    "description": "Setup failure: signed in but the sign-in could not be stored"
+  },
+  "dispatcharr.setup.connected": {
+    "value": "Connected to Dispatcharr",
+    "description": "Verdict once signed in"
+  },
+  "dispatcharr.setup.signed_in_as": {
+    "value": "{server} · signed in as {username}",
+    "args": {
+      "server": "str",
+      "username": "str"
+    },
+    "description": "Under the connected verdict: {server} is the server's address, {username} the account"
+  },
+  "dispatcharr.setup.channels": {
+    "value": {
+      "one": "{count} channel",
+      "other": "{count} channels"
+    },
+    "args": {
+      "count": "i64"
+    },
+    "description": "Under the connected verdict: how many channels the account can watch"
+  },
+  "dispatcharr.setup.channels_failed": {
+    "value": "The channel list could not be read.",
+    "description": "Under the connected verdict: the channel list could not be read"
+  },
+  "dispatcharr.setup.until_reboot": {
+    "value": "Saved only until this TV restarts.",
+    "description": "Note under the connected verdict: the sign-in was saved only until the TV restarts"
+  },
+  "dispatcharr.setup.sign_out": {
+    "value": "Sign out",
+    "description": "Button: forget the Dispatcharr sign-in"
+  }
+}

@@ -700,6 +700,7 @@ dependencies = [
  "plx_appkit",
  "plx_base",
  "plx_data",
+ "plx_dispatcharr",
  "plx_gfx",
  "plx_machine",
  "plx_media",

@@ -80,6 +80,13 @@ use plx_appkit::player_hud::ControlSlot;
 /// string built by the same expression and a harness can join the two lines on it.
 #[derive(Clone, Copy)]
 pub(crate) enum Screen {
+    /// Dispatcharr sign-in (`screens::setup`). Its cursor is the engine's, handed in raw as
+    /// [`Screen::Profiles`]' is, for the same reason: this module sits below `screens/` and cannot
+    /// decode the page's element numbers (0–2 the fields, 3 *Sign in*, 4 *Sign out*).
+    Setup {
+        /// The focused element, or `-1` with nothing focused (the page still loading).
+        elem: i32,
+    },
     /// The QR sign-in (`screens::login::LoginScreen`), an OWNED screen since phase 6.
     ///
     /// **This screen is not cursor-free, and this variant said so for a while after it stopped
@@ -245,6 +252,9 @@ fn push_fields(ps: &plx_media::route::PlaybackSession, s: &mut String, screen: S
             // to leave unreported, invisible to a (route × key) harness reading `phase=` alone
             // for the ~60/~12 seconds a stalled sign-in leaves it on screen with no phase change.
             let _ = write!(s, " phase={phase:?} ctl={}", b(has_control));
+        }
+        Screen::Setup { elem } => {
+            let _ = write!(s, " elem={elem}");
         }
         Screen::Profiles { elem } => {
             // See the variant's own doc for the grammar change this replaced (`avatar=<bool>` →
@@ -416,6 +426,9 @@ mod tests {
             // values through one grammar — same reason `Screen::Onboard`'s two entries exist
             ("profiles", Screen::Profiles { elem: 2 }),
             ("profiles", Screen::Profiles { elem: -1 }),
+            // a cursor and the still-loading page, as `profiles` above
+            ("setup", Screen::Setup { elem: 3 }),
+            ("setup", Screen::Setup { elem: -1 }),
             // both focus zones, because the two print different values through one grammar
             ("onboard", Screen::Onboard { list: true, row: 0 }),
             ("onboard", Screen::Onboard { list: false, row: -1 }),

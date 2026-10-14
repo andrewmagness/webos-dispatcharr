@@ -2663,6 +2663,9 @@ pub(crate) unsafe fn report(app: &mut App, fr: &mut Frame) {
                 // with no phase change of its own — `focusprobe::Screen::Login`'s own doc says
                 // why `focus_record().is_some()` decodes it exactly, the same one-element read
                 // `Route::Profiles`/`Route::Onboard` already do below.
+                AppArg::Setup => crate::focusprobe::Screen::Setup {
+                    elem: app.pages.focus_record().map_or(-1, |(_, elem, _)| elem as i32),
+                },
                 AppArg::Login => crate::focusprobe::Screen::Login {
                     phase: app.bridge.auth_read().0.phase,
                     has_control: app.pages.focus_record().is_some(),

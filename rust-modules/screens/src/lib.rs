@@ -39,3 +39,4 @@ pub mod profiles;
 pub mod registry;
 pub mod settings;
 pub mod preferences;
+pub mod setup; // Dispatcharr sign-in: the boot page while no account is stored

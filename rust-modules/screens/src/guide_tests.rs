@@ -118,7 +118,8 @@ fn landed() -> (GuideScreen, u32) {
     let out = step(&mut screen, ScreenEvent::Mount, None);
     let Some(DispatcharrCmd::Guide { reply }) = command(out) else { panic!("mount asks for the guide") };
     let (channels, guide) = lineup();
-    reply.send(GuideOutcome::Loaded { channels, guide, fetched_at: NOW }).unwrap();
+    let logos = vec![None; channels.len()];
+    reply.send(GuideOutcome::Loaded { channels, logos, guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(1000), None, 1000);
     let seat = reseated_on(&out).expect("a landing seats the cursor");
     step(&mut screen, ScreenEvent::FocusMoved { from: None, to: FocusKey { entry: EntryId(1), elem: seat }, by: By::Restore }, Some(seat));
@@ -315,7 +316,8 @@ fn a_stale_window_is_fetched_again_and_the_landing_keeps_the_channel_and_the_tim
     let (mut channels, guide) = lineup();
     channels.swap(0, 1);
     let fetched = NOW + Window::MAX_AGE;
-    reply.send(GuideOutcome::Loaded { channels, guide, fetched_at: fetched }).unwrap();
+    let logos = vec![None; channels.len()];
+    reply.send(GuideOutcome::Loaded { channels, logos, guide, fetched_at: fetched }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(later + 16), Some(c), later + 16);
     let seat = reseated_on(&out).expect("a refetch re-seats");
     let (row, _) = split(seat).unwrap();
@@ -369,7 +371,7 @@ fn a_failed_refetch_keeps_the_guide_on_screen() {
 fn an_account_with_no_channels_says_so_and_seats_on_account() {
     let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
     let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
-    reply.send(GuideOutcome::Loaded { channels: Vec::new(), guide: Guide::build(&[], &[], [], Window::around(NOW)),
+    reply.send(GuideOutcome::Loaded { channels: Vec::new(), logos: Vec::new(), guide: Guide::build(&[], &[], [], Window::around(NOW)),
         fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     assert_eq!(screen.phase, Phase::Empty);
@@ -388,6 +390,16 @@ fn account_opens_the_server_page_and_back_leaves_the_app() {
     });
     let out = step(&mut screen, back, Some(seat));
     assert_eq!(loop_req(&out), Some(LoopReq::BackAtRoot));
+}
+
+#[test]
+fn a_listing_keeps_one_logo_per_row_whatever_the_answer_held() {
+    let (channels, guide) = lineup();
+    let logos = vec![Some("http://192.0.2.10:9191/api/channels/logos/101/cache/".to_owned())];
+    let listing = Listing::new(channels, logos, guide, NOW).unwrap();
+    assert_eq!(listing.logos.len(), listing.rows());
+    assert!(listing.logos[0].is_some());
+    assert!(listing.logos[1..].iter().all(Option::is_none));
 }
 
 #[test]

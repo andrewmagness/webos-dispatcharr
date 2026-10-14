@@ -59,8 +59,8 @@
 //! the ids that exist. Reusing a number would file the previous account's results under the new
 //! account's server, which is the very leak this exists to close. The cost is that sign-out /
 //! sign-in cycles consume slots (a sign-out also removes the revoked slots' rows from
-//! those tables): past `SLOT_LIMIT` (every `u16` but the reserved one) registration
-//! is refused, says so in the log, and is recorded ([`id_space_exhausted`]). That is 65,535 registrations in one process, which for a
+//! those tables): past `SLOT_LIMIT` (every `u16` but the two reserved ones) registration
+//! is refused, says so in the log, and is recorded ([`id_space_exhausted`]). That is 65,534 registrations in one process, which for a
 //! household of one or two servers is a great many sign-outs; the table itself grows by segments,
 //! so no earlier ceiling sits between a sign-out and that one.
 
@@ -102,10 +102,12 @@ impl ConnectionFacts {
 /// Slots per segment. A segment is the unit of allocation: one leaked block of sixteen slots
 /// serves the next sixteen slot numbers, so the registry grows without moving any slot.
 const SEGMENT_SLOTS: usize = 16;
-/// Usable slot numbers: every `u16` except [`ServerId::UNSET`]'s, which is reserved and never
-/// names a slot. This is the id space the code has always allowed, and it is the whole ceiling —
-/// past it a registration is refused and logged, the one exhaustion path left.
-const SLOT_LIMIT: usize = u16::MAX as usize;
+/// Usable slot numbers: every `u16` except the top two, which never name a slot —
+/// [`ServerId::UNSET`]'s, and the one below it, which the image source spends on artwork that
+/// belongs to no Plex server at all (`plx_ui::tex::DIRECT`: an absolute URL, such as a
+/// Dispatcharr channel logo). It is the whole ceiling — past it a registration is refused and
+/// logged, the one exhaustion path left.
+const SLOT_LIMIT: usize = u16::MAX as usize - 1;
 /// Segment-pointer table length: enough for every number below [`SLOT_LIMIT`].
 const SEGMENT_COUNT: usize = SLOT_LIMIT.div_ceil(SEGMENT_SLOTS);
 

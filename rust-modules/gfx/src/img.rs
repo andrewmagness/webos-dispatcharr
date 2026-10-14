@@ -198,3 +198,78 @@ pub fn img_upload_rgba(px: *const c_uchar, w: c_int, h: c_int) -> c_uint {
     }
     crate::gfx::upload_rgba(0, w, h, px)
 }
+
+/// The largest size with `w`×`h`'s aspect that fits inside `box_w`×`box_h`, never larger than
+/// `w`×`h` itself: what an image is shrunk to when the source draws it in that box. Each side is
+/// at least 1.
+pub fn fit_size(w: u32, h: u32, box_w: u32, box_h: u32) -> (u32, u32) {
+    if w == 0 || h == 0 || box_w == 0 || box_h == 0 {
+        return (w.max(1), h.max(1));
+    }
+    let scale = (box_w as f64 / w as f64).min(box_h as f64 / h as f64).min(1.0);
+    (((w as f64 * scale).round() as u32).max(1), ((h as f64 * scale).round() as u32).max(1))
+}
+
+/// Does `data` look like an SVG document (rather than a raster image)? The raster decoder sniffs
+/// its own formats; an SVG is text, so it is recognised by its opening element.
+pub fn looks_like_svg(data: &[u8]) -> bool {
+    let head = &data[..data.len().min(512)];
+    let text = String::from_utf8_lossy(head);
+    let t = text.trim_start_matches('\u{feff}').trim_start();
+    t.starts_with("<svg") || (t.starts_with("<?xml") && text.contains("<svg"))
+}
+
+/// Decode `data` to OWNED RGBA fitted inside `box_w`×`box_h` — for artwork no server resized for
+/// us (`plx_ui::tex::DIRECT`). An SVG is rasterized to the box itself (uniformly scaled and
+/// centred, transparent around it); a raster image is decoded under [`decode_limits`] and shrunk
+/// to [`fit_size`], never enlarged.
+pub fn img_decode_fit(data: &[u8], box_w: u32, box_h: u32) -> Option<(u32, u32, Vec<u8>)> {
+    if box_w == 0 || box_h == 0 {
+        return None;
+    }
+    if looks_like_svg(data) {
+        let svg = std::str::from_utf8(data).ok()?;
+        let px = crate::svg::rasterize(svg, box_w as i32, box_h as i32)?;
+        return Some((box_w, box_h, px));
+    }
+    let (w, h, px) = img_decode_owned(data)?;
+    let (fw, fh) = fit_size(w, h, box_w, box_h);
+    if (fw, fh) == (w, h) {
+        return Some((w, h, px));
+    }
+    let src = image::RgbaImage::from_raw(w, h, px)?;
+    let out = image::imageops::resize(&src, fw, fh, image::imageops::FilterType::Triangle);
+    Some((fw, fh, out.into_raw()))
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+
+    #[test]
+    fn an_image_is_shrunk_to_fit_its_box_and_never_enlarged() {
+        assert_eq!(fit_size(400, 200, 160, 90), (160, 80));
+        assert_eq!(fit_size(200, 400, 160, 90), (45, 90));
+        assert_eq!(fit_size(100, 50, 160, 90), (100, 50), "smaller than the box: unchanged");
+        assert_eq!(fit_size(1600, 900, 160, 90), (160, 90));
+        assert_eq!(fit_size(10_000, 1, 160, 90), (160, 1), "a side never rounds to zero");
+    }
+
+    #[test]
+    fn a_raster_logo_decodes_fitted_to_its_box() {
+        let (w, h) = (400u32, 200u32);
+        let px: Vec<u8> = (0..w * h).flat_map(|i| [(i % 251) as u8, 40, 200, 255]).collect();
+        let png = img_encode_png(w, h, &px).expect("encodes");
+        let (fw, fh, out) = img_decode_fit(&png, 160, 90).expect("decodes");
+        assert_eq!((fw, fh), (160, 80));
+        assert_eq!(out.len(), (fw * fh * 4) as usize);
+    }
+
+    #[test]
+    fn an_svg_is_recognised_by_its_root_element() {
+        assert!(looks_like_svg(br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#));
+        assert!(looks_like_svg(b"\xef\xbb\xbf  <?xml version=\"1.0\"?>\n<svg></svg>"));
+        assert!(!looks_like_svg(b"\x89PNG\r\n\x1a\n"));
+        assert!(!looks_like_svg(b"<?xml version=\"1.0\"?><html/>"));
+    }
+}

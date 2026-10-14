@@ -66,7 +66,8 @@ pub enum Warm {
 /// The application's SOURCE half of image caching (spec §10), as the library sees it: an
 /// interning of `(server, path, w, h, png)` into an opaque [`PosterKey`], a fetch it starts on a
 /// miss, and a decoded image it hands back through [`accept`]. `srv` is the server's raw id —
-/// the library never names an application type. Installed once at boot ([`install`]).
+/// the library never names an application type — or [`DIRECT`]. Installed once at boot
+/// ([`install`]).
 pub trait Source {
     /// A DRAW's probe: `Some(key)` once the source has handed the cache this key's pixels (the
     /// texture may still be waiting for upload). A miss claims a slot and starts the fetch —
@@ -247,6 +248,12 @@ fn with_source<T>(f: impl FnOnce(&dyn Source) -> T, absent: T) -> T {
         None => absent,
     }
 }
+
+/// The origin for artwork that is no server's to resize: `path` is an absolute `http(s)` URL,
+/// fetched as it is with no credential, and the source fits the image inside the `w`×`h` box itself
+/// (never enlarging it; an SVG is rasterized to the box). A channel logo is the case. The value is
+/// one the server registry never hands out.
+pub const DIRECT: u16 = u16::MAX - 1;
 
 /// The renderer's question for art on a named server: the resident texture id, or 0 (the
 /// absent-resource rule: draw the placeholder at the final geometry; work may be

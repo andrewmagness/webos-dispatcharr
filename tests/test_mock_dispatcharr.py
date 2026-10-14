@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """tests/mock_dispatcharr.py answers the sign-in sequence the client makes, in the shapes it reads."""
 import json
+import struct
 import sys
 import threading
 import unittest
@@ -34,6 +35,20 @@ class MockDispatcharr(unittest.TestCase):
         status, tokens = self.call("POST", "/api/accounts/token/", {"Content-Type": "application/json"},
                                    {"username": user, "password": password})
         return status, tokens
+
+    def test_logos_are_served_without_a_credential_in_several_shapes(self):
+        self.start()
+        sizes = set()
+        for logo_id in (101, 102, 103):
+            with urllib.request.urlopen(self.base + f"/api/channels/logos/{logo_id}/cache/") as r:
+                self.assertEqual(r.headers["Content-Type"], "image/png")
+                data = r.read()
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+            sizes.add(struct.unpack(">II", data[16:24]))
+        self.assertEqual(len(sizes), 3, sizes)
+        with urllib.request.urlopen(self.base + "/api/channels/logos/105/cache/") as r:
+            self.assertEqual(r.headers["Content-Type"], "image/svg+xml")
+            self.assertTrue(r.read().startswith(b"<svg"))
 
     def test_version_needs_no_credential(self):
         self.start()

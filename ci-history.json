@@ -1,4 +1,4 @@
-{"updated":"2026-10-14T21:12:02Z",
+{"updated":"2026-10-14T21:15:27Z",
 "ci":[
 {"id":38635451190,"at":"2026-10-14T20:50:33Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"host unit tests (hostsim)":678,"host python/shell/C gates":242,"host harness tests":273,"host lint + type-checks":303,"host unit tests (default features)":876,"host checks (NOT a device gate)":4},"failed":["cross-build (armv7) + artifact assertions"]}
 ],
@@ -7,7 +7,8 @@
 {"id":38637798737,"at":"2026-10-14T21:07:46Z","sha":"72966a388","title":"Setup: example addresses from the documentation range, not a LAN one","pr":1,"event":"pull_request","conclusion":"success","attempt":1,"jobs":{"macOS tests against bundled FFmpeg and ASS":195,"macOS simulator build + launch":184,"Windows launcher syntax":22,"Linux simulator build + launch":230}}
 ],
 "nightly":[
-{"id":38635451860,"at":"2026-10-14T20:50:34Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":14},"failed":["ARM build + gates / build + verify"]}
+{"id":38635451860,"at":"2026-10-14T20:50:34Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":14},"failed":["ARM build + gates / build + verify"]},
+{"id":38637798819,"at":"2026-10-14T21:07:46Z","sha":"72966a388","title":"Setup: example addresses from the documentation range, not a LAN one","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":14},"failed":["ARM build + gates / build + verify"]}
 ],
 "cancelled":{},
 "daily":[]}

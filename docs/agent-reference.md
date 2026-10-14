@@ -57,7 +57,8 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   WSL's Linux filesystem, and stages fonts, their notice and the bundled ASS renderer into an isolated app directory. Its `make sim-wsl`
   build is optimized and deliberately skips host FFmpeg, so it covers UI, sign-in, Plex browsing,
   screenshots and remote commands but not demux/clock-sink playback. WSLg's non-blocking GLX swap
-  is capped at 60 Hz in the Linux host build. The launcher also refuses WSLg's `use_gfxredir=0`
+  is capped at 60 Hz in the Linux host build, as is SDL's display-less `offscreen` driver (a
+  headless box's screenshots and recordings; uncapped, a recording outgrows the replay budget). The launcher also refuses WSLg's `use_gfxredir=0`
   copy fallback, where GL swaps can remain at 60 while the Windows surface updates at only a few
   FPS. See the `ui-sim` skill.
 - `make` — build `pkg/plxnative` (the ARM binary), and, first, the FFmpeg it ships

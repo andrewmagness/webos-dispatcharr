@@ -41,14 +41,27 @@ impl WindowActivity {
     }
 }
 
-/// WSLg's X11/GLX swap can accept interval 1 without waiting for the Windows compositor. Keep
-/// that host-specific wall-clock adapter here, outside the app's logical clock: recorded UI
-/// replays must continue to see only their injected ticks.
+/// Whether a Linux host simulator's swap accepts interval 1 without waiting for anything:
+/// WSLg's X11/GLX (it does not wait for the Windows compositor), and SDL's `offscreen` driver,
+/// which has no display at all — uncapped, a headless run presents hundreds of frames a second,
+/// and a recording taken there outgrows the replay decoder's budget (`ui::rec::CAP_BYTES`).
 #[cfg(all(feature = "hostsim", target_os = "linux"))]
-pub(crate) struct WslgFrameBudget(std::time::Instant);
+pub(crate) fn swap_ignores_vsync(wsl: bool, video_driver: Option<&str>) -> bool {
+    match video_driver {
+        Some("offscreen") => true,
+        Some("x11") => wsl,
+        _ => false,
+    }
+}
+
+/// The 60 Hz software frame budget for a host whose swap ignores vsync. Keep that host-specific
+/// wall-clock adapter here, outside the app's logical clock: recorded UI replays must continue
+/// to see only their injected ticks.
+#[cfg(all(feature = "hostsim", target_os = "linux"))]
+pub(crate) struct SoftFrameBudget(std::time::Instant);
 
 #[cfg(all(feature = "hostsim", target_os = "linux"))]
-impl WslgFrameBudget {
+impl SoftFrameBudget {
     pub(crate) fn begin() -> Self { Self(std::time::Instant::now()) }
 
     pub(crate) fn finish(self) {
@@ -63,6 +76,17 @@ impl WslgFrameBudget {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(feature = "hostsim", target_os = "linux"))]
+    #[test]
+    fn only_hosts_whose_swap_does_not_wait_get_the_software_budget() {
+        assert!(swap_ignores_vsync(false, Some("offscreen")));
+        assert!(swap_ignores_vsync(true, Some("offscreen")));
+        assert!(swap_ignores_vsync(true, Some("x11")));
+        assert!(!swap_ignores_vsync(false, Some("x11")));
+        assert!(!swap_ignores_vsync(true, Some("wayland")));
+        assert!(!swap_ignores_vsync(false, None));
+    }
 
     #[test]
     fn background_blocks_every_present_request_until_did_foreground() {

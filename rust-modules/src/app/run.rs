@@ -110,7 +110,7 @@ pub(crate) unsafe fn run(app: &mut App) {
         watchdog.advance();
         let _frame_scope = plx_base::task::FrameScope::enter();
         #[cfg(all(feature = "hostsim", target_os = "linux"))]
-        let wslg_frame_budget = app.wslg_frame_pacing.then(super::window_activity::WslgFrameBudget::begin);
+        let soft_frame_budget = app.soft_frame_pacing.then(super::window_activity::SoftFrameBudget::begin);
         // Resolve the control row ONCE per iteration, before the event pump, and pass this
         // value to input, update and draw alike. `player_hud::slot()` reads `playpos_ns`, which
         // LG's media thread writes and `player::pump` advances mid-iteration — deriving it per
@@ -287,7 +287,7 @@ pub(crate) unsafe fn run(app: &mut App) {
             app,
             fr,
             #[cfg(all(feature = "hostsim", target_os = "linux"))]
-            wslg_frame_budget,
+            soft_frame_budget,
         );
         if fr.present { watchdog.presented(); }
         report(app, fr);
@@ -532,7 +532,7 @@ unsafe fn present_and_swap(
     app: &mut App,
     fr: &mut Frame,
     #[cfg(all(feature = "hostsim", target_os = "linux"))]
-    wslg_frame_budget: Option<super::window_activity::WslgFrameBudget>,
+    soft_frame_budget: Option<super::window_activity::SoftFrameBudget>,
 ) {
     if fr.present {
         // The dump's full prewarm drain and pre-draw debt sample, after the takes and before the draw.
@@ -626,7 +626,7 @@ unsafe fn present_and_swap(
         #[cfg(feature = "devtriggers")]
         plx_ui::card_motion_metrics::presented(fr.now);
         #[cfg(all(feature = "hostsim", target_os = "linux"))]
-        if let Some(budget) = wslg_frame_budget {
+        if let Some(budget) = soft_frame_budget {
             budget.finish();
         }
     } else {
@@ -3150,7 +3150,7 @@ mod lifecycle_regression_tests {
             remote: Default::default(),
             win: Default::default(),
             #[cfg(target_os = "linux")]
-            wslg_frame_pacing: false,
+            soft_frame_pacing: false,
             t0: Default::default(),
             instr: plx_base::diag::heartbeat::Instruments::new(false, 22.0),
             scenarios: crate::dev::scenarios::Scenarios {

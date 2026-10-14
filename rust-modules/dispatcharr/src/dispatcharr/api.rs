@@ -7,10 +7,17 @@ use super::models::{Channel, EpgData, GridReply, Group, Programme};
 use super::time::format_iso8601;
 
 /// A server and the key that opens it — what every read after sign-in needs.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Account {
     pub server: Server,
     pub api_key: String,
+}
+
+impl std::fmt::Debug for Account {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never put the key in a log line or a panic message.
+        f.debug_struct("Account").field("server", &self.server.base()).field("api_key", &"<redacted>").finish()
+    }
 }
 
 impl Account {

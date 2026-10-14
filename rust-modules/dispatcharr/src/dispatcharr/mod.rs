@@ -24,6 +24,7 @@
 //! Redirects are never followed — a request carrying a password or a key must not be replayed at
 //! an origin nobody chose.
 
+pub mod account; // the server and API key a sign-in leaves behind, in a 0600 file
 pub mod api; // channels/groups reads with the API key
 pub mod auth; // sign-in: version probe, JWT, existing-or-new API key
 pub mod client; // the one request door: URL, auth header, body, status → Error
@@ -34,6 +35,8 @@ pub mod time; // ISO 8601 <-> Unix seconds, the grid's two spellings
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_double; // a loopback Dispatcharr that records requests, for this crate's and the app's tests
+#[cfg(test)]
+mod account_tests;
 #[cfg(test)]
 mod tests;
 

@@ -17,12 +17,18 @@ crate-type = ["rlib"]
 default = []
 # The loopback Dispatcharr double (`dispatcharr::test_double`) for the application's tests. Enabled
 # from the dependents' `[dev-dependencies]`; never in a shipped build.
-test-support = []
+test-support = ["plx_base/test-support"]
 
 [dependencies]
+libc = "0.2"
+plx_base = { path = "../base" }
 plx_net = { path = "../net" }
 serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1", default-features = false, features = ["alloc", "std"] }
+
+[dev-dependencies]
+# `testscratch` and `testlock` for the account tests.
+plx_base = { path = "../base", features = ["test-support"] }
 
 [lints]
 workspace = true

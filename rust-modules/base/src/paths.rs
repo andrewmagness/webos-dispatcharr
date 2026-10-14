@@ -700,6 +700,31 @@ pub fn telemetry_candidates() -> Vec<PathBuf> {
     v
 }
 
+/// Candidate locations for the Dispatcharr account (server address and API key), best first, each
+/// with whether it survives a reboot — [`session_candidates`]' tiers and order, for its reasons:
+/// `/media/developer` outlives a reinstall under the Developer Mode jail, `/media/internal` is the
+/// production jail's one persistent writable place, the app dir is a theory, and the runtime
+/// directory comes LAST on a device because `/tmp` is swept on reboot (the `false`; a save that
+/// lands only there is reported as not durable). A steerable build keeps its own file first, in
+/// its instance root, so two simulators never share an account. No legacy entry: there is no older
+/// location to migrate from.
+pub fn dispatcharr_account_candidates() -> Vec<(PathBuf, bool)> {
+    let mut v = Vec::new();
+    if ENV_STEERABLE {
+        v.push((in_runtime_dir("dispatcharr.json"), true));
+    }
+    let id = app_id();
+    v.extend([
+        (PathBuf::from(format!("/media/developer/{id}-dispatcharr.json")), true),
+        (PathBuf::from(format!("/media/internal/.{id}-dispatcharr.json")), true),
+        (in_app_dir("dispatcharr.json"), true),
+    ]);
+    if !ENV_STEERABLE {
+        v.push((in_runtime_dir("dispatcharr.json"), false));
+    }
+    v
+}
+
 /// Candidate locations of the retired **last place** bookmark (`coldstart`).
 ///
 /// Builds before 2026-09-01 wrote into these persistent locations. The current build only removes

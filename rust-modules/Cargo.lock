@@ -608,6 +608,8 @@ dependencies = [
 name = "plx_dispatcharr"
 version = "0.0.0"
 dependencies = [
+ "libc",
+ "plx_base",
  "plx_net",
  "serde",
  "serde_json",

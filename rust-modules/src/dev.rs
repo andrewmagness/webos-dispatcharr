@@ -209,7 +209,8 @@ pub(crate) fn arm_gst_logging() {}
 /// **Sign in to a Dispatcharr server headlessly and log what it serves** —
 /// `/tmp/plxnative-dispatcharr`, three lines: server address, username, password.
 ///
-/// The milestone-1 probe, before the Setup screen exists: it runs [`plx_dispatcharr`]'s whole
+/// The headless twin of the Setup screen (`screens::setup`), which stores what it signs in with;
+/// this probe stores nothing. It runs [`plx_dispatcharr`]'s whole
 /// sign-in (version probe, JWT, existing-or-new API key), the channel and group reads and the guide
 /// on a worker, and writes the outcome to the event log as `dispatcharr:` lines. It never logs the
 /// password or the key. Like `plxnative-servers` it carries a credential, which is why it is not

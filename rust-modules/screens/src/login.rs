@@ -2247,8 +2247,8 @@ impl<H: AuthLike> Screen<H> for LoginScreen {
     }
     fn draw(&mut self, f: &mut DrawFrame<'_, '_, H>) {
         let p = f.painter;
-        // The QR screen is the first thing a new user sees, before Home has any artwork to lend
-        // it. `Painter::root()`, not `p`, for the ground — the ambient wash must not ride whatever
+        // On the Plex boot the QR screen is the first thing a new user sees, before Home has any
+        // artwork to lend it. `Painter::root()`, not `p`, for the ground — the ambient wash must not ride whatever
         // page-transition cascade this screen's own painter carries, exactly as
         // `screens::onboard`'s first-run mounting draws its own ground the same way.
         self.ground.draw_default(Painter::root());

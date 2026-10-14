@@ -540,7 +540,7 @@ pub(crate) fn direct_trigger_server() -> Result<plx_plex::plex::ServerId, String
 
 // ---- boot, and the loop's own between-frame state ---------------------------------------------
 /// Which screen the boot gate landed on — see the gate itself in `plex_run`, which is where the
-/// order of its four cases is argued.
+/// order of its cases is argued; [`dispatcharr_boot`] decides the Setup case ahead of all of them.
 pub(crate) enum BootTo {
     Home,
     Login,
@@ -1456,8 +1456,9 @@ pub(crate) unsafe fn construct(
     let acct_tried = false; // dev: /tmp/plxnative-acct opens the profile menu once
     let ptr = Pointer::IDLE;
 
-    // Initial route from the boot gate: Login when we have no usable creds, Profiles for the
-    // boot who's-watching picker, else Home.
+    // Initial route from the boot gate: Setup on an ordinary boot (`dispatcharr_boot`); on the
+    // developer's Plex boot, Login when we have no usable creds, Profiles for the boot
+    // who's-watching picker, else Home.
     //
     // …and Home is intercepted by the first-run question when this profile has never been
     // asked it and the roster holds a source at all — the account holder or a managed profile, one

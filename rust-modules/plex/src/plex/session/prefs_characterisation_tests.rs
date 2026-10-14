@@ -479,7 +479,7 @@ type Store = plx_platform::storage::backend::Backend<Db8>;
 
 fn store() -> Store {
     plx_platform::storage::backend::Backend::new(
-        Db8::default(), state::Flavor::Stable, "com.beb.plxnative.storage".into())
+        Db8::default(), state::Flavor::Stable, "com.magness.dispatcharrtv.storage".into())
 }
 
 fn commit(store: &mut Store, session: &Session, authority: SaveAuthority) {

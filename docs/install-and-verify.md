@@ -4,7 +4,7 @@ PlxNative is an unofficial, open-source Plex app for LG webOS TVs. It is not yet
 
 ## Already have Homebrew Channel?
 
-Open **Homebrew Channel** on your TV, find [**PlxNative**](https://repo.webosbrew.org/apps/com.beb.plxnative/), and select **Install**. Then [open PlxNative and sign in](#4-open-plxnative-and-sign-in).
+Open **Homebrew Channel** on your TV, find [**PlxNative**](https://repo.webosbrew.org/apps/com.magness.dispatcharrtv/), and select **Install**. Then [open PlxNative and sign in](#4-open-plxnative-and-sign-in).
 
 You can skip the Developer Mode and computer setup below. If your existing Homebrew Channel installation uses Developer Mode, keep renewing that session as usual.
 
@@ -71,7 +71,7 @@ Both options install PlxNative; neither unlocks extra PlxNative features. The di
 **The shorter route if you only want PlxNative.**
 
 1. On your computer, open the [latest PlxNative release](https://github.com/GLinnik21/plx-native/releases/latest).
-2. Under **Assets**, download **`com.beb.plxnative_X.Y.Z_arm.ipk`**. `X.Y.Z` is the release's version number. The `.ipk` is the TV app, not something to open on your computer; the manifest and source archives are not installers.
+2. Under **Assets**, download **`com.magness.dispatcharrtv_X.Y.Z_arm.ipk`**. `X.Y.Z` is the release's version number. The `.ipk` is the TV app, not something to open on your computer; the manifest and source archives are not installers.
 3. For a manual download, [check the package against the release checksum](#verifying-the-package) before installing it.
 4. In Dev Manager, select your TV, open **Apps**, and click **Install**. Choose the downloaded `.ipk`.
 5. Wait for installation to finish and check that **PlxNative** appears under **Installed**.
@@ -146,8 +146,8 @@ A release attaches five files. **For a direct installation, you need the first o
 
 | File | What it is |
 |---|---|
-| `com.beb.plxnative_X.Y.Z_arm.ipk` | The app. |
-| `com.beb.plxnative.manifest.json` | The Homebrew Channel manifest — how the Channel finds and verifies the update. |
+| `com.magness.dispatcharrtv_X.Y.Z_arm.ipk` | The app. |
+| `com.magness.dispatcharrtv.manifest.json` | The Homebrew Channel manifest — how the Channel finds and verifies the update. |
 | `ipk.sha256` | The checksum, for `sha256sum -c`. |
 | `ffmpeg-9.0.tar.xz` | The pristine upstream FFmpeg source, published because we are obliged to. |
 | `build-ffmpeg.sh` | The complete configure invocation that produced the bundled FFmpeg libraries. |
@@ -159,14 +159,14 @@ Nothing in this distribution chain is code-signed, so the SHA-256 published with
 Download `ipk.sha256` from the same release as the `.ipk` and open a terminal in the download folder. Replace `X.Y.Z` with the version you downloaded. On macOS and Windows, compare the printed hash with the one in `ipk.sha256`; on Linux, the check below should report `OK`. **Do not install the package if the hashes do not match.**
 
 ```sh
-shasum -a 256 com.beb.plxnative_X.Y.Z_arm.ipk              # macOS
+shasum -a 256 com.magness.dispatcharrtv_X.Y.Z_arm.ipk              # macOS
 sha256sum -c ipk.sha256                                    # Linux, with the checksum asset beside it
-certutil -hashfile com.beb.plxnative_X.Y.Z_arm.ipk SHA256 # Windows
+certutil -hashfile com.magness.dispatcharrtv_X.Y.Z_arm.ipk SHA256 # Windows
 ```
 
 [Return to direct installation](#option-a--install-plxnative-directly) after checking the file.
 
-**If Homebrew Channel installs PlxNative from its catalogue, you have nothing to verify manually.** It fetches that release's `com.beb.plxnative.manifest.json`, hashes the download on the television, and refuses to install a package that does not match.
+**If Homebrew Channel installs PlxNative from its catalogue, you have nothing to verify manually.** It fetches that release's `com.magness.dispatcharrtv.manifest.json`, hashes the download on the television, and refuses to install a package that does not match.
 
 If you point Homebrew Channel at a bare `.ipk` yourself instead of installing the catalogue entry, that catalogue verification path is bypassed, so verify the package yourself.
 

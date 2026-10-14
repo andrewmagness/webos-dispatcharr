@@ -135,7 +135,7 @@ Fixed scene, vary only thermal history, and log the **ordered** `pres=` series. 
 
 > **The `/tmp/plxnative-…` paths in this section predate the two-install split: they are the STABLE
 > install's runtime root.** A flavoured install puts the same names under `$(make -s print-rundir
-> FLAVOR=<f>)` — `/tmp/com.beb.plxnative.debug` at the tracked `FLAVOR ?= debug` default — so
+> FLAVOR=<f>)` — `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug` default — so
 > pasted as bare `/tmp/…` this arms one install while `make run` launches the other, and the ordered
 > `pres=` series comes off an unarmed screen. The block below is therefore scoped with
 > `R=$(make -s print-rundir)`, which is also what keeps its `rm -f` from reaching across and wiping

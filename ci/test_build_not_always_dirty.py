@@ -193,6 +193,10 @@ class ParserTests(unittest.TestCase):
             # A later rewrite of the file shows up in the NEXT build's stamp, not the earlier one.
             records = freeze_stamps(json_records(ours))
             (build / "output").write_text("cargo:rustc-env=X=2\n")
+            # Linux stamps mtimes from a coarse clock, so a rewrite microseconds after the first write
+            # usually keeps its mtime (181 of 200 on ext4, measured 2026-10-13). A real rerun is a
+            # build later; give the rewrite a later mtime, as that rerun would have.
+            os.utime(build / "output", ns=(0, next(iter(first.values())) + 1_000_000))
             self.assertEqual(script_stamp(records), first)
             self.assertNotEqual(script_stamp(freeze_stamps(json_records(ours))), first)
 

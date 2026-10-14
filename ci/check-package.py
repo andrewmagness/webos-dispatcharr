@@ -956,9 +956,11 @@ def check_tracked_resources(expect_title: str) -> list:
         check(bool(desc.strip()) and desc != english,
               f"{loc}/appinfo.json appDescription is present and actually translated")
         # The English sentence is a trademark disclaimer. A translation that transliterated the
-        # mark ("플렉스") would both lose the disclaimer's force and misuse it, and no reader of
+        # mark ("디스패처") would both lose the disclaimer's force and misuse it, and no reader of
         # this repository is placed to catch that by eye in twelve languages.
-        check("Plex" in desc, f"{loc}/appinfo.json names Plex verbatim (the disclaimer's subject)")
+        check("Dispatcharr" in desc,
+              f"{loc}/appinfo.json names Dispatcharr verbatim (the disclaimer's subject)")
+        check("Plex" not in desc, f"{loc}/appinfo.json no longer names Plex")
     return locales
 
 
@@ -1288,7 +1290,7 @@ check(binary.exists(), f"the staged payload carries the binary ({binary.name})")
 # THE ID IS THE RULE, and it is graded whatever the stamp says — note the `if IS_STABLE`
 # below sits BESIDE the `BUILD` branch, never inside it.
 #
-# `com.beb.plxnative` is what a user installs, so a dev-featured binary under it ships the whole
+# `com.magness.dispatcharrtv` is what a user installs, so a dev-featured binary under it ships the whole
 # /tmp trigger surface, the world-writable `plxnative-remote` FIFO and the `:8910` listener to the
 # public. The Makefile's `release-guard` refuses to BUILD that; this is the same rule on the bytes,
 # which is the half that survives someone reaching for the documented `ALLOW_DEV_ON_STABLE=1`
@@ -1492,8 +1494,8 @@ elif sha_file.exists():
 
 # The Makefile derives IPK_VERSION from appinfo.json, so the built filename is the fourth witness.
 # Scoped to THIS flavour's id: two flavours' artifacts can sit in pkg/ side by side, and the
-# `_arm.ipk` suffix in the pattern is what keeps `com.beb.plxnative_*` from also matching
-# `com.beb.plxnative.debug_*` (the dot is not a `_`, but a bare prefix test would still match).
+# `_arm.ipk` suffix in the pattern is what keeps `com.magness.dispatcharrtv_*` from also matching
+# `com.magness.dispatcharrtv.debug_*` (the dot is not a `_`, but a bare prefix test would still match).
 built = sorted((ROOT / "pkg").glob(f"{PACKAGED_ID}_*_arm.ipk"))
 if built:
     check(len(built) == 1, f"exactly one built {PACKAGED_ID} ipk in pkg/ (saw {[p.name for p in built]})")

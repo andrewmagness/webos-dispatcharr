@@ -2,7 +2,7 @@
 #
 # THIS FILE DOES NOT BELONG TO THIS REPOSITORY AT RUNTIME. It is kept here so the submission is
 # version-controlled and reviewable alongside the thing it describes. To submit, fork
-# https://github.com/webosbrew/apps-repo and copy this file to `packages/com.beb.plxnative.yml`.
+# https://github.com/webosbrew/apps-repo and copy this file to `packages/com.magness.dispatcharrtv.yml`.
 #
 # Schema: content/schemas/packages/PackageInfo.json in that repo.
 # Required: title, iconUri, manifestUrl, category, pool, description. Verified 2026-08-04.
@@ -18,7 +18,7 @@ detailIconUri: https://raw.githubusercontent.com/GLinnik21/plx-native/main/pkg/i
 # `releases/latest/download/...` always resolves to the newest release, which is how the channel
 # picks up an update without this file changing. The release workflow sets neither `draft` nor
 # `prerelease` precisely because either would exclude the release from `latest` and break this URL.
-manifestUrl: https://github.com/GLinnik21/plx-native/releases/latest/download/com.beb.plxnative.manifest.json
+manifestUrl: https://github.com/GLinnik21/plx-native/releases/latest/download/com.magness.dispatcharrtv.manifest.json
 
 category: multimedia
 pool: main

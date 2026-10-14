@@ -121,10 +121,10 @@ you want both the Movies and Shows shelves populated.
 
 ## Which install — and the one step `up` cannot do for you
 
-Three builds live on this television. **stable** is `com.beb.plxnative`, the app the household
-watches with; **debug** is `com.beb.plxnative.debug`, the developer build beside it, with its own
+Three builds live on this television. **stable** is `com.magness.dispatcharrtv`, the app the household
+watches with; **debug** is `com.magness.dispatcharrtv.debug`, the developer build beside it, with its own
 launcher tile (amber DEV bar), its own sign-in and its own runtime files; **nightly** is
-`com.beb.plxnative.nightly`, its own install beside the other two with its own launcher tile
+`com.magness.dispatcharrtv.nightly`, its own install beside the other two with its own launcher tile
 (grey NIGHTLY bar), runtime root and crash log. webOS keys the install directory, SAM's `launch`/`closeByAppId` and the LS2 role file on
 that id, so none of the three can touch each other. **`debug` is the default**, deliberately:
 deploying to `debug` when you meant `stable` costs you retyping one command, while the reverse
@@ -151,9 +151,9 @@ side-effect-free:
 
 ```bash
 make -s print-flavor   FLAVOR=debug     # debug
-make -s print-appid    FLAVOR=debug     # com.beb.plxnative.debug
+make -s print-appid    FLAVOR=debug     # com.magness.dispatcharrtv.debug
 make -s print-appdir   FLAVOR=debug     # /media/developer/apps/usr/palm/applications/<id>
-make -s print-rundir   FLAVOR=debug     # /tmp/com.beb.plxnative.debug   (stable: /tmp)
+make -s print-rundir   FLAVOR=debug     # /tmp/com.magness.dispatcharrtv.debug   (stable: /tmp)
 make -s print-eventlog FLAVOR=debug
 make -s print-tv                        # the TV address, expanded
 ```
@@ -191,7 +191,7 @@ runtime root *is* `/tmp`, and it treats every entry there whose name begins `plx
 armed trigger. So the flavour suffix has to stay outside that prefix namespace: a root named
 `/tmp/plxnative-debug` would sit in `/tmp` reading, to the *other* install, as a permanently armed
 trigger — silently suppressing the released app's who's-watching picker, with no line in any log.
-`com.beb.plxnative.debug` contains no `plxnative-`, so it cannot. The rule is the **prefix**, not
+`com.magness.dispatcharrtv.debug` contains no `plxnative-`, so it cannot. The rule is the **prefix**, not
 avoiding a clash with some file that happens to exist: there is no `plxnative-debug` trigger, and
 the dot is what makes it not matter if one is ever added. (`docs/two-installs.md` §4.1 has the
 second, independent guard.)
@@ -212,13 +212,13 @@ proves only "these are the bytes on my disk right now". It says nothing about wh
 the log you are about to read. `pidof plxnative` cannot close the gap either: both binaries are
 named `plxnative`, so on this busybox set it returns two pids in an order nothing promises. For
 liveness use `fuser $(make -s print-appdir FLAVOR=…)/plxnative`, which is inode-scoped and can only
-match one install. And anchor any path match on a delimiter — `com.beb.plxnative` is a **prefix**
-of `com.beb.plxnative.debug`, so match `/<id>/`, never the bare id.
+match one install. And anchor any path match on a delimiter — `com.magness.dispatcharrtv` is a **prefix**
+of `com.magness.dispatcharrtv.debug`, so match `/<id>/`, never the bare id.
 
 **The strong witness is the first line of the event log**, written before anything can fail:
 
 ```
-install: id=com.beb.plxnative.debug flavour=debug runtime=/tmp/com.beb.plxnative.debug features=dev APPID_env=…
+install: id=com.magness.dispatcharrtv.debug flavour=debug runtime=/tmp/com.magness.dispatcharrtv.debug features=dev APPID_env=…
 appdir: /media/… (from current_exe)
 ```
 

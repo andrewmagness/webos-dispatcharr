@@ -1,6 +1,6 @@
 # UX Scenario — PlxNative
 
-**App:** PlxNative · **id** `com.beb.plxnative` · **version** 0.4.1 · `"type": "native"`
+**App:** PlxNative · **id** `com.magness.dispatcharrtv` · **version** 0.4.1 · `"type": "native"`
 **Platform:** LG webOS TV, 1920×1080 UI, Magic Remote and standard IR remote
 **Document status:** written 2026-08-23 against the tree at that date. Every behaviour below is
 read out of the source, not remembered; where a claim could not be verified this document says so

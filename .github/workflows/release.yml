@@ -1,7 +1,7 @@
 name: Release
 
 # Publishes the .ipk and the webosbrew manifest.json to a GitHub Release, so that
-# `releases/latest/download/com.beb.plxnative.manifest.json` is a stable URL the Homebrew Channel
+# `releases/latest/download/com.magness.dispatcharrtv.manifest.json` is a stable URL the Homebrew Channel
 # package YAML can point at forever. The package YAML is submitted ONCE; every later version flows
 # through this workflow with no further PR to webosbrew/apps-repo.
 #
@@ -356,7 +356,7 @@ jobs:
       ref: ${{ needs.guard.outputs.tag }}
       # WHICH INSTALL. `FLAVOR ?= debug` in the Makefile — deliberately, so a developer's
       # muscle-memory `make deploy` cannot overwrite the app users watch with — and CI is the one
-      # place that default is wrong. Without this the release job packages `com.beb.plxnative.debug`,
+      # place that default is wrong. Without this the release job packages `com.magness.dispatcharrtv.debug`,
       # `webosbrew-gen-manifest` writes that id INTO the manifest the Homebrew Channel resolves, and
       # the sha256 cross-check still passes because it compares the wrong artifact against its own
       # manifest. It would finally die four jobs later on a missing `dist/ipk.sha256` (a flavoured
@@ -436,8 +436,8 @@ jobs:
           # reader, they move with every build (the bundled FFmpeg's size depends on the build), and
           # the standard's §1.9 defect was exactly a size somebody typed. Read from the manifest,
           # which is the artifact the note tells the reader they came from.
-          size=$(python3 -c "import json;print(json.load(open('dist/com.beb.plxnative.manifest.json'))['ipkSize'])")
-          inst=$(python3 -c "import json;print(json.load(open('dist/com.beb.plxnative.manifest.json'))['installedSize'])")
+          size=$(python3 -c "import json;print(json.load(open('dist/com.magness.dispatcharrtv.manifest.json'))['ipkSize'])")
+          inst=$(python3 -c "import json;print(json.load(open('dist/com.magness.dispatcharrtv.manifest.json'))['installedSize'])")
           # ONE sentinel is mandatory: the artifact's sha256, which is the only tamper check a
           # user of an unsigned binary has. A note that lost it would publish a body with no hash
           # at all, and `verify-published.sh` would only catch that once the release was public.

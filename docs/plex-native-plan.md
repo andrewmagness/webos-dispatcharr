@@ -176,7 +176,7 @@ the incompatible stream is handled.
 ### 3a. Root cause today
 
 - Timeline (`player/threads.rs:229-256`) sends bare GETs with `X-Plex-Client-Identifier=
-  com.beb.plxnative` and **no** `X-Plex-Session-Identifier`, no `playQueueItemID`, no
+  com.magness.dispatcharrtv` and **no** `X-Plex-Session-Identifier`, no `playQueueItemID`, no
   `audioStreamID`/`subtitleStreamID`.
 - Transcode (`route.rs:184`) uses `session=plxnative-{rk}` (per-ratingKey, not per-playback) and
   wrongly sets `X-Plex-Client-Identifier={session}`.
@@ -192,7 +192,7 @@ rides every timeline; and `audioStreamID`/`subtitleStreamID` on the timeline.
 
 | Key | Value | Notes |
 |---|---|---|
-| `X-Plex-Client-Identifier` | stable device id (persist once; e.g. `com.beb.plxnative` or persisted UUID) | groups the device; NEVER vary per item — fixes `route.rs:184` |
+| `X-Plex-Client-Identifier` | stable device id (persist once; e.g. `com.magness.dispatcharrtv` or persisted UUID) | groups the device; NEVER vary per item — fixes `route.rs:184` |
 | `X-Plex-Session-Identifier` | fresh opaque id per Play | becomes `Session/@id`; MUST equal the transcode `session` param byte-for-byte |
 | `X-Plex-Token` | token | already handled |
 | `X-Plex-Product` | `PlxNative` | today `plxnative` |

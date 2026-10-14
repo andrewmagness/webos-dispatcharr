@@ -69,33 +69,33 @@ Whenever you assert something about "the release build", prove the bytes first:
 ```sh
 md5 -q pkg/plxnative
 tools/tv-ssh ssh tv \
-  "md5sum /media/developer/apps/usr/palm/applications/com.beb.plxnative/plxnative"
+  "md5sum /media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv/plxnative"
 ```
 
 **That id is spelled out on purpose, and it is the STABLE one.** This is the most-copied "prove the
 bytes" idiom in the repo, and there is now a second install on the same television —
-`com.beb.plxnative.debug`, the developer build, which is what an unflavoured `make deploy` targets.
+`com.magness.dispatcharrtv.debug`, the developer build, which is what an unflavoured `make deploy` targets.
 Pasted into a debug context this command silently compares against the wrong app and reports a
 mismatch (or, worse, a match) about a binary nobody is releasing. **A release is always the stable
 id**, so leave the literal alone here; anywhere else, get the path from
 `make -s print-appdir FLAVOR=<f>`. And note the hash is now weaker evidence than it reads as:
 `pkg/plxnative` is a path every flavour and both configurations write, so a match proves the bytes
 and not the install. The **first line of the event log** is the witness that names both —
-`install: id=com.beb.plxnative flavour=- … features=release` — where `features=release` is the
+`install: id=com.magness.dispatcharrtv flavour=- … features=release` — where `features=release` is the
 direct answer to "is this the shipped configuration?". (The stable install prints `flavour=-`, not
 `flavour=stable`: the field is derived by stripping the stable id off the running one, so the app
 users get has nothing left to name.)
 
 ## The stable id is a release-only id, and the Makefile enforces it
 
-`com.beb.plxnative` is the id users install. There is now a second install on the same
-television — `com.beb.plxnative.debug`, the developer build — and **that one is the Makefile's
+`com.magness.dispatcharrtv` is the id users install. There is now a second install on the same
+television — `com.magness.dispatcharrtv.debug`, the developer build — and **that one is the Makefile's
 default**, so every release command below has to say `FLAVOR=stable` out loud. A release is always
 the stable id and always `RELEASE=1`; the other combination is refused:
 
 ```
 $ make FLAVOR=stable ipk
-refusing to put a DEV build on com.beb.plxnative — that id is what users install.
+refusing to put a DEV build on com.magness.dispatcharrtv — that id is what users install.
   release build:      make FLAVOR=stable RELEASE=1 ipk
   developer install:  make ipk          (FLAVOR=stable is not the default)
   really meant it:    make FLAVOR=stable ALLOW_DEV_ON_STABLE=1 ipk
@@ -225,7 +225,7 @@ python3 ci/check-package.py        # the gate: versions, ar layout, descriptors,
 ```
 
 `FLAVOR=stable` is what makes this the shipped id: unflavoured it packages
-`com.beb.plxnative.debug`, whose `.ipk` filename, `appinfo.json` and staged directory all carry the
+`com.magness.dispatcharrtv.debug`, whose `.ipk` filename, `appinfo.json` and staged directory all carry the
 debug id — and `make ipk` only writes `pkg/ipk.sha256` for the stable flavour, so a debug package
 cannot quietly overwrite the hash a release note quotes.
 
@@ -346,10 +346,10 @@ Deploying over ssh does not exercise the package. Install the real `.ipk` — th
 packaging bugs were found that `make deploy` could never have surfaced:
 
 ```sh
-tools/tv-ssh scp pkg/com.beb.plxnative_X.Y.Z_arm.ipk tv:/tmp/
+tools/tv-ssh scp pkg/com.magness.dispatcharrtv_X.Y.Z_arm.ipk tv:/tmp/
 tools/tv-ssh ssh tv "script -qc \"luna-send -i -a com.webos.appInstallService \
   luna://com.webos.appInstallService/dev/install \
-  '{\\\"id\\\":\\\"com.beb.plxnative\\\",\\\"ipkUrl\\\":\\\"/tmp/com.beb.plxnative_X.Y.Z_arm.ipk\\\",\\\"subscribe\\\":true}'\" /dev/null"
+  '{\\\"id\\\":\\\"com.magness.dispatcharrtv\\\",\\\"ipkUrl\\\":\\\"/tmp/com.magness.dispatcharrtv_X.Y.Z_arm.ipk\\\",\\\"subscribe\\\":true}'\" /dev/null"
 ```
 
 **Both ids here are the stable one, deliberately** — this step is the release going onto the id
@@ -359,13 +359,13 @@ bringing an install up, and wrong here, because it replaces the packaged binary 
 and the whole point of this step is that the **package** is what runs.
 
 Wake the TV first (`wake-tv` skill). Then launch it and read the event log: its first line is
-`install: id=com.beb.plxnative flavour=- … features=release` — check the id and `features=` there
+`install: id=com.magness.dispatcharrtv flavour=- … features=release` — check the id and `features=` there
 rather than inferring them, since both builds' binaries are named `plxnative` — the next line names
 the firmware, and a release build must leave **only** the three `*.log` files in the stable runtime
 root, `/tmp`. No FIFO, no `:8910` listener. That is the release build's whole premise and it is
 worth re-checking every time, by hash.
 
-If the developer install is also on this television you will see a `/tmp/com.beb.plxnative.debug`
+If the developer install is also on this television you will see a `/tmp/com.magness.dispatcharrtv.debug`
 directory beside those logs: that is the *other* install's runtime root, not a leak from this one.
 It is named for the app id — the reason the separator is a dot and not a hyphen — so it matches no
 `plxnative-*` glob and cannot be mistaken for a trigger by the check or by the app.
@@ -377,7 +377,7 @@ The listing and the submission are separate artifacts from the release and both 
 - **`webosbrew/apps-repo` PR** — the body argues for the requirements line. When compatibility
   changes, that argument changes. It has previously sat for weeks defending a ceiling that had
   already been removed.
-- **`packages/com.beb.plxnative.yml`** — the description thousands of channel users read before
+- **`packages/com.magness.dispatcharrtv.yml`** — the description thousands of channel users read before
   installing. Its "please read before installing" section is where the honest limits live.
 - **A comment on the PR** if the reviewer is waiting on something this release affects.
 

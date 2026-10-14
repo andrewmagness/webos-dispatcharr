@@ -108,7 +108,7 @@ control POST routes, every path and method is a bare 404.
 
 ```json
 {"kind":"envelope","seq":3,"session":"a1b2c3d4","sent_at_ms":812433,
- "app":{"version":"0.4.1","id":"com.beb.plxnative.debug","flavour":"debug",
+ "app":{"version":"0.4.1","id":"com.magness.dispatcharrtv.debug","flavour":"debug",
         "features":["lab-diagnostics","devtools"],"uptime_ms":812433},
  "device":{"webos_release":"10.3.1","codename":"…","api":"…","model":"OLED55C1",
            "board":"k8hpp","panel":"3840x2160","drawable":"1920x1080"},
@@ -395,7 +395,7 @@ only cheap check that the path actually exists before a tester spends a lab hour
 ```
 plxnative-lab start                       # prints session + the make line below
 make LAB=1 FLAVOR=debug ipk               # bakes pkg/lab.json into the package
-   → upload pkg/com.beb.plxnative.debug_0.4.1_arm.ipk to Cloud Test Lab and install it
+   → upload pkg/com.magness.dispatcharrtv.debug_0.4.1_arm.ipk to Cloud Test Lab and install it
 plxnative-lab status                       # wait for tv_control: connected
 plxnative-lab send down down ok wait:1000 diag
 plxnative-lab logs --follow               # the agent watches

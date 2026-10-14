@@ -1,6 +1,6 @@
 # Third-party notices
 
-This file accompanies the **PlxNative** application package (`com.beb.plxnative`), an unofficial
+This file accompanies the **PlxNative** application package (`com.magness.dispatcharrtv`), an unofficial
 native Plex client for LG webOS 4.x televisions. PlxNative itself is Copyright (c) 2026 Gleb
 Linnik and is distributed under GPL-3.0-or-later (see `LICENSE`; the brand reservation and the
 non-affiliation statements are in `TRADEMARKS.md`, alongside it in both the repository and this

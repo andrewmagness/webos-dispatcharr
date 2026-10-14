@@ -1090,7 +1090,7 @@ pub(crate) fn enter_profiles_from_onboard(pages: &mut plx_ui::dispatch::Dispatch
 /// happened to be selected, up to and including a managed child profile, and dressed an
 /// account-wide answer as a personal setting.
 ///
-/// It is still not asked at BOOT: a fresh install boots to the QR screen with nothing to consent
+/// It is still not asked at BOOT: a fresh install boots to a sign-in screen with nothing to consent
 /// about yet, and asking before somebody has managed to sign in is asking while they have nothing
 /// to lose by walking away.
 ///

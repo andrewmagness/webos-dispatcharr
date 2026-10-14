@@ -32,7 +32,7 @@ devtriggers = ["plx_base/devtriggers", "plx_machine/devtriggers", "plx_platform/
 # surface enumeration, the detail screen's read-backs, ...). Enabled from the dependents'
 # `[dev-dependencies]`; never in a shipped build. It enables the lower layers' own `test-support`
 # because the seams call into them.
-test-support = ["plx_base/test-support", "plx_machine/test-support", "plx_platform/test-support", "plx_gfx/test-support", "plx_net/test-support", "plx_ui/test-support", "plx_plex/test-support", "plx_telemetry/test-support", "plx_data/test-support", "plx_session/test-support", "plx_media/test-support", "plx_appkit/test-support"]
+test-support = ["plx_base/test-support", "plx_machine/test-support", "plx_platform/test-support", "plx_gfx/test-support", "plx_net/test-support", "plx_ui/test-support", "plx_plex/test-support", "plx_telemetry/test-support", "plx_data/test-support", "plx_session/test-support", "plx_media/test-support", "plx_appkit/test-support", "plx_dispatcharr/test-support"]
 
 [dependencies]
 plx_base = { path = "../base" }
@@ -42,6 +42,7 @@ plx_gfx = { path = "../gfx" }
 plx_net = { path = "../net" }
 plx_ui = { path = "../ui" }
 plx_plex = { path = "../plex" }
+plx_dispatcharr = { path = "../dispatcharr" }
 plx_telemetry = { path = "../telemetry" }
 plx_data = { path = "../data" }
 plx_session = { path = "../session" }

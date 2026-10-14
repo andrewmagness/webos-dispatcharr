@@ -14,6 +14,7 @@ members = [
     "gfx",
     "ui",
     "plex",
+    "dispatcharr",
     "telemetry",
     "data",
     "session",
@@ -230,6 +231,9 @@ plx_ui = { path = "ui" }
 # and probe logic and `http`, the one request door. It reports the app version it is handed
 # (`plex::identity::set_version`) rather than reading `PLX_VERSION`, which reaches one crate only.
 plx_plex = { path = "plex" }
+# The dispatcharr layer (ci/module-layers.ini `[dispatcharr]`): the typed Dispatcharr REST client —
+# sign-in, the per-user API key, channels and groups. A peer of `plx_plex`, not built on it.
+plx_dispatcharr = { path = "dispatcharr" }
 # The telemetry layer (ci/module-layers.ini `[telemetry]`): consent, the opt-in crash and usage
 # channels (Sentry, PostHog), the spool and worker, and the typed usage-event schema. It reports the
 # release string the application hands it (`telemetry::set_release`), and reads its credentials with `option_env!` from the build
@@ -319,6 +323,7 @@ plx_net = { path = "net", features = ["test-support"] }
 plx_ui = { path = "ui", features = ["test-support"] }
 # Likewise the plex layer's session fixtures and `*_for_test` seams.
 plx_plex = { path = "plex", features = ["test-support"] }
+plx_dispatcharr = { path = "dispatcharr", features = ["test-support"] }
 # Likewise the telemetry layer's consent, spool and queue seams and the usage-event schema tables.
 plx_telemetry = { path = "telemetry", features = ["test-support"] }
 # Likewise the data layer's seeding and fixture seams (`pms::seed_for_test`, `metadata::set_current_for_test`, ...).

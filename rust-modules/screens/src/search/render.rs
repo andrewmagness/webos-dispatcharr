@@ -9,8 +9,7 @@ use plx_ui::{theme, Env, Painter, View};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
 
-const CARET_W: f32 = 5.0;
-const CARET_GAP: f32 = 8.0;
+use plx_ui::text_field::{caret_shown, descent_pad, ink_target, run_and_head, run_layout, CARET_W};
 const GHOST_GAP: f32 = theme::size::BODY as f32;
 const COUNT_GAP: f32 = theme::space::SM;
 const SOURCE_PAD: f32 = theme::space::XS;
@@ -450,23 +449,6 @@ fn elide(
         measure.width(&cstring(s), size, bold)
     })
 }
-fn run_layout(run: f32, caret: f32, width: f32, editing: bool) -> (f32, f32) {
-    let available = (width - if editing { CARET_W + CARET_GAP } else { 0.0 }).max(0.0);
-    let overflow = (caret - available).max(0.0).min((run - available).max(0.0));
-    (
-        -overflow,
-        (caret - overflow + CARET_GAP).min((width - CARET_W).max(0.0)),
-    )
-}
-
-fn run_and_head(q: &str, caret: usize) -> (&str, &str) {
-    let run = &q[..q.find('\0').unwrap_or(q.len())];
-    let mut caret = caret.min(run.len());
-    while caret > 0 && !run.is_char_boundary(caret) {
-        caret -= 1;
-    }
-    (run, &run[..caret])
-}
 
 fn run_caret_w(blank: bool, head_w: f32) -> f32 {
     if blank {
@@ -479,22 +461,6 @@ fn run_caret_w(blank: bool, head_w: f32) -> f32 {
 fn ghost_shown(q: &str) -> bool {
     let n = q.trim().chars().count();
     n > 0 && n + 1 == plx_data::search::MIN_QUERY
-}
-
-fn caret_shown(editing: bool, phase_on: bool) -> bool {
-    editing && phase_on
-}
-
-fn descent_pad(box_h: f32, full_h: f32, cap_top: f32, cap_base: f32) -> f32 {
-    (full_h - box_h * 0.5 - (cap_top + cap_base) * 0.5).max(0.0)
-}
-
-fn ink_target(editing: bool) -> [f32; 4] {
-    if editing {
-        theme::FIELD_EDITING_INK
-    } else {
-        theme::FIELD_WAITING_INK
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -661,6 +627,7 @@ fn scope_text(sources: &[ScopeSource]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use plx_ui::text_field::CARET_GAP;
 
     #[test]
     fn translated_count_messages_follow_belarusian_grammar_with_separate_number_formatting() {
@@ -770,129 +737,6 @@ mod tests {
     }
 
     #[test]
-    fn ink_target_picks_pure_white_off_editing_and_the_editing_stop_on() {
-        assert_eq!(ink_target(false), theme::FIELD_WAITING_INK);
-        assert_eq!(ink_target(true), theme::FIELD_EDITING_INK);
-        assert_ne!(theme::FIELD_WAITING_INK, theme::FIELD_EDITING_INK);
-    }
-
-    #[test]
-    fn focus_is_carried_by_a_wide_ink_step_and_nothing_else() {
-        let idle = theme::cross(theme::TEXT_SECONDARY, ink_target(false), 0.0);
-        assert_eq!(idle, theme::TEXT_SECONDARY);
-        let waiting = theme::cross(theme::TEXT_SECONDARY, ink_target(false), 1.0);
-        let editing = theme::cross(theme::TEXT_SECONDARY, ink_target(true), 1.0);
-        assert_eq!(waiting, theme::FIELD_WAITING_INK);
-        assert_eq!(editing, theme::FIELD_EDITING_INK);
-        let luma = |c: [f32; 4]| (0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]) * c[3];
-        assert!(luma(waiting) - luma(idle) > 0.15);
-        assert!(luma(editing) - luma(idle) > 0.15);
-        assert!(luma(waiting) > luma(editing));
-    }
-
-    #[test]
-    fn the_caret_is_visible_only_during_the_on_phase_of_an_editing_field() {
-        assert!(caret_shown(true, true));
-        assert!(!caret_shown(true, false));
-        assert!(!caret_shown(false, true));
-        assert!(!caret_shown(false, false));
-    }
-
-    #[test]
-    fn a_run_that_fits_starts_at_the_edge_and_the_caret_trails_it() {
-        let (run, caret) = run_layout(100.0, 100.0, 756.0, true);
-        assert_eq!(run, 0.0);
-        assert_eq!(caret, 100.0 + CARET_GAP);
-    }
-
-    #[test]
-    fn an_overlong_run_slides_left_so_the_caret_lands_on_the_boxs_right_edge() {
-        let box_w = 756.0;
-        let (run, caret) = run_layout(900.0, 900.0, box_w, true);
-        assert!(run < 0.0);
-        assert_eq!(run + 900.0, box_w - CARET_GAP - CARET_W);
-        assert_eq!(caret + CARET_W, box_w);
-    }
-
-    #[test]
-    fn with_no_caret_the_run_uses_the_whole_box() {
-        let box_w = 756.0;
-        let (run, _) = run_layout(900.0, 900.0, box_w, false);
-        assert_eq!(run + 900.0, box_w);
-    }
-
-    #[test]
-    fn an_empty_run_keeps_the_designs_caret_gap() {
-        let (run, caret) = run_layout(0.0, 0.0, 756.0, true);
-        assert_eq!(run, 0.0);
-        assert_eq!(caret, CARET_GAP);
-    }
-
-    #[test]
-    fn the_caret_follows_the_insertion_point_whether_or_not_the_run_has_slid() {
-        for run_w in [0.0, 1.0, 400.0, 753.0, 900.0, 5000.0] {
-            let (run, caret) = run_layout(run_w, run_w, 756.0, true);
-            assert_eq!(caret, run + run_w + CARET_GAP, "run_w={run_w}");
-        }
-    }
-
-    #[test]
-    fn the_run_scrolls_to_the_caret_rather_than_to_the_tail() {
-        let box_w = 756.0;
-        let avail = box_w - CARET_GAP - CARET_W;
-        assert_eq!(run_layout(2000.0, 0.0, box_w, true), (0.0, CARET_GAP));
-        assert_eq!(
-            run_layout(2000.0, avail - 10.0, box_w, true),
-            (0.0, avail - 10.0 + CARET_GAP)
-        );
-        let (run, caret) = run_layout(2000.0, 1000.0, box_w, true);
-        assert_eq!(run, -(1000.0 - avail));
-        assert_eq!(caret + CARET_W, box_w);
-        for c in [0.0, 1.0, 500.0, 1999.0, 2000.0] {
-            let (_, caret) = run_layout(2000.0, c, box_w, true);
-            assert!(
-                (0.0..=box_w - CARET_W).contains(&caret),
-                "caret at {c} drew at {caret}"
-            );
-        }
-    }
-
-    #[test]
-    fn the_head_is_the_text_before_the_insertion_point() {
-        assert_eq!(run_and_head("wallace", 0), ("wallace", ""));
-        assert_eq!(run_and_head("wallace", 3), ("wallace", "wal"));
-        assert_eq!(run_and_head("wallace", 7), ("wallace", "wallace"));
-        assert_eq!(run_and_head("wallace ", 8), ("wallace ", "wallace "));
-        assert_eq!(run_and_head("", 0), ("", ""));
-    }
-
-    #[test]
-    fn a_caret_inside_a_multi_byte_character_never_splits_it() {
-        for q in ["суббота", "千と千尋", "Amélie", "🎬🎬", "aé千🎬z"] {
-            for c in 0..=q.len() + 4 {
-                let (run, head) = run_and_head(q, c);
-                assert_eq!(run, q);
-                assert!(q.starts_with(head), "the head must be a prefix: {head:?}");
-                assert!(head.len() <= c.min(q.len()));
-                assert!(c.min(q.len()) - head.len() < 4);
-            }
-        }
-    }
-
-    #[test]
-    fn a_nul_cuts_the_run_and_the_caret_lands_inside_what_is_left() {
-        assert_eq!(run_and_head("wal\0lace", 3), ("wal", "wal"));
-        assert_eq!(run_and_head("wal\0lace", 8), ("wal", "wal"));
-        assert_eq!(run_and_head("\0wallace", 4), ("", ""));
-        assert_eq!(run_and_head("су\0ббота", 99), ("су", "су"));
-    }
-
-    #[test]
-    fn a_box_too_narrow_for_the_caret_does_not_go_negative() {
-        assert_eq!(run_layout(0.0, 0.0, 2.0, true), (0.0, 0.0));
-    }
-
-    #[test]
     fn a_blank_field_puts_the_caret_at_the_field_start_not_after_the_placeholder() {
         assert_eq!(run_caret_w(true, 999.0), 0.0);
         assert_eq!(run_caret_w(false, 42.0), 42.0);
@@ -903,13 +747,6 @@ mod tests {
         assert_eq!(buggy_run, 0.0);
         assert_eq!(buggy_caret, 480.0 + CARET_GAP);
         assert!(caret < buggy_caret);
-    }
-
-    #[test]
-    fn the_clip_reserves_only_the_descent_centering_does_not_already_clear() {
-        assert_eq!(descent_pad(80.0, 87.0, 17.0, 70.0), 3.5);
-        assert_eq!(descent_pad(80.0, 40.0, 17.0, 20.0), 0.0);
-        assert_eq!(descent_pad(80.0, 10.0, 17.0, 70.0), 0.0);
     }
 
     #[test]

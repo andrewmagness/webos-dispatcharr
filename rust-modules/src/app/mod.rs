@@ -121,6 +121,7 @@ pub(crate) mod events;
 pub(crate) mod lifecycle;
 pub(crate) mod playback;
 mod preferences;
+mod dispatcharr; // the Setup and Guide screens' account and server work, on workers
 pub(crate) mod input;
 pub(crate) mod bridge;
 pub(crate) mod chrome;
@@ -297,11 +298,12 @@ pub(crate) struct App {
     remote: Option<crate::remote::Remote>,
     /// The SDL window (`SDL_CreateWindow`), for the swap.
     win: *mut c_void,
-    /// WSLg accepts swap interval 1 on X11/GLX without pacing the compositor. This boot-scoped
-    /// flag enables the host-only software frame budget while leaving native Linux and macOS on
-    /// their driver swap behavior.
+    /// Whether this host's swap ignores interval 1 (WSLg's X11/GLX, SDL's offscreen driver), so the
+    /// host-only software frame budget stands in for vsync
+    /// (`window_activity::swap_ignores_vsync`). Native Linux displays and macOS keep their driver's
+    /// swap behavior.
     #[cfg(all(feature = "hostsim", target_os = "linux"))]
-    wslg_frame_pacing: bool,
+    soft_frame_pacing: bool,
     /// Boot time (`SDL_GetTicks` at the end of boot): the origin of every dev-script delay AND
     /// the clock a replay restores from controlled initial inputs — a field BOTH sides
     /// write, so it stays here rather than on `dev::scenarios::Scenarios`.
@@ -479,6 +481,9 @@ fn pre_boot_diagnostics() -> plx_telemetry::telemetry::native::Guard {
     // its GStreamer is lazily initialised, so this is early enough and a later arming would be
     // read by nobody. It is the only instrument that can see inside the closed Dolby Vision chain.
     crate::dev::arm_gst_logging();
+    // If armed, sign in to a Dispatcharr server on a worker and log its channels (milestone 1's
+    // headless probe, before the Setup screen). Never blocks the boot.
+    crate::dev::dispatcharr_probe();
     // Playback tests photograph the television as well as grading its log. This keeps the same
     // ABR/pipeline evidence visible for every automated playback, rather than depending on the
     // previous manual toggle surviving into a new session.

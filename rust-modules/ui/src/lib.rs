@@ -91,6 +91,8 @@ pub mod testapp; // RESTRUCTURE (spec §15.1): a screen under test with no SDL �
 pub mod testpat; // dev-only SYNTHETIC GROUNDS — the page's picture replaced by a chosen pattern
 pub mod text_view;
 pub mod text_buffer;
+pub mod text_field; // a single-line text field: caret, scroll-to-caret, placeholder, masked password; ink-alone focus
+pub mod time_grid; // spans laid against a time axis (a programme guide): geometry, reveal targets, the cell/axis/now painters
 pub mod text_lift; // the animated focus treatment (lift + plate + shadow) for a block of prose that is a focus stop but not a card
 pub mod theme;
 pub mod underlay; // the shared UNDERLAY FIELD: a coarse, spatially faithful colour field of what is drawn beneath an overlay

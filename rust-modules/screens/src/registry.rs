@@ -64,6 +64,55 @@ pub enum AppFx {
     Player(PlayerReq),
     /// The item context menu's committed row (phase 10) — see [`ItemMenuReq`].
     ItemMenu(ItemMenuReq),
+    /// The Setup and Guide screens' account and server work — see [`DispatcharrCmd`].
+    Dispatcharr(DispatcharrCmd),
+}
+
+/// **What the Setup and Guide screens ask of the application.** Each reads or writes the
+/// Dispatcharr account file or talks to the server, so each BLOCKS, and a screen may not: the
+/// application runs it on a worker and answers on `reply`, which the screen reads on its tick.
+///
+/// No `Debug`: a sign-in carries the password.
+pub enum DispatcharrCmd {
+    /// Read the stored account. Answers `SignedOut` or `Connected`, then — when connected and
+    /// `lineup` asks for it — the `Lineup` the key opens.
+    Load { lineup: bool, reply: std::sync::mpsc::Sender<SetupOutcome> },
+    /// Sign in with what was typed and store the key. Answers `Failed`, `SaveFailed` or `Connected`
+    /// (the boot page then hands over to the Guide, which reads the lineup itself).
+    SignIn { address: String, username: String, password: String, reply: std::sync::mpsc::Sender<SetupOutcome> },
+    /// Forget the account. Answers `SignedOut`.
+    SignOut { reply: std::sync::mpsc::Sender<SetupOutcome> },
+    /// Read the stored account, its channels and the guide around now. Answers once.
+    Guide { reply: std::sync::mpsc::Sender<GuideOutcome> },
+}
+
+/// The answer to [`DispatcharrCmd::Guide`].
+pub enum GuideOutcome {
+    /// No stored account: the page goes back to Setup.
+    SignedOut,
+    /// The channels in guide order and their programmes, read at `fetched_at` (Unix seconds by the
+    /// television's clock — the page's only reading of the wall clock).
+    Loaded {
+        channels: Vec<plx_dispatcharr::dispatcharr::models::Channel>,
+        guide: plx_dispatcharr::dispatcharr::guide::Guide,
+        fetched_at: i64,
+    },
+    Failed(plx_dispatcharr::dispatcharr::Error),
+}
+
+/// One answer to a [`DispatcharrCmd`].
+pub enum SetupOutcome {
+    SignedOut,
+    /// Signed in: the stored record, and whether it is stored where it survives a reboot.
+    Connected {
+        record: plx_dispatcharr::dispatcharr::account::Record,
+        saved: plx_dispatcharr::dispatcharr::account::Saved,
+    },
+    /// The channel count behind the connected account.
+    Lineup(Result<usize, plx_dispatcharr::dispatcharr::Error>),
+    Failed(plx_dispatcharr::dispatcharr::Error),
+    /// The server accepted the sign-in and the account could not be stored anywhere.
+    SaveFailed,
 }
 
 /// A private live receipt. Requests contain account credentials and are intentionally unsupported
@@ -1222,6 +1271,15 @@ pub enum LoopReq {
     /// Lab builds only, and it changes no route: the tester stays where they were and the toast
     /// says what happened.
     AccountSendDiagnostics,
+    /// **The Dispatcharr pages' three moves.** A screen cannot name `AppArg` in a `NavOp` (the
+    /// bundle does not bind `Host::Arg`), so each is asked of the loop. Setup, once an account is
+    /// stored (found at boot, or just signed in): the Guide, as the new root.
+    DispatcharrGuide,
+    /// The Guide's *Account*: the Server page, pushed over it.
+    DispatcharrAccount,
+    /// Signed out (from the Server page), or the Guide found no account or a refused key: Setup,
+    /// as the new root, with nothing of the old account's pages left behind.
+    DispatcharrSetup,
 }
 
 /// Any host that carries this bundle. The screens under `screens/` are written against it, so the
@@ -1276,6 +1334,11 @@ pub mod word {
     /// The who's-watching picker (`screens::profiles::ProfilesScreen`). Same spelling as
     /// `app::words::route_word`'s `AppArg::Profiles` arm — see this module's doc.
     pub const PROFILES: &str = "profiles";
+    /// Dispatcharr sign-in (`screens::setup::SetupScreen`), a `route=` word like `LOGIN`; the same
+    /// spelling as `app::words::route_word`'s `AppArg::Setup` arm.
+    pub const SETUP: &str = "setup";
+    /// The Dispatcharr guide (`screens::guide::GuideScreen`), the root once an account is stored.
+    pub const GUIDE: &str = "guide";
 }
 
 /// An element key for a route-family screen: table rows are their index; the action band's
@@ -1629,9 +1692,17 @@ pub enum AppArg {
     /// The first-run consent question, rooted at this stage byte (0 for every real opening;
     /// `screens::consent`'s `STAGE_PRODUCT` for `/tmp/plxnative-consent=product`).
     FirstRunConsent(u8),
+    /// Dispatcharr sign-in (`screens::setup`) — the boot page. With an account stored it hands
+    /// straight over to the Guide.
+    Setup,
+    /// The Dispatcharr guide (`screens::guide`) — the root once an account is stored.
+    Guide,
+    /// The signed-in server and account, with *Sign out* (`screens::setup` in its server mode),
+    /// pushed from the Guide.
+    Server,
 }
 
-pub const ARG_SHAPE: &str = "AppArg{Login,Profiles,Onboard,Home,Library,Search,Player,Content:{Detail{sid:u32,rk:str},Person{sid:u32,key:str,guid:str,name:str,thumb:str},Filmography{sid:u32,key:str},Collection{sid:u32,rk:str,sec:i64,tag:i64,name:str}},Settings:SettingsPage{Root,Playback,AudioSubtitles,Favourites,Privacy,Legal,About,Document(u8),Preview(u8),ConsentStage(u8),Language,Contribute},FirstRunConsent(u8),LibraryMenu{host:u32,target:{epoch:u32,sid:u32,section:u64},kind:u32,anchor:[u32;4]},\
+pub const ARG_SHAPE: &str = "AppArg{Setup,Guide,Server,Login,Profiles,Onboard,Home,Library,Search,Player,Content:{Detail{sid:u32,rk:str},Person{sid:u32,key:str,guid:str,name:str,thumb:str},Filmography{sid:u32,key:str},Collection{sid:u32,rk:str,sec:i64,tag:i64,name:str}},Settings:SettingsPage{Root,Playback,AudioSubtitles,Favourites,Privacy,Legal,About,Document(u8),Preview(u8),ConsentStage(u8),Language,Contribute},FirstRunConsent(u8),LibraryMenu{host:u32,target:{epoch:u32,sid:u32,section:u64},kind:u32,anchor:[u32;4]},\
      PlayerOverlay{Tracks(tab:i32),Info,Chapters,More(quality:bool)},\
      AltSources{host:u32,sid:u32,rk:str,anchor:[u32;4]},\
      TracksPanel{page:i32},AboutPanel,PersonBio,CollectionAbout,AccountMenu,\
@@ -1671,6 +1742,10 @@ impl LogicalState for AppArg {
             Self::Content(arg) => { c.u32(1); arg.write(c); }
             Self::Settings(page) => { c.u32(2); page.write(c); }
             Self::FirstRunConsent(stage) => { c.u32(3).u8(*stage); }
+            // 13, after the surfaces' 4–12: allocated forward like every tag above.
+            Self::Setup => { c.u32(13); }
+            Self::Guide => { c.u32(14); }
+            Self::Server => { c.u32(15); }
         }
     }
     fn probe(&self, out: &mut String) { out.push_str("app_arg"); }
@@ -1685,7 +1760,10 @@ impl plx_ui::screen::ScreenArg for AppArg {
     fn chrome(&self) -> Chrome {
         match self {
             AppArg::Home | AppArg::Library | AppArg::Search => Chrome::TabBar,
-            AppArg::Login
+            AppArg::Setup
+            | AppArg::Guide
+            | AppArg::Server
+            | AppArg::Login
             | AppArg::Profiles
             | AppArg::Onboard
             | AppArg::Player
@@ -1745,6 +1823,10 @@ impl plx_ui::screen::ScreenArg for AppArg {
             AppArg::Content(ContentArg::Person { .. }) => 9,
             AppArg::Content(ContentArg::Filmography { .. }) => 14,
             AppArg::Content(ContentArg::Collection(_)) => 23,
+            // 25: allocated forward, after the Collection summary sheet's 24.
+            AppArg::Setup => 25,
+            AppArg::Guide => 26,
+            AppArg::Server => 27,
         })
     }
     fn title(&self) -> Option<&str> {
@@ -1905,6 +1987,9 @@ where
             // reset (see `input::enter_profiles_from_onboard`'s doc for the same argument made
             // about `screens::onboard` in 5b).
             AppArg::Login => Box::new(crate::login::LoginScreen::new(entry, H::auth(cx))),
+            AppArg::Setup => Box::new(crate::setup::SetupScreen::new(entry, id, crate::setup::Mode::Entry)),
+            AppArg::Server => Box::new(crate::setup::SetupScreen::new(entry, id, crate::setup::Mode::Server)),
+            AppArg::Guide => Box::new(crate::guide::GuideScreen::new(entry, id)),
             AppArg::Profiles => {
                 let screen = crate::profiles::ProfilesScreen::new(entry, H::auth(cx));
                 fx.push(plx_machine::machine::Fx::App(AppFx::Session(
@@ -2035,9 +2120,12 @@ pub fn every_surface_arg() -> Vec<AppArg> {
             | AppArg::PlayerOverlay(_)
             | AppArg::Settings(_)
             | AppArg::FirstRunConsent(_) => {}
-            // The eight PAGE variants. Named rather than swept into a `_`, so the exhaustiveness
+            // The nine PAGE variants. Named rather than swept into a `_`, so the exhaustiveness
             // above is real and a new SURFACE variant cannot land in a catch-all.
-            AppArg::Login
+            AppArg::Setup
+            | AppArg::Guide
+            | AppArg::Server
+            | AppArg::Login
             | AppArg::Profiles
             | AppArg::Onboard
             | AppArg::Home
@@ -2100,6 +2188,8 @@ pub const SCREEN_SHAPES: &[&str] = &[
     "LocalizationSettingsV4{Root:{language:system|en|es|be},Language:{selected:system|en|es|be,focus:u32,busy:bool,failed:bool},Contribute:QrLink,LoginReportAlert:{send:bool,scroll_target_bits:u32},ConsentDisclosure:{scroll_target_bits:u32,scroll_owner:answer_band},ConsentDeleteDisclosure:{scroll_target_bits:u32},BandPart:MeasuredRowOrColumn}",
     crate::preferences::SHAPE,
     crate::preferences::PICKER_SHAPE,
+    crate::setup::SHAPE,
+    crate::guide::SHAPE,
 ];
 
 /// The pin over [`SCREEN_SHAPES`] — bump it in the same edit that adds an entry, and say why.
@@ -2213,7 +2303,11 @@ pub const SCREEN_SHAPES: &[&str] = &[
 // About panel scroll: `AboutPanelScreen{}` gains the synopsis viewport's cursor and spring
 // (`page:usize,scroll:Spring{pos:f32,vel:f32}`, person_bio's shape); the previous pin was
 // 0x7435_d234_b769_60c2.
-const SCREEN_SHAPES_PIN: u64 = 0x6a55_c53a_d931_3acf;
+// Dispatcharr Setup: `ARG_SHAPE` gains `Setup` and `screens::setup::SHAPE` joins the inventory;
+// the previous pin was 0x6a55_c53a_d931_3acf. Re-record replay fixtures before trusting one.
+// Dispatcharr Guide: `ARG_SHAPE` gains `Guide` and `Server`, `screens::guide::SHAPE` joins the
+// inventory and `screens::setup::SHAPE` gains its mode; the previous pin was 0xb65f_df1d_138b_f7d1.
+const SCREEN_SHAPES_PIN: u64 = 0xe8d0_26d5_2943_05e6;
 
 #[cfg(test)]
 mod arg_tests {
@@ -2294,6 +2388,9 @@ mod arg_tests {
             AppArg::Content(crate::registry::ContentArg::Collection(
                 plx_plex::plex::collections::CollectionRef::by_tag(plx_plex::plex::ServerId::UNSET, 0, 1, ""),
             )),
+            AppArg::Setup,
+            AppArg::Guide,
+            AppArg::Server,
             AppArg::Login,
             AppArg::Profiles,
             AppArg::Onboard,

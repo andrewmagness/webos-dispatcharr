@@ -118,6 +118,8 @@ pub struct LocaleContext {
         icu_calendar::Gregorian,
         icu_datetime::fieldsets::YMD,
     >,
+    /// Hours and minutes, on the hour cycle the television's clock setting names (`clock`).
+    time: icu_datetime::NoCalendarFormatter<icu_datetime::fieldsets::T>,
 }
 impl LocaleContext {
     /// Exercise expanded catalogs without changing the process-wide locale or environment.
@@ -157,6 +159,12 @@ impl LocaleContext {
                 DecimalFormatter::try_new(Default::default(), Default::default())
                     .expect("compiled English number data")
             });
+        let clock = match clock {
+            Some("12") => Clock::H12,
+            Some("24") => Clock::H24,
+            _ => Clock::Locale,
+        };
+        let time = time_formatter(&locale, clock);
         let date = icu_datetime::FixedCalendarDateTimeFormatter::try_new(
             locale.into(),
             icu_datetime::fieldsets::YMD::short()
@@ -177,14 +185,11 @@ impl LocaleContext {
             preference,
             language,
             format_locale,
-            clock: match clock {
-                Some("12") => Clock::H12,
-                Some("24") => Clock::H24,
-                _ => Clock::Locale,
-            },
+            clock,
             plural,
             decimal,
             date,
+            time,
         }
     }
     pub fn preference(&self) -> Preference {
@@ -211,11 +216,52 @@ impl LocaleContext {
         d.pad_end(-scale);
         self.decimal.format(&d).to_string()
     }
+    /// A time of day (`hour` 0–23), in this locale's form and on the clock setting's hour cycle:
+    /// `21:05`, `9:05 PM`, `21 h 05`. `None` for an hour or minute out of range.
+    pub fn time(&self, hour: u8, minute: u8) -> Option<String> {
+        let t = icu_datetime::input::Time::try_new(hour, minute, 0, 0).ok()?;
+        Some(self.time.format(&t).to_string())
+    }
     pub fn date(&self, year: i32, month: u8, day: u8) -> Option<String> {
         let d = icu_calendar::Date::try_new_gregorian(year, month, day).ok()?;
         Some(self.date.format(&d).to_string())
     }
 }
+/// The hour-and-minute formatter for `locale`, with the hour cycle `clock` forces (none for
+/// `Clock::Locale`, which keeps the locale's own).
+fn time_formatter(locale: &Locale, clock: Clock) -> icu_datetime::NoCalendarFormatter<icu_datetime::fieldsets::T> {
+    use icu_datetime::preferences::HourCycle;
+    let mut prefs: icu_datetime::DateTimeFormatterPreferences = locale.clone().into();
+    prefs.hour_cycle = match clock {
+        Clock::Locale => None,
+        Clock::H12 => Some(HourCycle::H12),
+        Clock::H24 => Some(HourCycle::H23),
+    };
+    icu_datetime::NoCalendarFormatter::try_new(prefs, icu_datetime::fieldsets::T::hm()).unwrap_or_else(|_| {
+        icu_datetime::NoCalendarFormatter::try_new(Default::default(), icu_datetime::fieldsets::T::hm())
+            .expect("compiled English time data")
+    })
+}
+
+/// The local hour and minute of Unix instant `unix`, in the process's time zone (`localtime_r`:
+/// `TZ`, else `/etc/localtime`). `None` when the C library cannot place it.
+///
+/// Verified on the host only. Whether a native app under webOS's jail sees the zone the
+/// television's own settings name (rather than UTC) has not been checked on a set yet.
+pub fn local_hour_minute(unix: i64) -> Option<(u8, u8)> {
+    let t = libc::time_t::try_from(unix).ok()?;
+    // SAFETY: `localtime_r` writes only the `tm` it is handed and reads only `t`.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let ok = unsafe { !libc::localtime_r(&t, &mut tm).is_null() };
+    ok.then(|| (tm.tm_hour as u8, tm.tm_min as u8))
+}
+
+/// Unix instant `unix` as a time of day on this television's clock, in the current locale: what a
+/// guide's axis and a programme's times read. Empty when it cannot be placed.
+pub fn wall_time(unix: i64) -> String {
+    local_hour_minute(unix).and_then(|(h, m)| current().time(h, m)).unwrap_or_default()
+}
+
 /// Reject control bytes and invalid tags before they can become HTTP headers. POSIX suffixes
 /// are only used at this input boundary; callers retain canonical BCP-47 tags.
 pub fn normalize(s: &str) -> Option<String> {

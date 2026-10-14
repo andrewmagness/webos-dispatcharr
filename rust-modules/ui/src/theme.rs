@@ -766,6 +766,17 @@ pub const fn dim(c: [f32; 4], k: f32) -> [f32; 4] {
     [c[0] * k, c[1] * k, c[2] * k, c[3]]
 }
 
+// ── Time grid (a programme guide, `time_grid`) ───────────────────────────────
+/// A programme's cell at rest — the unkeyed control weight, so a row of cells reads as a row of
+/// things to press.
+pub const GUIDE_CELL_FILL: [f32; 4] = with_a(WHITE, 0.10);
+/// The cell on the air now: one step up the overlay ramp from its row.
+pub const GUIDE_CELL_AIRING_FILL: [f32; 4] = with_a(WHITE, 0.20);
+/// A stretch the listing names nothing for: quieter than any programme.
+pub const GUIDE_CELL_UNLISTED_FILL: [f32; 4] = with_a(WHITE, 0.05);
+/// The marker at the current time, across the axis and the lanes.
+pub const GUIDE_NOW: [f32; 4] = COOL_0;
+
 // ── Rails / overlays / accents ───────────────────────────────────────────────
 /// Unfilled progress/scrubber track.
 pub const RAIL_TRACK: [f32; 4] = with_a(WHITE, 0.20);

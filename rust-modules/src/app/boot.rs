@@ -540,11 +540,25 @@ pub(crate) fn direct_trigger_server() -> Result<plx_plex::plex::ServerId, String
 
 // ---- boot, and the loop's own between-frame state ---------------------------------------------
 /// Which screen the boot gate landed on — see the gate itself in `plex_run`, which is where the
-/// order of its four cases is argued.
+/// order of its cases is argued; [`dispatcharr_boot`] decides the Setup case ahead of all of them.
 pub(crate) enum BootTo {
     Home,
     Login,
     Profiles,
+    /// Dispatcharr sign-in: the page an ordinary boot lands on (`dispatcharr_boot`).
+    Setup,
+}
+
+/// **Does this boot land on Setup?** Every ordinary boot does: Dispatcharr is what this app signs in
+/// to, and Setup reads the stored account itself — showing the form when there is none and handing
+/// over to the Guide when there is. The Plex session is not activated at all on that path, so a
+/// boot makes no plex.tv request.
+///
+/// The two exceptions are the developer's explicit Plex boots, kept while the Plex screens are
+/// still in the tree so their harness keeps working: `/tmp/plxnative-login` (`forced_login`) and
+/// the `/tmp/plxnative-token` development PMS token.
+fn dispatcharr_boot(forced_login: bool, dev_token: &str) -> bool {
+    !forced_login && dev_token.is_empty()
 }
 
 /// Pure capture boundary shared by actual boot and owner bootstrap regression fixtures.
@@ -781,10 +795,10 @@ pub(crate) unsafe fn construct(
     }
     plx_base::surface::probe(win);
     // vsync on → the frame rate locks to the panel refresh. `/tmp/plxnative-novsync` uncaps it so
-    // `fps=` reports the true GPU render rate. WSLg's X11/GLX swap accepts interval 1 without
-    // blocking, so the software budget in `run` follows the same switch.
+    // `fps=` reports the true GPU render rate. WSLg's X11/GLX swap and SDL's offscreen driver accept
+    // interval 1 without blocking, so the software budget in `run` follows the same switch.
     // A frame dump never waits on the display: every iteration is a render, at swap interval 0 and
-    // with the Linux software pacer off (`vsync_enabled` also gates `wslg_frame_pacing`).
+    // with the Linux software pacer off (`vsync_enabled` also gates `soft_frame_pacing`).
     #[cfg(all(feature = "hostsim", feature = "devtriggers"))]
     let dumping = crate::dev::framedump::requested();
     #[cfg(not(all(feature = "hostsim", feature = "devtriggers")))]
@@ -792,9 +806,11 @@ pub(crate) unsafe fn construct(
     let vsync_enabled = !dumping && (controlled || !crate::dev::scenarios::novsync_armed());
     SDL_GL_SetSwapInterval(if vsync_enabled { 1 } else { 0 });
     #[cfg(all(feature = "hostsim", target_os = "linux"))]
-    let wslg_frame_pacing = vsync_enabled
-        && std::env::var_os("WSL_DISTRO_NAME").is_some()
-        && std::env::var("SDL_VIDEODRIVER").as_deref() == Ok("x11");
+    let soft_frame_pacing = vsync_enabled
+        && super::window_activity::swap_ignores_vsync(
+            std::env::var_os("WSL_DISTRO_NAME").is_some(),
+            std::env::var("SDL_VIDEODRIVER").ok().as_deref(),
+        );
     {
         let r = glGetString(GL_RENDERER);
         let v = glGetString(GL_VERSION);
@@ -1142,7 +1158,12 @@ pub(crate) unsafe fn construct(
     }
     };
     // Controlled Home constructs its App before executing the same bootstrap command path.
-    let boot_to = if controlled { BootTo::Home } else {
+    let boot_to = if controlled {
+        BootTo::Home
+    } else if dispatcharr_boot(forced_login, &dev_token) {
+        log("boot: Dispatcharr setup");
+        BootTo::Setup
+    } else {
         activate_session(&mut bridge, &mut pages, &mut super::recorder::Recplay::Off)
     };
     if !controlled {
@@ -1437,8 +1458,9 @@ pub(crate) unsafe fn construct(
     let acct_tried = false; // dev: /tmp/plxnative-acct opens the profile menu once
     let ptr = Pointer::IDLE;
 
-    // Initial route from the boot gate: Login when we have no usable creds, Profiles for the
-    // boot who's-watching picker, else Home.
+    // Initial route from the boot gate: Setup on an ordinary boot (`dispatcharr_boot`); on the
+    // developer's Plex boot, Login when we have no usable creds, Profiles for the boot
+    // who's-watching picker, else Home.
     //
     // …and Home is intercepted by the first-run question when this profile has never been
     // asked it and the roster holds a source at all — the account holder or a managed profile, one
@@ -1488,6 +1510,7 @@ pub(crate) unsafe fn construct(
         // soon as the account is authorized — earlier than here, and before the picker.
         BootTo::Login => AppArg::Login,
         BootTo::Profiles => AppArg::Profiles,
+        BootTo::Setup => AppArg::Setup,
     };
     // (dev: /tmp/plxnative-acct used to open the profile menu HERE, beside a
     // `route = Route::Account { over: BarHost::Home }`. The menu is a `ModalStack` surface since
@@ -1595,7 +1618,7 @@ pub(crate) unsafe fn construct(
         remote,
         win,
         #[cfg(all(feature = "hostsim", target_os = "linux"))]
-        wslg_frame_pacing,
+        soft_frame_pacing,
         t0,
         instr,
         measure_fault_logged: false,

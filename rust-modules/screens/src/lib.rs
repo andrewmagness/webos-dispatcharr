@@ -39,3 +39,5 @@ pub mod profiles;
 pub mod registry;
 pub mod settings;
 pub mod preferences;
+pub mod setup; // Dispatcharr sign-in: the boot page while no account is stored
+pub mod guide; // the Dispatcharr guide: channels against time, the root once an account is stored

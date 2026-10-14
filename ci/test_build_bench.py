@@ -96,6 +96,7 @@ if "--no-run" in args:
     art('/net', 'plx_net', '0.0.0')
     art('/ui', 'plx_ui', '0.0.0')
     art('/plex', 'plx_plex', '0.0.0')
+    art('/dispatcharr', 'plx_dispatcharr', '0.0.0')
     art('/telemetry', 'plx_telemetry', '0.0.0')
     art('/data', 'plx_data', '0.0.0')
     art('/session', 'plx_session', '0.0.0')

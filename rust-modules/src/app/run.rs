@@ -110,7 +110,7 @@ pub(crate) unsafe fn run(app: &mut App) {
         watchdog.advance();
         let _frame_scope = plx_base::task::FrameScope::enter();
         #[cfg(all(feature = "hostsim", target_os = "linux"))]
-        let wslg_frame_budget = app.wslg_frame_pacing.then(super::window_activity::WslgFrameBudget::begin);
+        let soft_frame_budget = app.soft_frame_pacing.then(super::window_activity::SoftFrameBudget::begin);
         // Resolve the control row ONCE per iteration, before the event pump, and pass this
         // value to input, update and draw alike. `player_hud::slot()` reads `playpos_ns`, which
         // LG's media thread writes and `player::pump` advances mid-iteration — deriving it per
@@ -287,7 +287,7 @@ pub(crate) unsafe fn run(app: &mut App) {
             app,
             fr,
             #[cfg(all(feature = "hostsim", target_os = "linux"))]
-            wslg_frame_budget,
+            soft_frame_budget,
         );
         if fr.present { watchdog.presented(); }
         report(app, fr);
@@ -532,7 +532,7 @@ unsafe fn present_and_swap(
     app: &mut App,
     fr: &mut Frame,
     #[cfg(all(feature = "hostsim", target_os = "linux"))]
-    wslg_frame_budget: Option<super::window_activity::WslgFrameBudget>,
+    soft_frame_budget: Option<super::window_activity::SoftFrameBudget>,
 ) {
     if fr.present {
         // The dump's full prewarm drain and pre-draw debt sample, after the takes and before the draw.
@@ -626,7 +626,7 @@ unsafe fn present_and_swap(
         #[cfg(feature = "devtriggers")]
         plx_ui::card_motion_metrics::presented(fr.now);
         #[cfg(all(feature = "hostsim", target_os = "linux"))]
-        if let Some(budget) = wslg_frame_budget {
+        if let Some(budget) = soft_frame_budget {
             budget.finish();
         }
     } else {
@@ -2012,6 +2012,11 @@ pub(super) fn reduce_navigation_request(request: plx_screens::registry::LoopReq,
         // Root BACK belongs to platform Home; first-run Onboard BACK has an in-app destination.
         plx_screens::registry::LoopReq::BackAtRoot => back_at_root(),
         plx_screens::registry::LoopReq::OnboardBack => enter_profiles_from_onboard(pages),
+        // The Dispatcharr pages: the Guide and Setup each become the root (nothing of the page
+        // they replace is kept to come back to), and the Server page is pushed over the Guide.
+        plx_screens::registry::LoopReq::DispatcharrGuide => super::bridge::nav_root(pages, AppArg::Guide),
+        plx_screens::registry::LoopReq::DispatcharrSetup => super::bridge::nav_root(pages, AppArg::Setup),
+        plx_screens::registry::LoopReq::DispatcharrAccount => super::bridge::nav_push(pages, AppArg::Server),
         other => return Err(other),
     }
     Ok(())
@@ -2028,7 +2033,10 @@ fn loop_requests(app: &mut App) {
             // and the one the 2026-09-03 rule could not reach until this phase — see the key
             // ladder's dispatcher arm for why a `Popover` could not tell the two BACKs apart.
             plx_screens::registry::LoopReq::BackAtRoot |
-            plx_screens::registry::LoopReq::OnboardBack => unreachable!("root request reduced above"),
+            plx_screens::registry::LoopReq::OnboardBack |
+            plx_screens::registry::LoopReq::DispatcharrGuide |
+            plx_screens::registry::LoopReq::DispatcharrSetup |
+            plx_screens::registry::LoopReq::DispatcharrAccount => unreachable!("navigation request reduced above"),
             // Privacy & data → Delete all local data, confirmed. The sweep signs the account out,
             // so the surface goes with the screen under it: there is no host left for its
             // dismissal fade to run over, which is what `settings::hide()` used to say by hand.
@@ -2663,6 +2671,12 @@ pub(crate) unsafe fn report(app: &mut App, fr: &mut Frame) {
                 // with no phase change of its own — `focusprobe::Screen::Login`'s own doc says
                 // why `focus_record().is_some()` decodes it exactly, the same one-element read
                 // `Route::Profiles`/`Route::Onboard` already do below.
+                AppArg::Setup | AppArg::Server => crate::focusprobe::Screen::Setup {
+                    elem: app.pages.focus_record().map_or(-1, |(_, elem, _)| elem as i32),
+                },
+                AppArg::Guide => crate::focusprobe::Screen::Guide {
+                    elem: app.pages.focus_record().map_or(-1, |(_, elem, _)| elem as i64),
+                },
                 AppArg::Login => crate::focusprobe::Screen::Login {
                     phase: app.bridge.auth_read().0.phase,
                     has_control: app.pages.focus_record().is_some(),
@@ -3147,7 +3161,7 @@ mod lifecycle_regression_tests {
             remote: Default::default(),
             win: Default::default(),
             #[cfg(target_os = "linux")]
-            wslg_frame_pacing: false,
+            soft_frame_pacing: false,
             t0: Default::default(),
             instr: plx_base::diag::heartbeat::Instruments::new(false, 22.0),
             scenarios: crate::dev::scenarios::Scenarios {

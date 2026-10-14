@@ -77,8 +77,8 @@ pub enum DispatcharrCmd {
     /// Read the stored account. Answers `SignedOut` or `Connected`, then — when connected and
     /// `lineup` asks for it — the `Lineup` the key opens.
     Load { lineup: bool, reply: std::sync::mpsc::Sender<SetupOutcome> },
-    /// Sign in with what was typed, store the key, then read the lineup. Answers `Failed`,
-    /// `SaveFailed`, or `Connected` and then `Lineup`.
+    /// Sign in with what was typed and store the key. Answers `Failed`, `SaveFailed` or `Connected`
+    /// (the boot page then hands over to the Guide, which reads the lineup itself).
     SignIn { address: String, username: String, password: String, reply: std::sync::mpsc::Sender<SetupOutcome> },
     /// Forget the account. Answers `SignedOut`.
     SignOut { reply: std::sync::mpsc::Sender<SetupOutcome> },

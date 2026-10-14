@@ -31,6 +31,19 @@ def main():
     shutil.rmtree(out, ignore_errors=True)
 
 
+def sanitizer_launcher(name):
+    """The prefix a sanitizer binary is run under. ThreadSanitizer's runtime in GCC 13 assumes the
+    smaller address-space layout older kernels randomised within: on a Linux kernel whose
+    `vm.mmap_rnd_bits` is 32 (Ubuntu 24.04's 6.x default) a randomly placed mapping lands in a
+    range it reserves, and it dies with "FATAL: ThreadSanitizer: unexpected memory mapping" — 10 of
+    40 runs on an x86_64 Ubuntu host, measured 2026-10-14, 0 of 40 under `setarch -R`. The failure
+    also hit the runtime probe below and turned TSan into a silent SKIP. Disabling ASLR for that
+    one process is the runtime's documented workaround; nothing under test depends on layout."""
+    if name == 'tsan' and platform.system() == 'Linux' and shutil.which('setarch'):
+        return ['setarch', platform.machine(), '-R']
+    return []
+
+
 def run_all(out):
     cc = os.environ.get('CC', 'cc')
     flags = ['-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread', '-g', '-O1']
@@ -61,8 +74,9 @@ def run_all(out):
         built = subprocess.run([cc, *flags, f'-fsanitize={sanitizer}', str(probe), '-o', str(exe)],
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         supported = built.returncode == 0
+        launch = sanitizer_launcher(name)
         if supported:
-            runtime = subprocess.run([str(exe)], stdout=subprocess.PIPE,
+            runtime = subprocess.run([*launch, str(exe)], stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, text=True, timeout=30)
             supported = runtime.returncode == 0
         if not supported:
@@ -73,7 +87,7 @@ def run_all(out):
         binary = out / f'auxv-{name}'
         run([cc, *flags, f'-fsanitize={sanitizer}', source, '-o', binary])
         for case in CASES:
-            run([binary, case])
+            run([*launch, binary, case])
         print(f'PASS: {name}, {len(CASES)} cases')
 
     original = (ROOT / 'src/compat/getauxval.c').read_text()

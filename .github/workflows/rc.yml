@@ -1,6 +1,6 @@
 name: Release candidate
 
-# A release CANDIDATE: the stable package (`com.beb.plxnative`) of a version that has not shipped,
+# A release CANDIDATE: the stable package (`com.magness.dispatcharrtv`) of a version that has not shipped,
 # built by the same pipeline as a release (`build-package.yml`, production telemetry, every gate)
 # and published as a GitHub prerelease for people to install and try before the release is cut.
 # `ci/rc.py`'s module doc is the full account; the short one:
@@ -191,9 +191,9 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           # Named for the candidate: every candidate of one version would otherwise download as the
-          # same com.beb.plxnative_X.Y.Z_arm.ipk.
+          # same com.magness.dispatcharrtv_X.Y.Z_arm.ipk.
           ipk="plxnative-v${LABEL}.ipk"
-          cp raw/com.beb.plxnative_*_arm.ipk "dist/$ipk"
+          cp raw/com.magness.dispatcharrtv_*_arm.ipk "dist/$ipk"
           ( cd dist && sha256sum "$ipk" > rc.sha256 )
           cp raw/ffmpeg-*.tar.xz raw/build-ffmpeg.sh dist/
           cp raw/plxnative-source-*.tar.gz* dist/

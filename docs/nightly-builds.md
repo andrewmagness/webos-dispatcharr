@@ -72,7 +72,7 @@ A package installed this way does not update itself. Install the next one the sa
 
 ## What is different about a nightly
 
-- **Its own app.** Its id is `com.beb.plxnative.nightly`: separate tile, separate sign-in,
+- **Its own app.** Its id is `com.magness.dispatcharrtv.nightly`: separate tile, separate sign-in,
   separate saved state. Nothing is shared with the regular app.
 - **Untested on a TV**, as above.
 - **Error reports go elsewhere.** If you have turned on crash reports or usage analytics, a nightly

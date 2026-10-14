@@ -133,8 +133,8 @@ it makes a mis-set item a named setup error instead of a mystery failure.
 
 ## Which install it drives (`--flavor`)
 
-Three builds can sit on one television: **`com.beb.plxnative`**, the app users install,
-**`com.beb.plxnative.debug`**, the developer build beside it, and **`com.beb.plxnative.nightly`**,
+Three builds can sit on one television: **`com.magness.dispatcharrtv`**, the app users install,
+**`com.magness.dispatcharrtv.debug`**, the developer build beside it, and **`com.magness.dispatcharrtv.nightly`**,
 the nightly build — each with its own launcher tile, its own sign-in, its own runtime files. They
 are separate apps to SAM, and a run has to drive exactly one of them end to end.
 
@@ -163,8 +163,8 @@ the other app's log, which is *plausible wrong data*, not a clean failure.
 The app's **first** log line names the install that wrote it, before anything can fail:
 
 ```
-install: id=com.beb.plxnative.debug flavour=debug runtime=/tmp/com.beb.plxnative.debug features=dev APPID_env=<value|unset>
-appdir: /media/developer/apps/usr/palm/applications/com.beb.plxnative.debug (from current_exe)
+install: id=com.magness.dispatcharrtv.debug flavour=debug runtime=/tmp/com.magness.dispatcharrtv.debug features=dev APPID_env=<value|unset>
+appdir: /media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.debug (from current_exe)
 ```
 
 `run.py` grades it as the log arrives and **aborts the whole run**, once and by name, if `id=` is
@@ -194,7 +194,7 @@ dev build on the stable id without `ALLOW_DEV_ON_STABLE=1`, so that install *is*
 alone — including its running app. **`pidof plxnative` is no longer a liveness test**: it returns
 two pids, in an order busybox does not promise. Use `fuser <appdir>/plxnative`, or resolve
 `readlink /proc/<pid>/exe` per pid. And any match on the app id must be **anchored on a delimiter**:
-`com.beb.plxnative` is a prefix of `com.beb.plxnative.debug`.
+`com.magness.dispatcharrtv` is a prefix of `com.magness.dispatcharrtv.debug`.
 
 ## Security
 

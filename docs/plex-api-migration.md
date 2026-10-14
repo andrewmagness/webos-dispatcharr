@@ -20,7 +20,7 @@
 >   with it: `GET /identity` (`machine_identity`) and `POST /playQueues` (`create_play_queue`,
 >   via a new `Client::post_json`; `post_void` carries the timeline).
 > - **The playback identity moved into `Client`** (`playback_identity` + the field values that
->   were `route::DEVICE_ID`/`identity_qs`) — the old dead "com.beb.plxnative/Generic" field
+>   were `route::DEVICE_ID`/`identity_qs`) — the old dead "com.magness.dispatcharrtv/Generic" field
 >   values are gone; PMS playback keys on the fixed device UUID as before.
 > - **`TBASE` died differently than planned**: instead of a stored offset-free query string,
 >   `route` keeps a `CUR_REMUX` flavor flag and rebuilds the identical `TranscodeSpec` from
@@ -472,7 +472,7 @@ migration): `section_items_paged`, `metadata_many`, `all_leaves`, `continue_watc
 
 2. **Transcode `X-Plex-Client-Identifier`.** Today `route::transcode_base` sends
    `X-Plex-Client-Identifier={session}` (= `plxnative-{rk}`) on decision/start (route.rs:173).
-   `Client::transcode_query` sends `X-Plex-Client-Identifier=self.client_id` (`com.beb.plxnative`)
+   `Client::transcode_query` sends `X-Plex-Client-Identifier=self.client_id` (`com.magness.dispatcharrtv`)
    while `session`/`X-Plex-Session-Identifier` stay `plxnative-{rk}`. Confirm the transcode still
    registers and streams after R3/R4/R6 (this is the value the design deliberately changed; if PMS
    ties the session to the client-id, revert `transcode_query` to use `session` there).

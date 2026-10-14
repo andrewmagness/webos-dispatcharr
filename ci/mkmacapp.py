@@ -156,7 +156,7 @@ def write_plist(contents: Path, ver: str):
         "CFBundleName": "PlxNative",
         "CFBundleDisplayName": "PlxNative",
         "CFBundleExecutable": "PlxNative",
-        "CFBundleIdentifier": "com.beb.plxnative",
+        "CFBundleIdentifier": "com.magness.dispatcharrtv",
         "CFBundleIconFile": "AppIcon",
         "CFBundleInfoDictionaryVersion": "6.0",
         "CFBundlePackageType": "APPL",

@@ -1273,7 +1273,7 @@ mod delete_all_tests {
         fn persistent(&self) -> Vec<std::path::PathBuf> {
             ["lastplace.json", "telemetry.json", "telemetry-spool.bin", "telemetry-crashmark.json"]
                 .iter()
-                .map(|name| self.0.join("persistent").join(format!(".com.beb.plxnative.debug-{name}")))
+                .map(|name| self.0.join("persistent").join(format!(".com.magness.dispatcharrtv.debug-{name}")))
                 .collect()
         }
         fn runtime(&self) -> std::path::PathBuf {

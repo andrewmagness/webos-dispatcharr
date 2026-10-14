@@ -1,7 +1,7 @@
 # Two installs on one television
 
 **This document predates the nightly flavour.** A third flavour, `FLAVOR=nightly`
-(`com.beb.plxnative.nightly`, port 8912), has since landed, and nightly is the one flavour that
+(`com.magness.dispatcharrtv.nightly`, port 8912), has since landed, and nightly is the one flavour that
 feeds a codegen input — `PLX_CHANNEL` / `PLX_NIGHTLY_DATE` into `build.rs`'s reported version. See
 `docs/agent-reference.md` for the current account; the body below still only describes stable and
 debug.
@@ -22,7 +22,7 @@ runtime root, and no codegen input anywhere. `pkg/plxnative` is still one artifa
 
 ## 1. What this prevents
 
-`make deploy` scp's a binary into `/media/developer/apps/usr/palm/applications/com.beb.plxnative/`.
+`make deploy` scp's a binary into `/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv/`.
 That directory is the app the household watches with. Every deploy overwrote it — with a debug
 build, with a half-finished feature, with whatever was on the branch — and there was no way to keep
 a working copy while developing, because there was exactly one place a copy could go.
@@ -37,10 +37,10 @@ So: two ids, two installs, two tiles.
 
 | | stable | debug |
 | --- | --- | --- |
-| app id | `com.beb.plxnative` | `com.beb.plxnative.debug` |
-| install dir | `…/applications/com.beb.plxnative` | `…/applications/com.beb.plxnative.debug` |
-| runtime root | `/tmp` | `/tmp/com.beb.plxnative.debug` |
-| session file | `/media/developer/com.beb.plxnative-auth.json` | `/media/developer/com.beb.plxnative.debug-auth.json` |
+| app id | `com.magness.dispatcharrtv` | `com.magness.dispatcharrtv.debug` |
+| install dir | `…/applications/com.magness.dispatcharrtv` | `…/applications/com.magness.dispatcharrtv.debug` |
+| runtime root | `/tmp` | `/tmp/com.magness.dispatcharrtv.debug` |
+| session file | `/media/developer/com.magness.dispatcharrtv-auth.json` | `/media/developer/com.magness.dispatcharrtv.debug-auth.json` |
 | launcher title | `PlxNative` | `PlxNative debug` |
 | launcher artwork | `pkg/icon.png` | `pkg/dev/icon.png` (amber DEV bar; nightly: `pkg/nightly/`, grey NIGHTLY bar) |
 | plex.tv device name | `PlxNative (LG TV)` | `PlxNative debug (LG TV)` |
@@ -60,10 +60,10 @@ learn any of this, and they are real echo recipes:
 
 ```sh
 make -s print-flavor   FLAVOR=debug     # debug
-make -s print-appid    FLAVOR=debug     # com.beb.plxnative.debug
-make -s print-appdir   FLAVOR=debug     # /media/developer/apps/usr/palm/applications/com.beb.plxnative.debug
-make -s print-rundir   FLAVOR=debug     # /tmp/com.beb.plxnative.debug
-make -s print-eventlog FLAVOR=debug     # /tmp/com.beb.plxnative.debug/plxnative-events.log
+make -s print-appid    FLAVOR=debug     # com.magness.dispatcharrtv.debug
+make -s print-appdir   FLAVOR=debug     # /media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.debug
+make -s print-rundir   FLAVOR=debug     # /tmp/com.magness.dispatcharrtv.debug
+make -s print-eventlog FLAVOR=debug     # /tmp/com.magness.dispatcharrtv.debug/plxnative-events.log
 make -s print-appport  FLAVOR=debug     # 8911  (the capture listener's port — §3.1)
 make -s print-tv                        # the television's address, expanded
 ```
@@ -74,7 +74,7 @@ then fails, and the tool reports "TV unreachable" against a television that is a
 `tools/tv-session.sh`'s `tv_host()` documents that trap because it hit it.
 
 An unknown value is a parse-time `$(error)`, not a fallback. `make FLAVOR=stabel deploy` would
-otherwise mint a third registered app called `com.beb.plxnative.stabel` on the television — LG's id
+otherwise mint a third registered app called `com.magness.dispatcharrtv.stabel` on the television — LG's id
 charset accepts it and nothing downstream objects — and the symptom is a mystery tile on a TV
 rather than a message on a terminal.
 
@@ -121,7 +121,7 @@ Two consequences, and they are the reason for the design rather than side effect
   account); a compiled-in id would have added a fresh axis of exactly that, on top of the
   `RELEASE=1` axis that already deletes the binary at parse time to stay honest.
 - **A mis-deployed binary tells the truth.** Copy the debug build into the stable directory by hand
-  and it identifies as `com.beb.plxnative`, uses `/tmp`, reads the stable session file and puts the
+  and it identifies as `com.magness.dispatcharrtv`, uses `/tmp`, reads the stable session file and puts the
   stable id in its Load payload. It is in the wrong place, but it is not *lying about where it is*,
   which is the difference between a bug you can see and a log you cannot trust.
 
@@ -297,7 +297,7 @@ It is the one surface in `dev.rs` that names no path at all.
 A second install's root named `/tmp/plxnative-debug` would therefore sit in `/tmp` reading, to the
 *other* install, as a permanently armed trigger — silently changing which screen the released app
 boots to, with no line in any log. The full app id contains no `plxnative-`, so
-`/tmp/com.beb.plxnative.debug` cannot. That is the first reason.
+`/tmp/com.magness.dispatcharrtv.debug` cannot. That is the first reason.
 
 The second is independent, because a failure this quiet deserves two: `any_trigger_present` now
 also requires the entry to be a **file**, so a directory matching the prefix cannot arm anything
@@ -305,15 +305,15 @@ whatever it is called. The host suite grades it (`dev.rs::a_directory_is_not_an_
 holding `testlock::serial()` — the runtime root is a crate global in exactly the sense that lock
 exists for).
 
-### 4.2 `com.beb.plxnative` is a PREFIX of `com.beb.plxnative.debug`
+### 4.2 `com.magness.dispatcharrtv` is a PREFIX of `com.magness.dispatcharrtv.debug`
 
-Any match on the app id must be **anchored on a delimiter**. A bare `grep com.beb.plxnative`,
-`case … in com.beb.plxnative*)`, or a `startswith` matches both installs and reports the wrong one
+Any match on the app id must be **anchored on a delimiter**. A bare `grep com.magness.dispatcharrtv`,
+`case … in com.magness.dispatcharrtv*)`, or a `startswith` matches both installs and reports the wrong one
 — or kills it.
 
 This is the same shape `src/main.c:57-61` already documents from the other side: the crash tracer
 matches `/proc/self/maps` lines on `/plxnative\n` and `/plxnative ` rather than on the app-directory
-name, precisely because the directory is *itself* called `…com.beb.plxnative/` and a bare substring
+name, precisely because the directory is *itself* called `…com.magness.dispatcharrtv/` and a bare substring
 test would also match every library deployed beside the binary.
 
 Three scopes are now three different questions, and picking the wrong one is how a tool grades the
@@ -415,8 +415,8 @@ left ungraded.
 fail:
 
 ```
-install: id=com.beb.plxnative.debug flavour=debug runtime=/tmp/com.beb.plxnative.debug features=dev APPID_env=<value|unset>
-appdir: /media/developer/apps/usr/palm/applications/com.beb.plxnative.debug (from current_exe)
+install: id=com.magness.dispatcharrtv.debug flavour=debug runtime=/tmp/com.magness.dispatcharrtv.debug features=dev APPID_env=<value|unset>
+appdir: /media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.debug (from current_exe)
 ```
 
 It exists because none of the obvious witnesses work. Both binaries are named `plxnative`, so
@@ -440,7 +440,7 @@ session with the set; several are answerable from one run's event log.
    so no mechanism is claimed here; §7 grades both halves. This paragraph used to say the argument
    locates the app's own compositor window, which was invented — the same sentence `engine.rs`'s
    `@APPID@` comment now refuses to make.
-   Both ids now say `com.beb.plxnative.debug`. If LG's stack keys on the *registered* id and finds
+   Both ids now say `com.magness.dispatcharrtv.debug`. If LG's stack keys on the *registered* id and finds
    it, this is fine; if anything keys on a hardcoded id, or on a `getenv("APPID")` that disagrees
    with ours, it is not.
    **The failure shape is audio over a black video plane, with no error line anywhere** — exactly
@@ -458,7 +458,7 @@ session with the set; several are answerable from one run's event log.
    *Settled by:* the `APPID_env=` field of the boot `install:` line, in any run's log, on either
    install. `unset` is as interesting an answer as a value, and a value that is *not* the id we
    were installed as is the most interesting of the three.
-3. **Does a second LS2 role file appear?** `/var/palm/ls2-dev/roles/pub/com.beb.plxnative.json`
+3. **Does a second LS2 role file appear?** `/var/palm/ls2-dev/roles/pub/com.magness.dispatcharrtv.json`
    exists for the stable install and grants `com.webos.media.client.*`, `com.webos.rm.client.*` and
    `com.webos.pipeline.*` (`docs/distribution.md` §3.5). The Dev Mode installer writes it; whether
    `dev/install` writes a second one keyed on the flavoured id has never been observed.

@@ -406,7 +406,7 @@ rougher, because the Kawase tap offsets scale with the source while the bilinear
 > screens, making the difference between them the screen rather than the class being priced.
 >
 > **The paths below name the STABLE install's runtime root.** A flavoured install puts the same
-> names under `$(make -s print-rundir FLAVOR=<f>)` — `/tmp/com.beb.plxnative.debug` at the tracked
+> names under `$(make -s print-rundir FLAVOR=<f>)` — `/tmp/com.magness.dispatcharrtv.debug` at the tracked
 > `FLAVOR ?= debug` default — so pasted verbatim they arm one install while `make run` launches the
 > other, and every leg is then measured on an unarmed screen. See `docs/two-installs.md`.
 >
@@ -1543,7 +1543,7 @@ exemption from the "every changed source refreshes each present" rule, and the a
 dithers every frame. All 27 `backdrop::` tests and the full `cargo test --lib` (3777 passed, 1
 ignored, 0 failed) stay green; `cargo +nightly check --lib --no-default-features` stays clean.
 
-**Re-measured on the TV** (same session, `com.beb.plxnative.debug`, panel off, muted, md5-verified
+**Re-measured on the TV** (same session, `com.magness.dispatcharrtv.debug`, panel off, muted, md5-verified
 deploys), `fps:modal-100`:
 
 | build | run | cycles>20ms | p50 | p95 | max | rss growth |

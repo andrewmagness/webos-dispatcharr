@@ -49,7 +49,7 @@ no `wakeonlan` binary on a stock Mac) and working SSH auth to the TV.
   `make deploy`, md5-compare before trusting the binary:
   `md5 -q pkg/plxnative` vs `ssh root@TV "md5sum $(make -s print-appdir FLAVOR=<f>)/plxnative"`.
   Spell the app directory that way rather than eliding it: there are two installs on this
-  television — `com.beb.plxnative` and `com.beb.plxnative.debug`, the latter being what an
+  television — `com.magness.dispatcharrtv` and `com.magness.dispatcharrtv.debug`, the latter being what an
   unflavoured `make deploy` targets — and a hand-typed path compares the wrong one without
   erroring. (`make -s print-*` is a real recipe and side-effect free; **never `make -p`**, which
   prints unexpanded definitions and hands you the literal `$(strip $(shell tools/tv-config.sh host …))`.)

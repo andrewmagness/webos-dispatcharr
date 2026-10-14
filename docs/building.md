@@ -27,7 +27,7 @@ make setup-env
 rustup toolchain install nightly --component rust-src --component clippy
 brew install cmake sshpass        # or your distribution's equivalent
 make                              # builds pkg/plxnative — a developer build
-make ipk                          # pkg/com.beb.plxnative.debug_<version>_arm.ipk
+make ipk                          # pkg/com.magness.dispatcharrtv.debug_<version>_arm.ipk
 ```
 
 ## Disk, and the build cache
@@ -53,7 +53,7 @@ fresh clone gets its own prefix in seconds rather than minutes.
 ## Two flavours, and the default is the developer one
 
 That is why the filename above says `.debug`. The app can be installed twice on one television:
-`com.beb.plxnative`, the id in every release and what users install, and `com.beb.plxnative.debug`
+`com.magness.dispatcharrtv`, the id in every release and what users install, and `com.magness.dispatcharrtv.debug`
 beside it, with its own launcher tile, sign-in and log. `FLAVOR` chooses which one every TV-facing
 target talks to, and the checked-in default is `debug`.
 
@@ -62,7 +62,7 @@ command typed from muscle memory should be able to overwrite it. So the shippabl
 asked for by name:
 
 ```sh
-make FLAVOR=stable RELEASE=1 ipk   # pkg/com.beb.plxnative_<version>_arm.ipk — what a release publishes
+make FLAVOR=stable RELEASE=1 ipk   # pkg/com.magness.dispatcharrtv_<version>_arm.ipk — what a release publishes
 ```
 
 `make FLAVOR=stable ipk` on its own is refused: the stable id is release-only. Add

@@ -99,7 +99,7 @@ pub struct Client {
     host: String,      // "192.0.2.10"  (numeric; passed straight to http_get/http_open)
     port: i32,         // 32400
     token: String,     // X-Plex-Token value
-    client_id: String, // X-Plex-Client-Identifier — stable device id ("com.beb.plxnative")
+    client_id: String, // X-Plex-Client-Identifier — stable device id ("com.magness.dispatcharrtv")
     product: String,   // "plxnative"
     version: String,   // "1"
     platform: String,  // "Generic"
@@ -109,7 +109,7 @@ impl Client {
     pub fn new(host: &str, port: i32, token: &str) -> Client {
         Client {
             host: host.to_owned(), port, token: token.to_owned(),
-            client_id: "com.beb.plxnative".into(),
+            client_id: "com.magness.dispatcharrtv".into(),
             product: "plxnative".into(), version: "1".into(), platform: "Generic".into(),
         }
     }

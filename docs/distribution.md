@@ -53,7 +53,7 @@ Native is first-class — Moonlight (SDL2/C), Kodi, RetroArch and IHSplay all sh
 
 ### 1.1 The submission is one file
 
-Fork `webosbrew/apps-repo`, add `packages/com.beb.plxnative.yml`, open a PR. The filename stem must
+Fork `webosbrew/apps-repo`, add `packages/com.magness.dispatcharrtv.yml`, open a PR. The filename stem must
 equal the manifest `id` (`repogen/lintpkg.py` hard-errors otherwise). Schema is
 `content/schemas/packages/PackageInfo.json`, draft 2020-12, **`additionalProperties: false`**:
 
@@ -62,7 +62,7 @@ title: PlxNative                       # required, <=30 chars
 shortDescription: Native client for Plex Media Server   # optional, <=80 chars
 iconUri: https://…/icon160.png         # required; https: or data:, must return 200
 detailIconUri: https://…/icon320.png   # optional, 320px convention
-manifestUrl: https://github.com/<you>/<repo>/releases/latest/download/com.beb.plxnative.manifest.json
+manifestUrl: https://github.com/<you>/<repo>/releases/latest/download/com.magness.dispatcharrtv.manifest.json
 category: multimedia                   # required
 pool: main                             # required; main = MUST be open source
 requirements:
@@ -83,9 +83,9 @@ the manifest you host yourself.
 `installedSize`. `type` enum includes `native`. Generate it rather than hand-writing it:
 
 ```
-webosbrew-gen-manifest -p pkg/com.beb.plxnative_0.1.0_arm.ipk \
+webosbrew-gen-manifest -p pkg/com.magness.dispatcharrtv_0.1.0_arm.ipk \
   -i https://…/icon160.png -l https://github.com/<you>/<repo> -r false \
-  -o com.beb.plxnative.manifest.json
+  -o com.magness.dispatcharrtv.manifest.json
 ```
 
 (from `webosbrew/dev-toolbox-cli`). It reads id/version/type/title out of the ipk's embedded
@@ -140,7 +140,7 @@ graceful on-device failure, not a `SIGSEGV`.
 has never been run:
 
 ```
-webosbrew-ipk-verify --details --fw-releases '>=4.0, <5.0' pkg/com.beb.plxnative_0.1.0_arm.ipk
+webosbrew-ipk-verify --details --fw-releases '>=4.0, <5.0' pkg/com.magness.dispatcharrtv_0.1.0_arm.ipk
 ```
 
 ### 1.5 The four repository rules — one of which is new and directly relevant
@@ -406,7 +406,7 @@ runtime; denial on a retail/store install falls back to the app-owned 0600 sessi
 not turn root into a requirement.
 
 **Device-proven 2026-08-01 on the 49SM9000PLA.** The running app is `Uid: 6910`, `Gid: 5000`,
-`CapEff: 0`, chrooted to `/var/palm/jail/com.beb.plxnative`, with `libplayerAPIs`, `libAcbAPI`,
+`CapEff: 0`, chrooted to `/var/palm/jail/com.magness.dispatcharrtv`, with `libplayerAPIs`, `libAcbAPI`,
 `libmali`, `libEGL/GLESv2`, `libwayland-webos-client`, `libavformat.so.57` and `libcurl.so.5` all
 mapped from inside that chroot. Root on the dev TV buys the **ssh dev loop**, not app privilege.
 
@@ -428,7 +428,7 @@ groups video,audio,luna,compositor,crashd,se
 ```
 
 The media stack is permitted by an **LS2 role file the Dev Mode installer writes automatically** —
-nothing we declare. On the device, `/var/palm/ls2-dev/roles/pub/com.beb.plxnative.json` grants
+nothing we declare. On the device, `/var/palm/ls2-dev/roles/pub/com.magness.dispatcharrtv.json` grants
 `com.webos.media.client.*`, `com.webos.rm.client.*`, `com.webos.pipeline.*` with in/outbound to
 `com.webos.media`. That is exactly the surface StarfishMediaAPIs needs, and it is why **no
 `requiredPermissions` entry is needed for playback itself** (neither Kodi nor Moonlight declares
@@ -1120,7 +1120,7 @@ between here and a release, and none of them is code:
   executed: no CI run, no Release, no tag. The NDK action's cache and relocate step, the toolbox
   `.deb` download, the pip install, the arm64 runner — all unexecuted. The first run should not be
   the release path.
-- **Write `packages/com.beb.plxnative.yml` in a fork of `webosbrew/apps-repo`** and open the PR.
+- **Write `packages/com.magness.dispatcharrtv.yml` in a fork of `webosbrew/apps-repo`** and open the PR.
   **DRAFTED — `docs/webosbrew-package.yml` is the ready file**; copy it into the fork under that
   name. Schema re-verified against upstream 2026-08-04: required keys are `title`, `iconUri`,
   `manifestUrl`, `category`, `pool`, `description`; `shortDescription` is capped at 80 characters;
@@ -1202,11 +1202,11 @@ be committed, tagged and pushed by hand, which is the sequence this exists to re
 
 ---
 
-## 7b. A release is always `com.beb.plxnative` — and a flavoured artifact must never become one
+## 7b. A release is always `com.magness.dispatcharrtv` — and a flavoured artifact must never become one
 
-Since 2026-08-21 this tree can package two ids. `com.beb.plxnative` is the app users install: it is
+Since 2026-08-21 this tree can package two ids. `com.magness.dispatcharrtv` is the app users install: it is
 the id in every manifest, every channel listing, every release asset name and every `ipk.sha256`.
-`com.beb.plxnative.debug` is the developer build that lives beside it on one television, and it has
+`com.magness.dispatcharrtv.debug` is the developer build that lives beside it on one television, and it has
 no release, no published hash and no listing — ever. `docs/two-installs.md` is the full account;
 what matters here is that the packaging path knows the difference and says so.
 
@@ -1254,9 +1254,9 @@ needs a tty over plain ssh, and given `-i` because the subscription is the only 
 
 ```sh
 luna-send -i -a com.webos.appInstallService luna://com.webos.appInstallService/dev/install \
-  '{"id":"com.beb.plxnative.debug","ipkUrl":"/tmp/com.beb.plxnative.debug_<version>_arm.ipk","subscribe":true}'
+  '{"id":"com.magness.dispatcharrtv.debug","ipkUrl":"/tmp/com.magness.dispatcharrtv.debug_<version>_arm.ipk","subscribe":true}'
 luna-send -i -a com.webos.appInstallService luna://com.webos.appInstallService/dev/remove \
-  '{"id":"com.beb.plxnative.debug","subscribe":true}'
+  '{"id":"com.magness.dispatcharrtv.debug","subscribe":true}'
 ```
 
 `install` **deploys afterwards, deliberately**: `appinstalld` replaces `applications/<id>/`
@@ -1273,7 +1273,7 @@ release is deliberately small:
 
 | | release `vX.Y.Z` | candidate `rc/vX.Y.Z-rc.N` |
 |---|---|---|
-| package id and version | `com.beb.plxnative`, `X.Y.Z` | the same — webOS installs only three integers |
+| package id and version | `com.magness.dispatcharrtv`, `X.Y.Z` | the same — webOS installs only three integers |
 | version the app reports | `X.Y.Z` | `X.Y.Z-rc.N` (Makefile `RC=N`, `build.rs`'s `PLX_CHANNEL=rc` arm) |
 | tag | `vX.Y.Z`, on the line | `rc/vX.Y.Z-rc.N`, on the bump commit, **no branch moves** |
 | GitHub release | latest | prerelease, `--latest=false` |
@@ -1450,11 +1450,11 @@ project whose whole verification philosophy is that the device is the real gate.
 `usr/palm/applications/<id>/appinfo.json` (the *application*) and
 `usr/palm/packages/<id>/packageinfo.json` (the *package*, which tells `appinstalld` what app ids the
 package owns). Ours had only the first. Confirmed against the device: all 12 store apps and **both
-Homebrew Channel apps** on the dev TV carry a `usr/palm/packages/` entry — `com.beb.plxnative` was
+Homebrew Channel apps** on the dev TV carry a `usr/palm/packages/` entry — `com.magness.dispatcharrtv` was
 the only application on the box without one, precisely because it was scp'd rather than installed.
 `webosbrew-ipk-verify` opens that file first and reports the miss as
 
-    Failed to open com.beb.plxnative_0.1.0_arm.ipk: No such file or directory (os error 2)
+    Failed to open com.magness.dispatcharrtv_0.1.0_arm.ipk: No such file or directory (os error 2)
 
 — the *ipk's* name, not the member's, so it reads like a corrupt or missing archive rather than a
 missing member. `ci/mkipk.py` now synthesises it from `pkg/appinfo.json`, keeping the version
@@ -1463,7 +1463,7 @@ single-sourced.
 **Bug 2 — GNU `ar` writes member names LG will not read.** With the descriptor added the verifier
 went green on both 4.x firmwares — and the TV still refused the package:
 
-    AppInstallD TASK_ERROR {"app_id":"com.beb.plxnative","error_code":-5,
+    AppInstallD TASK_ERROR {"app_id":"com.magness.dispatcharrtv","error_code":-5,
                             "error_text":"Failed to extract package"}
 
 GNU `ar` terminates short member names with `/`, so `ar t` on our own ipk showed `debian-binary/`,
@@ -1605,7 +1605,7 @@ tracked, cut from the SAME master by the same script:
 python3 tools/mkicons.py assets/logo-master.png --out-dir=pkg/dev --sizes=80,130 --badge=DEV
 ```
 
-The nightly install (`com.beb.plxnative.nightly`) is a third tile beside both, so it wears its own
+The nightly install (`com.magness.dispatcharrtv.nightly`) is a third tile beside both, so it wears its own
 set, `pkg/nightly/`, in the palette's cool grey (`COOL_200`, `#cdd3dd`) with the derived dark ink —
 cut the same way:
 

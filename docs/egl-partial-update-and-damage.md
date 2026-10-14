@@ -407,7 +407,7 @@ shippable:
 
 > **The `/tmp/plxnative-…` paths below predate the two-install split: they are the STABLE install's
 > runtime root.** A flavoured install puts the same names under `$(make -s print-rundir
-> FLAVOR=<f>)` — `/tmp/com.beb.plxnative.debug` at the tracked `FLAVOR ?= debug` default — so pasted
+> FLAVOR=<f>)` — `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug` default — so pasted
 > verbatim the `ssh` lines arm one install while the `make deploy`/`make run` beside them drive the
 > other, and the probe reports on a screen nothing armed. See `docs/two-installs.md`.
 

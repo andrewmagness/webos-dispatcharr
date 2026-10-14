@@ -171,7 +171,7 @@ this section's rule reads as "the entire compositor branch closes permanently") 
 
 > **The `/tmp/plxnative-…` paths in this section predate the two-install split: they are the STABLE
 > install's runtime root.** A flavoured install puts the same names under `$(make -s print-rundir
-> FLAVOR=<f>)` — `/tmp/com.beb.plxnative.debug` at the tracked `FLAVOR ?= debug` default — so
+> FLAVOR=<f>)` — `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug` default — so
 > pasted as bare `/tmp/…` this arms one install while `make run` launches the other, and every
 > number here is then read off an unarmed screen. The block below is therefore scoped with
 > `R=$(make -s print-rundir)`, which is also what keeps its `rm -f` from reaching across and wiping

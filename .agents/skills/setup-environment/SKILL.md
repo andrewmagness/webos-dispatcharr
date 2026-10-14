@@ -193,8 +193,8 @@ test` stops before it deploys**, saying the app directory does not exist. That i
 correct and it is not a toolchain fault: `make deploy` scp's into an app directory that
 is already registered, while creating an app is appinstalld's job — SAM has to learn the
 id and the per-id LS2 role file has to be written. Three builds live on one TV now
-(`com.beb.plxnative`, what users install, `com.beb.plxnative.debug`, the Makefile's
-**default**, and `com.beb.plxnative.nightly`, the nightly build), so install this one once
+(`com.magness.dispatcharrtv`, what users install, `com.magness.dispatcharrtv.debug`, the Makefile's
+**default**, and `com.magness.dispatcharrtv.nightly`, the nightly build), so install this one once
 and everything after it is a plain `make test`:
 
 ```bash

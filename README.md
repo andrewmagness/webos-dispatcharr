@@ -107,7 +107,7 @@ Set up LG Developer Mode and connect with webOS Dev Manager, then choose:
 - **Install Homebrew Channel first:** get an app catalogue on the TV, then install PlxNative and
   its updates with the remote.
 
-**Already have Homebrew Channel?** Find [PlxNative in its catalogue](https://repo.webosbrew.org/apps/com.beb.plxnative/)
+**Already have Homebrew Channel?** Find [PlxNative in its catalogue](https://repo.webosbrew.org/apps/com.magness.dispatcharrtv/)
 and select **Install**. Skip the computer setup.
 
 **Developer Mode needs periodic renewal.** If it expires and LG disables Developer Mode, apps

@@ -701,7 +701,7 @@ configuration saw the same moving underlay and presented continuously.
 
 > **The `/tmp/plxnative-…` paths in the recipe below predate the two-install split: they are the
 > STABLE install's runtime root.** A flavoured install puts the same names under `$(make -s
-> print-rundir FLAVOR=<f>)` — `/tmp/com.beb.plxnative.debug` at the tracked `FLAVOR ?= debug`
+> print-rundir FLAVOR=<f>)` — `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug`
 > default — so armed as bare `/tmp/…` the sweep never reaches the install `make run` launches, and
 > the row reproduces as its own unloaded control. See `docs/two-installs.md`.
 
@@ -945,7 +945,7 @@ can is the one above: continuous presents, and the frame-time distribution rathe
 
 > **The `/tmp/plxnative-…` paths below are the STABLE install's runtime root**, as in the section
 > above: a flavoured install puts the same names under `$(make -s print-rundir FLAVOR=<f>)` —
-> `/tmp/com.beb.plxnative.debug` at the tracked `FLAVOR ?= debug` default — so armed as bare
+> `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug` default — so armed as bare
 > `/tmp/…` not one of them reaches the install `make run` launches. See `docs/two-installs.md`.
 
 **This is the recipe as it stood, and it can no longer be run.** `/tmp/plxnative-navglass` was

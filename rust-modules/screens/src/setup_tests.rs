@@ -265,20 +265,20 @@ fn a_successful_sign_in_wipes_the_password_and_shows_the_lineup_when_it_lands() 
     assert_eq!(screen.phase, Phase::Connected);
     assert_eq!(reseated_on(&out), Some(SIGN_OUT));
     assert_eq!(screen.fields[2].text(), "", "the password is gone once it has signed in");
-    let copy = screen.connected.as_ref().unwrap().copy();
+    let copy = screen.connected.as_ref().unwrap().lines().join(" | ");
     assert!(copy.contains("http://192.168.1.10:9191") && copy.contains("andrew"), "{copy}");
     assert!(!copy.contains("channel"), "no count before the lineup lands: {copy}");
     reply.send(SetupOutcome::Lineup(Ok(42))).unwrap();
     step(&mut screen, tick(16_000), Some(SIGN_OUT));
-    assert!(screen.connected.as_ref().unwrap().copy().contains("42 channels"));
+    assert_eq!(screen.connected.as_ref().unwrap().lines()[1], "42 channels");
 }
 
 #[test]
 fn a_save_that_ends_at_reboot_says_so() {
     let c = Connected { server: "http://h:9191".into(), username: "u".into(), lineup: Lineup::Channels(1),
         saved: Some(Saved::UntilReboot) };
-    assert!(c.copy().contains(msg::dispatcharr_setup_until_reboot()));
-    assert!(c.copy().contains("1 channel"));
+    assert_eq!(c.lines()[1], "1 channel");
+    assert_eq!(c.lines()[2], msg::dispatcharr_setup_until_reboot());
 }
 
 #[test]

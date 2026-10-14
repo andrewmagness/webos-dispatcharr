@@ -2,7 +2,7 @@
   "dispatcharr.setup.title": "Conectar con Dispatcharr",
   "dispatcharr.setup.copy": "Introduce la dirección de tu servidor Dispatcharr y el usuario y la contraseña con los que inicias sesión en él. Este televisor guarda una clave de API, nunca tu contraseña.",
   "dispatcharr.setup.address": "Dirección del servidor",
-  "dispatcharr.setup.address_example": "192.168.1.10:9191",
+  "dispatcharr.setup.address_example": "Por ejemplo, 192.168.1.10:9191",
   "dispatcharr.setup.username": "Usuario",
   "dispatcharr.setup.password": "Contraseña",
   "dispatcharr.setup.empty_field": "Pulsa OK para escribir",

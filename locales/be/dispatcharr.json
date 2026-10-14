@@ -2,7 +2,7 @@
   "dispatcharr.setup.title": "Падключэнне да Dispatcharr",
   "dispatcharr.setup.copy": "Увядзіце адрас вашага сервера Dispatcharr, а таксама імя карыстальніка і пароль, з якімі вы ў яго ўваходзіце. Тэлевізар захоўвае ключ API, а не ваш пароль.",
   "dispatcharr.setup.address": "Адрас сервера",
-  "dispatcharr.setup.address_example": "192.168.1.10:9191",
+  "dispatcharr.setup.address_example": "Напрыклад, 192.168.1.10:9191",
   "dispatcharr.setup.username": "Імя карыстальніка",
   "dispatcharr.setup.password": "Пароль",
   "dispatcharr.setup.empty_field": "Націсніце OK, каб увесці",

@@ -153,9 +153,10 @@ struct Connected {
 }
 
 impl Connected {
-    /// The narrative copy under the verdict: who and where, then the lineup, then (only when the
-    /// save is not durable) that the TV will ask again after a restart.
-    fn copy(&self) -> String {
+    /// The lines under the verdict, each its own block: who and where, then the lineup, then (only
+    /// when the save is not durable) that the TV will ask again after a restart. Separate blocks,
+    /// not one string with line breaks: `TextView` reads a newline as a space, by design.
+    fn lines(&self) -> Vec<String> {
         let mut lines = vec![msg::dispatcharr_setup_signed_in_as(&self.server, &self.username)];
         match self.lineup {
             Lineup::Pending => {}
@@ -165,7 +166,7 @@ impl Connected {
         if self.saved == Some(Saved::UntilReboot) {
             lines.push(msg::dispatcharr_setup_until_reboot().to_owned());
         }
-        lines.join("\n")
+        lines
     }
 }
 
@@ -580,8 +581,17 @@ impl SetupScreen {
     fn draw_connected<H: AppLike>(&mut self, f: &mut DrawFrame<'_, '_, H>, p: Painter, focus: Option<u32>) {
         let Some(connected) = &self.connected else { return };
         let layout = RouteLayout::screen();
-        let copy = connected.copy();
-        layout.draw_narrative(p, None, msg::dispatcharr_setup_connected(), &copy, theme::size::BODY, f.measure);
+        let lines = connected.lines();
+        let mut y = layout.draw_narrative(p, None, msg::dispatcharr_setup_connected(), &lines[0], theme::size::BODY,
+            f.measure);
+        for line in &lines[1..] {
+            y += theme::space::SM;
+            let size = theme::size::BODY;
+            y += TextView::new(line, size, theme::TEXT_READING)
+                .leading(size as f32 + theme::space::XS)
+                .max_lines(3)
+                .draw(p, Rect::new(layout.narrative.x, y, layout.narrative.w, (layout.action.y - y).max(0.0)));
+        }
         if let Some(rect) = self.rect(SIGN_OUT, f.measure) {
             Button::new(msg::dispatcharr_setup_sign_out_c().as_ptr(), theme::size::BODY, rect)
                 .focused(focus == Some(SIGN_OUT))

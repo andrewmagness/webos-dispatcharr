@@ -2,7 +2,7 @@
   "dispatcharr.setup.title": "Connexion à Dispatcharr",
   "dispatcharr.setup.copy": "Saisissez l'adresse de votre serveur Dispatcharr ainsi que le nom d'utilisateur et le mot de passe avec lesquels vous vous y connectez. Ce téléviseur conserve une clé d'API, jamais votre mot de passe.",
   "dispatcharr.setup.address": "Adresse du serveur",
-  "dispatcharr.setup.address_example": "192.168.1.10:9191",
+  "dispatcharr.setup.address_example": "Par exemple, 192.168.1.10:9191",
   "dispatcharr.setup.username": "Nom d'utilisateur",
   "dispatcharr.setup.password": "Mot de passe",
   "dispatcharr.setup.empty_field": "Appuyez sur OK pour saisir",

@@ -12,8 +12,8 @@
     "description": "Setup field label: the server's address"
   },
   "dispatcharr.setup.address_example": {
-    "value": "192.168.1.10:9191",
-    "description": "Placeholder in the empty address field: an example address, not translated"
+    "value": "For example, 192.168.1.10:9191",
+    "description": "Placeholder in the empty address field: an example address after a translated lead-in"
   },
   "dispatcharr.setup.username": {
     "value": "Username",

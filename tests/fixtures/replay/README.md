@@ -399,3 +399,10 @@ the replay decoder refused (`record JSON/budget`): the offscreen driver's swap i
 simulator presented hundreds of frames a second. The Linux host build now applies its 60 Hz software
 frame budget to `offscreen` as well as WSLg's X11 (`window_activity::swap_ignores_vsync`). Targets
 and Resolve both report SAME with every difference counter at zero on that box.
+
+The Dispatcharr Guide (`AppArg::Guide` and `AppArg::Server`, `guide::SHAPE`, Setup's mode in
+`setup::SHAPE`) moved the state shape from 15830848505533587392 to 12330597747085511303
+(`SCREEN_SHAPES_PIN` `0xe8d0_26d5_2943_05e6`). All three anchors were recorded again on the
+headless Linux box with `tests/focusfp.sh --rec --only 1,6,12` and installed with
+`tools/plxnative-rec rerecord`, anchors retained; Targets and Resolve both report SAME with every
+difference counter at zero.

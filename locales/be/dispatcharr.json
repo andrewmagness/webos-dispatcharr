@@ -48,5 +48,8 @@
   "dispatcharr.guide.favourites": "Абранае",
   "dispatcharr.guide.all_channels": "Усе каналы",
   "dispatcharr.guide.no_favourites": "Абранага пакуль няма",
-  "dispatcharr.guide.no_favourites_reason": "Утрымлівайце OK на канале, каб дадаць яго ў абранае."
+  "dispatcharr.guide.no_favourites_reason": "Утрымлівайце OK на канале, каб дадаць яго ў абранае.",
+  "dispatcharr.setup.resume_on": "Пачынаць з апошняга канала: Так",
+  "dispatcharr.setup.resume_off": "Пачынаць з апошняга канала: Не",
+  "dispatcharr.setup.resume_note": "Калі ўключана, праграма адкрываецца на апошнім праглядзеным канале. НАЗАД вядзе ў Тэлегід."
 }

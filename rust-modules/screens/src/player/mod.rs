@@ -2830,7 +2830,7 @@ mod repair_confirmation_tests {
     fn live() -> plx_media::route::PlaybackSession {
         use plx_media::route::{LiveChannel, LiveLineup, LiveTune};
         let channels = (1..=3)
-            .map(|n| LiveChannel { id: n, number: n.to_string(), name: format!("C{n}"), url: format!("http://192.0.2.1:9191/{n}"),
+            .map(|n| LiveChannel { id: n, uuid: format!("u-{n}"), number: n.to_string(), name: format!("C{n}"), url: format!("http://192.0.2.1:9191/{n}"),
                 logo: None, programmes: Vec::new() })
             .collect();
         let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });

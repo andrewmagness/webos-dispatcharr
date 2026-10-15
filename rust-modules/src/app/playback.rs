@@ -187,7 +187,9 @@ fn tune_channel(
     bridge: &mut super::bridge::Bridge,
 ) {
     plx_media::player::stop_bufferfeed(ps, pa);
+    let uuid = tune.channel().map(|c| c.uuid.clone()).unwrap_or_default();
     if plx_media::route::request_live(ps, tune, plx_dispatcharr::dispatcharr::api::unix_now()) {
+        super::dispatcharr::remember_last(&uuid);
         start_playback(ps, pa, 0, Origin::Here, HUD_LINGER_MS, None, pages, bridge);
     } else {
         log("live: the channel change was refused");

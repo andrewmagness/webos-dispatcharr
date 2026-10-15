@@ -28,31 +28,82 @@ pub(super) fn execute(command: DispatcharrCmd) {
         DispatcharrCmd::Guide { reply } => {
             plx_base::task::spawn_small("dispatcharr guide", move || guide(&reply));
         }
-        DispatcharrCmd::SaveFavourites { favourites } => {
-            let generation = SAVES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            plx_base::task::spawn_small("dispatcharr prefs", move || save_favourites(generation, favourites));
-        }
+        DispatcharrCmd::SaveFavourites { favourites } => update_prefs(PrefsOp::Favourites(favourites)),
+        DispatcharrCmd::SetResume { on } => update_prefs(PrefsOp::Resume(on)),
     }
 }
 
-/// Favourites saves issued, and the newest one written: each save carries the whole list, so a
-/// worker that lost the race to a newer one writes nothing rather than putting the old list back.
-static SAVES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static WRITTEN: std::sync::Mutex<u64> = std::sync::Mutex::new(0);
+/// One change to the viewer's stored choices ([`prefs`]).
+enum PrefsOp {
+    Favourites(Vec<String>),
+    Last(String),
+    Resume(bool),
+}
 
-fn save_favourites(generation: u64, favourites: Vec<String>) {
-    let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
-    if generation < *written {
-        return;
+/// The ordered writer of the viewer's choices: one worker reads the file, applies the change and
+/// writes it, in the order the changes were made, so a last-channel write cannot put back the
+/// favourites a newer save replaced (each op touches its own field of a fresh read).
+static PREFS: std::sync::Mutex<Option<std::sync::mpsc::Sender<PrefsOp>>> = std::sync::Mutex::new(None);
+
+fn update_prefs(op: PrefsOp) {
+    let mut tx = PREFS.lock().unwrap_or_else(|e| e.into_inner());
+    if tx.is_none() {
+        let (send, recv) = std::sync::mpsc::channel::<PrefsOp>();
+        if !plx_base::task::spawn_small("dispatcharr prefs", move || {
+            for op in recv {
+                apply_prefs(op);
+            }
+        }) {
+            plx_base::eventlog::log("dispatcharr: no worker for the viewing preferences; change dropped");
+            return;
+        }
+        *tx = Some(send);
     }
+    if let Some(send) = tx.as_ref() {
+        let _ = send.send(op);
+    }
+}
+
+fn apply_prefs(op: PrefsOp) {
     let account::Loaded::Signed(record, _) = account::load() else { return };
     let server = record.account.server.base();
     let mut p = prefs::load(&server);
-    p.favourites = favourites;
+    let line = match op {
+        PrefsOp::Favourites(favourites) => {
+            p.favourites = favourites;
+            format!("dispatcharr: favourites={}", p.favourites.len())
+        }
+        PrefsOp::Last(uuid) => {
+            p.last = Some(uuid);
+            "dispatcharr: last channel saved".to_owned()
+        }
+        PrefsOp::Resume(on) => {
+            p.resume_on_launch = on;
+            format!("dispatcharr: resume_on_launch={on}")
+        }
+    };
     if prefs::save(&server, &p).is_ok() {
-        *written = generation;
-        plx_base::eventlog::log(&format!("dispatcharr: favourites={}", p.favourites.len()));
+        plx_base::eventlog::log(&line);
     }
+}
+
+/// A live tune landed on channel `uuid`: it is the one the next launch starts on.
+pub(super) fn remember_last(uuid: &str) {
+    if !uuid.is_empty() {
+        update_prefs(PrefsOp::Last(uuid.to_owned()));
+    }
+}
+
+/// Whether this run's first guide has been answered: only that one may resume a channel, so coming
+/// back to the Guide later never tunes on its own.
+static RESUME_OFFERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The channel the first guide of this run starts on, if the viewer kept that on.
+fn resume_for(p: &prefs::Prefs) -> Option<String> {
+    if RESUME_OFFERED.swap(true, std::sync::atomic::Ordering::AcqRel) || !p.resume_on_launch {
+        return None;
+    }
+    p.last.clone()
 }
 
 fn answer<T>(reply: &Sender<T>, outcome: T) {
@@ -73,7 +124,7 @@ fn load(lineup_too: bool, reply: &Sender<SetupOutcome>) {
         account::Loaded::Signed(record, saved) => {
             plx_base::eventlog::log(&format!("dispatcharr: stored account for {}", record.account.server.base()));
             let account = record.account.clone();
-            answer(reply, SetupOutcome::Connected { record, saved });
+            answer(reply, SetupOutcome::Connected { resume_on_launch: prefs::load(&record.account.server.base()).resume_on_launch, record, saved });
             if lineup_too {
                 lineup(&account, reply);
             }
@@ -113,7 +164,7 @@ fn sign_in(address: &str, username: &str, password: String, reply: &Sender<Setup
         if signed.key_generated { "generated" } else { "reused" },
     ));
     // The boot page hands over to the Guide, which reads the lineup itself.
-    answer(reply, SetupOutcome::Connected { record, saved });
+    answer(reply, SetupOutcome::Connected { resume_on_launch: prefs::load(&record.account.server.base()).resume_on_launch, record, saved });
 }
 
 /// Read the lineup behind `account` and answer with its size.
@@ -146,8 +197,9 @@ fn guide(reply: &Sender<GuideOutcome>) {
             ));
             let logos = channels.iter().map(|c| c.logo_id.map(|id| account.logo_url(id))).collect();
             let streams = channels.iter().map(|c| account.stream_url(c)).collect();
-            let favourites = prefs::load(&account.server.base()).favourites;
-            answer(reply, GuideOutcome::Loaded { channels, logos, streams, favourites, guide, fetched_at });
+            let p = prefs::load(&account.server.base());
+            let resume = resume_for(&p);
+            answer(reply, GuideOutcome::Loaded { channels, logos, streams, favourites: p.favourites, resume, guide, fetched_at });
         }
         Err(e) => {
             plx_base::eventlog::log(&format!("dispatcharr: guide failed: {e}"));

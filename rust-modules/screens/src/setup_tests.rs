@@ -268,7 +268,7 @@ fn a_successful_sign_in_wipes_the_password_and_hands_over_to_the_guide() {
     type_into(&mut screen, PASSWORD, "hunter2");
     let (_, out) = step(&mut screen, ScreenEvent::Activate(SIGN_IN), Some(SIGN_IN));
     let Some(DispatcharrCmd::SignIn { reply, .. }) = command(out) else { panic!() };
-    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable }).unwrap();
+    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable, resume_on_launch: true }).unwrap();
     let (_, out) = step(&mut screen, tick(16_000), Some(SIGN_IN));
     assert_eq!(loop_req(&out), Some(LoopReq::DispatcharrGuide));
     assert_eq!(screen.fields[2].text(), "", "the password is gone once it has signed in");
@@ -280,7 +280,7 @@ fn a_stored_account_at_boot_goes_straight_to_the_guide() {
     let mut screen = SetupScreen::new(EntryId(1), InstanceId(1), Mode::Entry);
     let (_, out) = step(&mut screen, ScreenEvent::Mount, None);
     let Some(DispatcharrCmd::Load { reply, .. }) = command(out) else { panic!() };
-    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable }).unwrap();
+    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable, resume_on_launch: true }).unwrap();
     let (_, out) = step(&mut screen, tick(16_000), None);
     assert_eq!(loop_req(&out), Some(LoopReq::DispatcharrGuide));
     assert_eq!(screen.phase, Phase::Loading, "nothing is drawn for the frame the hand-over takes");
@@ -292,11 +292,29 @@ fn server_page() -> (SetupScreen, std::sync::mpsc::Sender<SetupOutcome>) {
     let (_, out) = step(&mut screen, ScreenEvent::Mount, None);
     let Some(DispatcharrCmd::Load { lineup, reply }) = command(out) else { panic!() };
     assert!(lineup, "the Server page shows the lineup");
-    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable }).unwrap();
+    reply.send(SetupOutcome::Connected { record: record(), saved: Saved::Durable, resume_on_launch: true }).unwrap();
     let (_, out) = step(&mut screen, tick(16_000), None);
     assert_eq!(screen.phase, Phase::Connected);
-    assert_eq!(reseated_on(&out), Some(SIGN_OUT));
+    assert_eq!(reseated_on(&out), Some(RESUME), "the page opens on the switch, never on Sign out");
     (screen, reply)
+}
+
+#[test]
+fn the_start_on_the_last_channel_switch_flips_and_is_saved() {
+    let (mut screen, _reply) = server_page();
+    assert!(screen.connected.as_ref().unwrap().resume);
+    assert_eq!(screen.resume_label(), msg::dispatcharr_setup_resume_on_c());
+    let (_, out) = step(&mut screen, ScreenEvent::Activate(RESUME), Some(RESUME));
+    assert!(matches!(command(out), Some(DispatcharrCmd::SetResume { on: false })));
+    assert_eq!(screen.resume_label(), msg::dispatcharr_setup_resume_off_c());
+    let (_, out) = step(&mut screen, ScreenEvent::Activate(RESUME), Some(RESUME));
+    assert!(matches!(command(out), Some(DispatcharrCmd::SetResume { on: true })));
+}
+
+#[test]
+fn the_switch_walks_down_to_sign_out() {
+    let (screen, _reply) = server_page();
+    assert_eq!(screen.elems(), &[RESUME, SIGN_OUT]);
 }
 
 #[test]
@@ -317,7 +335,7 @@ fn the_server_page_names_the_account_then_the_lineup_when_it_lands() {
 
 #[test]
 fn a_save_that_ends_at_reboot_says_so() {
-    let c = Connected { server: "http://h:9191".into(), username: "u".into(), lineup: Lineup::Channels(1),
+    let c = Connected { server: "http://h:9191".into(), username: "u".into(), lineup: Lineup::Channels(1), resume: true,
         saved: Saved::UntilReboot };
     assert_eq!(c.lines()[1], "1 channel");
     assert_eq!(c.lines()[2], msg::dispatcharr_setup_until_reboot());

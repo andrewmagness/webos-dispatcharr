@@ -22,6 +22,9 @@ pub struct LiveProgramme {
 pub struct LiveChannel {
     /// The server's channel id: what the Guide keys its rows by.
     pub id: i64,
+    /// The channel's UUID: what the viewer's choices (favourites, the last channel) are stored by,
+    /// since a server keeps it when it renumbers or renames the channel.
+    pub uuid: String,
     /// The number as a viewer reads and types it (`"2"`, `"2.1"`); empty when it has none.
     pub number: String,
     pub name: String,
@@ -124,7 +127,8 @@ mod tests {
     use super::*;
 
     fn ch(id: i64, number: &str, url: &str) -> LiveChannel {
-        LiveChannel { id, number: number.into(), name: format!("c{id}"), url: url.into(), logo: None, programmes: Vec::new() }
+        LiveChannel { id, uuid: format!("u-{id}"), number: number.into(), name: format!("c{id}"), url: url.into(), logo: None,
+            programmes: Vec::new() }
     }
 
     fn lineup(chs: Vec<LiveChannel>) -> LiveLineup {

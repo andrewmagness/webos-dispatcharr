@@ -17,7 +17,24 @@ the server — channels, EPG, stream proxying — so this app aims to be the liv
 - **A real guide.** Every channel against time, with what's on now and next, logos, favourites and
   the coloured remote keys.
 - **Live playback that feels like a TV.** Channel up/down, number entry, last-channel recall and a
-  mini-guide overlay, played through LG's native media pipeline.
+  now/next banner, played through LG's native media pipeline.
+
+## Using it
+
+On the **Guide**, OK on any programme plays its channel; **hold OK** on a channel to make it a
+favourite (a star marks it), and the **Favourites** switch at the top shows only those. While
+watching:
+
+| Remote | What it does |
+|---|---|
+| CH▲ / CH▼, or UP / DOWN | the next or previous channel in the list you came from |
+| number keys (the Magic Remote's 123) | that channel, as soon as the number can only mean one |
+| OK | show or hide the banner: what's on now, its progress, and what's next |
+| hold OK | back to the channel you watched before |
+| BACK | the Guide |
+
+The app reopens on the last channel you watched; *Account* → *Start on the last channel* turns that
+off.
 
 ## Status
 
@@ -29,7 +46,7 @@ Early and under active development. Nothing here has been released.
 | M1 — Dispatcharr client and the Setup screen | done |
 | M2 — live MPEG-TS playback on the television | done — H.264/AAC channels play on the TV's hardware decoder |
 | M3 — the programme guide | done — grid, logos, OK to tune |
-| M4 — player overlay, channel up/down, favourites, recall | in progress — channel up/down, number entry, now/next banner, hold-OK recall and favourites done; resume-on-launch next |
+| M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, hold-OK recall, favourites, start on the last channel |
 | M5 — codec coverage, error handling, packaging and release | not started |
 
 Development targets a webOS 6 set. Features are verified in the desktop simulator against a mock

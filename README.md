@@ -68,8 +68,8 @@ This project is a standalone derivative of [PlxNative](https://github.com/GLinni
 Plex client for webOS by Gleb Linnik. Its rendering, UI system, focus engine and native player are
 what this app is built on. The Plex pages, plex.tv sign-in, the Settings pages, the Plex
 documentation tooling, the on-demand player's transport and panels and the trailer preview engine
-have been removed; the Plex
-playback and library code still inside the player engine and data layers is being removed in stages.
+have been removed; the Plex playback and library code still inside the player engine and data
+layers is being removed in stages.
 
 ## Licence
 

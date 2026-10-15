@@ -47,7 +47,7 @@ Early and under active development. Nothing here has been released.
 | M2 — live MPEG-TS playback on the television | done — H.264/AAC channels play on the TV's hardware decoder |
 | M3 — the programme guide | done — grid, logos, OK to tune |
 | M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, hold-OK recall, favourites, start on the last channel |
-| M5 — codec coverage, error handling, packaging and release | not started |
+| M5 — codec coverage, error handling, packaging and release | in progress — dropped streams reconnect, a busy server is retried, a channel's real audio/video codecs are detected and declared |
 
 Development targets a webOS 6 set. Features are verified in the desktop simulator against a mock
 Dispatcharr server (`tests/mock_dispatcharr.py`), and on the television against a real Dispatcharr

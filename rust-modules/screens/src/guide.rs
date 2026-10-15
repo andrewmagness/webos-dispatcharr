@@ -49,7 +49,7 @@ use plx_ui::time_grid::{self, CellLook, View as GridView};
 use plx_ui::widgets::{Button, StatusKind, StatusOverlay};
 use plx_ui::{consts, theme, Env, Painter, Rect, Spring, View};
 
-use super::registry::{word, AppFx, AppLike, DispatcharrCmd, GuideOutcome, LoopReq};
+use super::registry::{word, AppFx, AppLike, ContentReq, DispatcharrCmd, GuideOutcome, LoopReq, PlayIntent};
 
 /// The header's one control. Below `STRIP_BASE`: every element from there up is the shared tab
 /// strip's (`plx_ui::dispatch::PageWithStrip`), and the page is never asked about one.
@@ -139,6 +139,8 @@ struct Listing {
     channels: Vec<Channel>,
     /// Each channel's logo URL (`None` for one without), row for row.
     logos: Vec<Option<String>>,
+    /// Each channel's live stream URL (empty for one the answer did not give), row for row.
+    streams: Vec<String>,
     guide: Guide,
     lanes: Vec<Vec<Slot>>,
     /// Each channel's number as a viewer reads it, kept so a frame does not format sixty of them.
@@ -148,12 +150,13 @@ struct Listing {
 }
 
 impl Listing {
-    fn new(mut channels: Vec<Channel>, mut logos: Vec<Option<String>>, guide: Guide, fetched_at: i64)
-        -> Option<Self> {
+    fn new(mut channels: Vec<Channel>, mut logos: Vec<Option<String>>, mut streams: Vec<String>, guide: Guide,
+        fetched_at: i64) -> Option<Self> {
         let window = guide.window()?;
         channels.truncate(MAX_ROWS);
         // Row for row with the channels whatever the answer held: a short list means no logos.
         logos.resize(channels.len(), None);
+        streams.resize(channels.len(), String::new());
         let lanes = channels
             .iter()
             .map(|c| {
@@ -163,7 +166,7 @@ impl Listing {
             })
             .collect();
         let numbers = channels.iter().map(Channel::number_label).collect();
-        Some(Listing { channels, logos, guide, lanes, numbers, window, fetched_at })
+        Some(Listing { channels, logos, streams, guide, lanes, numbers, window, fetched_at })
     }
 
     fn rows(&self) -> usize {
@@ -376,11 +379,11 @@ impl GuideScreen {
                     self.reseat(RETRY, fx);
                 }
             }
-            GuideOutcome::Loaded { channels, logos, guide, fetched_at } => {
+            GuideOutcome::Loaded { channels, logos, streams, guide, fetched_at } => {
                 self.clock = Some(WallClock { unix: fetched_at, ms });
                 self.now = fetched_at;
                 self.drawn_now = fetched_at;
-                let Some(listing) = Listing::new(channels, logos, guide, fetched_at) else {
+                let Some(listing) = Listing::new(channels, logos, streams, guide, fetched_at) else {
                     self.phase = Phase::Failed(Error::BadResponse("guide window".into()));
                     self.reseat(RETRY, fx);
                     return;
@@ -495,10 +498,38 @@ impl GuideScreen {
                 }
                 _ => {}
             },
-            // OK on a programme tunes its channel — the player is M4's.
-            _ => {}
+            // OK on any programme tunes its channel.
+            elem => {
+                if let Some(play) = self.tune(elem) {
+                    fx.push(Fx::App(AppFx::Content(ContentReq::Play { play, resume_ns: 0 })));
+                }
+            }
         }
         fx.invalidate(Provenance::Input);
+    }
+
+    /// What OK on `elem` plays: its row's channel, live. The line under the title is what airs
+    /// NOW, whichever programme the cursor was on, because live TV can only play the present.
+    fn tune(&self, elem: u32) -> Option<PlayIntent> {
+        let (row, _) = split(elem)?;
+        let listing = self.listing.as_ref()?;
+        let url = listing.streams.get(row).filter(|u| !u.is_empty())?.clone();
+        let channel = listing.channels.get(row)?;
+        let context = listing
+            .at(row, self.now)
+            .and_then(split)
+            .and_then(|(r, s)| listing.programme(r, listing.slot(r, s)?))
+            .map(|p| p.title.clone())
+            .unwrap_or_default();
+        // Every channel sampled on a real server (2026-10-14) was H.264 + AAC. The Load must be
+        // declared before the stream is opened; reading it from the stream is M5's codec work.
+        Some(PlayIntent::Live {
+            url,
+            vcodec: "h264".to_owned(),
+            acodec: "aac".to_owned(),
+            title: channel.name.clone(),
+            context,
+        })
     }
 
     // ── drawing ──────────────────────────────────────────────────────────────────────────────

@@ -121,7 +121,8 @@ fn guide(reply: &Sender<GuideOutcome>) {
                 guide.channels_with_programmes()
             ));
             let logos = channels.iter().map(|c| c.logo_id.map(|id| account.logo_url(id))).collect();
-            answer(reply, GuideOutcome::Loaded { channels, logos, guide, fetched_at });
+            let streams = channels.iter().map(|c| account.stream_url(c)).collect();
+            answer(reply, GuideOutcome::Loaded { channels, logos, streams, guide, fetched_at });
         }
         Err(e) => {
             plx_base::eventlog::log(&format!("dispatcharr: guide failed: {e}"));

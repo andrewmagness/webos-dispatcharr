@@ -745,7 +745,7 @@ mod live_url_tests {
 
     fn tune(urls: &[&str], index: usize) -> super::super::LiveTune {
         let channels = urls.iter().enumerate().map(|(i, u)| super::super::LiveChannel {
-            id: i as i64, number: (i + 1).to_string(), name: format!("C{i}"), url: (*u).into(), logo: None,
+            id: i as i64, uuid: format!("u-{i}"), number: (i + 1).to_string(), name: format!("C{i}"), url: (*u).into(), logo: None,
             programmes: vec![super::super::LiveProgramme { start: 0, end: 100, title: format!("P{i}") }],
         }).collect();
         let lineup = super::super::LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() };

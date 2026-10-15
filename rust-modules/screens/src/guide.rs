@@ -191,6 +191,7 @@ impl Listing {
                 .zip(&logos)
                 .map(|((c, url), logo)| LiveChannel {
                     id: c.id,
+                    uuid: c.uuid.clone(),
                     number: c.number_label(),
                     name: c.name.clone(),
                     url,
@@ -443,15 +444,22 @@ impl GuideScreen {
                     self.reseat(RETRY, fx);
                 }
             }
-            GuideOutcome::Loaded { channels, logos, streams, favourites, guide, fetched_at } => {
+            GuideOutcome::Loaded { channels, logos, streams, favourites, resume, guide, fetched_at } => {
                 self.clock = Some(WallClock { unix: fetched_at, ms });
                 self.now = fetched_at;
                 self.drawn_now = fetched_at;
                 self.favourites = favourites;
+                // The channel to start on (the last one watched, on the run's first guide).
+                let resume = resume.and_then(|uuid| channels.iter().find(|c| c.uuid == uuid).map(|c| c.id));
                 self.source = Some(Source { channels, logos, streams, guide, fetched_at });
-                // The channel and the time under the cursor, before the old listing goes.
-                let carry = self.carry.take();
+                // The channel and the time under the cursor, before the old listing goes; or the
+                // channel being resumed, so BACK out of it lands on its row.
+                let carry = resume.map(|id| (id, fetched_at)).or(self.carry.take());
                 self.relist(Refocus::Cell { carry, row: 0 }, fx);
+                let row = resume.and_then(|id| self.listing.as_ref()?.channels.iter().position(|c| c.id == id));
+                if let Some(play) = row.and_then(|row| self.tune(cell(row, 0))) {
+                    fx.push(Fx::App(AppFx::Content(ContentReq::Play { play, resume_ns: 0 })));
+                }
             }
         }
     }

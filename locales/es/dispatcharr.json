@@ -47,5 +47,8 @@
   "dispatcharr.guide.favourites": "Favoritos",
   "dispatcharr.guide.all_channels": "Todos los canales",
   "dispatcharr.guide.no_favourites": "Aún no hay favoritos",
-  "dispatcharr.guide.no_favourites_reason": "Mantén pulsado OK en un canal para añadirlo a tus favoritos."
+  "dispatcharr.guide.no_favourites_reason": "Mantén pulsado OK en un canal para añadirlo a tus favoritos.",
+  "dispatcharr.setup.resume_on": "Empezar en el último canal: Sí",
+  "dispatcharr.setup.resume_off": "Empezar en el último canal: No",
+  "dispatcharr.setup.resume_note": "Si está activado, la app se abre reproduciendo el último canal que viste. ATRÁS va a la Guía."
 }

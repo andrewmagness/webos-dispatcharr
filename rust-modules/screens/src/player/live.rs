@@ -233,6 +233,7 @@ mod tests {
             .enumerate()
             .map(|(i, n)| LiveChannel {
                 id: i as i64,
+                uuid: format!("u-{n}"),
                 number: (*n).into(),
                 name: format!("C{n}"),
                 url: format!("u{n}"),

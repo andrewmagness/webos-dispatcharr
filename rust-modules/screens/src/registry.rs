@@ -87,6 +87,9 @@ pub enum DispatcharrCmd {
     /// Store the favourite channels (UUIDs, in the order added) for the signed-in server. No
     /// answer: the Guide already shows the change, and a failed write is logged.
     SaveFavourites { favourites: Vec<String> },
+    /// Store whether the app starts on the last channel watched (the Server page's switch). No
+    /// answer, for the same reason.
+    SetResume { on: bool },
 }
 
 /// The answer to [`DispatcharrCmd::Guide`].
@@ -97,12 +100,14 @@ pub enum GuideOutcome {
     /// television's clock — the page's only reading of the wall clock). `logos` is each channel's
     /// logo URL, in the same order (`None` for a channel without one), and `streams` each
     /// channel's live stream URL (what OK tunes). `favourites` are the UUIDs of the channels the
-    /// viewer marked on this TV.
+    /// viewer marked on this TV. `resume` is the channel to start on: the last one watched, on the
+    /// app's first guide of a run, when the viewer has not turned that off.
     Loaded {
         channels: Vec<plx_dispatcharr::dispatcharr::models::Channel>,
         logos: Vec<Option<String>>,
         streams: Vec<String>,
         favourites: Vec<String>,
+        resume: Option<String>,
         guide: plx_dispatcharr::dispatcharr::guide::Guide,
         fetched_at: i64,
     },
@@ -112,10 +117,12 @@ pub enum GuideOutcome {
 /// One answer to a [`DispatcharrCmd`].
 pub enum SetupOutcome {
     SignedOut,
-    /// Signed in: the stored record, and whether it is stored where it survives a reboot.
+    /// Signed in: the stored record, whether it is stored where it survives a reboot, and whether
+    /// the app starts on the last channel watched.
     Connected {
         record: plx_dispatcharr::dispatcharr::account::Record,
         saved: plx_dispatcharr::dispatcharr::account::Saved,
+        resume_on_launch: bool,
     },
     /// The channel count behind the connected account.
     Lineup(Result<usize, plx_dispatcharr::dispatcharr::Error>),
@@ -2324,7 +2331,9 @@ pub const SCREEN_SHAPES: &[&str] = &[
 // Live TV (M4): `screens::player::SHAPE` gains the live controls (`live:{seen,banner,typed,
 // missing,ok_down,ok_fired}`) and `screens::guide::SHAPE` the favourites (`favourites:u64,
 // only_favourites:bool`); the previous pin was 0xe8d0_26d5_2943_05e6.
-const SCREEN_SHAPES_PIN: u64 = 0x99ec_fc56_b8d6_cda6;
+// Resume on launch: `screens::setup::SHAPE` gains the Server page's switch (`resume:u8`); the
+// previous pin was 0x99ec_fc56_b8d6_cda6.
+const SCREEN_SHAPES_PIN: u64 = 0x5914_3011_5c1f_8596;
 
 #[cfg(test)]
 mod arg_tests {

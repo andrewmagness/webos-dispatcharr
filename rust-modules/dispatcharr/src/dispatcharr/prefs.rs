@@ -1,4 +1,5 @@
-//! **What the viewer chose on this TV**: the favourite channels, and the channel last watched.
+//! **What the viewer chose on this TV**: the favourite channels, the channel last watched, and
+//! whether the app starts on it.
 //!
 //! Channels are named by their UUID, which a server keeps when it renumbers or renames a channel.
 //! The file belongs to one server: [`load`] answers empty for any other, so signing in somewhere
@@ -24,12 +25,20 @@ const MAX_PREFS_FILE: u64 = 8 * 1024 * 1024;
 static IO: Mutex<()> = Mutex::new(());
 
 /// The viewer's choices for one server.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prefs {
     /// Favourite channels' UUIDs, in the order they were added.
     pub favourites: Vec<String>,
     /// The channel last watched, for resuming on launch.
     pub last: Option<String>,
+    /// Start the app on [`last`](Self::last) (the Server page's switch). On unless turned off.
+    pub resume_on_launch: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Prefs { favourites: Vec::new(), last: None, resume_on_launch: true }
+    }
 }
 
 impl Prefs {
@@ -59,6 +68,12 @@ struct Stored {
     favourites: Vec<String>,
     #[serde(default)]
     last: Option<String>,
+    #[serde(default = "on")]
+    resume_on_launch: bool,
+}
+
+fn on() -> bool {
+    true
 }
 
 /// The choices stored for `server` (its `base()`); empty when there are none, or they belong to
@@ -82,6 +97,7 @@ pub fn save(server: &str, prefs: &Prefs) -> Result<(), ()> {
         server: server.to_owned(),
         favourites: prefs.favourites.clone(),
         last: prefs.last.clone(),
+        resume_on_launch: prefs.resume_on_launch,
     })
     .map_err(|_| ())?;
     let _io = IO.lock().unwrap_or_else(|e| e.into_inner());
@@ -108,7 +124,7 @@ fn parse(bytes: &[u8], server: &str) -> Option<Prefs> {
     let mut favourites = stored.favourites;
     favourites.retain(|f| !f.is_empty());
     favourites.dedup();
-    Some(Prefs { favourites, last: stored.last.filter(|l| !l.is_empty()) })
+    Some(Prefs { favourites, last: stored.last.filter(|l| !l.is_empty()), resume_on_launch: stored.resume_on_launch })
 }
 
 #[cfg(not(any(test, feature = "test-support")))]
@@ -143,7 +159,7 @@ mod tests {
     #[test]
     fn choices_round_trip_and_belong_to_their_server() {
         let _g = plx_base::testlock::serial();
-        let p = Prefs { favourites: vec!["u-1".into(), "u-9".into()], last: Some("u-9".into()) };
+        let p = Prefs { favourites: vec!["u-1".into(), "u-9".into()], last: Some("u-9".into()), resume_on_launch: false };
         save(HERE, &p).unwrap();
         assert_eq!(load(HERE), p);
         assert_eq!(load("http://192.0.2.11:9191"), Prefs::default(), "another server starts clean");
@@ -154,6 +170,7 @@ mod tests {
         let bad = br#"{"format":"dispatcharr-prefs","version":2,"server":"http://192.0.2.10:9191"}"#;
         assert_eq!(parse(bad, HERE), None);
         let ok = br#"{"format":"dispatcharr-prefs","version":1,"server":"http://192.0.2.10:9191","favourites":["a","a",""],"last":""}"#;
-        assert_eq!(parse(ok, HERE), Some(Prefs { favourites: vec!["a".into()], last: None }));
+        assert_eq!(parse(ok, HERE), Some(Prefs { favourites: vec!["a".into()], last: None, resume_on_launch: true }),
+            "a file from before the switch existed starts on the last channel");
     }
 }

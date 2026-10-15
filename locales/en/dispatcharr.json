@@ -209,5 +209,17 @@
   "dispatcharr.guide.no_favourites_reason": {
     "value": "Hold OK on a channel to add it to your favourites.",
     "description": "Under 'No favourites yet': how to add one"
+  },
+  "dispatcharr.setup.resume_on": {
+    "value": "Start on the last channel: On",
+    "description": "Server page switch, while on: the app opens playing the channel watched last. OK turns it off"
+  },
+  "dispatcharr.setup.resume_off": {
+    "value": "Start on the last channel: Off",
+    "description": "Server page switch, while off: the app opens on the Guide. OK turns it on"
+  },
+  "dispatcharr.setup.resume_note": {
+    "value": "When on, the app opens playing the channel you watched last. BACK goes to the Guide.",
+    "description": "Under the start-on-the-last-channel switch: what it does"
   }
 }

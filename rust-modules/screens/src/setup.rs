@@ -66,8 +66,9 @@ const ADDRESS: u32 = 0;
 const USERNAME: u32 = 1;
 const PASSWORD: u32 = 2;
 const SIGN_IN: u32 = 3;
-/// Connected's one control.
+/// Connected's controls: *Sign out*, and the start-on-the-last-channel switch.
 const SIGN_OUT: u32 = 4;
+const RESUME: u32 = 5;
 /// The page's one focus group. `GroupId(0)` is the container's own fresh-mount target
 /// (`stack.rs::fresh`), so a fresh mount seats here with no correction of its own.
 const GROUP: GroupId = GroupId(0);
@@ -79,7 +80,7 @@ const BLINK_US: u32 = 530_000;
 /// is recorded as its length and caret only: a replay must never carry it.
 pub const SHAPE: &str = "SetupScreen{mode:u8,phase:u8,editing:Option<u32>,address:{text:str,caret:u64},\
     username:{text:str,caret:u64},password:{len:u64,caret:u64},blink_us:u32,failure:Option<u8>,\
-    pending:bool,lineup:u8,saved:u8}";
+    pending:bool,lineup:u8,saved:u8,resume:u8}";
 
 /// Where the page is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -161,6 +162,8 @@ struct Connected {
     username: String,
     lineup: Lineup,
     saved: Saved,
+    /// The app starts on the last channel watched.
+    resume: bool,
 }
 
 impl Connected {
@@ -246,6 +249,8 @@ struct SetupState {
     pending: bool,
     lineup: u8,
     saved: u8,
+    /// 0 not connected, 1 off, 2 on.
+    resume: u8,
 }
 
 impl LogicalState for SetupState {
@@ -261,7 +266,7 @@ impl LogicalState for SetupState {
         c.option(self.failure, |c, d| {
             c.u8(d);
         });
-        c.bool(self.pending).u8(self.lineup).u8(self.saved);
+        c.bool(self.pending).u8(self.lineup).u8(self.saved).u8(self.resume);
     }
     fn probe(&self, out: &mut String) {
         out.push_str(&format!(
@@ -316,7 +321,7 @@ impl SetupScreen {
                 mode,
                 phase: Phase::Loading, editing: None, address: (String::new(), 0),
                 username: (String::new(), 0), password: (0, 0), blink_us: 0, failure: None,
-                pending: false, lineup: 0, saved: 0,
+                pending: false, lineup: 0, saved: 0, resume: 0,
             },
         };
         screen.sync_state();
@@ -345,6 +350,7 @@ impl SetupScreen {
                 Some(Saved::Durable) => 1,
                 Some(Saved::UntilReboot) => 2,
             },
+            resume: self.connected.as_ref().map_or(0, |c| 1 + u8::from(c.resume)),
         };
     }
 
@@ -353,7 +359,7 @@ impl SetupScreen {
         match self.phase {
             Phase::Loading => &[],
             Phase::Form | Phase::Working => &[ADDRESS, USERNAME, PASSWORD, SIGN_IN],
-            Phase::Connected => &[SIGN_OUT],
+            Phase::Connected => &[RESUME, SIGN_OUT],
         }
     }
 
@@ -365,12 +371,25 @@ impl SetupScreen {
                 let c = layout::column();
                 Some(Rect::new(c.x, layout::button_top(), w, layout::BUTTON_H))
             }
+            RESUME => {
+                let w = Button::pill_w_measured(self.resume_label(), theme::size::BODY, false, false, measure);
+                let c = layout::column();
+                Some(Rect::new(c.x, c.y, w.min(c.w), layout::BUTTON_H))
+            }
             SIGN_OUT => {
                 let w = Button::pill_w_measured(msg::dispatcharr_setup_sign_out_c(), theme::size::BODY, false, false, measure);
                 let a = RouteLayout::screen().action;
                 Some(Rect::new(a.x, a.y + (a.h - layout::BUTTON_H) * 0.5, w, layout::BUTTON_H))
             }
             _ => None,
+        }
+    }
+
+    fn resume_label(&self) -> &'static std::ffi::CStr {
+        if self.connected.as_ref().is_some_and(|c| c.resume) {
+            msg::dispatcharr_setup_resume_on_c()
+        } else {
+            msg::dispatcharr_setup_resume_off_c()
         }
     }
 
@@ -417,6 +436,12 @@ impl SetupScreen {
                 self.keyboard(target, fx);
             }
             (Phase::Form, SIGN_IN) => self.sign_in(fx),
+            (Phase::Connected, RESUME) => {
+                if let Some(c) = &mut self.connected {
+                    c.resume = !c.resume;
+                    fx.push(Fx::App(AppFx::Dispatcharr(DispatcharrCmd::SetResume { on: c.resume })));
+                }
+            }
             (Phase::Connected, SIGN_OUT) => {
                 let (reply, rx) = mpsc::channel();
                 self.pending = Some(rx);
@@ -488,20 +513,26 @@ impl SetupScreen {
                 self.phase = Phase::Form;
                 self.reseat(if self.fields[0].text().is_empty() { ADDRESS } else { PASSWORD }, fx);
             }
-            SetupOutcome::Connected { record, saved } => {
+            SetupOutcome::Connected { record, saved, resume_on_launch } => {
                 let server = record.account.server.base();
                 self.prefill(&server, &record.username);
                 // The password has done its one job; it does not stay in memory.
                 self.fields[2] = TextBuffer::new(String::new(), 0);
                 self.failure = None;
-                self.connected = Some(Connected { server, username: record.username, lineup: Lineup::Pending, saved });
+                self.connected = Some(Connected {
+                    server,
+                    username: record.username,
+                    lineup: Lineup::Pending,
+                    saved,
+                    resume: resume_on_launch,
+                });
                 match self.mode {
                     // The boot page's job is done: the Guide replaces it. The page keeps its
                     // spinner (or nothing, at boot) for the frame the replacement takes.
                     Mode::Entry => fx.push(Fx::App(AppFx::Loop(LoopReq::DispatcharrGuide))),
                     Mode::Server => {
                         self.phase = Phase::Connected;
-                        self.reseat(SIGN_OUT, fx);
+                        self.reseat(RESUME, fx);
                     }
                 }
             }
@@ -625,6 +656,17 @@ impl SetupScreen {
                 .leading(size as f32 + theme::space::XS)
                 .max_lines(3)
                 .draw(p, Rect::new(layout.narrative.x, y, layout.narrative.w, (layout.action.y - y).max(0.0)));
+        }
+        if let Some(rect) = self.rect(RESUME, f.measure) {
+            Button::new(self.resume_label().as_ptr(), theme::size::BODY, rect)
+                .focused(focus == Some(RESUME))
+                .draw(&Env::inert(), p);
+            self.stop(f, p, RESUME);
+            let c = layout::column();
+            let top = rect.y + rect.h + theme::space::SM;
+            TextView::new(msg::dispatcharr_setup_resume_note(), theme::size::BODY, theme::TEXT_SECONDARY)
+                .max_lines(3)
+                .draw(p, Rect::new(c.x, top, c.w, (c.y + c.h - top).max(0.0)));
         }
         if let Some(rect) = self.rect(SIGN_OUT, f.measure) {
             Button::new(msg::dispatcharr_setup_sign_out_c().as_ptr(), theme::size::BODY, rect)

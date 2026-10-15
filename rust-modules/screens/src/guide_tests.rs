@@ -132,7 +132,7 @@ fn landed() -> (GuideScreen, u32) {
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), guide, fetched_at: NOW }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), resume: None, guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(1000), None, 1000);
     let seat = reseated_on(&out).expect("a landing seats the cursor");
     step(&mut screen, ScreenEvent::FocusMoved { from: None, to: FocusKey { entry: EntryId(1), elem: seat }, by: By::Restore }, Some(seat));
@@ -331,7 +331,7 @@ fn a_stale_window_is_fetched_again_and_the_landing_keeps_the_channel_and_the_tim
     let fetched = NOW + Window::MAX_AGE;
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), guide, fetched_at: fetched }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), resume: None, guide, fetched_at: fetched }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(later + 16), Some(c), later + 16);
     let seat = reseated_on(&out).expect("a refetch re-seats");
     let (row, _) = split(seat).unwrap();
@@ -385,7 +385,7 @@ fn a_failed_refetch_keeps_the_guide_on_screen() {
 fn an_account_with_no_channels_says_so_and_seats_on_account() {
     let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
     let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
-    reply.send(GuideOutcome::Loaded { channels: Vec::new(), logos: Vec::new(), streams: Vec::new(), favourites: Vec::new(),
+    reply.send(GuideOutcome::Loaded { channels: Vec::new(), logos: Vec::new(), streams: Vec::new(), favourites: Vec::new(), resume: None,
         guide: Guide::build(&[], &[], [], Window::around(NOW)),
         fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
@@ -443,7 +443,7 @@ fn a_channel_with_no_stream_url_does_not_tune() {
     let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
-    reply.send(GuideOutcome::Loaded { channels, logos, streams: Vec::new(), favourites: Vec::new(), guide, fetched_at: NOW }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, logos, streams: Vec::new(), favourites: Vec::new(), resume: None, guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     let seat = reseated_on(&out).unwrap();
     let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
@@ -536,7 +536,7 @@ fn landed_with(favourites: &[&str]) -> (GuideScreen, u32) {
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
     let favourites = favourites.iter().map(|f| (*f).to_owned()).collect();
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites, guide, fetched_at: NOW }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites, resume: None, guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     (screen, reseated_on(&out).expect("a landing seats the cursor"))
 }
@@ -610,4 +610,34 @@ fn the_switch_sits_left_of_account_and_left_right_walk_between_them() {
     assert_eq!(moved(Focusable::neighbour(&screen, screen.key(ACCOUNT), Dir::Left, &c)), Some(FAVOURITES));
     assert_eq!(moved(Focusable::neighbour(&screen, screen.key(FAVOURITES), Dir::Right, &c)), Some(ACCOUNT));
     assert_eq!(split(FAVOURITES), None, "the switch is not a cell");
+}
+
+// ── resume on launch ─────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn a_landing_with_a_channel_to_resume_tunes_it_and_seats_on_its_row() {
+    let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
+    let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
+    let (channels, guide) = lineup();
+    let logos = vec![None; channels.len()];
+    let streams = streams(&channels);
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), resume: Some("u-4".into()), guide,
+        fetched_at: NOW }).unwrap();
+    let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
+    assert_eq!(tuned(&out).map(|t| t.index), Some(3), "channel 4 starts playing");
+    assert_eq!(reseated_on(&out).and_then(split).map(|(row, _)| row), Some(3), "BACK will land on its row");
+}
+
+#[test]
+fn a_channel_to_resume_the_lineup_no_longer_has_tunes_nothing() {
+    let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
+    let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
+    let (channels, guide) = lineup();
+    let logos = vec![None; channels.len()];
+    let streams = streams(&channels);
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), resume: Some("gone".into()), guide,
+        fetched_at: NOW }).unwrap();
+    let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
+    assert!(tuned(&out).is_none());
+    assert_eq!(reseated_on(&out).and_then(split).map(|(row, _)| row), Some(0));
 }

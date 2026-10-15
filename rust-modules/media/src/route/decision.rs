@@ -729,6 +729,17 @@ mod live_url_tests {
         set_url(&mut ps, "http://192.0.2.1:32400/a.mkv");
         assert!(!is_live(&ps), "a file URL replaces it");
     }
+
+    #[test]
+    fn a_tune_installs_the_live_url_and_its_declaration() {
+        let mut ps = PlaybackSession::IDLE;
+        assert!(!request_live(&mut ps, "", "h264", "aac", "ESPN", ""), "no URL, no tune");
+        assert!(request_live(&mut ps, "http://192.0.2.1:9191/proxy/ts/stream/x", "h264", "aac", "ESPN", "SportsCenter"));
+        assert!(is_live(&ps));
+        assert_eq!(url(&ps), "http://192.0.2.1:9191/proxy/ts/stream/x");
+        assert_eq!((stream_vcodec(&ps).as_str(), stream_acodec(&ps).as_str()), ("h264", "aac"));
+        assert!(!play_pending(), "nothing to resolve: the start ritual Loads at once");
+    }
 }
 pub fn transcode_session(ps: &PlaybackSession) -> String {
     ps.tsession.clone()
@@ -7421,6 +7432,65 @@ pub fn request_play(
         None,
         false,
         crate::player::report::AttemptOrigin::Fresh,
+    )
+}
+
+/// **Tune a live channel** (a Dispatcharr stream): no server resolve, so nothing runs on a
+/// worker. The URL and its Load declaration are installed at once, as `plxnative-playurl` does,
+/// and [`play_pending`] stays false, so the start ritual's `prepare_start` starts the Load
+/// directly. `title` is the channel and `ctx` the line under it (what is on now).
+///
+/// Refused, leaving everything as it was, while a PMS or native route transition owns the player
+/// (the phases [`request_play`] refuses in), and for an empty URL or a declaration the television
+/// cannot be given.
+pub fn request_live(
+    ps: &mut PlaybackSession,
+    url: &str,
+    vcodec: &str,
+    acodec: &str,
+    title: &str,
+    ctx: &str,
+) -> bool {
+    if url.is_empty() {
+        return false;
+    }
+    if route_transition_owns_player() {
+        crate::player::log("live: a route transition still owns the player; refusing the tune");
+        return false;
+    }
+    if !set_stream_declaration(ps, vcodec, acodec, 0.0, plx_data::metadata::Dovi::NONE, false) {
+        return false;
+    }
+    { let s = &mut *ps; {
+        s.request = None;
+        s.requested_resume_ns = 0;
+        s.play_verdict = None;
+        s.resolve_failed = false;
+        s.preview = false;
+        // SAFETY: as in `request_play_inner`, the lengths are the arrays' own.
+        unsafe {
+            set_c(s.title.as_mut_ptr(), s.title.len(), title);
+            set_c(s.ctxline.as_mut_ptr(), s.ctxline.len(), ctx);
+        }
+    } };
+    set_live_url(ps, url);
+    crate::player::log(&format!("live: tune v={vcodec} a={acodec}"));
+    true
+}
+
+/// A PMS or native transaction is mid-flight: the phases [`begin_playback_request`] refuses in.
+fn route_transition_owns_player() -> bool {
+    let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
+    matches!(
+        control.phase,
+        ControlPhase::Resolving
+            | ControlPhase::Preparing(_)
+            | ControlPhase::Prepared(_)
+            | ControlPhase::Starting(_, _)
+            | ControlPhase::StagingUser(_)
+            | ControlPhase::Applying(_)
+            | ControlPhase::Completing(_)
+            | ControlPhase::OriginalTrial(_)
     )
 }
 

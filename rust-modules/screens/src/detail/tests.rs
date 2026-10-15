@@ -2657,6 +2657,7 @@ fn a_show_trailer_disc_plays_the_extra_not_the_on_deck_episode() {
             assert_ne!(context.as_str(), plx_data::metadata::TRAILER_CONTEXT);
         }
         (PlayIntent::Movie(_), _) => {}
+        (PlayIntent::Live { .. }, _) => panic!("a detail page plays no channel"),
     }
     clear();
 }

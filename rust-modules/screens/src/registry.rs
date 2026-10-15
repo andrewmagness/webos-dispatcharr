@@ -92,10 +92,12 @@ pub enum GuideOutcome {
     SignedOut,
     /// The channels in guide order and their programmes, read at `fetched_at` (Unix seconds by the
     /// television's clock — the page's only reading of the wall clock). `logos` is each channel's
-    /// logo URL, in the same order (`None` for a channel without one).
+    /// logo URL, in the same order (`None` for a channel without one), and `streams` each
+    /// channel's live stream URL (what OK tunes).
     Loaded {
         channels: Vec<plx_dispatcharr::dispatcharr::models::Channel>,
         logos: Vec<Option<String>>,
+        streams: Vec<String>,
         guide: plx_dispatcharr::dispatcharr::guide::Guide,
         fetched_at: i64,
     },
@@ -1121,6 +1123,9 @@ pub enum PlayIntent {
     /// boundary, and once Detail's `selected` becomes an owned per-page snapshot (rather than a
     /// process-wide catalog read) there is no `'static` row left to borrow.
     Movie(plx_data::pms::PmsMovie),
+    /// A live channel (the Guide's OK): its stream URL and the codecs to declare for it.
+    /// `title` is the channel, `context` what is on now.
+    Live { url: String, vcodec: String, acodec: String, title: String, context: String },
 }
 
 pub trait ContentLike: AppLike<Memory = PageMemory> {}

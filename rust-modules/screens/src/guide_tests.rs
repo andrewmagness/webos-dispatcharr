@@ -79,6 +79,18 @@ fn loop_req(out: &[Stamped<GuideHost>]) -> Option<LoopReq> {
     })
 }
 
+fn content_req(out: &[Stamped<GuideHost>]) -> Option<&ContentReq> {
+    out.iter().find_map(|s| match &s.fx {
+        Fx::App(AppFx::Content(req)) => Some(req),
+        _ => None,
+    })
+}
+
+/// Each channel's stream URL, the way the application builds them.
+fn streams(channels: &[Channel]) -> Vec<String> {
+    channels.iter().map(|c| format!("http://192.0.2.10:9191/proxy/ts/stream/{}", c.uuid)).collect()
+}
+
 fn reseated_on(out: &[Stamped<GuideHost>]) -> Option<u32> {
     out.iter().find_map(|s| match &s.fx {
         Fx::Deliver(_, Delivery::Screen(ScreenEvent::Enter(Enter::Fresh { focus: FocusTarget::Elem(k) }))) => Some(k.elem),
@@ -119,7 +131,8 @@ fn landed() -> (GuideScreen, u32) {
     let Some(DispatcharrCmd::Guide { reply }) = command(out) else { panic!("mount asks for the guide") };
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
-    reply.send(GuideOutcome::Loaded { channels, logos, guide, fetched_at: NOW }).unwrap();
+    let streams = streams(&channels);
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(1000), None, 1000);
     let seat = reseated_on(&out).expect("a landing seats the cursor");
     step(&mut screen, ScreenEvent::FocusMoved { from: None, to: FocusKey { entry: EntryId(1), elem: seat }, by: By::Restore }, Some(seat));
@@ -317,7 +330,8 @@ fn a_stale_window_is_fetched_again_and_the_landing_keeps_the_channel_and_the_tim
     channels.swap(0, 1);
     let fetched = NOW + Window::MAX_AGE;
     let logos = vec![None; channels.len()];
-    reply.send(GuideOutcome::Loaded { channels, logos, guide, fetched_at: fetched }).unwrap();
+    let streams = streams(&channels);
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, guide, fetched_at: fetched }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(later + 16), Some(c), later + 16);
     let seat = reseated_on(&out).expect("a refetch re-seats");
     let (row, _) = split(seat).unwrap();
@@ -371,7 +385,8 @@ fn a_failed_refetch_keeps_the_guide_on_screen() {
 fn an_account_with_no_channels_says_so_and_seats_on_account() {
     let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
     let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
-    reply.send(GuideOutcome::Loaded { channels: Vec::new(), logos: Vec::new(), guide: Guide::build(&[], &[], [], Window::around(NOW)),
+    reply.send(GuideOutcome::Loaded { channels: Vec::new(), logos: Vec::new(), streams: Vec::new(),
+        guide: Guide::build(&[], &[], [], Window::around(NOW)),
         fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     assert_eq!(screen.phase, Phase::Empty);
@@ -393,11 +408,53 @@ fn account_opens_the_server_page_and_back_leaves_the_app() {
 }
 
 #[test]
+fn ok_on_what_airs_now_tunes_its_channel() {
+    let (mut screen, seat) = landed();
+    let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
+    let Some(ContentReq::Play { play: PlayIntent::Live { url, vcodec, acodec, title, context }, resume_ns }) =
+        content_req(&out)
+    else {
+        panic!("OK on a programme tunes its channel")
+    };
+    assert_eq!(url, "http://192.0.2.10:9191/proxy/ts/stream/u-1");
+    assert_eq!((vcodec.as_str(), acodec.as_str()), ("h264", "aac"));
+    assert_eq!((title.as_str(), context.as_str()), ("Channel 1", "One 0"));
+    assert_eq!(*resume_ns, 0);
+}
+
+#[test]
+fn ok_on_a_later_programme_tunes_the_channel_to_what_airs_now() {
+    let (mut screen, seat) = landed();
+    let c = walk(&mut screen, seat, Dir::Down); // channel 2, "Two long"
+    let later = walk(&mut screen, c, Dir::Right); // "Two 0", 13:15
+    let out = step(&mut screen, ScreenEvent::Activate(later), Some(later));
+    let Some(ContentReq::Play { play: PlayIntent::Live { url, context, .. }, .. }) = content_req(&out) else {
+        panic!("a later programme still tunes the channel")
+    };
+    assert!(url.ends_with("/u-2"));
+    assert_eq!(context, "Two long", "live TV plays what is on now");
+}
+
+#[test]
+fn a_channel_with_no_stream_url_does_not_tune() {
+    let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
+    let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
+    let (channels, guide) = lineup();
+    let logos = vec![None; channels.len()];
+    reply.send(GuideOutcome::Loaded { channels, logos, streams: Vec::new(), guide, fetched_at: NOW }).unwrap();
+    let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
+    let seat = reseated_on(&out).unwrap();
+    let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
+    assert!(content_req(&out).is_none());
+}
+
+#[test]
 fn a_listing_keeps_one_logo_per_row_whatever_the_answer_held() {
     let (channels, guide) = lineup();
     let logos = vec![Some("http://192.0.2.10:9191/api/channels/logos/101/cache/".to_owned())];
-    let listing = Listing::new(channels, logos, guide, NOW).unwrap();
+    let listing = Listing::new(channels, logos, Vec::new(), guide, NOW).unwrap();
     assert_eq!(listing.logos.len(), listing.rows());
+    assert_eq!(listing.streams.len(), listing.rows(), "and one stream URL, empty when absent");
     assert!(listing.logos[0].is_some());
     assert!(listing.logos[1..].iter().all(Option::is_none));
 }

@@ -23,7 +23,7 @@ pub use plx_net::net::origin::{plex_direct_literal, split, url_host, Origin, Res
 /// (a grant is the one exception, and it lives in `grant`, not here). A
 /// developer build (`devtriggers`) is [`CredentialPolicy::AllowPlaintext`]: the rule exists so a
 /// lane with no TLS server of its own can still exercise the credentialed path against a plain
-/// `dev::DevServer` — unless `/tmp/plxnative-storepolicy` was armed at boot, which
+/// `dev::DevServer` — unless `/tmp/dispatcharrtv-storepolicy` was armed at boot, which
 /// gives a developer build the store's `HttpsOnly` so the consent flow (reachable only under it)
 /// can be exercised in the sim and on the TV. The trigger only ever tightens, and a store build
 /// has no trigger to read. Nothing about WHICH origin is eligible ever depends on where the policy came
@@ -46,7 +46,7 @@ pub enum CredentialPolicy {
 
 #[cfg(all(feature = "devtriggers", not(any(test, feature = "test-support"))))]
 plx_base::devtrig::latched_flag!(
-    /// `/tmp/plxnative-storepolicy` — a developer build takes the store's
+    /// `/tmp/dispatcharrtv-storepolicy` — a developer build takes the store's
     /// [`CredentialPolicy::HttpsOnly`], read once at boot, so the PLX-NATIVE-10 consent flow (which
     /// `AllowPlaintext` never needs) is reachable in the sim and on the TV. Absent from a store
     /// build, and never read by a host test: a stray file on a developer's machine must not change

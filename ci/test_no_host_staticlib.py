@@ -33,7 +33,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-CRATE = "plxnative_modules"
+CRATE = "dispatcharrtv"
 # The layer crates split out of the app crate (docs/module-layers.md), each a dependency of it and
 # each held to the same rule: an rlib, never an archive. One archive is linked, and it is the app's.
 LAYER_CRATES = ("plx_base", "plx_machine", "plx_net", "plx_platform", "plx_gfx", "plx_ui", "plx_plex", "plx_dispatcharr", "plx_telemetry", "plx_data", "plx_media", "plx_appkit", "plx_screens")

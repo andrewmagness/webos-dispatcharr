@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build `PlxNative.app` — the app core as a SELF-CONTAINED macOS application.
+"""Build `DispatcharrTV.app` — the app core as a SELF-CONTAINED macOS application.
 
 This is the `hostsim` build (`rust-modules/src/bin/sim.rs`): the same UI, the same Plex data layer
 and the same event loop the television runs, wrapped in a bundle that carries its own SDL, its own
@@ -119,16 +119,16 @@ def build_binary(tdir: Path) -> Path:
     """Cargo, release, with BOTH dev features off.
 
     `--no-default-features` drops `devtools` (the on-screen counter) and `devtriggers` (the whole
-    `/tmp/plxnative-*` surface, the remote FIFO and the capture listener). A binary somebody was
+    `/tmp/dispatcharrtv-*` surface, the remote FIFO and the capture listener). A binary somebody was
     sent must not take instructions from a world-writable directory — and with the feature off
     there is nothing to take: `devtrig::flag` is `false` and `devtrig::read` is `None` at COMPILE time.
     """
-    print("==> building plxnative-sim (release, no dev features)")
+    print("==> building dispatcharrtv-sim (release, no dev features)")
     run("cargo", "build", "--manifest-path", REPO / "rust-modules/Cargo.toml",
         "--target-dir", tdir, "--release", "--no-default-features",
-        "--features", "hostsim", "--bin", "plxnative-sim",
+        "--features", "hostsim", "--bin", "dispatcharrtv-sim",
         env=dict(os.environ, CARGO_INCREMENTAL="0"))
-    return tdir / "release/plxnative-sim"
+    return tdir / "release/dispatcharrtv-sim"
 
 
 def write_icon(res: Path):
@@ -259,7 +259,7 @@ def main():
 
     ver = version()
     out = Path(args.out)
-    app = out / "PlxNative.app"
+    app = out / "DispatcharrTV.app"
     contents, = (app / "Contents",)
     macos, frameworks, res = contents / "MacOS", contents / "Frameworks", contents / "Resources"
 
@@ -304,7 +304,7 @@ def main():
 
     readme = REPO / "docs/macos-app-readme.md"
     if readme.exists():
-        shutil.copy2(readme, out / "PlxNative-README.md")
+        shutil.copy2(readme, out / "DispatcharrTV-README.md")
 
     if args.zip:
         zip_path = out / f"PlxNative-{ver}-{platform.machine()}.zip"

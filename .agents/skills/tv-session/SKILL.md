@@ -5,7 +5,7 @@ description: >
   screenshots or logs, and hand the TV back. Use for on-device UI or playback verification,
   reproducing a bug on the set, navigating a live screen, capturing the video plane, or giving
   the user a live view. Also covers off-network phone/Safari access through the authenticated
-  `up --remote` HTTPS tunnel, the `/tmp/plxnative-*` boot triggers, token and profile-picker boot
+  `up --remote` HTTPS tunnel, the `/tmp/dispatcharrtv-*` boot triggers, token and profile-picker boot
   gates, remote key/click injection, and capture-source choice. Use this instead of generic
   run/verify commands when behavior must be proven on the cross-compiled ARM television.
 ---
@@ -96,7 +96,7 @@ on the screen you asked for → the remote FIFO exists. A live view is one flag 
 
 For a multi-server boot, `--server <slot>` supplies the server half of a `detail=` or `player=`
 item identity. Use it instead of navigating through Search/Sources with key presses: for example,
-`--screen player=5469 --server 1` arms `plxnative-play` and `plxnative-server` together. The app
+`--screen player=5469 --server 1` arms `dispatcharrtv-play` and `dispatcharrtv-server` together. The app
 refuses an invalid or unregistered explicit slot rather than falling back to the current server,
 because the same numeric rating key normally names a different item on each PMS. The option also
 selects the signed-in stored-session boot automatically: that is the credential source which
@@ -106,10 +106,10 @@ of printing a misleading `session up`.
 
 `itemmenu` is the press-and-hold card context menu, and it is the only boot path to it. The
 interactive gesture is a real ≥500 ms hold (`press::LONG_MS`), which no boot trigger can express,
-so `plxnative-itemmenu` snaps into the grid and holds the focused card for you. Driving it by hand
+so `dispatcharrtv-itemmenu` snaps into the grid and holds the focused card for you. Driving it by hand
 instead means the FIFO's split halves — `okdown`, sleep past 500 ms, `okup` — never the `ok` tap.
 To measure the hold's own animation (the card's press-in, the capsule fill, the menu opening and
-closing) rather than the settled menu, use the counted `plxnative-holdbench` trigger or the fps scenes
+closing) rather than the settled menu, use the counted `dispatcharrtv-holdbench` trigger or the fps scenes
 `home-hold` / `collection-hold` (`home-tap` / `collection-tap` for press-and-cancel): they send a real
 OK-down, never an OK while the menu is up, and dismiss with Back. `docs/agent-reference.md` has the wire format.
 
@@ -165,13 +165,13 @@ and idle in front of you.
 
 ### The runtime root moved, and only for a flavoured install
 
-The stable install keeps `/tmp` byte for byte, so every recipe and every `/tmp/plxnative-…` line
+The stable install keeps `/tmp` byte for byte, so every recipe and every `/tmp/dispatcharrtv-…` line
 below stays literally true for the app users get. A flavoured install puts its triggers, its
-`plxnative-remote` FIFO and its runtime logs in `/tmp/<app id>` instead. **Every name is
-unchanged — only the directory moved**, so read each `/tmp/plxnative-…` path here as
-`$(make -s print-rundir FLAVOR=…)/plxnative-…`.
+`dispatcharrtv-remote` FIFO and its runtime logs in `/tmp/<app id>` instead. **Every name is
+unchanged — only the directory moved**, so read each `/tmp/dispatcharrtv-…` path here as
+`$(make -s print-rundir FLAVOR=…)/dispatcharrtv-…`.
 
-`plxnative-diag.log` is the storage worker's allowlisted snapshot on every flavour (0640,
+`dispatcharrtv-diag.log` is the storage worker's allowlisted snapshot on every flavour (0640,
 at most 16 KiB). It records build/uid/gid, fixed-label write probes, activation and helper stages;
 it contains no session data or resolved paths. Events, crash and stderr are 0640 too (they were
 0600 until 2026-10-04; group read is what lets a Dev Mode user fetch them). The diagnostics
@@ -183,16 +183,16 @@ They moved into the runtime root with everything else — `$(make -s print-rundi
 not a shared `/tmp/sample.h264` — and they are read through `devtrig::read_sample`, which resolves via
 `paths::in_runtime_dir` like every other dev read. A second consequence follows from the same
 missing prefix and is easy to want the other way round: `dev::any_trigger_present` matches on
-`plxnative-`, so **a sample does NOT mark the boot as automated** and does not suppress the
+`dispatcharrtv-`, so **a sample does NOT mark the boot as automated** and does not suppress the
 who's-watching picker. Arm one on a multi-user account and you land on the picker, not on Home.
 
 The separator is a DOT, and that is structural rather than cosmetic. The **stable** install's
-runtime root *is* `/tmp`, and it treats every entry there whose name begins `plxnative-` as an
+runtime root *is* `/tmp`, and it treats every entry there whose name begins `dispatcharrtv-` as an
 armed trigger. So the flavour suffix has to stay outside that prefix namespace: a root named
-`/tmp/plxnative-debug` would sit in `/tmp` reading, to the *other* install, as a permanently armed
+`/tmp/dispatcharrtv-debug` would sit in `/tmp` reading, to the *other* install, as a permanently armed
 trigger — silently suppressing the released app's who's-watching picker, with no line in any log.
-`com.magness.dispatcharrtv.debug` contains no `plxnative-`, so it cannot. The rule is the **prefix**, not
-avoiding a clash with some file that happens to exist: there is no `plxnative-debug` trigger, and
+`com.magness.dispatcharrtv.debug` contains no `dispatcharrtv-`, so it cannot. The rule is the **prefix**, not
+avoiding a clash with some file that happens to exist: there is no `dispatcharrtv-debug` trigger, and
 the dot is what makes it not matter if one is ever added. (`docs/two-installs.md` §4.1 has the
 second, independent guard.)
 
@@ -205,13 +205,13 @@ like a total regression.
 
 ### md5 proves the BYTES, not which install they are in
 
-`up` still md5-compares your `pkg/plxnative` against the copy in the app directory, and that check
+`up` still md5-compares your `pkg/dispatcharrtv` against the copy in the app directory, and that check
 is worth having — but with two installs it answers a narrower question than it looks like it does.
-`pkg/plxnative` is a path that **every** flavour and **both** configurations write, so a match
+`pkg/dispatcharrtv` is a path that **every** flavour and **both** configurations write, so a match
 proves only "these are the bytes on my disk right now". It says nothing about which app produced
-the log you are about to read. `pidof plxnative` cannot close the gap either: both binaries are
-named `plxnative`, so on this busybox set it returns two pids in an order nothing promises. For
-liveness use `fuser $(make -s print-appdir FLAVOR=…)/plxnative`, which is inode-scoped and can only
+the log you are about to read. `pidof dispatcharrtv` cannot close the gap either: both binaries are
+named `dispatcharrtv`, so on this busybox set it returns two pids in an order nothing promises. For
+liveness use `fuser $(make -s print-appdir FLAVOR=…)/dispatcharrtv`, which is inode-scoped and can only
 match one install. And anchor any path match on a delimiter — `com.magness.dispatcharrtv` is a **prefix**
 of `com.magness.dispatcharrtv.debug`, so match `/<id>/`, never the bare id.
 
@@ -228,15 +228,15 @@ a log you did not watch being produced.
 
 ## Triggers are boot state; the FIFO is live state
 
-Every `plxnative-*` trigger in the install's runtime root is read **once at boot**, so it
+Every `dispatcharrtv-*` trigger in the install's runtime root is read **once at boot**, so it
 must be in place before the launch. Anything you want to do to a *running* app goes through
 the remote FIFO (`tv-session.sh key` / `click`).
 
-**Some exceptions are deliberate and read LIVE**: `plxnative-failtest` (so a read-out variant
-can be swapped mid-playback), `plxnative-testpat` (the same for the synthetic ground),
-`plxnative-gohome` (which leg of the root press to force — armed AFTER the screen you want has
+**Some exceptions are deliberate and read LIVE**: `dispatcharrtv-failtest` (so a read-out variant
+can be swapped mid-playback), `dispatcharrtv-testpat` (the same for the synthetic ground),
+`dispatcharrtv-gohome` (which leg of the root press to force — armed AFTER the screen you want has
 settled, because arming it before the launch also makes the boot count as automated and moves which
-screen you land on), and `plxnative-signinfail` (`auth::scripted::signinfail_spec` is re-read on
+screen you land on), and `dispatcharrtv-signinfail` (`auth::scripted::signinfail_spec` is re-read on
 every sign-in code request and every poll, so *Try again* keeps failing the same way until the file
 is removed).
 
@@ -247,7 +247,7 @@ is removed).
    run inherits whatever the last session armed. `tv-session.sh up` glob-clears first,
    in the runtime root of the flavour it was given.
 2. **Any non-DIAG trigger also suppresses the who's-watching picker.** The app treats the
-   presence of any `plxnative-*` file in its runtime root, outside an exemption list, as
+   presence of any `dispatcharrtv-*` file in its runtime root, outside an exemption list, as
    "this is an automated boot" — which is why arming a live view does not change the boot
    you are observing. **The exempt list is `dev::DIAG` in `rust-modules/src/dev.rs`, and
    only that**; it has grown past the three `*.log` files and the four names this skill
@@ -264,8 +264,8 @@ Two halves are needed and a single grep is the trap: a path literal now only eve
 COMMENT, and four triggers (`grid`, `h265`, `playidx`, `ptype`) are named nowhere but their
 `devtrig::flag`/`devtrig::read` call, so grepping paths alone silently under-reports the catalog.
 
-Boot gate order, when you care which identity you land as: `plxnative-login` forces the QR
-screen → `plxnative-token` beats any stored session → a stored session (with the picker
+Boot gate order, when you care which identity you land as: `dispatcharrtv-login` forces the QR
+screen → `dispatcharrtv-token` beats any stored session → a stored session (with the picker
 for a multi-user account) → otherwise QR sign-in. Nothing is compiled into the binary.
 
 ## Observing: pick the right capture source
@@ -281,11 +281,11 @@ That listener is **8910 for the stable install, 8911 for debug, 8912 for nightly
 not fight over one socket — and `make -s print-appport FLAVOR=…` is that rule for the shell
 (`capture::default_port` is the same rule in Rust; `ci/flavor.py --selftest` compares them).
 
-The split only bites when you arm the trigger **by hand**: an empty `plxnative-capture` takes the
+The split only bites when you arm the trigger **by hand**: an empty `dispatcharrtv-capture` takes the
 default for that install, so a debug install (the default flavour) lands on 8911 and the page needs
 `--app-port 8911` (or `TV_APP_PORT=8911`) to find the debug install. `tv-session.sh --stream` never
 has to be told: it writes the resolved number into the trigger content
-(`plxnative-capture=$APPPORT`, where `APPPORT` came from `make -s print-appport FLAVOR=$FLAVOR`)
+(`dispatcharrtv-capture=$APPPORT`, where `APPPORT` came from `make -s print-appport FLAVOR=$FLAVOR`)
 and hands the SAME variable to `stream-screen.py --app-port`, so the arm and the viewer cannot
 address different ports. The session is therefore on 8910 for `--flavor stable`, 8911 at the
 default (debug), or 8912 for `--flavor nightly` — the port follows the flavour rather than being
@@ -433,7 +433,7 @@ the TV is signed in as whatever the automation chose.
 
 | Symptom | Fix |
 |---|---|
-| `no route= heartbeat` after launch | Check the install-scoped PID with `fuser`. No PID: `crash-triage`; live PID: `profile-tv` / `tools/plxnative-sample snapshot`. |
+| `no route= heartbeat` after launch | Check the install-scoped PID with `fuser`. No PID: `crash-triage`; live PID: `profile-tv` / `tools/dispatcharrtv-sample snapshot`. |
 | Landed on the wrong screen | A stale trigger. Re-run `up` (it clears), or check `status`, which lists what is armed. |
 | Boot shows the QR sign-in screen | No token — `src/config.local.h` is missing/unreadable, or you passed `--no-token`. |
 | Picker appeared during an automated run | You armed only DIAG-exempt triggers. Add any other trigger, or use `--screen profiles` deliberately. |

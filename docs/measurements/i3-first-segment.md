@@ -1,7 +1,7 @@
 # I3 — the first segment no longer forces a downshift
 
 **Device session 2026-08-27.** LG 49SM9000PLA, webOS 4.10.0,
-`com.beb.plxnative.debug`. Binary: `36b96679` (`abr: suppress first-segment false
+`com.beb.dispatcharrtv.debug`. Binary: `36b96679` (`abr: suppress first-segment false
 downshifts`). Host gate at that SHA: 1 327 Rust tests + 152 harness tests green;
 `cargo +nightly check --lib --no-default-features` green.
 
@@ -26,7 +26,7 @@ actuator.
 
 Two earlier launches in the same lease still printed `prime_down`. They are excluded:
 the first used the ARM binary from before `36b96679`; the second rebuilt
-`pkg/plxnative` but did not deploy it. `tests/run.py` launches the installed debug app
+`pkg/dispatcharrtv` but did not deploy it. `tests/run.py` launches the installed debug app
 and does not replace its binary. The accepted run followed an explicit `make deploy`;
 only that run exercised the commit named above.
 

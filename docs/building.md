@@ -26,7 +26,7 @@ Windows and needs no webOS NDK; run `tools/sim.ps1 setup` there.
 make setup-env
 rustup toolchain install nightly --component rust-src --component clippy
 brew install cmake sshpass        # or your distribution's equivalent
-make                              # builds pkg/plxnative — a developer build
+make                              # builds pkg/dispatcharrtv — a developer build
 make ipk                          # pkg/com.magness.dispatcharrtv.debug_<version>_arm.ipk
 ```
 
@@ -44,10 +44,10 @@ own, gated by free space on the volume (`PLX_GC_MIN_FREE_GIB`, default 20) and, 
 a lane idle guard (`PLX_GC_IDLE_MIN`, default 60) so a lane an agent might resume soon is spared.
 It runs from a Claude Code `SessionEnd` hook and from the hourly launchd agent `make disk-watch`
 installs (`tools/install-disk-watch.sh`, macOS only — run it yourself; nothing here installs it
-for you). Logs land in `~/Library/Logs/plxnative-build-gc.log` (or `$PLX_GC_LOG`).
+for you). Logs land in `~/Library/Logs/dispatcharrtv-build-gc.log` (or `$PLX_GC_LOG`).
 
 The bundled FFmpeg is not rebuilt per checkout. Its source and object tree is machine-wide under
-`$PLX_BUILD_CACHE` (default `~/.cache/plxnative`), keyed by configure flags and toolchain, so a
+`$PLX_BUILD_CACHE` (default `~/.cache/dispatcharrtv`), keyed by configure flags and toolchain, so a
 fresh clone gets its own prefix in seconds rather than minutes.
 
 ## Two flavours, and the default is the developer one
@@ -80,8 +80,8 @@ The platform entry points are deliberately separate:
   host FFmpeg, so the pipeline between the socket and decoder runs on the host. The historical
   `sim`, `sim-run`, and `sim-shot` names remain aliases for these macOS targets.
 - Linux: `make sim-linux` builds the optimized UI/Plex simulator without host FFmpeg. Run the
-  resulting `rust-modules/target-sim/release/plxnative-sim` under X11 or Wayland with
-  `PLXNATIVE_APP_DIR=pkg` (or use the matching path below a custom `SIM_TDIR`).
+  resulting `rust-modules/target-sim/release/dispatcharrtv-sim` under X11 or Wayland with
+  `DISPATCHARRTV_APP_DIR=pkg` (or use the matching path below a custom `SIM_TDIR`).
 - Windows/WSLg: `tools/sim.ps1 build|run|shot|send`, backed by the `make sim-wsl` compatibility
   alias for `sim-linux`. It adds dependency setup, isolated assets/runtime state and WSLg checks.
 
@@ -122,7 +122,7 @@ make TV=<ip> test     # deploy + run
 ```
 
 Skip the install and `deploy` stops with *"the debug flavour is not installed"* rather than
-half-working. Drop the address into `~/.config/plxnative/tv-host` (one line, an IP or hostname; a per-checkout
+half-working. Drop the address into `~/.config/dispatcharrtv/tv-host` (one line, an IP or hostname; a per-checkout
 `.tv-host` also works and wins) and you can leave `TV=<ip>` off every command, in every worktree. Ask `make -s print-appid print-appdir print-rundir
 FLAVOR=<f>` when you need to know where a given flavour's binary, logs and dev triggers live.
 

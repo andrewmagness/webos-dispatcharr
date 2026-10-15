@@ -8,7 +8,7 @@ it was blocked on there being no second policy path in the app.
 **It does not need one.** `TransactionModel::measured()` (`ab0c6f7e`) landed BEFORE I6
 (`f331dd4d`), so a checkout of `f331dd4d^` runs the same pipeline — and a checkout cannot grade a
 strawman, which hand-reconstructing the deleted gates from a comment could. `tools/abr-sim-case.py`
-takes `PLXNATIVE_SIM_BIN`, so both legs get **HEAD's manifest, HEAD's fixtures and HEAD's shaper**
+takes `DISPATCHARRTV_SIM_BIN`, so both legs get **HEAD's manifest, HEAD's fixtures and HEAD's shaper**
 and differ only in the app binary.
 
 ## Result

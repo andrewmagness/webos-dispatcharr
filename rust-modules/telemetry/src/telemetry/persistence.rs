@@ -398,7 +398,7 @@ enum PreviousCanonical {
     Blocked,
 }
 
-/// Decode the complete `plxnative-record` wrapper used by the JSON canonical store that preceded
+/// Decode the complete `dispatcharrtv-record` wrapper used by the JSON canonical store that preceded
 /// DB8. A corrupt/future record is terminal and is never treated like an absent legacy source.
 #[cfg(any(
     all(target_os = "linux", target_arch = "arm", not(feature = "hostsim"), not(any(test, feature = "test-support"))),
@@ -994,7 +994,7 @@ mod tests {
     impl Fixture {
         fn new(name: &str) -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "plxnative-consent-persistence-{name}-{}",
+                "dispatcharrtv-consent-persistence-{name}-{}",
                 std::process::id()
             ));
             let _ = std::fs::remove_dir_all(&dir);

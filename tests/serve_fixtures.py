@@ -13,7 +13,7 @@ why `Range` is not optional here (§4 of the spec below).
 
 THE SPEC — what the app actually requires of a server (all read out of the code, not assumed):
 
-  1. Request line is `GET <abs-path> HTTP/1.1` with `Host:`, `User-Agent: plxnative/0.1` and
+  1. Request line is `GET <abs-path> HTTP/1.1` with `Host:`, `User-Agent: dispatcharrtv/0.1` and
      `Accept: */*` (`stream.rs::http_open`). Media GETs omit `Connection: close` so HTTP/1.1
      keep-alive is the default; sequential HLS/playlist GETs to the same peer reuse the fd.
      Range seeks still close from the client (`ff.rs::seek_cb`). No pipelining.
@@ -658,7 +658,7 @@ def default_root():
     and `.gitignore` as the only defence against committing media has been got wrong here before.
     """
     return os.path.join(
-        os.environ.get("FIXTURES_OUT") or os.path.expanduser("~/plxnative-fixtures"), "pipeline")
+        os.environ.get("FIXTURES_OUT") or os.path.expanduser("~/dispatcharrtv-fixtures"), "pipeline")
 
 
 def lan_ip(peer=None):
@@ -746,7 +746,7 @@ def main():
         return _selftest(a.root, a.port)
     srv, base = serve(a.root, a.port, sink=lambda m: print(m, flush=True))
     print(f"serving {a.root}")
-    print(f"  {base}/<file>   (this is the address to put in plxnative-url)")
+    print(f"  {base}/<file>   (this is the address to put in dispatcharrtv-url)")
     print("  ^C to stop")
     try:
         threading.Event().wait()

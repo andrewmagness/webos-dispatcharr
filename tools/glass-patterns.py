@@ -15,7 +15,7 @@ a shot at each rung, and a contact sheet out the other end:
     tools/glass-patterns.py --lens "off:2,0,0 a:10,10,0 b:14,18,0"   # …one instance per rung
 
 `--lens` is the second axis: each entry is `<name>:<bevel>,<lens>,<spec>`, written to that
-instance's `plxnative-tracklens`, so a run photographs every geometry against every ground and the
+instance's `dispatcharrtv-tracklens`, so a run photographs every geometry against every ground and the
 per-ground sheets stack the rungs for comparison. It is read once per process, which is why a rung
 costs a whole simulator — and why they are launched together and driven in lockstep.
 
@@ -29,9 +29,9 @@ import argparse, os, re, shutil, signal, subprocess, sys, time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-SIM = REPO / "rust-modules/target-sim/debug/plxnative-sim"
+SIM = REPO / "rust-modules/target-sim/debug/dispatcharrtv-sim"
 # The tab track, in authored 1920x1080 coordinates — `draw_tab_row` logs this rect as `rect=` when
-# `plxnative-groundlog` is armed, and these are the values it prints. Used for the crops and for
+# `dispatcharrtv-groundlog` is armed, and these are the values it prints. Used for the crops and for
 # sampling the drawn plate.
 TRACK = (686, 36, 547, 76)
 LADDER = ([f"flat:{l}" for l in range(0, 101, 10)]
@@ -59,30 +59,30 @@ def launch(root: Path, pkg: str, pms: str, port: str, lens: str = "", lift: str 
     root.mkdir(parents=True, exist_ok=True)
     # the container's lens geometry, one rung per instance — `gfx::standing_sweep` reads it once
     if lens:
-        (root / "plxnative-tracklens").write_text(lens)
+        (root / "dispatcharrtv-tracklens").write_text(lens)
     # …and its diffuse floor, the same way; "0" is the material before the floor existed
     if lift:
-        (root / "plxnative-tracklift").write_text(lift)
+        (root / "dispatcharrtv-tracklift").write_text(lift)
     # …and how much of the rim shows the page unblurred
     if sharp:
-        (root / "plxnative-tracksharp").write_text(sharp)
+        (root / "dispatcharrtv-tracksharp").write_text(sharp)
     tok = re.search(r'^#define\s+PMS_TOKEN\s+"([^"]*)"', (REPO / "src/config.local.h").read_text(), re.M)
     if tok:
-        (root / "plxnative-token").write_text(tok.group(1))
+        (root / "dispatcharrtv-token").write_text(tok.group(1))
     # `noidle` because a settled screen stops presenting and `shot` would then wait for a frame that
     # never comes; `groundlog` because the numbers below are read from it.
-    (root / "plxnative-noidle").touch()
-    (root / "plxnative-groundlog").touch()
-    (root / "plxnative-testpat").write_text("flat:0")
-    env = dict(os.environ, PLXNATIVE_RUNTIME_DIR=str(root), PLXNATIVE_APP_DIR=str(REPO / "pkg"),
-               PLXNATIVE_WIN="1920x1080")
+    (root / "dispatcharrtv-noidle").touch()
+    (root / "dispatcharrtv-groundlog").touch()
+    (root / "dispatcharrtv-testpat").write_text("flat:0")
+    env = dict(os.environ, DISPATCHARRTV_RUNTIME_DIR=str(root), DISPATCHARRTV_APP_DIR=str(REPO / "pkg"),
+               DISPATCHARRTV_WIN="1920x1080")
     log = open(root / "stdout.log", "w")
     return subprocess.Popen([str(SIM), pms, port], env=env, stdout=log, stderr=log)
 
 
 def drive(root: Path, pats, settle):
     """Walk the ladder, one shot per rung, and return [(pat, shot_path)] in order."""
-    fifo = root / "plxnative-remote"
+    fifo = root / "dispatcharrtv-remote"
     for _ in range(120):
         if fifo.exists():
             break
@@ -107,7 +107,7 @@ def drawn(root: Path):
     pat = re.compile(r"track_ground rgb=([\d.]+),([\d.]+),([\d.]+) L\*=([\d.-]+) "
                      r"tone=([\d.]+)->(\d) want=([\d.]+) drawn=([\d.]+)")
     seen = []
-    for line in (root / "plxnative-events.log").read_text(errors="replace").splitlines():
+    for line in (root / "dispatcharrtv-events.log").read_text(errors="replace").splitlines():
         m = pat.search(line)
         if m:
             seen.append(tuple(float(x) for x in m.groups()))
@@ -154,7 +154,7 @@ def main():
     shots = {}
     try:
         # driven in lockstep so every package sees the same ground at the same moment
-        fifos = {pkg: open(roots[pkg] / "plxnative-remote", "r+b", buffering=0) for pkg in pkgs}
+        fifos = {pkg: open(roots[pkg] / "dispatcharrtv-remote", "r+b", buffering=0) for pkg in pkgs}
         for pkg in pkgs:
             shots[pkg] = []
         for i, pat in enumerate(pats):

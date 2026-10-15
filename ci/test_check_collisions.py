@@ -72,9 +72,9 @@ class ConcurrentSteps(unittest.TestCase):
 
     def test_no_rust_test_arms_a_trigger_in_the_shared_runtime_root(self):
         # A host test run resolves the runtime root to the bare `/tmp` (only `hostsim` can steer it),
-        # so a test that writes `plxnative-<trigger>` there is visible to every other test process
+        # so a test that writes `dispatcharrtv-<trigger>` there is visible to every other test process
         # on the machine. Two of them did, and a second checkout's player test read the armed
-        # `plxnative-failtest` ("left: []  right: [Transport(None)]", 119 of 150 side-by-side runs).
+        # `dispatcharrtv-failtest` ("left: []  right: [Transport(None)]", 119 of 150 side-by-side runs).
         # Tests arm triggers through `plx_base::devtrig::with_private_triggers` instead. The one
         # production use below is the remote FIFO's path, which is not a test.
         allowed = {'rust-modules/src/remote.rs'}
@@ -84,7 +84,7 @@ class ConcurrentSteps(unittest.TestCase):
             if '/target' in rel or rel in allowed:
                 continue
             for number, line in enumerate(path.read_text(errors='replace').splitlines(), 1):
-                if 'in_runtime_dir("plxnative-' in line:
+                if 'in_runtime_dir("dispatcharrtv-' in line:
                     hits.append(f'{rel}:{number}')
         self.assertEqual(hits, [], 'arm triggers with devtrig::with_private_triggers, not in the shared root')
 
@@ -108,7 +108,7 @@ RUN_TOGETHER = (
     'python3 ci/test_tv_ssh.py',
     'python3 ci/test_test_crate.py',
     'python3 ci/test_cargo_test_parallel.py',
-    'python3 tools/plxnative-lab selftest',
+    'python3 tools/dispatcharrtv-lab selftest',
     'python3 ci/test_libass_fetch.py',
     'python3 ci/test_deploy_manifest.py',
     'python3 tests/test_image_cache_stress.py',
@@ -150,7 +150,7 @@ class StepsRunTogetherInOneCheck(unittest.TestCase):
         hits = []
         for folder in ('ci', 'tools', 'tests', '.claude/hooks'):
             for path in sorted((ROOT / folder).rglob('*')):
-                if not path.is_file() or (path.suffix not in ('.py', '.sh') and path.name != 'plxnative-lab'):
+                if not path.is_file() or (path.suffix not in ('.py', '.sh') and path.name != 'dispatcharrtv-lab'):
                     continue
                 for number, line in enumerate(path.read_text(errors='replace').splitlines(), 1):
                     if not line.lstrip().startswith('#') and FIXED_PORT.search(line):

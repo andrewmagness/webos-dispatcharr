@@ -31,7 +31,7 @@ programmes sit on a fixed lattice from a fixed epoch, so any two answers for the
 identical.
 
     python3 tests/mock_dispatcharr.py --host <this-machine-lan-ip> --port 9192
-    printf '%s\n' http://<this-machine-lan-ip>:9192 admin admin > /tmp/plxnative-dispatcharr
+    printf '%s\n' http://<this-machine-lan-ip>:9192 admin admin > /tmp/dispatcharrtv-dispatcharr
 
 The default binds loopback only, like tests/mock_pms.py; pass the LAN address for a television.
 """

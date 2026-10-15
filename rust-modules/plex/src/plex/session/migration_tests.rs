@@ -490,7 +490,7 @@ fn versioned_wrapper_is_decoded_before_bare_session_and_clear_is_a_tombstone() {
         ),
         ("wrapper-cleared", serde_json::json!("Cleared")),
     ] {
-        let wrapper = serde_json::json!({"format":"plxnative-record","version":1,"domain":"session","key":"session","revision":7,"state":state});
+        let wrapper = serde_json::json!({"format":"dispatcharrtv-record","version":1,"domain":"session","key":"session","revision":7,"state":state});
         let source = LegacyFile::new(name, &wrapper);
         let mut store = MigrationFixture::default();
         let boot = persistence::bootstrap_with(
@@ -549,7 +549,7 @@ fn recorded_identity_refusal_and_unavailability_preserve_secure_input_without_re
     .into_iter()
     .enumerate()
     {
-        let mut secure = serde_json::json!({"format":"plxnative-secure-session","version":1,"sealed":{"backend":"keymanager3","key":"plxnative.session.v1","iv":"synthetic","data":"synthetic"}});
+        let mut secure = serde_json::json!({"format":"dispatcharrtv-secure-session","version":1,"sealed":{"backend":"keymanager3","key":"dispatcharrtv.session.v1","iv":"synthetic","data":"synthetic"}});
         if let Some(identity) = identity {
             secure["sealed"]["identity"] = identity.into();
         }
@@ -580,7 +580,7 @@ fn recorded_identity_refusal_and_unavailability_preserve_secure_input_without_re
 fn secure_open_then_durable_plaintext_readback_is_required_before_retirement() {
     let source = LegacyFile::new(
         "secure-open",
-        &serde_json::json!({"format":"plxnative-secure-session","version":1,"sealed":{"backend":"keymanager3","identity":"named"}}),
+        &serde_json::json!({"format":"dispatcharrtv-secure-session","version":1,"sealed":{"backend":"keymanager3","identity":"named"}}),
     );
     let mut opener = Opener {
         plaintext: Some(serde_json::to_vec(&fixture()).unwrap()),
@@ -596,7 +596,7 @@ fn secure_open_then_durable_plaintext_readback_is_required_before_retirement() {
 
 #[test]
 fn unknown_secure_format_remains_opaque_until_explicit_clear() {
-    for (index,value) in [serde_json::json!({"format":"future-secure","version":3}),serde_json::json!({"format":"plxnative-secure-session","version":2}),serde_json::json!({"format":"plxnative-secure-session","version":1,"sealed":{"backend":"future"}})].into_iter().enumerate() {
+    for (index,value) in [serde_json::json!({"format":"future-secure","version":3}),serde_json::json!({"format":"dispatcharrtv-secure-session","version":2}),serde_json::json!({"format":"dispatcharrtv-secure-session","version":1,"sealed":{"backend":"future"}})].into_iter().enumerate() {
         let source=LegacyFile::new(&format!("unknown-{index}"),&value);let mut store=MigrationFixture::default();let mut opener=opener();
         let boot=persistence::bootstrap_with(&mut store,&mut opener,std::slice::from_ref(&source.path));
         assert!(matches!(boot.state,CanonicalRead::Blocked(_)));assert_eq!(store.commits,0);assert!(source.path.exists());assert!(opener.identities.is_empty());
@@ -977,7 +977,7 @@ fn pending_import_retries_only_its_recorded_envelope_and_never_another_legacy_fi
         "pending-no-fallback",
         &serde_json::json!({"client_id":"other","account_token":"never-import"}),
     );
-    let envelope=serde_json::json!({"format":"plxnative-secure-session","version":1,"sealed":{"backend":"keymanager3","identity":"named"}}).to_string();
+    let envelope=serde_json::json!({"format":"dispatcharrtv-secure-session","version":1,"sealed":{"backend":"keymanager3","identity":"named"}}).to_string();
     let mut store = MigrationFixture {
         pending: Some(envelope.clone()),
         ..Default::default()

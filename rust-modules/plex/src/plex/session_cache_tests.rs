@@ -68,7 +68,7 @@ fn a_locked_record_is_retried_not_latched() {
     let t = TempSession::new("cache-locked-retried");
     std::fs::write(
         t.file(),
-        br#"{"format":"plxnative-secure-session","version":99,"sealed":{}}"#,
+        br#"{"format":"dispatcharrtv-secure-session","version":99,"sealed":{}}"#,
     )
     .expect("write the locked fixture");
     invalidate_for_test();
@@ -122,7 +122,7 @@ struct TempCanonicalRoot {
 impl TempCanonicalRoot {
     fn new(tag: &str) -> TempCanonicalRoot {
         let dir = std::env::temp_dir().join(format!(
-            "plxnative-session-cache-canonical-{}-{tag}",
+            "dispatcharrtv-session-cache-canonical-{}-{tag}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);

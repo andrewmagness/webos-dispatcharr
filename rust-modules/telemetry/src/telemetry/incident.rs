@@ -886,7 +886,7 @@ pub fn event_body(
         "level": "error",
         "release": super::release(),
         "environment": super::sender::ENVIRONMENT,
-        "sdk": {"name": "plxnative-handled", "version": super::app_version()},
+        "sdk": {"name": "dispatcharrtv-handled", "version": super::app_version()},
         "logger": "onboarding",
         "transaction": "onboarding",
         "culprit": format!("onboarding::{kind}"),
@@ -1558,7 +1558,7 @@ mod tests {
         use super::super::delivery::{self, DeliveryState};
         let _g = plx_base::testlock::serial();
         delivery::forget();
-        let dir = std::env::temp_dir().join(format!("plxnative-standing-watch-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dispatcharrtv-standing-watch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         super::super::spool::set_test_path(Some(dir.join("spool.bin")));
@@ -1584,7 +1584,7 @@ mod tests {
         use delivery::DeliveryState;
         let _g = plx_base::testlock::serial();
         delivery::forget();
-        let dir = std::env::temp_dir().join(format!("plxnative-standing-race-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dispatcharrtv-standing-race-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         spool::set_test_path(Some(dir.join("spool.bin")));
         let record = super::super::queue::Record {
@@ -1620,7 +1620,7 @@ mod tests {
     fn a_standing_report_needs_the_scope_and_never_carries_a_stall() {
         let _g = plx_base::testlock::serial();
         let saved = consent::current();
-        let dir = std::env::temp_dir().join(format!("plxnative-incident-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dispatcharrtv-incident-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         super::super::spool::set_test_path(Some(dir.join("spool.bin")));

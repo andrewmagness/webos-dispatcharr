@@ -507,7 +507,7 @@ fn activate_commits_the_bare_rows_directly() {
     );
 }
 
-/// `resolve_menupick_row` is the `/tmp/plxnative-menupick` trigger's own parser: a plain number
+/// `resolve_menupick_row` is the `/tmp/dispatcharrtv-menupick` trigger's own parser: a plain number
 /// always wins (the original "row N" contract, on either tab); a name is only ever tried on the
 /// Audio tab, and an unrecognized one — or a name asked of the Subtitles tab, which has no such
 /// map — resolves to nothing, which `menupick_arm` turns into its "unknown target" log rather than

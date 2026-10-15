@@ -142,7 +142,7 @@ pub fn event_body(
         "level": "error",
         "release": super::release(),
         "environment": super::sender::ENVIRONMENT,
-        "sdk": {"name": "plxnative-handled", "version": super::app_version()},
+        "sdk": {"name": "dispatcharrtv-handled", "version": super::app_version()},
         "logger": "playback",
         "transaction": "playback",
         "culprit": format!("playback::{code}"),

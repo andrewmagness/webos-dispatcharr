@@ -38,7 +38,7 @@ minutes of television for a pipeline the change cannot reach.)
 
 **2. Reading a bare `./tests/run.py` as the suite it used to be.** The default **inverted on
 2026-08-22**. A bare run is now the **synthetic tier** — generated clips served off your
-Mac through `/tmp/plxnative-playurl`, **no Plex anywhere**. Ask `./tests/run.py --list` for the
+Mac through `/tmp/dispatcharrtv-playurl`, **no Plex anywhere**. Ask `./tests/run.py --list` for the
 count — a number written down here has now rotted twice, the second time inside the branch that
 was correcting the first. The 21 library-backed cases are
 `./tests/run.py --server`; `--fps` and `--fps-player` imply `--server` (except with `--mock`, which refuses it; see tests/README.md) (their scenes navigate a
@@ -80,12 +80,12 @@ but a photograph could show it (`gfx.rs`, at the `glBlendFuncSeparate` call).
 
 ### Tier 1 — `make check`
 
-`cargo +$(RUST_NIGHTLY) test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens`, preceded by `make lint` (three **named** clippy lints —
+`cargo +$(RUST_NIGHTLY) test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens`, preceded by `make lint` (three **named** clippy lints —
 `ifs_same_cond`, `same_functions_in_if_condition`, `if_same_then_else` — the shadowed-branch gate),
 and followed by **three** host checks that are easy to forget are in here: `python3 ci/flavor.py
 --selftest` (the flavour transform, whose central assertion is that the STABLE transform is the
 identity), `python3 tests/test_harness.py` (pins `run.py`'s skip partition — the path a full
-`manifest.local.json` never enters), and `python3 tools/plxnative-lab selftest` (the Lab
+`manifest.local.json` never enters), and `python3 tools/dispatcharrtv-lab selftest` (the Lab
 Diagnostics receiver: a real TLS listener on loopback, one accepted upload and six refusals — the
 whole of what that tool exposes to the public internet, and the only gate it has, since nothing in
 cargo can see a python file).
@@ -106,7 +106,7 @@ lock.) Do not write a new number here: measure it if you need one — this file 
 Count it yourself if you need the number:
 
 ```sh
-cd rust-modules && cargo +nightly test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens -- --list | grep -c ': test'
+cd rust-modules && cargo +nightly test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens -- --list | grep -c ': test'
 ```
 
 **Run it on nightly.** `make check` uses `cargo +$(RUST_NIGHTLY)`; a bare `cargo test` uses your
@@ -165,9 +165,9 @@ It provably cannot answer:
 **Two host-only traps that read as your change being broken.** The recipes are `ui-sim`'s; they are
 named here only so you can tell them from a regression in your own edit.
 
-- **`make sim-shot` hangs on a settled screen.** `PLXNATIVE_SHOT_FRAME` (`SIM_FRAME`, default 200)
+- **`make sim-shot` hangs on a settled screen.** `DISPATCHARRTV_SHOT_FRAME` (`SIM_FRAME`, default 200)
   counts **presented** frames, and `plx_machine::idle` gates presents — so a screen that settles before
-  frame 200 never reaches it. Arm `plxnative-noidle` in the instance root, or drive the `shot` FIFO
+  frame 200 never reaches it. Arm `dispatcharrtv-noidle` in the instance root, or drive the `shot` FIFO
   token instead, which calls `plx_machine::idle::invalidate()` for you (`shot.rs::request`).
 - **A synthetic `SDL_TEXTINPUT` SIGSEGVs inside SDL** — macOS `libSDL2` is sdl2-compat forwarding
   into SDL3, whose text event carries a `char *text` where SDL2 carries an inline `char[32]`. No
@@ -203,7 +203,7 @@ nothing — no television, no PMS, no plex.tv — but it **lists the tier you di
 under `--list --server`. `run.py` prints two different tables on purpose, because the two matrices
 share no key (a `fixture` and a `declare` on one side, an `item`/`rk` on the other). It also still
 needs a TV **address** — the overlay's `tv`, `--tv`, or the shared lookup (`tools/tv-config.sh host`:
-the `.tv-host` files, then `~/.config/plxnative/tv-host`) — which it never dials; it exits saying so
+the `.tv-host` files, then `~/.config/dispatcharrtv/tv-host`) — which it never dials; it exits saying so
 only when none of those yields one.
 
 **And the guard hook refuses it.** `.claude/hooks/tv-lock-guard.py` classifies by COMMAND WORD, so
@@ -256,8 +256,8 @@ FROZEN** before they were made to report. (`Xfade` drove the ROUTE dip too until
 applies to a new async landing that repaints: without an `invalidate()` it arrives invisibly until
 the next keypress.
 
-**Frame rate.** Never quote `fps=` from a run with `/tmp/plxnative-profile` or
-`/tmp/plxnative-hwcnt` armed: `frame.ui` brackets every frame with two `glFinish`es and drops a
+**Frame rate.** Never quote `fps=` from a run with `/tmp/dispatcharrtv-profile` or
+`/tmp/dispatcharrtv-hwcnt` armed: `frame.ui` brackets every frame with two `glFinish`es and drops a
 60 fps leg to **45**. Measured 2026-08-19, in the run that also **refuted** the "the panel
 thermally throttles" story — a control leg held 60/60/60 across six runs on a set up 2 h 15 m under
 continuous load. The 50 fps readings in the archived notes belong to the instrument. Take pacing in
@@ -309,7 +309,7 @@ built the package; a real release goes through the **`cut-release`** skill.
   library holds, so `16 passed` can mean sixteen of the shapes that installation happens to own. A
   skipped case is coverage you did not get.
 - **The `install:` boot line names which of two identically-named binaries wrote the log.** Read it
-  before grading anything: `pidof` cannot tell the installs apart and `pkg/plxnative` is a path
+  before grading anything: `pidof` cannot tell the installs apart and `pkg/dispatcharrtv` is a path
   every flavour and configuration writes.
 - **A `sim=1` heartbeat is not a device measurement.** Say which tier produced each claim. "Looks
   right in the simulator, not yet device-verified" is a useful, honest status; "verified" without a

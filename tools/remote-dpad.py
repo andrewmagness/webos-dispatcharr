@@ -86,7 +86,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # The ONLY tokens that may reach the TV's FIFO. Names are the app's own
-# (crate::remote drains `plxnative-remote` inside that install's runtime root — /tmp
+# (crate::remote drains `dispatcharrtv-remote` inside that install's runtime root — /tmp
 # for the stable install, /tmp/<app id> for a flavoured one). This file never touches
 # that path: an allowed token is forwarded to stream-screen.py's /key, and the held
 # SSH writer THERE resolves and writes the FIFO. Keeping the path in exactly one

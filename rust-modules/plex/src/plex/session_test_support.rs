@@ -77,7 +77,7 @@ impl TempSession {
         // there a literal path stops meeting a read that resolves its own root, while this
         // test is choosing the path that BOTH halves resolve to.
         let dir = std::env::temp_dir()
-            .join(format!("plxnative-session-{}-{tag}", std::process::id()));
+            .join(format!("dispatcharrtv-session-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir); // a previous run that died mid-test
         std::fs::create_dir_all(&dir).expect("a writable temp dir");
         super::redirect_for_test(Some(dir.join("auth.json")));

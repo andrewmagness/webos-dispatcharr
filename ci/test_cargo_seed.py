@@ -40,14 +40,14 @@ def touch(path, text="x", mtime=None):
 LOCK = """version = 4
 
 [[package]]
-name = "plxnative-modules"
+name = "dispatcharrtv"
 version = "0.7.0"
 dependencies = [
  "serde",
 ]
 
 [[package]]
-name = "plxnative-storage"
+name = "dispatcharrtv-storage"
 version = "0.0.0"
 
 [[package]]
@@ -116,13 +116,13 @@ class SeedCase(unittest.TestCase):
         touch(os.path.join(t, "debug", "deps", "libserde-1111.rmeta"))
         touch(os.path.join(t, "debug", ".fingerprint", "serde-1111", "lib-serde"))
         touch(os.path.join(t, "debug", ".cargo-lock"), "")
-        touch(os.path.join(t, "debug", "deps", "libplxnative_modules-9999.rlib"), "APP")
-        touch(os.path.join(t, "debug", "deps", "plxnative_modules-9999"), "APP-TEST-BIN")
-        touch(os.path.join(t, "debug", "deps", "plxnative_modules-9999.plxnative_modules.cgu.0.rcgu.o"), "APP")
-        touch(os.path.join(t, "debug", ".fingerprint", "plxnative-modules-9999", "lib-plxnative_modules"))
-        touch(os.path.join(t, "debug", "build", "plxnative-modules-9999", "output"), "APP")
+        touch(os.path.join(t, "debug", "deps", "libdispatcharrtv-9999.rlib"), "APP")
+        touch(os.path.join(t, "debug", "deps", "dispatcharrtv-9999"), "APP-TEST-BIN")
+        touch(os.path.join(t, "debug", "deps", "dispatcharrtv-9999.dispatcharrtv.cgu.0.rcgu.o"), "APP")
+        touch(os.path.join(t, "debug", ".fingerprint", "dispatcharrtv-9999", "lib-dispatcharrtv"))
+        touch(os.path.join(t, "debug", "build", "dispatcharrtv-9999", "output"), "APP")
         touch(os.path.join(t, "debug", "build", "serde-2222", "output"), "serde-build")
-        touch(os.path.join(t, "debug", "plxnative-sim"), "APP-SIM")
+        touch(os.path.join(t, "debug", "dispatcharrtv-sim"), "APP-SIM")
         touch(os.path.join(t, "debug", "incremental", "x", "work"), "inc")
         touch(os.path.join(t, ".lib-artifacts.json"), "{}")
         return t
@@ -148,7 +148,7 @@ class Harvest(SeedCase):
         self.build_tdir()
         self.harvest()
         files = tree(self.seed_dir())
-        leaked = sorted(f for f in files if "plxnative" in f)
+        leaked = sorted(f for f in files if "dispatcharrtv" in f)
         self.assertEqual(leaked, [], "app artifacts in the seed")
         self.assertNotIn(".lib-artifacts.json", files)
         self.assertFalse(any("incremental" in f for f in files))
@@ -192,12 +192,12 @@ class Harvest(SeedCase):
         self.harvest()
         shutil.rmtree(self.tdir)
         touch(os.path.join(self.tdir, "arm-unknown-linux-gnueabi", "release", "deps", "libcore-3333.rlib"))
-        touch(os.path.join(self.tdir, "arm-unknown-linux-gnueabi", "release", "deps", "libplxnative_modules-9999.a"))
+        touch(os.path.join(self.tdir, "arm-unknown-linux-gnueabi", "release", "deps", "libdispatcharrtv-9999.a"))
         self.harvest()
         files = tree(self.seed_dir())
         self.assertIn(os.path.join("debug", "deps", "libserde-1111.rlib"), files)
         self.assertIn(os.path.join("arm-unknown-linux-gnueabi", "release", "deps", "libcore-3333.rlib"), files)
-        self.assertFalse(any("plxnative" in f for f in files))
+        self.assertFalse(any("dispatcharrtv" in f for f in files))
         self.assertEqual(sorted(os.listdir(os.path.join(self.cache, "cargo-seed"))), ["target", "target.lock"])
 
     def test_a_version_bump_does_not_change_the_key(self):
@@ -272,10 +272,10 @@ class Harvest(SeedCase):
         self.assertIn(os.path.join("debug", "deps", "libserde-1111.rlib"), files)
 
     def test_a_third_party_crate_is_never_taken_for_a_local_one(self):
-        self.assertEqual(seed.local_packages(self.root), {"plxnative-modules", "plxnative-storage"})
-        keep = seed.local_matcher({"plxnative-modules"})
+        self.assertEqual(seed.local_packages(self.root), {"dispatcharrtv", "dispatcharrtv-storage"})
+        keep = seed.local_matcher({"dispatcharrtv"})
         self.assertFalse(keep("libserde-1111.rlib"))
-        self.assertTrue(keep("libplxnative_modules-9999.rlib"))
+        self.assertTrue(keep("libdispatcharrtv-9999.rlib"))
 
     def test_a_lock_that_lists_no_package_refuses_the_harvest(self):
         touch(os.path.join(self.root, "rust-modules", "Cargo.lock"), "not a lock\n")
@@ -317,7 +317,7 @@ class Restore(SeedCase):
         self.restore()
         files = tree(self.tdir)
         self.assertIn(os.path.join("debug", "deps", "libserde-1111.rlib"), files)
-        self.assertFalse(any("plxnative" in f for f in files))
+        self.assertFalse(any("dispatcharrtv" in f for f in files))
         self.assertNotIn(seed.KEY_FILE, files)
         self.assertNotIn(seed.USED_FILE, files)
         self.assertEqual(os.stat(os.path.join(self.tdir, "debug", "deps", "libserde-1111.rlib")).st_mtime, 1_000_000)

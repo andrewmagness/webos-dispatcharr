@@ -6,10 +6,10 @@
 # stub .so files are generated from stub/*.c by the Makefile
 stub/*.so
 # cross-compiled binary + packaging output
-pkg/plxnative
+pkg/dispatcharrtv
 pkg/threadprobe
 pkg/mali-irq-sample
-pkg/plxnative-stackwalk
+pkg/dispatcharrtv-stackwalk
 # Local opt-in profiler bundles: raw stacks/maps and device measurements are evidence, not source.
 pkg/diagnostics/
 pkg/*.ipk
@@ -54,7 +54,7 @@ rust-modules/target-sim-lab/
 # `make screenshots-sim` — the documentation-screenshot simulator (hostsim + devtriggers).
 rust-modules/target-sim-shots/
 rust-modules/target-sim-video/
-# pkg/plxnative-storage's own target dir, deliberately separate from $(RUST_TDIR) — see the
+# pkg/dispatcharrtv-storage's own target dir, deliberately separate from $(RUST_TDIR) — see the
 # Makefile's STORAGE_TDIR comment. One glob for every RELEASE/LAB/SYMBOLS combination.
 rust-modules/target*-storage/
 
@@ -64,7 +64,7 @@ rust-poc/
 .tv-mac
 # which television this working copy talks to (Makefile TV, tools/ TV_HOST) — one line, an IP or
 # hostname. Local because it is the maintainer's home network, not a project fact. It is only the
-# per-checkout OVERRIDE: tools/tv-config.sh also reads ~/.config/plxnative/tv-host (and tv-mac), the
+# per-checkout OVERRIDE: tools/tv-config.sh also reads ~/.config/dispatcharrtv/tv-host (and tv-mac), the
 # once-per-machine home for these that every worktree shares.
 .tv-host
 .tv-stream.pid
@@ -98,7 +98,7 @@ pkg/.flavor/
 # are ignored.
 #
 # Nobody should be making that symlink any more — `ci/build-ffmpeg.sh` keeps the 122 MB object
-# tree in a machine-wide, flag-keyed cache (`$PLX_BUILD_CACHE`, default `~/.cache/plxnative`), so
+# tree in a machine-wide, flag-keyed cache (`$PLX_BUILD_CACHE`, default `~/.cache/dispatcharrtv`), so
 # a fresh worktree gets its own real prefix in about three seconds. The slashless form stays: it
 # costs nothing, and it is the pattern that was actually load-bearing when somebody did.
 # `vendor/ffmpeg-build` still holds one thing after that change — the pinned upstream TARBALL,
@@ -121,7 +121,7 @@ vendor/libass-prefix-host
 # branch bound for a PUBLIC repository. Caught in the pre-push scan; ignored here so the
 # next person seeding a fleet cannot repeat it.
 vendor/vendor/
-# ...and the copies staged into pkg/ for the package. Equally derived: pkg/plxnative depends on
+# ...and the copies staged into pkg/ for the package. Equally derived: pkg/dispatcharrtv depends on
 # them, so a fresh clone rebuilds FFmpeg either way, and tracking them costs 2.1 MB per version
 # bump forever in a repo whose reproducibility rests on the pinned tarball.
 pkg/lib*-plx.so.*
@@ -132,25 +132,25 @@ pkg/libass-plx.0.dylib.*.new
 pkg/.ffabi-ok
 
 # Session file the app writes next to its payload. The desktop simulator is pointed at
-# pkg/ via PLXNATIVE_APP_DIR, so it lands here on a host run; it can hold plex.tv and PMS
+# pkg/ via DISPATCHARRTV_APP_DIR, so it lands here on a host run; it can hold plex.tv and PMS
 # tokens, and this repository is public.
 pkg/auth.json
 
-# The Lab Diagnostics session file (docs/lab-diagnostics.md), written by `tools/plxnative-lab
+# The Lab Diagnostics session file (docs/lab-diagnostics.md), written by `tools/dispatcharrtv-lab
 # start` and staged into a `make LAB=1` package. It holds a live bearer secret and the developer's
 # own endpoint; `ci/check-package.py` refuses any non-LAB package that contains it.
 pkg/lab.json
 
 # `make macapp` output: the macOS application bundle, its zip, and the recipient's README copy.
-# Build products, like pkg/plxnative and the .ipk above — and the bundle carries ~10 copied
+# Build products, like pkg/dispatcharrtv and the .ipk above — and the bundle carries ~10 copied
 # Homebrew dylibs, which are neither ours to commit nor meaningful outside the machine that
 # assembled them. ci/mkmacapp.py rebuilds all three in about a minute.
-pkg/PlxNative.app/
+pkg/DispatcharrTV.app/
 pkg/PlxNative-*.zip
-pkg/PlxNative-README.md
+pkg/DispatcharrTV-README.md
 
 # Generated test media (tests/fixtures/make_fixtures.py, `make fixtures`). The default output
-# root is ~/plxnative-fixtures and the generator REFUSES an --out anywhere inside this repo, so
+# root is ~/dispatcharrtv-fixtures and the generator REFUSES an --out anywhere inside this repo, so
 # these patterns should never match anything — they are here for the case where somebody points
 # a build at the tree by hand or the guard is ever weakened. Media is ~2.5 GB per set and is
 # reproducible from the script, so none of it belongs in a public repository's history.
@@ -182,17 +182,17 @@ pkg/*.dylib
 pkg/.ffabi-host-ok
 rust-modules/target-sym/
 rust-modules/target-release-sym/
-pkg/plxnative.debug
+pkg/dispatcharrtv.debug
 pkg/telemetry.local.json
 tests/fixtures/softfloat/arm.tbl
 
 # Recordings (restructure spec §5.6): a recording taken against a real server never leaves this
 # machine; committed fixtures live under tests/fixtures/replay/ and pass the synthetic alphabet.
-**/plxnative-recordings/
+**/dispatcharrtv-recordings/
 
 # Local byte-bound linker evidence (contains build paths; never package or publish raw).
 /pkg/*.link.*
 /pkg/link-evidence/
 
 # Independent native DB8 storage helper (built by Makefile).
-/pkg/plxnative-storage
+/pkg/dispatcharrtv-storage

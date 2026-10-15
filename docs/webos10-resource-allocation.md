@@ -10,7 +10,7 @@ AV1 (only on a set whose codec table lists an AV1 decoder) follows the HEVC enve
 and the device's own per-codec row (now read WITH `maxFrameRate`) clamps only when the table was
 actually measured. The asynchronous `type=18` is also a verdict now (§3.5's second defect). NOT
 re-measured on 10.3.1. **The frame-rate leg was run on the dev set (webOS 4.10) on 2026-09-03
-instead, with `/tmp/plxnative-sinkmax=WxH@F`, and it is a discriminator there too — in a
+instead, with `/tmp/dispatcharrtv-sinkmax=WxH@F`, and it is a discriminator there too — in a
 different way:** a 4K H.264 24p direct play declared `3840x2160@60` is announced by the pipeline as
 `frameRate:24` and then, a second later, `frameRate:30` (`smp_cb type=4` twice), i.e. a 24p
 stream presented on a 30 fps lattice; declared `@24` or `@30` it is announced as 24 once and held.

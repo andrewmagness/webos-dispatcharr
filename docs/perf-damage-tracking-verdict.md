@@ -111,7 +111,7 @@ Bound it generously: assume **6 continuous minutes of animation per hour** (≈2
 | `Painter::clip` set-sites | **7**, not 6: `table.rs:315`, `widgets.rs:220/224/334/1654/1797/2060`. The "six" everyone cited are the `clip_clear()` lines. B5's own sizing (`ui-framework-improvements.md:460`) cites `card_row.rs:293/298/301` — **stale**, `card_row.rs` has no clip. `ui/CLAUDE.md`'s "`TableView::draw`, its one user" is also stale. |
 | `sysroot/usr/lib/libEGL.so.1.4` exports `eglSetDamageRegionKHR` | **FALSE.** Checked with both `nm -D` and `objdump -T`: 14 dynamic symbols, **all CRT** (`_init`, `_fini`, `__cxa_finalize`, bss markers). Zero `egl*` symbols. 5140 bytes, only real `DT_NEEDED` is `libmali.so`. **Nothing about which EGL extensions this device has is knowable from this tree.** |
 | device SDL's EGL entry points | **18**, from its `"Could not retrieve EGL function …"` strings. `eglGetProcAddress` and `eglQueryString` are present; **no** `*WithDamage*`, `eglSurfaceAttrib`, or `buffer_age`. |
-| `/tmp/plxnative-nodraw` exists | **No.** 45 triggers in the tree; `nodraw` is not one. |
+| `/tmp/dispatcharrtv-nodraw` exists | **No.** 45 triggers in the tree; `nodraw` is not one. |
 | `capture.rs:344` is a libEGL dlopen precedent | It dlopens **`libturbojpeg.so.0`** (`capture.rs:337-353`). The precedent is real; the target was mis-described. |
 | Home's hero "already pays an opaque full-screen wash every frame" | **Backwards.** `home.rs:444-447` is the *skip*, and its comment says why: *"without the first the hero view pays an extra ~2M-fragment pass it does not need."* |
 | wayland damage is a union / opcodes | **Confirmed verbatim.** `WL_SURFACE_DAMAGE 2` (`wayland-client-protocol.h:3096`), `SET_OPAQUE_REGION 4` (`:3098`), *"the new pending damage is the union of old pending damage and the given rectangle"* (`:3252-3253`). A hand-marshalled rect can only **add**. |
@@ -150,7 +150,7 @@ Three independent blockers, each sourced:
 
 **Real risk to check.** Our destination alpha is not 1 everywhere. `frame_clear` clears to alpha 1.0 (`gfx.rs:152`), but the blend is non-separate `glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` (`gfx.rs:329`), so a 0.5-alpha overdraw leaves dst alpha at 0.75 — every AA glyph edge, scrim and focus glow. The protocol warns *"marking transparent content as opaque will result in repaint artifacts"* (`:3326-3327`). Visually we *want* LSM to ignore alpha here; it still has to be seen on the panel. And it must be route-scoped and re-asserted the way the player path already re-asserts NULL every frame, or the first frame after leaving playback occludes a plane that has not torn down yet.
 
-**Go/no-go, one boot.** Arm `plxnative-noidle` in this install's runtime root
+**Go/no-go, one boot.** Arm `dispatcharrtv-noidle` in this install's runtime root
 (`$(make -s print-rundir)`, not a bare `/tmp` — at the tracked `FLAVOR ?= debug` default those are
 different directories, and arming the wrong one leaves the present gate ON, so Home idles instead
 of presenting and BOTH legs measure the same settled screen. That produces exactly the flat result
@@ -169,7 +169,7 @@ this section's rule reads as "the entire compositor branch closes permanently") 
 
 **Question: does any animating frame spend its time in fill?** Nothing else can reopen the case.
 
-> **The `/tmp/plxnative-…` paths in this section predate the two-install split: they are the STABLE
+> **The `/tmp/dispatcharrtv-…` paths in this section predate the two-install split: they are the STABLE
 > install's runtime root.** A flavoured install puts the same names under `$(make -s print-rundir
 > FLAVOR=<f>)` — `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug` default — so
 > pasted as bare `/tmp/…` this arms one install while `make run` launches the other, and every
@@ -179,16 +179,16 @@ this section's rule reads as "the entire compositor branch closes permanently") 
 
 ```
 R=$(make -s print-rundir)                              # this install's runtime root, never bare /tmp
-wake-tv; ssh root@TV "rm -f $R/plxnative-*"            # a stale trigger changes which screen you boot to
-printf 'hm.grid' > $R/plxnative-profile                # one asynchronous timer-query phase per run
-touch $R/plxnative-homeosc                             # perpetual grid focus sweep: never settles, gate never fires
-echo "$TOKEN" > $R/plxnative-token
+wake-tv; ssh root@TV "rm -f $R/dispatcharrtv-*"            # a stale trigger changes which screen you boot to
+printf 'hm.grid' > $R/dispatcharrtv-profile                # one asynchronous timer-query phase per run
+touch $R/dispatcharrtv-homeosc                             # perpetual grid focus sweep: never settles, gate never fires
+echo "$TOKEN" > $R/dispatcharrtv-token
 make run RUN_SECS=40      # then read the once-per-60-frames aggregate lines out of the event log
 ```
 
-There are **11** brackets already in the tree: `hm.backdrop`/`hm.hero`/`hm.grid` (`home.rs:1127`/`:1129`/`:1131`) and eight `dt.*` (`detail.rs:1402-1493`). Select and run them one at a time. Repeat with `echo <ratingKey> > $R/plxnative-navosc` (`home-detail-nav` — by the manifest's own reasoning at `:138` the heaviest thing in the app) and with `$R/plxnative-libswitch`.
+There are **11** brackets already in the tree: `hm.backdrop`/`hm.hero`/`hm.grid` (`home.rs:1127`/`:1129`/`:1131`) and eight `dt.*` (`detail.rs:1402-1493`). Select and run them one at a time. Repeat with `echo <ratingKey> > $R/dispatcharrtv-navosc` (`home-detail-nav` — by the manifest's own reasoning at `:138` the heaviest thing in the app) and with `$R/dispatcharrtv-libswitch`.
 
-Then, separately and without either profiler armed: `echo 14 > $R/plxnative-framedrop` on the same three scenes. `app.rs:521` states the read verbatim — **"high `swap` with low pump/draw ⇒ GPU fill."**
+Then, separately and without either profiler armed: `echo 14 > $R/dispatcharrtv-framedrop` on the same three scenes. `app.rs:521` states the read verbatim — **"high `swap` with low pump/draw ⇒ GPU fill."**
 
 **Flip condition.** If individual phase GPU time on a *sweeping* grid or a nav dip is a large fraction of 16.7 ms, or the framedrop lines show `swap` dominating with low `draw`, then animating frames are fill-bound and the question reopens — **as a fill project, not necessarily as damage.** Do not sum separately queried phases as normal frame time; use the whole-frame query for that. The cheaper fill levers are still unspent: `player_hud.rs:92-100` draws every subtitle line **five times** across the full panel at size 36 (`ui-framework-improvements.md` B7, *"biggest un-named fill item in the tree"*), and detail requests a 1920×1080 backdrop into a 64-slot LRU with no byte budget and no `glGetError` check (B10, `posters.rs:24`). Spend those before scissoring anything. If `draw` dominates `swap` and the phases come back small, the 45-tier is CPU, and this closes.
 

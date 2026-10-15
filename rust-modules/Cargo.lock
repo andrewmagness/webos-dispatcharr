@@ -157,6 +157,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7cd812cc2bc1d69d4764bd80df88b4317eaef9e773c75226407d9bc0876b211c"
 
 [[package]]
+name = "dispatcharrtv"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "libc",
+ "plx_appkit",
+ "plx_base",
+ "plx_data",
+ "plx_dispatcharr",
+ "plx_gfx",
+ "plx_machine",
+ "plx_media",
+ "plx_net",
+ "plx_platform",
+ "plx_plex",
+ "plx_screens",
+ "plx_telemetry",
+ "plx_ui",
+ "serde",
+ "serde_json",
+ "xxhash-rust",
+]
+
+[[package]]
+name = "dispatcharrtv-storage"
+version = "0.0.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "displaydoc"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -736,39 +769,6 @@ dependencies = [
  "plx_machine",
  "plx_platform",
  "qrcodegen",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "plxnative-modules"
-version = "0.1.0"
-dependencies = [
- "image",
- "libc",
- "plx_appkit",
- "plx_base",
- "plx_data",
- "plx_dispatcharr",
- "plx_gfx",
- "plx_machine",
- "plx_media",
- "plx_net",
- "plx_platform",
- "plx_plex",
- "plx_screens",
- "plx_telemetry",
- "plx_ui",
- "serde",
- "serde_json",
- "xxhash-rust",
-]
-
-[[package]]
-name = "plxnative-storage"
-version = "0.0.0"
-dependencies = [
- "libc",
  "serde",
  "serde_json",
 ]

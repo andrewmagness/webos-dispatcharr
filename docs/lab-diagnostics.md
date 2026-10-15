@@ -3,18 +3,18 @@
 **Diagnostics status: BUILT and DEVICE-VERIFIED on the dev set, 2026-08-26** (against `main`
 @5a8ef2ef). The whole chain —
 a **physical BLUE press** on the Magic Remote → snapshot → scrub → gzip → pinned TLS POST from the
-television's own libcurl → receiver → `plxnative-lab logs` — has run on the LG 49SM9000PLA. §11 is
+television's own libcurl → receiver → `dispatcharrtv-lab logs` — has run on the LG 49SM9000PLA. §11 is
 what that did and did not prove; §12 records the separately verified public leg through the router.
 
 **Lab Control status: BUILT and HOST-VERIFIED, not yet device-verified.** The same lab package can
-hold an outbound pinned HTTPS poll, receive ordered app-input commands from `plxnative-lab send`,
+hold an outbound pinned HTTPS poll, receive ordered app-input commands from `dispatcharrtv-lab send`,
 dispatch them on the SDL main thread and acknowledge delivery. It adds no dependency. The remaining
 proof is an `.ipk` installed on a Cloud Test Lab set and one command/ack round trip (§11).
 
 LG Cloud Test Lab rents us physical sets on webOS/SoC combinations nobody here owns. It gives a
 picture and a virtual remote, and **no console, no ssh, no stdout, no way to download a file**. We
 can reproduce a bug on a k8hpp webOS 10 set and watch it happen, and the agent fixing it cannot see
-one line of `plxnative-events.log`.
+one line of `dispatcharrtv-events.log`.
 
 This is the bridge: a lab-only build presses its own log out through the internet to a receiver on
 the developer's Mac and optionally holds an outbound command poll. Commands come back only as the
@@ -69,7 +69,7 @@ Cloud Test Lab TV  ──HTTPS POST / long poll──▶  lab.plxnative.com:3944
                                             │
                                         Keenetic  ──UPnP IGD AddPortMapping (temporary)
                                             │
-                                    Mac:<ephemeral>  ──▶  plxnative-lab  ──▶  ~/.plxnative-lab/…
+                                    Mac:<ephemeral>  ──▶  dispatcharrtv-lab  ──▶  ~/.dispatcharrtv-lab/…
                                                                                     │
                                                                           the coding agent reads
 ```
@@ -234,7 +234,7 @@ The Mac has no CA-issued certificate and getting one for `lab.plxnative.com` mea
 renewals and a private key on a laptop. The cheaper and *stronger* answer for a two-party private
 channel:
 
-* `plxnative-lab start` generates a **fresh self-signed cert per session** (`openssl`, already on
+* `dispatcharrtv-lab start` generates a **fresh self-signed cert per session** (`openssl`, already on
   macOS) and computes its **SPKI SHA-256 pin**.
 * The lab build sets `CURLOPT_PINNEDPUBLICKEY = "sha256//<base64>"` with `SSL_VERIFYPEER=0` /
   `VERIFYHOST=0`. libcurl checks the pin **independently of** VERIFYPEER (documented), and
@@ -319,7 +319,7 @@ which appears nowhere in this tree and is unbound.
 **The design absorbs every outcome**, which is why none of this blocked the build:
 
 * the trigger is a **list in `lab.json`** (`trigger_wcodes` / `trigger_syms`), so trying another
-  code is a repack, not a rebuild — `plxnative-lab start --trigger 489,488` writes it. It stays a
+  code is a repack, not a rebuild — `dispatcharrtv-lab start --trigger 489,488` writes it. It stays a
   list now that the codes are known, because 486–489 is one remote on one firmware and a rented
   set may spell them differently or not send them at all;
 * the **account-menu and player-overflow rows** reach the same upload with the D-pad alone, which
@@ -329,26 +329,26 @@ which appears nowhere in this tree and is unbound.
   own key binding. The recipe is `docs/remote-keys.md` §7, run through this bridge instead of over
   ssh.
 
-The default in `plxnative-lab start` is **489**, the measured BLUE. `406` survives only as a unit
+The default in `dispatcharrtv-lab start` is **489**, the measured BLUE. `406` survives only as a unit
 test's fixture in `labcfg/config.rs` — it was the original guess (the CEA-2014 / webOS web-runtime
 keycode for BLUE) and it was wrong, which is the whole lesson of this section.
 
-## 8. Receiver — `tools/plxnative-lab`, python3 stdlib only
+## 8. Receiver — `tools/dispatcharrtv-lab`, python3 stdlib only
 
 Matches the repo's existing tool idiom (`tools/netcond.py`, `tools/stream-screen.py`): one file, no
 dependencies, `--selftest`.
 
 ```
-plxnative-lab start [--port 39443] [--no-upnp] [--json]
-plxnative-lab status [--json]
-plxnative-lab send down down ok wait:1000 diag [--timeout 30] [--no-wait]
-plxnative-lab clear
-plxnative-lab logs [--follow] [--since 5m] [--seq N]
-plxnative-lab stop
+dispatcharrtv-lab start [--port 39443] [--no-upnp] [--json]
+dispatcharrtv-lab status [--json]
+dispatcharrtv-lab send down down ok wait:1000 diag [--timeout 30] [--no-wait]
+dispatcharrtv-lab clear
+dispatcharrtv-lab logs [--follow] [--since 5m] [--seq N]
+dispatcharrtv-lab stop
 ```
 
 `start` generates the session (id, secret, cert, pin), binds `0.0.0.0:<ephemeral>`, creates the UPnP
-mapping, writes `~/.plxnative-lab/session.json` + `receiver.pid`, forks to the background and prints
+mapping, writes `~/.dispatcharrtv-lab/session.json` + `receiver.pid`, forks to the background and prints
 one JSON object with the session, endpoint, the path of the `pkg/lab.json` it wrote (mode 0600; the
 secret goes there and is not echoed) **and the exact `make` line to build the matching ipk**.
 It refuses to start if a session is already live (one session, by design).
@@ -372,7 +372,7 @@ is not redelivered on a later relaunch. It cannot recall a response the app has 
 
 `logs` prints the newest snapshot's records as JSONL to stdout (gunzipped); `--follow` blocks and
 emits each new upload as it lands; `--since 5m` filters by record
-timestamp. Uploads are stored verbatim under `~/.plxnative-lab/uploads/NNNN-<unix>.jsonl.gz` — the
+timestamp. Uploads are stored verbatim under `~/.dispatcharrtv-lab/uploads/NNNN-<unix>.jsonl.gz` — the
 agent can also just read those.
 
 **Hardening** (the exposed surface is the whole internet for the life of the session): the public
@@ -393,13 +393,13 @@ only cheap check that the path actually exists before a tester spends a lab hour
 ## 9. Build and deploy loop
 
 ```
-plxnative-lab start                       # prints session + the make line below
+dispatcharrtv-lab start                       # prints session + the make line below
 make LAB=1 FLAVOR=debug ipk               # bakes pkg/lab.json into the package
    → upload pkg/com.magness.dispatcharrtv.debug_0.4.1_arm.ipk to Cloud Test Lab and install it
-plxnative-lab status                       # wait for tv_control: connected
-plxnative-lab send down down ok wait:1000 diag
-plxnative-lab logs --follow               # the agent watches
-plxnative-lab stop                        # mapping removed
+dispatcharrtv-lab status                       # wait for tv_control: connected
+dispatcharrtv-lab send down down ok wait:1000 diag
+dispatcharrtv-lab logs --follow               # the agent watches
+dispatcharrtv-lab stop                        # mapping removed
 ```
 
 `LAB=1` sets `RUST_FEATFLAGS += --features lab-diagnostics` and its own `RUST_TDIR=target-lab` —
@@ -421,7 +421,7 @@ id, is a packaging error**, which is where this class of mistake gets caught rat
 **In:** the feature flag, the ring + tap, the snapshot envelope from `Diag`/`webos`/`devcaps`, the
 scrub pass, pinned gzip upload on a worker, the account-menu row **and** the configurable colour-key
 arm, the toast, the pinned HTTPS long-poll worker + main-thread mailbox, bounded ordered command
-queue/redelivery/ack, loopback-only enqueue/status/clear, `plxnative-lab
+queue/redelivery/ack, loopback-only enqueue/status/clear, `dispatcharrtv-lab
 start/status/send/clear/logs/stop` with
 UPnP, and `LAB=1` packaging + the two package assertions.
 
@@ -440,7 +440,7 @@ not pretending the old filesystem contract exists.
 
 * `make check` is green in both configurations. **Take the counts yourself** — this repository has
   rotted four written test counts already and the fifth is not going to be this one:
-  `cd rust-modules && cargo +nightly test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens -- --list | grep -c ': test'`, with and without
+  `cd rust-modules && cargo +nightly test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens -- --list | grep -c ': test'`, with and without
   `--features lab-diagnostics`. What the feature's own tests cover: the ring's two caps and its
   `dropped` delta, the `lab.json` parse and each refusal it names, the five scrub rewrites and the
   outright refusal (including the bare address and the household name the device test found), the
@@ -449,21 +449,21 @@ not pretending the old filesystem contract exists.
   that the toast sits inside the safe area and clear of the stats panel.
 * All four feature configurations type-check clean under `warnings = "deny"`: default,
   `--no-default-features`, `+lab-diagnostics`, and `--no-default-features +lab-diagnostics`.
-* `tools/plxnative-lab selftest` — a real TLS listener with a freshly generated certificate, a real
+* `tools/dispatcharrtv-lab selftest` — a real TLS listener with a freshly generated certificate, a real
   gzip upload accepted and stored, upload refusals, command enqueue, ordered delivery, redelivery
   before ack, advancement after ack, status, grammar refusal and stale-session refusal. Wired into
   `make check`.
 * Lab Control's Rust tests cover response parsing, bounded waits and the worker↔main-thread mailbox.
   Both default and `+lab-diagnostics` configurations compile under `warnings = "deny"`; the control
   module and its persistent worker do not exist in the former.
-* **The whole chain, end to end, on loopback**: `plxnative-lab start --hostname 127.0.0.1
+* **The whole chain, end to end, on loopback**: `dispatcharrtv-lab start --hostname 127.0.0.1
   --no-upnp` → `make LAB=1 sim` → `k:0,406` down the remote FIFO → the app logged
   `lab: snapshot seq=1 reason=key route=login` and `lab: uploaded seq=1 4689B -> 2053B (gzip)
-  status=200`, and `plxnative-lab logs` printed the envelope and 44 records. The toast was
+  status=200`, and `dispatcharrtv-lab logs` printed the envelope and 44 records. The toast was
   screenshotted reading *Diagnostics uploaded / 2 KB sent*.
 * The **network path exists**: the Keenetic answers SSDP (`http://<router>:1900/ctl/IPConn`),
   reports its external address, and `lab.plxnative.com` resolves to exactly that address. Checked
-  by `plxnative-lab selftest`'s closing note and by `status`'s `dns_matches`.
+  by `dispatcharrtv-lab selftest`'s closing note and by `status`'s `dns_matches`.
 
 **Verified ON THE DEV TELEVISION** (LG 49SM9000PLA, webOS 4.10.2), 2026-08-26, under the
 `tv-lock`, `make LAB=1 FLAVOR=debug deploy`:
@@ -515,11 +515,11 @@ default build. Re-run it after any change here, or give the matrix a LAB leg.
 
 **It works.** Measured 2026-08-26, in this order, so none of it is inference:
 
-1. `plxnative-lab start` discovered the Keenetic's IGD (`http://<router>:1900/ctl/IPConn`,
+1. `dispatcharrtv-lab start` discovered the Keenetic's IGD (`http://<router>:1900/ctl/IPConn`,
    `WANIPConnection:1`) and **`AddPortMapping` succeeded** — not the tool trusting its own return
    value: a raw `GetSpecificPortMappingEntry` read back
    `NewInternalPort <the ephemeral local port> / NewInternalClient 203.0.113.7 / NewEnabled 1 /
-   NewLeaseDuration 3600 / NewPortMappingDescription plxnative-lab`.
+   NewLeaseDuration 3600 / NewPortMappingDescription dispatcharrtv-lab`.
 2. The router's external address equals what `lab.plxnative.com` resolves to (`status`'s
    `dns_matches: true`).
 3. **A phone on LTE — off the LAN entirely — reached the receiver**, got the expected certificate

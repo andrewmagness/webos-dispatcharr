@@ -20,14 +20,14 @@ use super::*;
 /// Falls back to the canvas size if SDL cannot answer, which is the behaviour this replaced.
 #[cfg(feature = "hostsim")]
 pub(crate) fn desktop_window_size() -> (c_int, c_int) {
-    // `PLXNATIVE_WIN=<w>x<h>` overrides the fit entirely — `make sim-shot SIM_W=1920 SIM_H=1080`.
+    // `DISPATCHARRTV_WIN=<w>x<h>` overrides the fit entirely — `make sim-shot SIM_W=1920 SIM_H=1080`.
     // It exists because the fit below is chosen for a HUMAN looking at a window, and a screenshot
     // is not that: on a 1x display the divisor lands on 2 and every shot comes back 960x540, which
     // is half the canvas the UI is authored at. A hairline, a 1px edge-sheen and a snapped glyph
     // are exactly the things that do not survive that, so a shot taken to JUDGE the interface has
     // to be asked for at full size. Off-screen edges are fine for a headless grab: the drawable is
     // the window's own framebuffer, not the part of it the compositor happens to show.
-    if let Some(v) = std::env::var_os("PLXNATIVE_WIN") {
+    if let Some(v) = std::env::var_os("DISPATCHARRTV_WIN") {
         let v = v.to_string_lossy().to_lowercase();
         if let Some((w, h)) = v.split_once('x') {
             if let (Ok(w), Ok(h)) = (w.trim().parse::<c_int>(), h.trim().parse::<c_int>()) {
@@ -89,11 +89,11 @@ pub(crate) fn install_panic_logger() {
             &line,
             plx_telemetry::telemetry::crashreport::now_secs(),
         );
-        default(info); // preserve default behaviour (stderr -> plxnative-stderr.log)
+        default(info); // preserve default behaviour (stderr -> dispatcharrtv-stderr.log)
     }));
 }
 
-/// Append the panic's record to the crash log at `path` (`plxnative-crash.log`, which `src/main.c`
+/// Append the panic's record to the crash log at `path` (`dispatcharrtv-crash.log`, which `src/main.c`
 /// opens and the signal tracer appends to).
 ///
 /// **Two disciplines, both the event log's** (the crash log is group-readable for the same Dev Mode
@@ -224,7 +224,7 @@ mod seam_order_tests {
     /// shipping build, panics when asked for it earlier, so the hand-in has to be the first thing
     /// the one entry point does: nothing before it can build a header or a `User-Agent`. It also
     /// has to hand in `PLX_VERSION` itself, the string `ci/check-package.py` grades in the binary
-    /// (as `plxnative@` + version, see the telemetry hand-in below), and no second production site
+    /// (as `dispatcharrtv@` + version, see the telemetry hand-in below), and no second production site
     /// may hand in anything else. Reads the source, like the tests
     /// below, because no host test can run `enter_application`.
     #[test]
@@ -247,7 +247,7 @@ mod seam_order_tests {
         // `plx_telemetry` reports the release it is handed the same way (and also panics when asked
         // earlier in a shipping build). It is composed here with `concat!`, not by the telemetry
         // crate, because `ci/check-package.py` greps the packaged binary for that exact string.
-        let release = concat!("plx_telemetry::telemetry::", "set_release(concat!(\"plxnative@\", env!(\"PLX_VERSION\")));");
+        let release = concat!("plx_telemetry::telemetry::", "set_release(concat!(\"dispatcharrtv@\", env!(\"PLX_VERSION\")));");
         let second = body
             .lines()
             .map(str::trim)
@@ -407,8 +407,8 @@ pub(crate) fn loop_tick(iters_ct: &mut i32, loop_t: &mut u32, loop_shown: &mut i
     *loop_t = now;
     true
 }
-/// How many times a finished `plxnative-playurl` playback may start itself AGAIN — the
-/// `/tmp/plxnative-replay` trigger's content, as a number (LG App Self Checklist #46).
+/// How many times a finished `dispatcharrtv-playurl` playback may start itself AGAIN — the
+/// `/tmp/dispatcharrtv-replay` trigger's content, as a number (LG App Self Checklist #46).
 ///
 /// A named function rather than a closure at the one call site, for `note_global_press`'s reason
 /// one step removed: the call site is inside the SDL event loop, which no host test can enter, and
@@ -579,7 +579,7 @@ pub(crate) unsafe fn construct(
     #[cfg(feature = "hostsim")]
     let title = c"Dispatcharr TV";
     #[cfg(not(feature = "hostsim"))]
-    let title = c"plxnative";
+    let title = c"dispatcharrtv";
     let win = SDL_CreateWindow(title.as_ptr(), wx, wy, ww_req, wh_req, SDL_WINDOW_FLAGS);
     if win.is_null() {
         log("CreateWindow failed");
@@ -591,7 +591,7 @@ pub(crate) unsafe fn construct(
         return Err(1);
     }
     plx_base::surface::probe(win);
-    // vsync on → the frame rate locks to the panel refresh. `/tmp/plxnative-novsync` uncaps it so
+    // vsync on → the frame rate locks to the panel refresh. `/tmp/dispatcharrtv-novsync` uncaps it so
     // `fps=` reports the true GPU render rate. WSLg's X11/GLX swap and SDL's offscreen driver accept
     // interval 1 without blocking, so the software budget in `run` follows the same switch.
     let vsync_enabled = !crate::dev::scenarios::novsync_armed();
@@ -646,7 +646,7 @@ pub(crate) unsafe fn construct(
     ));
 
     plx_platform::tv::window::grab(win);
-    // EXPERIMENT (`/tmp/plxnative-opaque`), no-op without the trigger: build the full-surface
+    // EXPERIMENT (`/tmp/dispatcharrtv-opaque`), no-op without the trigger: build the full-surface
     // wl_region once, so `opaque_route` below can declare the UI plane opaque on every screen
     // that has nothing behind it. See `system.rs`'s section on it.
     plx_platform::tv::window::arm_opaque_region();
@@ -686,11 +686,11 @@ pub(crate) unsafe fn construct(
     // The player's own preferences are not stored anywhere by this app: a fresh record's defaults
     // are what every playback resolves under.
     let session = plx_plex::plex::session::Session::default();
-    // dev: /tmp/plxnative-toast=<text> — asks the TV's notification service for a system toast,
+    // dev: /tmp/dispatcharrtv-toast=<text> — asks the TV's notification service for a system toast,
     // once plain and once as the app, and logs each full outcome (`toast-probe …`).
     #[cfg(feature = "devtriggers")]
     crate::dev::scenarios::toast_probe::arm_at_boot();
-    // dev: /tmp/plxnative-hintoff — the hold hint taught for this run, on every screen kind, read
+    // dev: /tmp/dispatcharrtv-hintoff — the hold hint taught for this run, on every screen kind, read
     // once here on the frame thread (the hint's latches are thread-local). The site demo film is
     // shot with it: the capsule is a one-time teaching overlay, and a film has no viewer to teach.
     #[cfg(feature = "devtriggers")]
@@ -706,7 +706,7 @@ pub(crate) unsafe fn construct(
         plx_ui::containers::transition::PageDip::new(),
     ));
     restore_player_preferences(&session);
-    // dev: /tmp/plxnative-audioenh=off|boost|loudness — force the PERSISTED enhancement
+    // dev: /tmp/dispatcharrtv-audioenh=off|boost|loudness — force the PERSISTED enhancement
     // preference right after it was restored from whatever the install actually has saved, so a
     // harness case's starting preference never depends on what an earlier run's pick left behind.
     // Unlike every other boot override on this page, this one calls the real persisting setter —
@@ -717,18 +717,18 @@ pub(crate) unsafe fn construct(
     log("boot: Dispatcharr setup");
     plx_media::player::acb_init(&mt);
     plx_media::ff::boot(); // Live playback resource boot.
-    // dev: the animation-diagnostic overlay is OFF by default; /tmp/plxnative-anim enables it (its
-    // trace goes to /tmp/plxnative-anim.log, a separate stream from the main event log)
+    // dev: the animation-diagnostic overlay is OFF by default; /tmp/dispatcharrtv-anim enables it (its
+    // trace goes to /tmp/dispatcharrtv-anim.log, a separate stream from the main event log)
     crate::dev::scenarios::arm_anim();
-    // dev: /tmp/plxnative-stillclock=<ms> holds every free-running animation clock (spinners)
+    // dev: /tmp/dispatcharrtv-stillclock=<ms> holds every free-running animation clock (spinners)
     // still, so a screenshot of a waiting screen settles on one deterministic frame.
     crate::dev::scenarios::arm_stillclock();
     // dev: profile is asynchronous EXT_disjoint_timer_query timing; hwcnt is the serialized
     // direct Mali counter-attribution run. Their content names ONE phase (empty = frame.ui).
     // Combining them would perturb the timer result, so fail closed when both are present.
-    // dev: /tmp/plxnative-glassload is the backdrop-glass LOAD DIAL — a sweep of glass-surface
+    // dev: /tmp/dispatcharrtv-glassload is the backdrop-glass LOAD DIAL — a sweep of glass-surface
     // count, size and refresh cadence that cycles its own steps inside one launch, so legs are
-    // interleaved by construction. /tmp/plxnative-navblur is the blurred-route-transition
+    // interleaved by construction. /tmp/dispatcharrtv-navblur is the blurred-route-transition
     // prototype. Both live in `ui::glassload`; both are absent from a release build.
     // The plan is built HERE rather than in the `App` literal below so the dial is armed at the
     // point in boot it always was: `configure` logs what it will run, and that line's position in
@@ -737,24 +737,24 @@ pub(crate) unsafe fn construct(
     crate::dev::scenarios::arm_glassload(&mut glass);
     crate::dev::scenarios::arm_navblur(&mut glass);
     // dev: the two OVERDRAW surfaces (`ui::overdraw`, docs/backdrop-blur-profiling.md Part 5).
-    // `plxnative-overdraw` arms the CPU-side per-draw-class ledger — how much screen-visible
+    // `dispatcharrtv-overdraw` arms the CPU-side per-draw-class ledger — how much screen-visible
     // quad area this app submits, per primitive family, per frame. It is not billed for the
     // wayland compositor's work and is not `glFinish`-serialised, which is what the GPU's
-    // global FRAG_QUADS_RAST cannot say. `plxnative-drawmask=<classes>` REFUSES every draw of
+    // global FRAG_QUADS_RAST cannot say. `dispatcharrtv-drawmask=<classes>` REFUSES every draw of
     // the named classes, so a whole-frame `frame.ui` A/B against the unmasked control prices
     // that class as the frame sees it; `all` draws nothing and is therefore the compositor
     // floor. A masked leg is a broken picture on purpose.
     crate::dev::scenarios::arm_overdraw();
     crate::dev::scenarios::arm_drawmask();
-    // dev: /tmp/plxnative-nobudget — the frame budget's A/B CONTROL leg (spec §8.1). Read here
+    // dev: /tmp/dispatcharrtv-nobudget — the frame budget's A/B CONTROL leg (spec §8.1). Read here
     // with the other boot triggers; applied to the one `Budget` below, once the tree exists.
     let nobudget = crate::dev::scenarios::nobudget_armed();
     crate::dev::scenarios::arm_profile_hwcnt();
-    // dev: /tmp/plxnative-cpuprof — the render thread's OWN time per phase, every phase at
+    // dev: /tmp/dispatcharrtv-cpuprof — the render thread's OWN time per phase, every phase at
     // once, no glFinish. The one mode that can see a frame the frame-drop detector reports as
     // all `draw=` and no `swap=`; the two GPU modes above are blind to it by construction.
     crate::dev::scenarios::arm_cpuprof();
-    // dev: /tmp/plxnative-noidle turns the whole-frame present gate (plx_machine::idle) OFF, so a still
+    // dev: /tmp/dispatcharrtv-noidle turns the whole-frame present gate (plx_machine::idle) OFF, so a still
     // screen goes back to repainting at panel rate. It is a DIAG trigger (see the list above)
     // precisely so an A/B costs one file and does not also change which screen you boot to —
     // and so that if a frame ever looks wrong on the panel, ruling this feature out is one
@@ -762,7 +762,7 @@ pub(crate) unsafe fn construct(
     plx_ui::testpat::boot();
     plx_media::player::seed_dev_track_names();
     crate::dev::scenarios::arm_noidle();
-    // dev: /tmp/plxnative-framedrop — the FRAME-DROP DETECTOR. When present, each frame is timed with
+    // dev: /tmp/dispatcharrtv-framedrop — the FRAME-DROP DETECTOR. When present, each frame is timed with
     // the high-res perf counter (pump / draw / swap, NO glFinish so it doesn't perturb the pipeline),
     // and any frame whose total exceeds a threshold (ms; file content overrides the 22ms default) is
     // logged with its phase breakdown + GL texture-upload count — so a scroll judder shows *what* stalled
@@ -836,7 +836,7 @@ pub(crate) unsafe fn construct(
     // A last-page bookmark left by an older install is retired unconditionally, so automated and
     // ordinary upgrades retire the same state.
     crate::coldstart::retire();
-    // dev: `/tmp/plxnative-replay[=N]` — how many times a finished `plxnative-playurl`
+    // dev: `/tmp/dispatcharrtv-replay[=N]` — how many times a finished `dispatcharrtv-playurl`
     // playback may be started AGAIN (LG App Self Checklist #46, "replay after completion").
     //
     // A COUNTER re-arming `auto_tried`, rather than the latch being lifted: `auto_tried` also
@@ -854,7 +854,7 @@ pub(crate) unsafe fn construct(
     let replay_left: u32 = replay_budget(crate::dev::scenarios::replay_trigger_value().as_deref());
     let prev = 0u32;
     let ev = [0u8; 128];
-    // dev/testing remote: drain any tokens written to /tmp/plxnative-remote and push
+    // dev/testing remote: drain any tokens written to /tmp/dispatcharrtv-remote and push
     // them as synthetic key events BEFORE the poll loop, so they're consumed this frame
     // by the ONE real key handler (see crate::remote / tools/stream-screen.py).
     let remote = crate::remote::Remote::open();
@@ -911,7 +911,7 @@ pub(crate) unsafe fn construct(
             ..Default::default()
         },
     };
-    // dev: /tmp/plxnative-nobudget — put the ONE frame budget (the tree's, spec §2.2) into its
+    // dev: /tmp/dispatcharrtv-nobudget — put the ONE frame budget (the tree's, spec §2.2) into its
     // pre-phase-11 shape for the A/B's control leg. The tree exists now, which is why this is
     // here rather than beside the trigger read.
     //
@@ -921,7 +921,7 @@ pub(crate) unsafe fn construct(
     if app.scenarios.dev.nobudget {
         app.pages.budget = plx_ui::frame::Budget::pre_phase_11();
         #[cfg(feature = "devtriggers")]
-        plx_base::eventlog::log("budget: pre-phase-11 admission (quota only) by /tmp/plxnative-nobudget");
+        plx_base::eventlog::log("budget: pre-phase-11 admission (quota only) by /tmp/dispatcharrtv-nobudget");
     }
     // **ROOT THE TREE AT THE BOOT PAGE.** The `route` chosen above used to be a field of `App`
     // that `bridge::sync_page` mirrored onto the container on the loop's first frame; there is no

@@ -9,4 +9,4 @@ Homepage: https://github.com/andrewmagness/dispatcharr-webos
 License: GPL-3.0-or-later
 Description: Dispatcharr TV — unofficial native Dispatcharr client for LG webOS (not affiliated with Dispatcharr)
 webOS-Package-Format-Version: 2
-webOS-Packager-Version: plxnative-mkipk/1
+webOS-Packager-Version: dispatcharrtv-mkipk/1

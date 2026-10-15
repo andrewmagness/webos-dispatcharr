@@ -652,7 +652,7 @@ struct Root {
 }
 impl Root {
     fn new(tag: &str) -> Root {
-        let dir = std::env::temp_dir().join(format!("plxnative-prefs-char-{}-{tag}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dispatcharrtv-prefs-char-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         plx_base::paths::redirect_persistent_state_root_for_test(Some(dir.clone()));
         Root { dir }

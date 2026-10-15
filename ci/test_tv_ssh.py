@@ -172,7 +172,7 @@ class TvSshTests(unittest.TestCase):
         self.assert_no_leak(proc)
 
     def test_scp_key_rejected_falls_back(self):
-        proc = self.run_wrapper("key-denied", "scp", "pkg/plxnative", "tv:/media/x/plxnative.new")
+        proc = self.run_wrapper("key-denied", "scp", "pkg/dispatcharrtv", "tv:/media/x/dispatcharrtv.new")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         sshpass = [c for c in self.calls() if c.startswith("sshpass")]
         self.assertEqual(len(sshpass), 1, self.calls())

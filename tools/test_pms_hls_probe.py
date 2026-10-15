@@ -98,8 +98,8 @@ class Redaction(unittest.TestCase):
     def test_raw_and_percent_encoded_values_are_removed(self):
         origin = "http://private.example:32400"
         token = "tok+secret/value"
-        session = "plxnative-probe-private"
-        client_id = "plxnative-client-private"
+        session = "dispatcharrtv-probe-private"
+        client_id = "dispatcharrtv-client-private"
         item = "987654"
         text = (
             f"{origin}/library/metadata/{item}?X-Plex-Token={urllib.parse.quote(token, safe='')}"

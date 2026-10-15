@@ -991,7 +991,7 @@ pub(super) fn new_sess(rk: &str) -> String {
     }
     use std::sync::atomic::{AtomicU64, Ordering};
     static CTR: AtomicU64 = AtomicU64::new(1);
-    format!("plxnative-{rk}-{}", CTR.fetch_add(1, Ordering::Relaxed))
+    format!("dispatcharrtv-{rk}-{}", CTR.fetch_add(1, Ordering::Relaxed))
 }
 
 

@@ -284,7 +284,7 @@ pub(crate) struct App {
     /// Boot time (`SDL_GetTicks` at the end of boot): the origin of every dev-script delay.
     pub(crate) t0: u32,
     /// The frame's instruments: the eight phase stamps, FRAMEDROP, the per-second peaks
-    /// (`diag::heartbeat`), armed by `plxnative-framedrop`.
+    /// (`diag::heartbeat`), armed by `dispatcharrtv-framedrop`.
     instr: plx_base::diag::heartbeat::Instruments,
     /// Every dev-trigger arm's own state — oscillator phases, retry latches, boot-time flags
     /// (formerly `DevFlags`) — gathered on ONE struct (spec: `dev/scenarios.rs`'s module doc).
@@ -352,8 +352,8 @@ fn pre_boot_diagnostics() -> plx_telemetry::telemetry::native::Guard {
     //
     // Two builds can sit on one television — the app users get, and a developer one beside it
     // (`paths::app_id`) — and until this line nothing in the system said which of them produced a
-    // given log. The obvious witnesses do not work: both binaries are named `plxnative`, so
-    // `pidof` cannot tell them apart on this busybox set; `pkg/plxnative` is a path EVERY
+    // given log. The obvious witnesses do not work: both binaries are named `dispatcharrtv`, so
+    // `pidof` cannot tell them apart on this busybox set; `pkg/dispatcharrtv` is a path EVERY
     // configuration writes, so an md5 against the local build proves only that some flavour of
     // some configuration matches. That ambiguity is the "plausible wrong data" failure this
     // project's testing section is built around: a harness that graded the other install's log
@@ -377,7 +377,7 @@ fn pre_boot_diagnostics() -> plx_telemetry::telemetry::native::Guard {
         std::env::var("APPID").unwrap_or_else(|_| "unset".into()),
     ));
     // ...and the app directory on the NEXT line, with its provenance (`from current_exe` /
-    // `PLXNATIVE_APP_DIR` / `macOS bundle`) — strictly more than repeating the path here would
+    // `DISPATCHARRTV_APP_DIR` / `macOS bundle`) — strictly more than repeating the path here would
     // say. Logged here rather than by whoever resolves `app_dir()` first, so the two lines are
     // adjacent and the pair is what a triage reader sees at the top. (`paths` itself cannot log:
     // the event log resolves its own path through it.)
@@ -401,7 +401,7 @@ fn pre_boot_diagnostics() -> plx_telemetry::telemetry::native::Guard {
     // a snapshot this publishes, and with none installed it refuses everything. So the ordering is
     // the fail-closed guarantee, not a convenience.
     let telemetry_guard = plx_telemetry::telemetry::boot();
-    // …and then, if asked, DIE. `plxnative-crashtest` is the instrument for the instrument: both
+    // …and then, if asked, DIE. `dispatcharrtv-crashtest` is the instrument for the instrument: both
     // the C fallback and (when consented/configured) the out-of-process native recorder are now
     // armed, so this trigger grades the reporter users actually run. It remains before SDL so a
     // playback/UI regression cannot make the instrument unreachable. Compiled out with
@@ -460,7 +460,7 @@ fn enter_application(pms_host: *const c_char, pms_port: c_int) -> Result<App,c_i
     // The release every telemetry report carries, composed here because the packaged binary is
     // graded for this exact contiguous string (`ci/check-package.py`); second, before anything can
     // build an envelope or an SDK option.
-    plx_telemetry::telemetry::set_release(concat!("plxnative@", env!("PLX_VERSION")));
+    plx_telemetry::telemetry::set_release(concat!("dispatcharrtv@", env!("PLX_VERSION")));
     // The hooks `plex` is handed for what it cannot name; first, so no session load precedes them.
     install_plex_seams();
     // Telemetry erases the player's in-memory error trace (withdrawal, sign-out, its own boot load

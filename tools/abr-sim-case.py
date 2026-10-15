@@ -19,7 +19,7 @@ hand-written copies of a case drifting apart.
 
 **What it CANNOT tell you**, and the reasons are structural rather than temporary:
 
-* **Nothing decodes.** `plxnative-clocksink` accepts access units, discards them, and advances a
+* **Nothing decodes.** `dispatcharrtv-clocksink` accepts access units, discards them, and advances a
   presentation clock at real time clamped to the last fed PTS. That is a faithful plant for the
   reserve the controller reads and it is not a decoder. Anything about LG's decoder — resource
   allocation, the Load payload's Dolby declaration, raster excursions, frame pacing — is
@@ -31,7 +31,7 @@ hand-written copies of a case drifting apart.
   assertions. Grading here would be a second copy of `a_abr_shape` free to disagree with the first.
 
 **Traps, both cost time before they are known.** `SDL_VIDEODRIVER=dummy` fails with
-`CreateWindow failed` — the simulator needs a real GL context, so a small `PLXNATIVE_WIN` is used
+`CreateWindow failed` — the simulator needs a real GL context, so a small `DISPATCHARRTV_WIN` is used
 instead of hiding the window. And `serve()` returns `(server, url_base)`, not a server.
 """
 import json
@@ -45,13 +45,13 @@ sys.path.insert(0, os.path.join(REPO, "tests"))
 from run import triggers_for_case  # noqa: E402
 from serve_fixtures import serve, default_root  # noqa: E402
 
-# `PLXNATIVE_SIM_BIN` overrides which simulator is driven, which is what makes an A/B possible:
+# `DISPATCHARRTV_SIM_BIN` overrides which simulator is driven, which is what makes an A/B possible:
 # point it at a simulator built from another commit and this still supplies HEAD's manifest,
 # HEAD's fixtures and HEAD's shaper, so the ONLY thing that differs between the two legs is the
 # app. Reconstructing an old policy by hand would grade a strawman; a checkout cannot.
 SIM_BIN = os.environ.get(
-    "PLXNATIVE_SIM_BIN",
-    os.path.join(REPO, "rust-modules", "target-sim", "debug", "plxnative-sim"))
+    "DISPATCHARRTV_SIM_BIN",
+    os.path.join(REPO, "rust-modules", "target-sim", "debug", "dispatcharrtv-sim"))
 
 
 def cases():
@@ -93,8 +93,8 @@ def main():
 
     # One instance root PER CASE, so several of these run side by side — which is the capability
     # the television does not have and the reason this file is worth its length.
-    tag = os.environ.get("PLXNATIVE_SIM_TAG", "head")
-    root = os.path.join("/tmp", "plxnative-sim-abr", tag, name)
+    tag = os.environ.get("DISPATCHARRTV_SIM_TAG", "head")
+    root = os.path.join("/tmp", "dispatcharrtv-sim-abr", tag, name)
     shutil.rmtree(root, ignore_errors=True)
     os.makedirs(root, exist_ok=True)
     write = lambda n, v: open(os.path.join(root, n), "w").write(v)  # noqa: E731
@@ -109,13 +109,13 @@ def main():
         write(fname, content or "")
     # The one trigger that is genuinely THIS tier's rather than the harness's: nothing decodes on a
     # Mac, so the clock sink stands in for LG's decoder. `tests/run.py` has no reason to know it.
-    write("plxnative-clocksink", "")
+    write("dispatcharrtv-clocksink", "")
 
     print(f"{name}: {secs}s, fixtures on {base}, root {root}")
     if case.get("segment_profile"):
         print(f"  segment_profile={case['segment_profile']}")
-    env = dict(os.environ, PLXNATIVE_RUNTIME_DIR=root,
-               PLXNATIVE_APP_DIR=os.path.join(REPO, "pkg"), PLXNATIVE_WIN="640x360")
+    env = dict(os.environ, DISPATCHARRTV_RUNTIME_DIR=root,
+               DISPATCHARRTV_APP_DIR=os.path.join(REPO, "pkg"), DISPATCHARRTV_WIN="640x360")
     proc = subprocess.Popen([SIM_BIN, "127.0.0.1", "32400"], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
@@ -129,7 +129,7 @@ def main():
     finally:
         srv.shutdown()
 
-    log = os.path.join(root, "plxnative-events.log")
+    log = os.path.join(root, "dispatcharrtv-events.log")
     if not os.path.exists(log):
         print("no event log — the simulator did not boot", file=sys.stderr)
         return 1

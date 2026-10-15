@@ -2,9 +2,9 @@
 # tests/player_shots.sh — the player HUD and its four panels, on the simulator, as PNGs.
 #
 # The screens phase 9 moves are the ones no host test can look at: the transport, the track menu,
-# the Info card, the Chapters strip and the `…` popover. This boots `plxnative-sim` straight into a
-# real playback — `plxnative-playurl` at a Range-capable `tests/serve_fixtures.py`, plus
-# `plxnative-clocksink` so the seam accepts and discards the access units and a presentation clock
+# the Info card, the Chapters strip and the `…` popover. This boots `dispatcharrtv-sim` straight into a
+# real playback — `dispatcharrtv-playurl` at a Range-capable `tests/serve_fixtures.py`, plus
+# `dispatcharrtv-clocksink` so the seam accepts and discards the access units and a presentation clock
 # advances — drives the transport with the remote FIFO and writes one shot per panel. The same
 # script run against two commits produces two comparable sets.
 #
@@ -21,8 +21,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SIM_BIN="${SIM_BIN:-$ROOT/rust-modules/target-sim/debug/plxnative-sim}"
-OUT="${1:-/tmp/plxnative-player-shots}"
+SIM_BIN="${SIM_BIN:-$ROOT/rust-modules/target-sim/debug/dispatcharrtv-sim}"
+OUT="${1:-/tmp/dispatcharrtv-player-shots}"
 CLIP="${CLIP:-/tmp/plxfix/clip.mp4}"
 MEDIA_PORT="${MEDIA_PORT:-8021}"
 PMS_PORT="${PMS_PORT:-32497}"
@@ -49,16 +49,16 @@ cleanup() {
 trap cleanup EXIT
 sleep 1
 
-printf 'synthetic-token' > "$D/plxnative-token"
-touch "$D/plxnative-noidle" "$D/plxnative-clocksink"
+printf 'synthetic-token' > "$D/dispatcharrtv-token"
+touch "$D/dispatcharrtv-noidle" "$D/dispatcharrtv-clocksink"
 printf '{"url":"http://127.0.0.1:%s/%s","vcodec":"h264","acodec":"aac","fps":24.0}' \
-  "$MEDIA_PORT" "$(basename "$CLIP")" > "$D/plxnative-playurl"
+  "$MEDIA_PORT" "$(basename "$CLIP")" > "$D/dispatcharrtv-playurl"
 
-PLXNATIVE_RUNTIME_DIR="$D" PLXNATIVE_APP_DIR="$ROOT/pkg" PLXNATIVE_WIN=1920x1080 \
+DISPATCHARRTV_RUNTIME_DIR="$D" DISPATCHARRTV_APP_DIR="$ROOT/pkg" DISPATCHARRTV_WIN=1920x1080 \
   "$SIM_BIN" 127.0.0.1 "$PMS_PORT" > "$D/sim.out" 2>&1 &
 SIM_PID=$!
 
-LOG="$D/plxnative-events.log"
+LOG="$D/dispatcharrtv-events.log"
 for _ in $(seq 1 200); do
   [ -f "$LOG" ] && grep -q 'route=player' "$LOG" && break
   kill -0 "$SIM_PID" 2>/dev/null || break
@@ -66,7 +66,7 @@ for _ in $(seq 1 200); do
 done
 sleep 5
 
-exec 3<> "$D/plxnative-remote"
+exec 3<> "$D/dispatcharrtv-remote"
 send() { for t in "$@"; do printf '%s ' "$t" >&3; sleep "$STEP"; done; }
 shot() { printf 'shot ' >&3; sleep 2; mv "$D"/shot-*.png "$OUT/$1.png" 2>/dev/null || true; }
 

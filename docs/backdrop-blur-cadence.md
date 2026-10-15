@@ -11,7 +11,7 @@ webOS 4.5) on 2026-08-19.
 
 ## The instrument that had to be built first
 
-`/tmp/plxnative-glasshz=<presents-per-refresh>` moves the shared cadence: `1` refreshes on every
+`/tmp/dispatcharrtv-glasshz=<presents-per-refresh>` moves the shared cadence: `1` refreshes on every
 changed present and is the current default, `3` is the historical baseline measured below, and
 `8` is the far end. Absent, nothing runs and the period is the
 compiled-in `DEFAULT_DYNAMIC_PERIOD`, so a default build is unchanged. The value clamps to 1..=8 —
@@ -60,7 +60,7 @@ For pricing a change, the mean is the one that pays the bills.
 
 ## The cost curve
 
-Whole-frame `frame.ui` HWCNT, scene `plxnative-acct` + `plxnative-homeosc` + `plxnative-noidle`
+Whole-frame `frame.ui` HWCNT, scene `dispatcharrtv-acct` + `dispatcharrtv-homeosc` + `dispatcharrtv-noidle`
 (the established baseline scene). Three interleaved rounds — ascending, descending, shuffled — of
 ten legs each, ~700 samples per leg, 60 leading samples discarded. Each cell is the median across
 rounds of that round's mean; `spread` is max−min across rounds.

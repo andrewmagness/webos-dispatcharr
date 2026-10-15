@@ -8,7 +8,7 @@
 //! GL work lives in `gfx::cap_cycle`; this module owns the trigger, the threads, the
 //! single-slot mailbox, and the wire protocol.
 //!
-//! Enabled by the `plxnative-capture` trigger (content: optional port, else [`default_port`] —
+//! Enabled by the `dispatcharrtv-capture` trigger (content: optional port, else [`default_port`] —
 //! 8910 for the app users install, one higher for a developer build beside it), read
 //! once at boot like every dev trigger — and excluded from `automated_boot`'s DIAG
 //! list (dev.rs) so attaching a live view to an interactive session doesn't suppress

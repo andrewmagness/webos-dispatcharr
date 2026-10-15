@@ -1759,10 +1759,10 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             // the addresses). The rule's stated consequence, `SOUND_ERROR_019`, is a literal that
             // exists in NO library on this device.
             //
-            // Ran behind `/tmp/plxnative-atmosacb` first, then measured, then made the default:
+            // Ran behind `/tmp/dispatcharrtv-atmosacb` first, then measured, then made the default:
             // `rv=1` accepted, 1600 audio AUs fed with `reply=O` and no error of any kind, and the
             // television's own read-out — "Dolby Vision / Dolby Atmos", both lines — photographed
-            // in a DISPLAY capture at 11 s. `/tmp/plxnative-noatmosacb` is the way back out.
+            // in a DISPLAY capture at 11 s. `/tmp/dispatcharrtv-noatmosacb` is the way back out.
             if crate::route::stream_immersive(ps) && !plx_base::devtrig::flag("noatmosacb") {
                 let rv = unsafe { super::sink().plane_send_atmos(mt, id.as_ptr()) };
                 super::log(&format!("atmos: acb setMediaAudioData rv={rv}"));
@@ -1779,7 +1779,7 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         if let Some(mut bytes) = bytes {
             // A VP9 stream's PQ lives in the container, which the pipeline never sees, so its own
             // envelope says "hdrType":"none". Say HDR10 here when the demuxer found PQ (see
-            // `vp9_hdr`). `/tmp/plxnative-novp9hdr` sends the envelope as the pipeline made it.
+            // `vp9_hdr`). `/tmp/dispatcharrtv-novp9hdr` sends the envelope as the pipeline made it.
             let container_hdr = *SHARED.container_hdr.lock().unwrap();
             if let Some(h) = container_hdr {
                 if !plx_base::devtrig::flag("novp9hdr") {

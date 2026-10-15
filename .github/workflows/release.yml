@@ -371,7 +371,7 @@ jobs:
       homebrew-manifest: true
       source-asset: true
       # The per-binary firmware-database check nightly has carried since #137; a release ships
-      # plxnative-storage too (its DT_NEEDED list is ci/expected-dt-needed-storage.txt), so it owes the same
+      # dispatcharrtv-storage too (its DT_NEEDED list is ci/expected-dt-needed-storage.txt), so it owes the same
       # gate webosbrew-ipk-verify's per-package verdict does not replace.
       fwcompat: true
     secrets:
@@ -529,7 +529,7 @@ jobs:
             dist/ipk.sha256
             dist/ffmpeg-*.tar.xz
             dist/build-ffmpeg.sh
-            dist/plxnative-source-*.tar.gz*
+            dist/dispatcharrtv-source-*.tar.gz*
             dist/source-rebuild.json
       # Re-derive every published claim FROM the published artifacts. Everything assertable
       # before publishing is in ci/check-package.py; this is the half that needs a live release —

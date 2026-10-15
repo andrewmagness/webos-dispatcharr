@@ -65,7 +65,7 @@ code. That is the job.
 **Report contradictions. Never report absence.**
 
 A doc that fails to mention the new thing is **not a finding**. "Consider documenting the new
-`plxnative-foo` trigger" is not a finding. "docs/agent-reference.md's trigger list does not include your new
+`dispatcharrtv-foo` trigger" is not a finding. "docs/agent-reference.md's trigger list does not include your new
 gate" is not a finding — docs/agent-reference.md says of that very list, "There are ~40; this lists the ones
 worth knowing by name" and "**The catalog is the source, not this list**", so the omission is the
 design. Same for the per-module test bullets, which the file tells you to read as "what each module
@@ -148,7 +148,7 @@ recall, so be exhaustive rather than tidy:
   every sentence spelled `./tests/run.py` describe a different suite. Look for a new flag, mode or
   tier whose *existence* re-points a word that did not change.
 - **file paths** added, deleted or moved (a deleted `.rs` file is almost always named in prose).
-- **string literals with a life of their own**: trigger names (`plxnative-*`), event-log field
+- **string literals with a life of their own**: trigger names (`dispatcharrtv-*`), event-log field
   names (`loop=`, `fps=`, `pos=`, `vgap=`), manifest gate keys (`loop_floor`, `fps_floor`,
   `fps_ceiling`), make goals and variables (`FLAVOR`, `RELEASE`, `RUN_SECS`), cargo features
   (`devtools`, `devtriggers`, `hostsim`), remote-FIFO tokens, JSON payload keys.
@@ -339,7 +339,7 @@ file no compiler reads.
 Note why it qualifies: a reader believing it would go looking for a file that is not there, and
 would carry away the false idea that this app has two demuxers.
 
-**A rejected non-finding**: the same change added `plxnative-playurl`, and docs/agent-reference.md's dev-trigger
+**A rejected non-finding**: the same change added `dispatcharrtv-playurl`, and docs/agent-reference.md's dev-trigger
 bullet does not name every trigger. Rejected — the bullet says "There are ~40; this lists the ones
 worth knowing by name" and gives the shell one-liner that regenerates the real catalog. Nothing
 there is false. (Had the bullet instead said "the full list is below", the *same* omission would be

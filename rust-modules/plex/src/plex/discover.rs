@@ -57,10 +57,10 @@
 //! → `401 {"error":"Unauthorized","message":"You must provide a token!"}`, where
 //! `/library/people/{guid}` is recorded above as answering 200 unauthenticated). The token that
 //! satisfies it is the plex.tv ACCOUNT token, which is what makes the filmography unreachable on
-//! any automated boot: those sign in with `/tmp/plxnative-token`, a *server* token, and leave
-//! `Session::account_token` empty. That is the same wall `/tmp/plxnative-personbio` exists for, one
+//! any automated boot: those sign in with `/tmp/dispatcharrtv-token`, a *server* token, and leave
+//! `Session::account_token` empty. That is the same wall `/tmp/dispatcharrtv-personbio` exists for, one
 //! step further along — the biography degrades to a blank line, the filmography degrades to
-//! nothing at all — and it is why `/tmp/plxnative-personcredits` had to be written.
+//! nothing at all — and it is why `/tmp/dispatcharrtv-personcredits` had to be written.
 use super::account::AccountClient;
 use super::models::de_i64;
 use serde::Deserialize;

@@ -67,7 +67,7 @@ fn select_reports_a_failed_write_and_keeps_the_live_value() {
     let _restore = Restore(subtitle_size(), subtitle_position());
     restore_subtitle_size(SubtitleSize::Medium);
     // the session file's parent is a regular file, so no write can land
-    let dir = std::env::temp_dir().join(format!("plxnative-select-blocked-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("dispatcharrtv-select-blocked-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("blocker"), b"x").unwrap();

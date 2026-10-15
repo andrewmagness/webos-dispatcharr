@@ -13,7 +13,7 @@ half of that banner.
 
 ## 0. Provenance, and how to re-read the evidence
 
-Ten diagnostic snapshots reached `tools/plxnative-lab` through the bridge of
+Ten diagnostic snapshots reached `tools/dispatcharrtv-lab` through the bridge of
 `docs/lab-diagnostics.md`. Each is one `{"kind":"envelope",…}` line plus the ring's tail, so the
 ring's records are re-sent on every upload: **6907 record lines, 3083 distinct records**, across
 **three app runs**. `seq` restarts at 1 per relaunch, so the runs are ordered by upload number

@@ -26,7 +26,7 @@ What it does, in order:
 3. Runs them with a bounded number of jobs (`--jobs`, default `PLX_TEST_JOBS` or min(6, CPUs)), largest
    binary first. Each runs the way cargo runs it: cwd is the package directory and the
    CARGO_MANIFEST_DIR / CARGO_PKG_* / library-path environment is set. Each also gets its own
-   PLXNATIVE_RUNTIME_DIR (a subdirectory of the caller's, named for the package; only the hostsim
+   DISPATCHARRTV_RUNTIME_DIR (a subdirectory of the caller's, named for the package; only the hostsim
    build reads it) and its own
    RUST_TEST_THREADS share, so the binaries cannot share the runtime root's files and the
    machine is not oversubscribed jobs-fold (timing tests are sensitive to that). Each runs with
@@ -151,7 +151,7 @@ class Run:
         if runtime_root is not None:
             sub = os.path.join(runtime_root, self.name)
             os.makedirs(sub, exist_ok=True)
-            self.env["PLXNATIVE_RUNTIME_DIR"] = sub
+            self.env["DISPATCHARRTV_RUNTIME_DIR"] = sub
             self.tmpdir = os.path.join(sub, "tmp")
             os.makedirs(self.tmpdir, exist_ok=True)
             # The user's own primary group, as a real per-user temp directory has: a directory made
@@ -232,10 +232,10 @@ def main() -> int:
     ncpu = os.cpu_count() or 1
     jobs = min(args.jobs, len(tests))
     threads = args.threads or (max(2, -(-ncpu // jobs)) if jobs > 1 else None)
-    runtime_root = os.environ.get("PLXNATIVE_RUNTIME_DIR")
+    runtime_root = os.environ.get("DISPATCHARRTV_RUNTIME_DIR")
     scratch = None
     if runtime_root is None:
-        scratch = tempfile.mkdtemp(prefix="plxnative-check.")
+        scratch = tempfile.mkdtemp(prefix="dispatcharrtv-check.")
         runtime_root = scratch
     runs = [Run(t, link_paths.get(t["package_id"], []), runtime_root, threads, args.filter, libtest)
             for t in tests]

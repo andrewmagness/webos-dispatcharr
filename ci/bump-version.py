@@ -50,7 +50,7 @@ APPINFO = ROOT / "pkg/appinfo.json"
 CONTROL = ROOT / "ipkroot/ctl/control"
 CARGO_TOML = ROOT / "rust-modules/Cargo.toml"
 CARGO_LOCK = ROOT / "rust-modules/Cargo.lock"
-CRATE = "plxnative-modules"
+CRATE = "dispatcharrtv"
 
 SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 

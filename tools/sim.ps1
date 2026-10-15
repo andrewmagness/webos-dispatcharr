@@ -151,12 +151,12 @@ $prepare = @'
 set -euo pipefail
 . "$HOME/.cargo/env"
 repo="$PLX_REPO"
-runtime="${PLX_RUNTIME:-$HOME/.local/state/plxnative-sim}"
-target="${PLX_TARGET:-$HOME/.cache/plxnative-sim/target}"
-assets="${PLX_ASSETS:-$HOME/.local/share/plxnative-sim/assets}"
+runtime="${PLX_RUNTIME:-$HOME/.local/state/dispatcharrtv-sim}"
+target="${PLX_TARGET:-$HOME/.cache/dispatcharrtv-sim/target}"
+assets="${PLX_ASSETS:-$HOME/.local/share/dispatcharrtv-sim/assets}"
 mkdir -p "$runtime" "$target" "$assets"
 # All launch paths use the same build-and-stage operation. The ASS library is
-# produced by make, and the process loads it from PLXNATIVE_APP_DIR, not pkg/.
+# produced by make, and the process loads it from DISPATCHARRTV_APP_DIR, not pkg/.
 build_simulator() {
     cd "$repo"
     make sim-wsl SIM_TDIR="$target"
@@ -176,9 +176,9 @@ if [ "${PLX_STAGE_TOKEN:-}" = 1 ]; then
         exit 1
     fi
     umask 077
-    printf '%s' "$token" > "$runtime/plxnative-token"
+    printf '%s' "$token" > "$runtime/dispatcharrtv-token"
     echo "Plex token staged in the private simulator runtime directory."
-elif [ -s "$runtime/plxnative-token" ]; then
+elif [ -s "$runtime/dispatcharrtv-token" ]; then
     echo "Using the token already staged in the simulator runtime directory."
 fi
 pms="${PLX_PMS:-}"
@@ -190,23 +190,23 @@ if [ -z "$port" ] && [ -f "$repo/src/config.local.h" ]; then
     port=$(sed -n 's/^#define[[:space:]]*PMS_PORT[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$repo/src/config.local.h" | head -n 1 || true)
 fi
 port="${port:-32400}"
-export PLXNATIVE_RUNTIME_DIR="$runtime"
-export PLXNATIVE_APP_DIR="$assets"
-export PLXNATIVE_WIN=1920x1080
+export DISPATCHARRTV_RUNTIME_DIR="$runtime"
+export DISPATCHARRTV_APP_DIR="$assets"
+export DISPATCHARRTV_WIN=1920x1080
 export SDL_VIDEODRIVER="${SDL_VIDEODRIVER:-x11}"
 '@
 
 $instanceLocks = @'
 set -euo pipefail
-runtime="${PLX_RUNTIME:-$HOME/.local/state/plxnative-sim}"
-target="${PLX_TARGET:-$HOME/.cache/plxnative-sim/target}"
+runtime="${PLX_RUNTIME:-$HOME/.local/state/dispatcharrtv-sim}"
+target="${PLX_TARGET:-$HOME/.cache/dispatcharrtv-sim/target}"
 mkdir -p "$runtime" "$target"
-exec 9>"$runtime/plxnative-sim.lock"
+exec 9>"$runtime/dispatcharrtv-sim.lock"
 if ! flock -n 9; then
     echo "Simulator runtime is already in use: $runtime" >&2
     exit 1
 fi
-exec 8>"$target/plxnative-sim.instance.lock"
+exec 8>"$target/dispatcharrtv-sim.instance.lock"
 if ! flock -n 8; then
     echo "Simulator build artifacts are in use: $target. Use a separate -TargetDir for another instance." >&2
     exit 1
@@ -241,21 +241,21 @@ echo "WSLg simulator dependencies are ready."
     "build" {
         Invoke-WslShell -Environment $commonEnvironment -Script ($instanceLocks + "`n" + $prepare + "`n" + @'
 build_simulator
-echo "Built $target/release/plxnative-sim"
+echo "Built $target/release/dispatcharrtv-sim"
 '@)
     }
     "run" {
         Assert-WslgFastTransport
         Invoke-WslShell -Environment $commonEnvironment -Script ($instanceLocks + "`n" + $prepare + "`n" + @'
 build_simulator
-printf '%s\n' "$$" > "$runtime/plxnative-sim.pid"
-exec "$target/release/plxnative-sim" "$pms" "$port"
+printf '%s\n' "$$" > "$runtime/dispatcharrtv-sim.pid"
+exec "$target/release/dispatcharrtv-sim" "$pms" "$port"
 '@)
     }
     "shot" {
         Assert-WslgFastTransport
         if ([string]::IsNullOrWhiteSpace($Output)) {
-            $Output = Join-Path (Get-Location) "plxnative-shot.png"
+            $Output = Join-Path (Get-Location) "dispatcharrtv-shot.png"
         }
         $outputAbsolute = Get-AbsoluteWindowsPath $Output
         $commonEnvironment.PLX_OUTPUT = ConvertTo-WslPath $outputAbsolute
@@ -265,24 +265,24 @@ mkdir -p "$(dirname "$PLX_OUTPUT")"
 base="$runtime/windows-shot.png"
 captured="$runtime/windows-shot-1.png"
 rm -f "$base" "$captured"
-PLXNATIVE_SHOT="$base" "$target/release/plxnative-sim" "$pms" "$port" &
+DISPATCHARRTV_SHOT="$base" "$target/release/dispatcharrtv-sim" "$pms" "$port" &
 pid=$!
-printf '%s\n' "$pid" > "$runtime/plxnative-sim.pid"
+printf '%s\n' "$pid" > "$runtime/dispatcharrtv-sim.pid"
 cleanup() {
     kill "$pid" 2>/dev/null || true
-    if [ "$(cat "$runtime/plxnative-sim.pid" 2>/dev/null || true)" = "$pid" ]; then
-        rm -f "$runtime/plxnative-sim.pid"
+    if [ "$(cat "$runtime/dispatcharrtv-sim.pid" 2>/dev/null || true)" = "$pid" ]; then
+        rm -f "$runtime/dispatcharrtv-sim.pid"
     fi
 }
 trap cleanup EXIT
 for _ in $(seq 1 200); do
-    [ -p "$runtime/plxnative-remote" ] && break
+    [ -p "$runtime/dispatcharrtv-remote" ] && break
     kill -0 "$pid" 2>/dev/null || { wait "$pid"; exit $?; }
     sleep 0.05
 done
-[ -p "$runtime/plxnative-remote" ] || { echo "Simulator remote did not start." >&2; exit 1; }
+[ -p "$runtime/dispatcharrtv-remote" ] || { echo "Simulator remote did not start." >&2; exit 1; }
 sleep 5
-exec 3<>"$runtime/plxnative-remote"
+exec 3<>"$runtime/dispatcharrtv-remote"
 printf 'shot ' >&3
 exec 3>&-
 complete=0
@@ -302,7 +302,7 @@ done
 [ "$complete" = 1 ] || { echo "Simulator did not produce a complete screenshot." >&2; exit 1; }
 kill "$pid" 2>/dev/null || true
 wait "$pid" 2>/dev/null || true
-rm -f "$runtime/plxnative-sim.pid"
+rm -f "$runtime/dispatcharrtv-sim.pid"
 trap - EXIT
 mv "$captured" "$PLX_OUTPUT"
 echo "Wrote $PLX_OUTPUT"
@@ -321,12 +321,12 @@ echo "Wrote $PLX_OUTPUT"
         $commonEnvironment.PLX_TOKENS = $InputTokens -join " "
         Invoke-WslShell -Environment $commonEnvironment -Script @'
 set -euo pipefail
-runtime="${PLX_RUNTIME:-$HOME/.local/state/plxnative-sim}"
-target="${PLX_TARGET:-$HOME/.cache/plxnative-sim/target}"
-fifo="$runtime/plxnative-remote"
-pid=$(cat "$runtime/plxnative-sim.pid" 2>/dev/null || true)
+runtime="${PLX_RUNTIME:-$HOME/.local/state/dispatcharrtv-sim}"
+target="${PLX_TARGET:-$HOME/.cache/dispatcharrtv-sim/target}"
+fifo="$runtime/dispatcharrtv-remote"
+pid=$(cat "$runtime/dispatcharrtv-sim.pid" 2>/dev/null || true)
 actual=$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)
-expected=$(readlink -f "$target/release/plxnative-sim" 2>/dev/null || true)
+expected=$(readlink -f "$target/release/dispatcharrtv-sim" 2>/dev/null || true)
 if [ ! -p "$fifo" ] || [ -z "$pid" ] || [ "$actual" != "$expected" ]; then
     echo "The simulator remote is unavailable at $fifo. Start tools/sim.ps1 run first." >&2
     exit 1

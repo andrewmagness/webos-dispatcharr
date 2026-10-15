@@ -2289,7 +2289,7 @@ fn home_server_sets(pins: &[(ServerId, i64, bool)]) -> (Vec<ServerId>, Vec<Serve
 /// construction rather than by convention.
 ///
 /// The registry IS the granted roster — a server is in it only once plex.tv (or the
-/// `plxnative-servers` dev trigger) handed us a token for it — and [`feeds_home`] is what narrows
+/// `dispatcharrtv-servers` dev trigger) handed us a token for it — and [`feeds_home`] is what narrows
 /// the grant to a pin. The handle comes from the same place (`ServerFacts`), so nothing here has an
 /// opinion about who a server belongs to that the Sources list does not share.
 fn roster_with_scope(scope: &BrowseScope) -> Vec<(ServerId, String)> {

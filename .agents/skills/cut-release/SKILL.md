@@ -67,9 +67,9 @@ binary you are about to publish. Mixing a query with a real goal is not a query 
 Whenever you assert something about "the release build", prove the bytes first:
 
 ```sh
-md5 -q pkg/plxnative
+md5 -q pkg/dispatcharrtv
 tools/tv-ssh ssh tv \
-  "md5sum /media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv/plxnative"
+  "md5sum /media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv/dispatcharrtv"
 ```
 
 **That id is spelled out on purpose, and it is the STABLE one.** This is the most-copied "prove the
@@ -79,7 +79,7 @@ Pasted into a debug context this command silently compares against the wrong app
 mismatch (or, worse, a match) about a binary nobody is releasing. **A release is always the stable
 id**, so leave the literal alone here; anywhere else, get the path from
 `make -s print-appdir FLAVOR=<f>`. And note the hash is now weaker evidence than it reads as:
-`pkg/plxnative` is a path every flavour and both configurations write, so a match proves the bytes
+`pkg/dispatcharrtv` is a path every flavour and both configurations write, so a match proves the bytes
 and not the install. The **first line of the event log** is the witness that names both —
 `install: id=com.magness.dispatcharrtv flavour=- … features=release` — where `features=release` is the
 direct answer to "is this the shipped configuration?". (The stable install prints `flavour=-`, not
@@ -106,7 +106,7 @@ The parenthetical names the flavour you **asked for**, not the default — readi
 add `FLAVOR=stable` is backwards; the developer install is the one you get by typing nothing.)
 
 This is §2 seen from the other side: a dev-featured binary under the shipped id carries the whole
-`/tmp` trigger surface, the world-writable `plxnative-remote` FIFO and the `:8910` capture
+`/tmp` trigger surface, the world-writable `dispatcharrtv-remote` FIFO and the `:8910` capture
 listener (8910 is the *stable* install's port; debug defaults to 8911 and nightly to 8912, which
 is exactly why the shipped id carrying a listener **at all** is the thing being ruled out here).
 Before the split that could only happen by publishing by hand, which is how v0.2.1's defects got
@@ -344,7 +344,7 @@ and the whole point of this step is that the **package** is what runs.
 
 Wake the TV first (`wake-tv` skill). Then launch it and read the event log: its first line is
 `install: id=com.magness.dispatcharrtv flavour=- … features=release` — check the id and `features=` there
-rather than inferring them, since both builds' binaries are named `plxnative` — the next line names
+rather than inferring them, since both builds' binaries are named `dispatcharrtv` — the next line names
 the firmware, and a release build must leave **only** the three `*.log` files in the stable runtime
 root, `/tmp`. No FIFO, no `:8910` listener. That is the release build's whole premise and it is
 worth re-checking every time, by hash.
@@ -352,7 +352,7 @@ worth re-checking every time, by hash.
 If the developer install is also on this television you will see a `/tmp/com.magness.dispatcharrtv.debug`
 directory beside those logs: that is the *other* install's runtime root, not a leak from this one.
 It is named for the app id — the reason the separator is a dot and not a hyphen — so it matches no
-`plxnative-*` glob and cannot be mistaken for a trigger by the check or by the app.
+`dispatcharrtv-*` glob and cannot be mistaken for a trigger by the check or by the app.
 
 ### 7. Tell the people who are waiting
 

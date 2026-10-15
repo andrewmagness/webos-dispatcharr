@@ -124,7 +124,7 @@ fn a_damaged_or_foreign_file_is_unreadable_not_an_account() {
     let c = Candidates::new("damaged", 1);
     let bad: [&[u8]; 5] = [
         b"{\"format\":\"dispatcharr-account\",\"vers",
-        br#"{"format":"plxnative-session","version":1,"server":"http://h:1","username":"u","api_key":"k"}"#,
+        br#"{"format":"dispatcharrtv-session","version":1,"server":"http://h:1","username":"u","api_key":"k"}"#,
         br#"{"format":"dispatcharr-account","version":2,"server":"http://h:1","username":"u","api_key":"k"}"#,
         br#"{"format":"dispatcharr-account","version":1,"server":"not a server","username":"u","api_key":"k"}"#,
         br#"{"format":"dispatcharr-account","version":1,"server":"http://h:1","username":"u","api_key":""}"#,

@@ -150,7 +150,7 @@ def render_notes(*, label: str, sha: str, base_tag: "str | None", prev_tag: "str
         "## Reporting problems\n\n"
         f"[Open an issue](https://github.com/{repo}/issues/new) and include the version string "
         f"`{label}`. If error reporting is enabled, reports from this build are filed under "
-        f"`plxnative@{label}`, apart from any release.",
+        f"`dispatcharrtv@{label}`, apart from any release.",
 
         "## Installing\n\n"
         f"Download `{ipk}` below and install it with "
@@ -208,14 +208,14 @@ def _selftest() -> int:
     check(last_release(["rc/v0.1.0-rc.1"]) is None, "no release yet")
 
     body = render_notes(label="0.8.0-rc.2", sha="abc1234def" + "0" * 30, base_tag="v0.7.0",
-                        prev_tag="rc/v0.8.0-rc.1", ipk="plxnative-v0.8.0-rc.2.ipk",
+                        prev_tag="rc/v0.8.0-rc.1", ipk="dispatcharrtv-v0.8.0-rc.2.ipk",
                         sha256="deadbeef" * 8, repo="GLinnik21/plx-native",
                         changes=["- Home: something (#471)"])
     check("replaces the regular PlxNative" in body, "notes say it replaces the stable install")
     check("will not offer the final 0.8.0" in body, "notes warn the final is not offered over it")
     check("/compare/v0.7.0...rc/v0.8.0-rc.2" in body, "notes compare against the last release")
     check("/compare/rc/v0.8.0-rc.1...rc/v0.8.0-rc.2" in body, "notes link the previous candidate")
-    check(f"{'deadbeef' * 8}  plxnative-v0.8.0-rc.2.ipk" in body, "notes carry a shasum -c line")
+    check(f"{'deadbeef' * 8}  dispatcharrtv-v0.8.0-rc.2.ipk" in body, "notes carry a shasum -c line")
     check("- Home: something (#471)" in body, "notes list the changes")
     first = render_notes(label="0.8.0-rc.1", sha="0" * 40, base_tag=None, prev_tag=None,
                          ipk="x.ipk", sha256="0" * 64, repo="o/r", changes=[])

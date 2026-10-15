@@ -1,6 +1,6 @@
 # P1 — the anatomy of a quality transaction, measured
 
-**Device session 2026-08-26.** LG 49SM9000PLA, webOS 4.10.0, `com.beb.plxnative.debug`.
+**Device session 2026-08-26.** LG 49SM9000PLA, webOS 4.10.0, `com.beb.dispatcharrtv.debug`.
 Binary: `9828ef8e` (module split, Phase 1 instrumentation, two clock fixes). Host suite at that
 SHA: 1275 Rust + 108 harness + 155 hook checks green.
 

@@ -245,8 +245,8 @@ usage: tools/build-gc.sh [MODE] [-n]
                   used it for a week; under pressure only). Single-instance: a mkdir lock
                   (stale-safe, $PLX_GC_LOCK_DIR) means a second --auto exits 0 quietly rather than
                   racing the first. Logs one line per stage to $PLX_GC_LOG (default
-                  ~/Library/Logs/plxnative-build-gc.log on macOS,
-                  ${XDG_STATE_HOME:-~/.cache}/plxnative/build-gc.log elsewhere), truncated to its
+                  ~/Library/Logs/dispatcharrtv-build-gc.log on macOS,
+                  ${XDG_STATE_HOME:-~/.cache}/dispatcharrtv/build-gc.log elsewhere), truncated to its
                   last ~200 lines past ~1 MB. `--auto -n` previews every stage the current free
                   space would trigger, deletes nothing, and still takes the lock.
   -n, --dry-run   print what would go, delete nothing.
@@ -295,10 +295,10 @@ free_kib() {
 gc_log_path() {
   if [ -n "${PLX_GC_LOG-}" ]; then printf '%s' "$PLX_GC_LOG"; return 0; fi
   case "$(uname -s 2>/dev/null)" in
-    Darwin) printf '%s' "$HOME/Library/Logs/plxnative-build-gc.log" ;;
+    Darwin) printf '%s' "$HOME/Library/Logs/dispatcharrtv-build-gc.log" ;;
     *)
-      if [ -n "${XDG_STATE_HOME-}" ]; then printf '%s' "$XDG_STATE_HOME/plxnative/build-gc.log"
-      else printf '%s' "$HOME/.cache/plxnative/build-gc.log"; fi ;;
+      if [ -n "${XDG_STATE_HOME-}" ]; then printf '%s' "$XDG_STATE_HOME/dispatcharrtv/build-gc.log"
+      else printf '%s' "$HOME/.cache/dispatcharrtv/build-gc.log"; fi ;;
   esac
 }
 # One line per stage. Bounded rather than rotated: this is a diagnostic trail for a human to skim
@@ -580,7 +580,7 @@ external_incremental_trees() {
 # hash, a source edit only touches the files under the CURRENT hash, and a hash nothing builds
 # anymore — yesterday's feature set, a reverted flag — keeps its binary and every `*.rcgu.o`
 # codegen-unit object beside it forever. Measured 2026-09-28 in the main checkout:
-# `rust-modules/target/debug/deps` held 6416 `plxnative_modules-*` files across 6 live-SIZED
+# `rust-modules/target/debug/deps` held 6416 `dispatcharrtv-*` files across 6 live-SIZED
 # hashes (~100 MB binary + objects each), all last written 2026-09-17 — 5.5 GB nothing had built
 # from in eleven days.
 #
@@ -806,7 +806,7 @@ owner_is_alive() {   # $1 = lock directory
 # FFmpeg lock is about the SHARED cache, which belongs to no checkout at all — there is no finer
 # answer to give, so this half stays all-or-nothing exactly as it was.
 ffmpeg_lock_held() {
-  c=${PLX_BUILD_CACHE-$HOME/.cache/plxnative}
+  c=${PLX_BUILD_CACHE-$HOME/.cache/dispatcharrtv}
   if [ -n "$c" ]; then
     for l in "$c"/ffmpeg/*.lock; do
       case "$l" in *'*'*) continue ;; esac
@@ -1141,7 +1141,7 @@ report)
     done
   fi
 
-  cache=${PLX_BUILD_CACHE-$HOME/.cache/plxnative}
+  cache=${PLX_BUILD_CACHE-$HOME/.cache/dispatcharrtv}
   echo
   if [ -n "$cache" ] && [ -d "$cache" ]; then
     printf 'shared build cache  %8s  %s (FFmpeg: one copy per configuration, for every checkout)\n' \
@@ -1221,7 +1221,7 @@ prune_lock() {
   return 1
 }
 stale_cache_trees() {
-  c=${PLX_BUILD_CACHE-$HOME/.cache/plxnative}
+  c=${PLX_BUILD_CACHE-$HOME/.cache/dispatcharrtv}
   [ -n "$c" ] && [ -d "$c/ffmpeg" ] || return 0
   for d in "$c"/ffmpeg/*; do
     case "$d" in

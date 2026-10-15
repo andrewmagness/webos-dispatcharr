@@ -64,7 +64,7 @@ video, so none of this can be confirmed from a desk. This is the ordinary "does 
 and feel right" pass every UI change needs before it's trusted, independent of the deeper
 legibility grading in the anchor-table TODO above.
 
-**Context:** `docs/trailer-ux-plan.md` §5 has the exact scene design (reuse `plxnative-navosc`'s
+**Context:** `docs/trailer-ux-plan.md` §5 has the exact scene design (reuse `dispatcharrtv-navosc`'s
 headless-trigger pattern, per `K_DISC_UNFURL`'s own disc-unfurl scene as the nearest analogue).
 
 **Effort:** M

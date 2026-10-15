@@ -5,7 +5,7 @@
 //! `telemetry` layer of `ci/module-layers.ini`: it uses `base`, `machine`, `platform`, `net` and
 //! `plex` and nothing above them.
 //!
-//! The release it reports (`plxnative@<version>`) is what the application hands to
+//! The release it reports (`dispatcharrtv@<version>`) is what the application hands to
 //! `telemetry::set_release` right after `plex::identity::set_version`, because `PLX_VERSION` is a
 //! `cargo:rustc-env` of the application crate alone. The Sentry and PostHog credentials are read with
 //! `option_env!` from the build environment, never from a file, so an unconfigured build carries

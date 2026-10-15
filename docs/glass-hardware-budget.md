@@ -341,7 +341,7 @@ These are not budget items. They are unavailable at any frame rate.
 background, flips at the bottom, and fades the new page up. Could that grey trough be a **blur** of
 the outgoing page instead, with the tab bar's glass sitting on top of it?
 
-**It was built and measured.** `/tmp/plxnative-navblur` holds the page at full brightness and
+**It was built and measured.** `/tmp/dispatcharrtv-navblur` holds the page at full brightness and
 cross-fades a full-bleed blur slab over it, with a tab-track-shaped glass capsule composited above.
 
 **The answer is yes, at a real and quantified cost.**
@@ -611,8 +611,8 @@ Photographed proof rather than only sums: over six real heroes in the simulator 
 set, the bar is transparent on the dark ones and takes .562 on the bright cyan that used to drown
 its labels.
 
-**What ships:** the glass track, with `/tmp/plxnative-flattabs` for the comparison,
-`/tmp/plxnative-tabglassdim` to pin the weight by hand and `/tmp/plxnative-groundlog` to print what
+**What ships:** the glass track, with `/tmp/dispatcharrtv-flattabs` for the comparison,
+`/tmp/dispatcharrtv-tabglassdim` to pin the weight by hand and `/tmp/dispatcharrtv-groundlog` to print what
 it read and what it chose. The Account popover uses a cached backdrop and a one-copy full host
 `FrameCache`; its menu animation no longer redraws or dynamically resamples Home underneath.
 
@@ -628,7 +628,7 @@ with the profile name exactly as before.
 ### What the material costs, in counters (2026-08-19, the shipped default)
 
 An A/B on `fps:home-grid`'s own scene (`homeosc`, the busiest UI scene the suite has), both legs
-with `/tmp/plxnative-hwcnt=frame.ui` armed so the profiler's own overhead cancels. ~1,160 frames a
+with `/tmp/dispatcharrtv-hwcnt=frame.ui` armed so the profiler's own overhead cancels. ~1,160 frames a
 leg, 20 discarded.
 
 | counter | flat track | glass track | delta |
@@ -682,7 +682,7 @@ it is written down here rather than built.
 
 ## 9. How this was measured
 
-**The instrument.** A load dial (`rust-modules/ui/src/glassload.rs`, `/tmp/plxnative-glassload`)
+**The instrument.** A load dial (`rust-modules/ui/src/glassload.rs`, `/tmp/dispatcharrtv-glassload`)
 draws N surfaces of a chosen size and kind — backdrop glass, poster card, or flat photograph — over
 the real Home screen, at a chosen blur-refresh cadence. It **cycles its own configurations on a
 timer inside one launch**, six seconds each, repeating for the length of the run. That is not a
@@ -696,19 +696,19 @@ a deploy plus its measurements inside one lock — a deploy in one lock and a me
 would be measuring somebody else's binary). Fifteen measurement legs across eleven distinct sweeps,
 6-second steps, 2–4 full cycles each, 8–16 usable heartbeat samples per configuration after
 discarding the two seconds around every step change. Scene throughout: Home, focus sweeping the grid
-continuously (`plxnative-homeosc`), repaint-skipping disabled (`plxnative-noidle`), so every
+continuously (`dispatcharrtv-homeosc`), repaint-skipping disabled (`dispatcharrtv-noidle`), so every
 configuration saw the same moving underlay and presented continuously.
 
-> **The `/tmp/plxnative-…` paths in the recipe below predate the two-install split: they are the
+> **The `/tmp/dispatcharrtv-…` paths in the recipe below predate the two-install split: they are the
 > STABLE install's runtime root.** A flavoured install puts the same names under `$(make -s
 > print-rundir FLAVOR=<f>)` — `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug`
 > default — so armed as bare `/tmp/…` the sweep never reaches the install `make run` launches, and
 > the row reproduces as its own unloaded control. See `docs/two-installs.md`.
 
-**To reproduce any row.** Arm `/tmp/plxnative-token`, `/tmp/plxnative-noidle`,
-`/tmp/plxnative-homeosc`, and put a sweep in `/tmp/plxnative-glassload` — for example
+**To reproduce any row.** Arm `/tmp/dispatcharrtv-token`, `/tmp/dispatcharrtv-noidle`,
+`/tmp/dispatcharrtv-homeosc`, and put a sweep in `/tmp/dispatcharrtv-glassload` — for example
 `hold=6;off,1x608x396@3,1x1920x1080@3` — then `make run RUN_SECS=128` and read the log with
-`tools/analyze-loadsweep.py`. The transition prototype is `/tmp/plxnative-navblur` (`1p:3` pins it
+`tools/analyze-loadsweep.py`. The transition prototype is `/tmp/dispatcharrtv-navblur` (`1p:3` pins it
 for a capture, `1:3` rides a real route change, `2:3` gives the upper surface its own cache). Both
 triggers are absent from a `RELEASE=1` build.
 
@@ -794,7 +794,7 @@ same dial in the same launch.
 ## 11. The scroll band as glass — built, measured, refused (2026-08-21)
 
 > **The element this section is about no longer exists, and cannot be re-armed.** `nav_scrim`, the
-> `nav_glass_*` family and the `/tmp/plxnative-navglass` trigger were all DELETED on 2026-09-05,
+> `nav_glass_*` family and the `/tmp/dispatcharrtv-navglass` trigger were all DELETED on 2026-09-05,
 > when Search became one scrolling document and left the band with no caller at all (the Library had
 > stopped drawing one the same day). `git log -S nav_scrim` and the retirement note in
 > `rust-modules/ui/src/widgets.rs` are the recipe; reproducing any of this needs the band REBUILT on
@@ -808,7 +808,7 @@ caller's content began. Two screens drew it — the Library grid (chrome to 186,
 Search (208 and 248). The obvious improvement was to make it a **frosted material** instead, so a
 poster scrolling under the bar blurred rather than dissolving into flat grey.
 
-It was built (`/tmp/plxnative-navglass`, `widgets::nav_scrim`'s glass path — the same three bands at
+It was built (`/tmp/dispatcharrtv-navglass`, `widgets::nav_scrim`'s glass path — the same three bands at
 `NAV_GLASS_FROST` 0.62 of their weight, over one `Glass::DYNAMIC_BACKDROP` surface), it worked, and
 it did not ship. **The trigger stayed off, and is now gone with the element.**
 
@@ -868,7 +868,7 @@ below, and they are consistent with it.
 
 ### What it actually costs
 
-Scene: the real screens, `plxnative-noidle` armed so the app presents continuously (the fps scenes'
+Scene: the real screens, `dispatcharrtv-noidle` armed so the app presents continuously (the fps scenes'
 oscillators settle between steps, so their `fps=` is a duty cycle and not a fill rate), both
 profilers disarmed, 30 s per leg, first 5 samples dropped. **Two independent runs of every leg**,
 which reproduced to within 0.1 fps of mean.
@@ -884,8 +884,8 @@ which reproduced to within 0.1 fps of mean.
 per second a signal rather than noise: there is no spread on the other side of the comparison to
 hide in.
 
-**Where the two frames go — the frame-time distribution.** `/tmp/plxnative-framedrop=17` logs every
-frame over 17 ms with its phase breakdown, and takes no `glFinish`, so unlike `plxnative-profile` it
+**Where the two frames go — the frame-time distribution.** `/tmp/dispatcharrtv-framedrop=17` logs every
+frame over 17 ms with its phase breakdown, and takes no `glFinish`, so unlike `dispatcharrtv-profile` it
 does not move the pacing: its own legs reproduced the unarmed fps figures above exactly (60.0 / 58.0
 median). Library grid, 24 s a leg:
 
@@ -909,7 +909,7 @@ On a screen whose one job is a smooth scroll, and which today holds a hard 60 wi
 
 ### The existing fps scenes PASS, and quoting them would have been the mistake
 
-Run both ways (whole UI tier, 14 scenes, `plxnative-navglass` added to the two scroll scenes):
+Run both ways (whole UI tier, 14 scenes, `dispatcharrtv-navglass` added to the two scroll scenes):
 
 | scene | control | glass | its gates |
 |---|---|---|---|
@@ -943,12 +943,12 @@ can is the one above: continuous presents, and the frame-time distribution rathe
 
 ### If somebody proposes this again
 
-> **The `/tmp/plxnative-…` paths below are the STABLE install's runtime root**, as in the section
+> **The `/tmp/dispatcharrtv-…` paths below are the STABLE install's runtime root**, as in the section
 > above: a flavoured install puts the same names under `$(make -s print-rundir FLAVOR=<f>)` —
 > `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug` default — so armed as bare
 > `/tmp/…` not one of them reaches the install `make run` launches. See `docs/two-installs.md`.
 
-**This is the recipe as it stood, and it can no longer be run.** `/tmp/plxnative-navglass` was
+**This is the recipe as it stood, and it can no longer be run.** `/tmp/dispatcharrtv-navglass` was
 deleted with `nav_scrim` on 2026-09-05: the Library's one-scroll rewrite took that screen's fixed
 toolbar and the band with it, Search followed the same day, and an element with no caller was
 retired rather than kept warm. Arming the trigger today does nothing, which reads as a broken
@@ -956,9 +956,9 @@ trigger and is not one — there is no trigger. The measurement above stands on 
 reproduction is gone, and getting it back means rebuilding the band on a screen with fixed top
 chrome.
 
-It was: `plxnative-noidle` + `plxnative-search=<a query the library matches>` +
-`plxnative-searchosc` (+ `plxnative-navglass`), `make run RUN_SECS=30`, and separately
-`printf 17 > /tmp/plxnative-framedrop` for the distribution.
+It was: `dispatcharrtv-noidle` + `dispatcharrtv-search=<a query the library matches>` +
+`dispatcharrtv-searchosc` (+ `dispatcharrtv-navglass`), `make run RUN_SECS=30`, and separately
+`printf 17 > /tmp/dispatcharrtv-framedrop` for the distribution.
 
 **Take both numbers, and know which one each answers.** `worstframe=` is the EXPLANATION — it is
 where the two frames went, and it is what a median hides. `fps=`, and specifically its **minimum**,
@@ -988,17 +988,17 @@ ever grows fixed top chrome again, this section is the reason to price the band 
 **The idea.** The reference client draws a still's label on a blurred strip across the bottom of the
 card rather than on a black gradient, so the artwork under the label is dimmed rather than hidden
 and the label can sit lower. The owner asked what it would cost, with a photograph of Apple TV's
-Continue Watching row. `/tmp/plxnative-tileglass` is that build — the same band height, the same two
+Continue Watching row. `/tmp/dispatcharrtv-tileglass` is that build — the same band height, the same two
 lines, the same bar; only the GROUND changes, so an A/B between two runs is the material and not a
 second layout.
 
-**Measured on the dev set, TV Shows library, `plxnative-libosc` sweeping the document, 44 s a leg.**
+**Measured on the dev set, TV Shows library, `dispatcharrtv-libosc` sweeping the document, 44 s a leg.**
 Eight stills on screen across two shelves, which is what the screen actually holds.
 
 | leg | min | median | max |
 |---|---|---|---|
 | control — the black scrim | 59 | **60** | 61 |
-| `plxnative-tileglass` | **42** | **56** | 61 |
+| `dispatcharrtv-tileglass` | **42** | **56** | 61 |
 
 **It is what §8 predicts, for once, and the shape is the whole reason.** A per-tile band is a wide
 thin strip, the worst shape this hardware has (§8: a single 1148x76 bar falls to 46 once its

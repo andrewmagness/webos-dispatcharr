@@ -28,7 +28,7 @@ fn main() {
     }
     #[cfg(not(all(target_os = "linux", target_arch = "arm")))]
     {
-        eprintln!("plxnative-storage requires the webOS Linux service runtime");
+        eprintln!("dispatcharrtv-storage requires the webOS Linux service runtime");
         std::process::exit(1);
     }
 }

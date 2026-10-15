@@ -68,8 +68,8 @@ queue is invisible in the plan you wrote.
   at once."* The lease is one directory on the television, with no flavour in it — deliberately.
 - **Everyone else goes to the simulator** — the **`ui-sim`** skill. N instances run at once, and it
   answers layout, focus, navigation, every screen and the whole Plex data layer. Give each lane
-  **its own `SIM_DIR`**: it defaults to `/tmp/plxnative-sim` (`Makefile:845`) and is passed straight
-  through as that instance's `PLXNATIVE_RUNTIME_DIR`, so two lanes on the default share one token
+  **its own `SIM_DIR`**: it defaults to `/tmp/dispatcharrtv-sim` (`Makefile:845`) and is passed straight
+  through as that instance's `DISPATCHARRTV_RUNTIME_DIR`, so two lanes on the default share one token
   file, one remote FIFO and one event log.
 - Say the assignment **out loud in every prompt**, including the lanes that don't get it. "No
   device access" is information a worker acts on; silence is a worker that tries `make deploy`,
@@ -204,7 +204,7 @@ What keeps that in check:
   free space is below the threshold, so a seed whose donor lanes are gone does not hold ~1.3 GB
   for a month.
 - **The FFmpeg build tree is machine-wide and keyed by its configure flags**, under
-  `$PLX_BUILD_CACHE` (default `~/.cache/plxnative`); see the vendor bullet below.
+  `$PLX_BUILD_CACHE` (default `~/.cache/dispatcharrtv`); see the vendor bullet below.
 
 **The rule: workers run `make check` and nothing that cross-compiles. ONE integrator does the
 cross-build, once, at the end.** Because `make check` is bounded to two slots machine-wide, several lanes
@@ -215,7 +215,7 @@ in the Makefile) but do not expect N lanes' `make check` calls to finish in para
 `make check` is `make lint` (three named clippy lints) plus
 `cargo test --lib`, `ci/flavor.py --selftest` and `tests/test_harness.py` — all four invoke their
 tool directly, so none of them enters `ci/build-ffmpeg.sh`. The FFmpeg build is reached down exactly
-one chain — `pkg/plxnative` → the Rust staticlib → `pkg/.ffabi-ok` → the header rule at
+one chain — `pkg/dispatcharrtv` → the Rust staticlib → `pkg/.ffabi-ok` → the header rule at
 `Makefile:416` — which means a bare `make`, `make all`, `make deploy`, `make ipk` and `make test`
 all build it and `make check` cannot. (`make macapp` does **not**: `ci/mkmacapp.py` never mentions
 FFmpeg. It costs a fourth cargo target dir, 125 MB, and nothing else.)
@@ -272,7 +272,7 @@ cp "$MAIN/tests/manifest.local.json" "$WT/tests/"        # only for ./tests/run.
 - **Nothing to seed for the TV address or MAC — do NOT copy `.tv-host` / `.tv-mac`.** Every reader
   (the Makefile's `TV`, `tools/tv-ssh`, `tools/tv-lock.sh`, `tests/run.py`, `stream-screen.py`,
   `wake-tv.sh`) goes through `tools/tv-config.sh`: this checkout's file, the main checkout's, then the
-  per-USER `~/.config/plxnative/tv-host` / `tv-mac` (`$PLX_TV_CONFIG_DIR` / `$XDG_CONFIG_HOME`
+  per-USER `~/.config/dispatcharrtv/tv-host` / `tv-mac` (`$PLX_TV_CONFIG_DIR` / `$XDG_CONFIG_HOME`
   respected). Set those once per machine and every lane has them; `wake-tv.sh` also caches a MAC it
   learns there, so a lane waking a sleeping set no longer re-learns it. A copy in each worktree would
   go stale the first time the address changed in one place, which is why there is no seeding step and
@@ -282,7 +282,7 @@ cp "$MAIN/tests/manifest.local.json" "$WT/tests/"        # only for ./tests/run.
   (280 MB, plus the builder's MAC addresses and home path in FFmpeg's configure logs) into a branch
   bound for a public repository**. The `.gitignore` entry that now catches it says so. **You no
   longer need to do anything at all**: since 2026-09-03 `ci/build-ffmpeg.sh` puts the 122 MB source
-  and object tree in a machine-wide cache under `$PLX_BUILD_CACHE` (default `~/.cache/plxnative`),
+  and object tree in a machine-wide cache under `$PLX_BUILD_CACHE` (default `~/.cache/dispatcharrtv`),
   keyed by the configure flags, so a lane that cross-builds compiles nothing and copies out a
   3.8 MB prefix. Measured the day it landed: a cold worktree's `make pkg/.ffabi-ok` went from
   ~2 minutes and 122 MB to **3 seconds and 3.8 MB**.
@@ -334,7 +334,7 @@ cannot be reached once they are running — a hazard you meant to mention is a h
 
    ```sh
    tools/tv-lock.sh acquire --why "clean up after a collision"
-   tools/tv-session.sh down                # closes the app, clears every plxnative-* trigger, relaunches
+   tools/tv-session.sh down                # closes the app, clears every dispatcharrtv-* trigger, relaunches
    tools/tv-lock.sh release
    ```
 

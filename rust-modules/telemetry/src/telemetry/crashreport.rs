@@ -45,7 +45,7 @@
 //!
 //! # Sending twice is worse than not sending
 //!
-//! `plxnative-crash.log` is append-only and survives relaunch **by design** — `docs/agent-reference.md` calls it the
+//! `dispatcharrtv-crash.log` is append-only and survives relaunch **by design** — `docs/agent-reference.md` calls it the
 //! thing to read after a crash-and-restart, and `tools/crash-report.sh` parses it. So this module
 //! may not truncate it. Instead it records how many bytes it has already reported and skips them,
 //! which means a human and this module can both read the file without either disturbing the other.
@@ -764,7 +764,7 @@ pub fn sentry_body(
         "release": super::release(),
         "environment": super::sender::ENVIRONMENT,
         "dist": effective_build_id,
-        "sdk": {"name": "plxnative-fallback", "version": super::app_version()},
+        "sdk": {"name": "dispatcharrtv-fallback", "version": super::app_version()},
         // **The value is built from the NAME and the ADDRESS, both of which this crate owns.** Not
         // the record's own line, which would be one line of code and would make the no-text
         // guarantee depend on what the C tracer happens to write.
@@ -864,7 +864,7 @@ pub fn panic_sentry_body(
         "level": "fatal",
         "release": super::release(),
         "environment": super::sender::ENVIRONMENT,
-        "sdk": {"name": "plxnative-fallback", "version": super::app_version()},
+        "sdk": {"name": "dispatcharrtv-fallback", "version": super::app_version()},
         "exception": {"values": [{
             "type": "panic",
             // The hash, NOT the message. See the module doc: this is the field a Rust panic would
@@ -1116,7 +1116,7 @@ fn prefix_hash_from(seed: u64, bytes: &[u8]) -> u64 {
 fn log_path() -> std::path::PathBuf {
     #[cfg(any(test, feature = "test-support"))]
     if let Some(root) = TEST_ROOT.lock().unwrap().as_ref() {
-        return root.join("plxnative-crash.log");
+        return root.join("dispatcharrtv-crash.log");
     }
     plx_base::paths::in_runtime_dir(plx_base::paths::runtime_file::CRASH)
 }
@@ -1535,7 +1535,7 @@ fn write_mark(mark: &Mark) -> bool {
 /// is one of two prefixes (`/media/developer/…` or `/media/cryptofs/…`) and reporting which would
 /// say how the person installed the app — a small fact about them rather than about the crash.
 /// Sentry only uses this string to label the image in the UI; the pairing is done by `debug_id`.
-const CODE_FILE: &str = "plxnative";
+const CODE_FILE: &str = "dispatcharrtv";
 
 #[cfg(test)]
 mod tests {
@@ -1546,7 +1546,7 @@ mod tests {
                        *** SIGNAL 11 (SIGSEGV) addr=0x0 pc=0x88ef8 lr=0x4bccd0\n\
                        reg: sp=0xbe8f1a90 fp=0x0 ip=0x1 cpsr=0x60000010 r0=0x0 r1=0x2a\n\
                        at: b6f00000-b6f21000 r-xp 00000000 fe:01 1234 /lib/libc.so.6\n\
-                       bin: 00010000-00600000 r-xp 00000000 fe:01 99 /media/developer/x/plxnative\n";
+                       bin: 00010000-00600000 r-xp 00000000 fe:01 99 /media/developer/x/dispatcharrtv\n";
 
     fn extra() -> FaultExtra {
         FaultExtra { native_path: NativePath::NoEnvelope, modules: Vec::new() }
@@ -1702,8 +1702,8 @@ mod tests {
         *** SIGNAL 11 (SIGSEGV) addr=0x0 pc=0xb6f10123 lr=0x4bccd0\n\
         reg: sp=0xbe8f1a90 fp=0x0 ip=0x1 cpsr=0x60000010 r0=0x0 r1=0x2a\n\
         at: b6f00000-b6f21000 r-xp 00000000 fe:01 1234 /usr/lib/libwayland-client.so.0\n\
-        at: 00010000-00600000 r-xp 00000000 fe:01 99 /media/developer/x/plxnative\n\
-        bin: 00010000-00600000 r-xp 00000000 fe:01 99 /media/developer/x/plxnative\n";
+        at: 00010000-00600000 r-xp 00000000 fe:01 99 /media/developer/x/dispatcharrtv\n\
+        bin: 00010000-00600000 r-xp 00000000 fe:01 99 /media/developer/x/dispatcharrtv\n";
 
     /// A little-endian ELF32 shared object whose only program header is a `PT_NOTE` holding one
     /// GNU build-id note: all `gnu_build_id` needs, with every offset stated once.
@@ -2289,7 +2289,7 @@ mod tests {
     fn the_reported_image_path_says_nothing_about_the_install() {
         let body =
             String::from_utf8(sentry_body(&only_fault(REC), "e", "b", Some("d"), None, &extra())).unwrap();
-        assert!(body.contains("plxnative"));
+        assert!(body.contains("dispatcharrtv"));
         assert!(
             !body.contains("/media/"),
             "the install prefix must not be reported"
@@ -2763,10 +2763,10 @@ mod tests {
             return; // a developer build with a DSN compiled in cannot exercise this branch
         }
         let dir = std::env::temp_dir()
-            .join(format!("plxnative-crashreport-nodsn-{}", std::process::id()));
+            .join(format!("dispatcharrtv-crashreport-nodsn-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let log = dir.join("plxnative-crash.log");
+        let log = dir.join("dispatcharrtv-crash.log");
         std::fs::write(&log, REC).unwrap();
         let spool_file = dir.join("spool.bin");
         spool::set_test_path(Some(spool_file.clone()));

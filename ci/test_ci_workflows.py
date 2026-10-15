@@ -105,7 +105,7 @@ class BundledLibrarySymbols(unittest.TestCase):
 
     def test_every_symbol_file_is_checked_for_features_before_the_token_guarded_upload(self):
         step = self.step()
-        self.assertIn("python3 ci/check-debug-files.py pkg/plxnative.debug pkg/symbols/*.debug", step)
+        self.assertIn("python3 ci/check-debug-files.py pkg/dispatcharrtv.debug pkg/symbols/*.debug", step)
         self.assertLess(step.index("ci/check-debug-files.py"), step.index('"$UPLOAD" != true'))
         self.assertLess(step.index('"$UPLOAD" != true'), step.index("debug-files upload pkg/symbols"))
 
@@ -258,12 +258,12 @@ class HostLibraryCaches(unittest.TestCase):
     The first version cached `vendor/ffmpeg-prefix-host` and `vendor/ffmpeg-build`, logged "Cache
     hit", and rebuilt FFmpeg anyway on every run (libass, which had no cache at all, likewise): the
     restored header is older than the fresh checkout's `ci/build-ffmpeg.sh`, so make re-ran the
-    script, and the script keeps its objects under `~/.cache/plxnative/ffmpeg`, which nothing saved.
+    script, and the script keeps its objects under `~/.cache/dispatcharrtv/ffmpeg`, which nothing saved.
     """
 
     MACOS_JOBS = ("macos", "macos-host-tests")
     LIBASS_JOBS = ("linux", "macos", "macos-host-tests")
-    FFMPEG_WORK = "~/.cache/plxnative/ffmpeg"
+    FFMPEG_WORK = "~/.cache/dispatcharrtv/ffmpeg"
     LIBASS_PREFIX = "vendor/libass-prefix-host"
     LIBASS_SOURCES = "vendor/libass-sources"
 
@@ -280,7 +280,7 @@ class HostLibraryCaches(unittest.TestCase):
 
     def test_the_cache_paths_are_where_the_scripts_write(self):
         sh = (ROOT / "ci/build-ffmpeg.sh").read_text()
-        self.assertIn("CACHE_ROOT=${PLX_BUILD_CACHE-$HOME/.cache/plxnative}", sh)
+        self.assertIn("CACHE_ROOT=${PLX_BUILD_CACHE-$HOME/.cache/dispatcharrtv}", sh)
         self.assertIn('WORK="$CACHE_ROOT/ffmpeg/$ARCHTAG-$VERSION-$KEY"', sh)
         # The pinned tarball lives in the same directory, so a hit needs no download either.
         self.assertIn('CACHED_TAR="$CACHE_ROOT/ffmpeg/ffmpeg-$VERSION-', sh)

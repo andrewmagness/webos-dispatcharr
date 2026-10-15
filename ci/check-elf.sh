@@ -8,7 +8,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-BIN="${1:-pkg/plxnative}"
+BIN="${1:-pkg/dispatcharrtv}"
 # macOS ships no readelf; fall back to the NDK's, which is on any machine that can build this.
 NDK_BIN="${WEBOS_SDK:-$HOME/webos-ndk/arm-webos-linux-gnueabi_sdk-buildroot}/bin"
 if [ -z "${READELF:-}" ]; then
@@ -86,7 +86,7 @@ LOAD_BASE=$(awk '/^  LOAD/{print $3}' <<<"$PHEADERS" | LC_ALL=C sort | sed -n '1
   || fail "lowest PT_LOAD is $LOAD_BASE, not $WANT_BASE — update telemetry::sentry::IMAGE_ADDR and re-verify that a real crash still symbolicates"
 
 # (2) The BUILD ID. It is the only thing that pairs a stripped binary a stranger's television
-# faulted in with the pkg/plxnative.debug a release uploaded. `-Wl,--build-id=sha1` is
+# faulted in with the pkg/dispatcharrtv.debug a release uploaded. `-Wl,--build-id=sha1` is
 # unconditional on every link and `strip` preserves it, so an absent one means the flag was lost.
 NOTES=$("$READELF" -n "$BIN") || fail "readelf -n failed"
 grep -qi 'Build ID: *[0-9a-f]\{40\}' <<<"$NOTES" \
@@ -130,7 +130,7 @@ fi
 ok "$(wc -l < "$AUDIT_TMP/dt-needed.actual" | tr -d ' ') entries, unchanged"
 
 echo "== storage helper =="
-# pkg/plxnative-storage ships to the TV beside the app and links the same way, through the same stub
+# pkg/dispatcharrtv-storage ships to the TV beside the app and links the same way, through the same stub
 # .so trick: a library it quietly starts needing is a binary that will not start on a firmware
 # without it, which `tools/fwcompat.py` would only say if somebody ran it by hand. It is a separate
 # executable with its own list (libluna-service2 and glib are its, and it needs none of the app's
@@ -142,7 +142,7 @@ echo "== storage helper =="
 #
 # Absent is a failure in CI, where `make ipk` has just built it, and a skip anywhere else, where
 # `./ci/check-elf.sh` is run on a tree that built the application alone.
-STORAGE="${STORAGE_BIN:-$(dirname "$BIN")/plxnative-storage}"
+STORAGE="${STORAGE_BIN:-$(dirname "$BIN")/dispatcharrtv-storage}"
 if [ ! -f "$STORAGE" ]; then
   [ "${CI:-}" != "true" ] || fail "$STORAGE is missing — the storage helper ships in the package and must be graded"
   echo "  SKIP — $STORAGE not built"

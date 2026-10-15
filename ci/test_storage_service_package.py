@@ -19,7 +19,7 @@ class StorageServicePackage(unittest.TestCase):
 
     def test_built_helper_packages_for_every_flavor_when_available(self):
         repo = Path(__file__).resolve().parent.parent
-        if not (repo / "pkg/plxnative-storage").is_file():
+        if not (repo / "pkg/dispatcharrtv-storage").is_file():
             self.skipTest("cross-built helper not available")
         for flav in mkipk.flavor.FLAVORS:
             with self.subTest(flavor=flav), tempfile.TemporaryDirectory() as tmp:
@@ -39,7 +39,7 @@ class StorageServicePackage(unittest.TestCase):
             with self.subTest(app_id=app_id), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 (root / "pkg").mkdir()
-                (root / "pkg/plxnative-storage").write_bytes(b"\x7fELF\x01\x01" + bytes(12) + b"\x28\x00")
+                (root / "pkg/dispatcharrtv-storage").write_bytes(b"\x7fELF\x01\x01" + bytes(12) + b"\x28\x00")
                 app = {"id": app_id, "title": "PlxNative", "vendor": "PlxNative", "version": "0.6.6"}
                 data = root / "data"
                 self.stage_app(data, app)
@@ -61,13 +61,13 @@ class StorageServicePackage(unittest.TestCase):
                     self.assertEqual(application["requiredPermissions"], package["requiredPermissions"])
                     self.assertFalse(any("/state" in m.name for m in tf.getmembers()))
                     helpers = ["/" + m.name for m in tf.getmembers()
-                               if m.name.endswith("/plxnative-storage")]
+                               if m.name.endswith("/dispatcharrtv-storage")]
                     self.assertEqual(len(helpers), 1)
                     # Execute the real Rust path validator, not a Python copy of its allowlist.
                     result = subprocess.run(
                         ["cargo", "+" + (os.environ.get("RUST_NIGHTLY") or "nightly"), "test", "--manifest-path",
                          str(Path(__file__).resolve().parent.parent / "rust-modules/Cargo.toml"),
-                         "-p", "plxnative-storage", "--bin", "plxnative-storage", "runtime::tests::packaged_app_identity",
+                         "-p", "dispatcharrtv-storage", "--bin", "dispatcharrtv-storage", "runtime::tests::packaged_app_identity",
                          "--", "--exact"],
                         env={**os.environ, "CARGO_INCREMENTAL": "0",
                              "PATH": str(Path.home() / ".cargo" / "bin") + os.pathsep + os.environ.get("PATH", ""),

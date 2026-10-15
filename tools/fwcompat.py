@@ -21,13 +21,13 @@ a firmware can export `AcbAPI_setMediaVideoData` and still refuse to put a pictu
 plane. Do not read a green matrix as "it works on webOS 5"; read it as "it starts".
 
 USAGE
-    tools/fwcompat.py                          # grade pkg/plxnative against every release
+    tools/fwcompat.py                          # grade pkg/dispatcharrtv against every release
     tools/fwcompat.py --release 5.3.1          # one release, with the full missing list
     tools/fwcompat.py --shipped pkg pkg/libavformat-plx.so.63   # a bundled library, siblings shipped
     tools/fwcompat.py --lib libSDL2-2.0.so.0 --grep webOS      # what does that library export?
     tools/fwcompat.py --inventory libAcbAPI libavformat        # which releases carry these?
 
-The database (~317 MB unpacked) is fetched once into ~/.cache/plxnative/fwsym and reused. Pass
+The database (~317 MB unpacked) is fetched once into ~/.cache/dispatcharrtv/fwsym and reused. Pass
 --db to point at an existing extraction. Everything after the download is offline.
 """
 
@@ -48,8 +48,8 @@ FWSYM_DEB = "webosbrew-toolbox-fw-symbols_0.4.0-1_arm64.deb"
 FWSYM_URL = f"https://github.com/webosbrew/dev-toolbox-cli/releases/download/{FWSYM_TAG}/{FWSYM_DEB}"
 
 REPO = Path(__file__).resolve().parent.parent
-DEFAULT_BINARY = REPO / "pkg" / "plxnative"
-CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "plxnative" / "fwsym"
+DEFAULT_BINARY = REPO / "pkg" / "dispatcharrtv"
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "dispatcharrtv" / "fwsym"
 
 # The NDK's readelf understands the target's ELF; the host's may not exist at all on macOS.
 NDK = Path(os.environ.get("WEBOS_SDK", Path.home() / "webos-ndk" / "arm-webos-linux-gnueabi_sdk-buildroot"))

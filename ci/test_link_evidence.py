@@ -47,7 +47,7 @@ class StageFromHashedCargoOutput(unittest.TestCase):
         self.deps.mkdir(parents=True)
         self.elf_bytes = b'\x7fELF' + b'synthetic-arm-binary' * 100
 
-    def write_hashed_evidence(self, crate_underscored='plxnative_storage', hashsuf='c485fd1d0c28d026'):
+    def write_hashed_evidence(self, crate_underscored='dispatcharrtv_storage', hashsuf='c485fd1d0c28d026'):
         # Mirrors what cargo/arm-cc.py actually produce: the linker's own `-o` output (the real
         # ELF, same bytes the plain-named copy will carry) sits at the hashed path itself, not
         # only its evidence sidecar files.
@@ -70,19 +70,19 @@ class StageFromHashedCargoOutput(unittest.TestCase):
 
     def test_plain_named_copy_with_no_sidecar_finds_hashed_deps_evidence(self):
         self.write_hashed_evidence()
-        source = self.release / 'plxnative-storage'  # cargo's own copy: no `.link.*` beside it.
+        source = self.release / 'dispatcharrtv-storage'  # cargo's own copy: no `.link.*` beside it.
         source.write_bytes(self.elf_bytes)
-        destination = self.root / 'pkg' / 'plxnative-storage'
+        destination = self.root / 'pkg' / 'dispatcharrtv-storage'
         destination.parent.mkdir()
         destination.write_bytes(self.elf_bytes)
         result = self.run_stage(source, destination)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertTrue((self.root / 'pkg/plxnative-storage.link.json').is_file())
-        self.assertTrue((self.root / 'pkg/plxnative-storage.link.map').is_file())
-        record = json.loads((self.root / 'pkg/plxnative-storage.link.json').read_text())
+        self.assertTrue((self.root / 'pkg/dispatcharrtv-storage.link.json').is_file())
+        self.assertTrue((self.root / 'pkg/dispatcharrtv-storage.link.map').is_file())
+        record = json.loads((self.root / 'pkg/dispatcharrtv-storage.link.json').read_text())
         self.assertEqual(record['linked_elf_sha256'], hashlib.sha256(self.elf_bytes).hexdigest())
         # And the staged evidence must itself pass the real gate.
-        m.check_elf(destination, self.root / 'pkg/plxnative-storage')
+        m.check_elf(destination, self.root / 'pkg/dispatcharrtv-storage')
 
     def test_never_picks_a_stale_sibling_with_the_wrong_content(self):
         # A hashed sibling exists (from a PRIOR, different build) but its recorded elf_sha256
@@ -91,9 +91,9 @@ class StageFromHashedCargoOutput(unittest.TestCase):
         record = json.loads(Path(str(base) + '.link.json').read_text())
         record['elf_sha256'] = '0' * 64  # deliberately wrong
         Path(str(base) + '.link.json').write_text(json.dumps(record))
-        source = self.release / 'plxnative-storage'
+        source = self.release / 'dispatcharrtv-storage'
         source.write_bytes(self.elf_bytes)
-        destination = self.root / 'pkg' / 'plxnative-storage'
+        destination = self.root / 'pkg' / 'dispatcharrtv-storage'
         destination.parent.mkdir()
         destination.write_bytes(self.elf_bytes)
         result = self.run_stage(source, destination)
@@ -125,12 +125,12 @@ class StageFromBuildScriptShapedCargoOutput(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.triple = self.root / 'arm-unknown-linux-gnueabi'
         self.release = self.triple / 'release'
-        self.out = self.release / 'build' / 'plxnative-modules' / '6f340859124788dd' / 'out'
+        self.out = self.release / 'build' / 'dispatcharrtv' / '6f340859124788dd' / 'out'
         self.out.mkdir(parents=True)
         self.elf_bytes = b'\x7fELF' + b'synthetic-arm-binary' * 100
 
     def write_evidence_in_out_dir(self):
-        base = self.out / 'plxnative_storage'
+        base = self.out / 'dispatcharrtv_storage'
         base.write_bytes(self.elf_bytes)
         link_map = b'LOAD src/main.rs\n'
         link_trace = b'linker invocation trace'
@@ -149,16 +149,16 @@ class StageFromBuildScriptShapedCargoOutput(unittest.TestCase):
 
     def test_finds_evidence_outside_deps_by_walking_the_whole_triple_tree(self):
         self.write_evidence_in_out_dir()
-        source = self.release / 'plxnative-storage'  # cargo's own copy: no `.link.*` beside it,
+        source = self.release / 'dispatcharrtv-storage'  # cargo's own copy: no `.link.*` beside it,
         source.write_bytes(self.elf_bytes)            # and no `deps/` sibling holds it either.
-        destination = self.root / 'pkg' / 'plxnative-storage'
+        destination = self.root / 'pkg' / 'dispatcharrtv-storage'
         destination.parent.mkdir()
         destination.write_bytes(self.elf_bytes)
         result = self.run_stage(source, destination)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        record = json.loads((self.root / 'pkg/plxnative-storage.link.json').read_text())
+        record = json.loads((self.root / 'pkg/dispatcharrtv-storage.link.json').read_text())
         self.assertEqual(record['linked_elf_sha256'], hashlib.sha256(self.elf_bytes).hexdigest())
-        m.check_elf(destination, self.root / 'pkg/plxnative-storage')
+        m.check_elf(destination, self.root / 'pkg/dispatcharrtv-storage')
 
 
 if __name__ == '__main__':

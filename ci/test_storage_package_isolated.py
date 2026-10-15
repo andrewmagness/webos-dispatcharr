@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
 """Fail if building the storage helper compiles the app library.
 
-`plxnative-storage` is the small LS2 service binary that holds the private store; it shares a few
+`dispatcharrtv-storage` is the small LS2 service binary that holds the private store; it shares a few
 source files with the platform layer crate (`platform/src/storage_service/*.rs`,
 `platform/src/storage/state.rs`) but never links the
-app crate. While it was a `[[bin]]` of the `plxnative-modules` package, cargo nevertheless built
+app crate. While it was a `[[bin]]` of the `dispatcharrtv` package, cargo nevertheless built
 the whole ~423k-line library for it first (a bin of a package depends on that package's lib), so
-`make check` paid two extra host library builds and the `pkg/plxnative-storage` rule paid a third,
+`make check` paid two extra host library builds and the `pkg/dispatcharrtv-storage` rule paid a third,
 ARM one, for a binary that used none of it. The helper is its own workspace package now, and this
 holds that line.
 
 It asks cargo for the resolved UNIT GRAPH of BOTH invocations the repo uses for the helper
 (`cargo ... --unit-graph`, nightly `-Zunstable-options`) instead of compiling them:
   * `cargo test <bin> --no-run`, what `make check` builds before running the helper's unit tests;
-  * `cargo rustc <bin> --no-default-features`, the shape of the `pkg/plxnative-storage` rule. That
+  * `cargo rustc <bin> --no-default-features`, the shape of the `pkg/dispatcharrtv-storage` rule. That
     rule passes `--release --target arm-unknown-linux-gnueabi`; here it is the HOST, dev-profile
     graph of the same package and binary, because the property checked (which crates cargo would
     compile for this binary) is decided by the package graph, not by the profile or the triple.
@@ -25,7 +25,7 @@ records (about 7 s of rustc on the serial cargo path of `make check`); the unit 
 thing without running rustc.
 
 The package that owns the binary is asked of `cargo metadata` rather than hard-coded, so the same
-script is red on the old layout (the owner IS `plxnative-modules`) for the right reason.
+script is red on the old layout (the owner IS `dispatcharrtv`) for the right reason.
 """
 import json
 import os
@@ -35,9 +35,9 @@ import sys
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-APP_CRATE = "plxnative_modules"
-APP_PACKAGE = "plxnative-modules"
-BIN = "plxnative-storage"
+APP_CRATE = "dispatcharrtv"
+APP_PACKAGE = "dispatcharrtv"
+BIN = "dispatcharrtv-storage"
 NIGHTLY = os.environ.get("RUST_NIGHTLY", "nightly")
 
 
@@ -87,7 +87,7 @@ def owner_package():
 
 
 class ParserTests(unittest.TestCase):
-    PID = "path+file:///r/rust-modules#plxnative-modules@0.7.0"
+    PID = "path+file:///r/rust-modules#dispatcharrtv@0.7.0"
 
     def unit(self, name, pkg_id, kind=("lib",)):
         return {"pkg_id": pkg_id, "target": {"name": name, "kind": list(kind)}}
@@ -106,7 +106,7 @@ class ParserTests(unittest.TestCase):
 
     def test_other_crates_and_the_helper_itself_are_fine(self):
         graph = {"units": [self.unit("serde_json", "registry+https://x#serde_json@1.0.0"),
-                           self.unit(BIN, "path+file:///r/rust-modules/storage#plxnative-storage@0.0.0",
+                           self.unit(BIN, "path+file:///r/rust-modules/storage#dispatcharrtv-storage@0.0.0",
                                      ("bin",))]}
         self.assertEqual(app_package_units(graph), [])
 

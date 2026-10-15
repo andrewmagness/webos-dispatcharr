@@ -32,7 +32,7 @@ Scene fields (tests/manifest.json, `fps_scenes`):
                                 like a slow remote server; a spec is `[class=]profile[:k=v,...]`, and
                                 `shows`/`seasons`/`episodes` size the TV library (a season over 60
                                 episodes pages)
-  "mock": {"triggers": {"plxnative-search": "sb"}}
+  "mock": {"triggers": {"dispatcharrtv-search": "sb"}}
                                 trigger values that replace the scene's own under --mock (a query
                                 that the synthetic titles, all `s` + hex, can actually match)
   "mock": {"only": true, ...}   runs ONLY under --mock (the scene is meaningless on a real library)
@@ -46,7 +46,7 @@ Scene fields (tests/manifest.json, `fps_scenes`):
                                 `focus route=... region=grid` fingerprint required in the window
   "walk": {"row_down": 1, "cards": 96, "key_gap_s": 0.33, ...}
                                 a ROW walk (#567, `home-recent-paging`): after Home lands, press Down
-                                `row_down` times to reach a named row (the `plxnative-grid` trigger
+                                `row_down` times to reach a named row (the `dispatcharrtv-grid` trigger
                                 seats row 0, the first shelf, so 1 reaches the second), then Right
                                 `cards` times, rest `rest_s`, Left `cards` times back. Only
                                 down/right/left, never ok or back. `max_rows` is not used. The
@@ -61,7 +61,7 @@ Scene fields (tests/manifest.json, `fps_scenes`):
                                 grading, which only Home logs: the walk starts once the screen's
                                 first `focus route=<route>` fingerprint is logged, and FAILS when the
                                 deepest `cdg=` (the focused card's index in its source, logged with
-                                `plxnative-focusx`) never reaches `min_global`, i.e. the list never
+                                `dispatcharrtv-focusx`) never reaches `min_global`, i.e. the list never
                                 paged. The detail counts frames the focused card was drawn partly
                                 off the 1920-wide canvas.
   "walk": {"min_landed": 150, ...}
@@ -329,10 +329,10 @@ def landed_count(lines):
 
 
 def library_section_index(scene):
-    """The directory index of the section `plxnative-library` seats: content `1` is the preferred
+    """The directory index of the section `dispatcharrtv-library` seats: content `1` is the preferred
     Shows library (index 1), anything else (a bare flag, `0`, ...) the preferred Movies library
     (index 0) — `dev/scenarios.rs`, `library` trigger. The mock lists Movies before Shows."""
-    content = (scene.get("triggers") or {}).get("plxnative-library")
+    content = (scene.get("triggers") or {}).get("dispatcharrtv-library")
     return 1 if str(content).strip() == "1" else 0
 
 
@@ -454,14 +454,14 @@ def walk_secs_needed(scene):
 
 def grid_fingerprint_seen(window, route, region):
     """Whether `window` holds a `focus route=<route> ... region=<region>` fingerprint
-    (`focusprobe`, armed by `plxnative-focus`; logged on change, so one line is a focus MOVE)."""
+    (`focusprobe`, armed by `dispatcharrtv-focus`; logged on change, so one line is a focus MOVE)."""
     rx = re.compile(rf"\bfocus route={re.escape(route)}\b.*\bregion={re.escape(region)}\b")
     return any(rx.search(ln) for ln in window or [])
 
 
 def deepest_shelf_row(window, route):
     """The largest `row=` among the window's `focus route=<route> ... region=shelf row=<R>`
-    fingerprints (`focusprobe`, armed by `plxnative-focus`), or None when there is none. This is
+    fingerprints (`focusprobe`, armed by `dispatcharrtv-focus`), or None when there is none. This is
     the SCREEN's evidence of how deep the walk got, as opposed to the data layer's landed count."""
     rx = re.compile(rf"\bfocus route={re.escape(route)}\b.*\bregion=shelf row=(\d+)\b")
     rows = [int(m.group(1)) for ln in window or [] if (m := rx.search(ln))]
@@ -525,7 +525,7 @@ CANVAS_W = 1920  # plx_base::surface::LOGICAL_W: every drawn x in the fingerprin
 def describe_reach(window, route, reach):
     """`(failure_or_None, detail)` for a row walk over a surface that logs no `hubs: landed` line
     per page (`walk.reach`): the deepest source index the focused card had (`cdg=`, the
-    `plxnative-focusx` read-out of `plx_ui::card_probe`) on `focus route=<route>` lines of the
+    `dispatcharrtv-focusx` read-out of `plx_ui::card_probe`) on `focus route=<route>` lines of the
     walk's window. A walk that never got past the first window measured nothing, so it fails below
     `min_global`. Also counts the frames the focused card was drawn partly outside the canvas: a
     finding in the detail, never a failure. The detail and the failure also name how many DISTINCT
@@ -556,7 +556,7 @@ def describe_reach(window, route, reach):
                 f"{' region=' + region if region else ''}`, below the {need} the scene requires "
                 f"({len(cards)} distinct cards were focused: far more of them than `cdg` reached "
                 f"means the probe's `cdg` is wrong, not that the list never paged; is "
-                f"`plxnative-focus` + `plxnative-focusx` armed?)"), detail
+                f"`dispatcharrtv-focus` + `dispatcharrtv-focusx` armed?)"), detail
     return None, detail
 
 
@@ -665,7 +665,7 @@ def describe_walk(rows_landed, keys_seen, stats, hub_lands, unit="row"):
 # ---------------------------------------------------------------------------
 # Placeholder accounting (a burst walk's instrument)
 # ---------------------------------------------------------------------------
-# `phcount: frames=F ph_frames=P draws=D ph=N`, one line per second while `plxnative-phcount` is
+# `phcount: frames=F ph_frames=P draws=D ph=N`, one line per second while `dispatcharrtv-phcount` is
 # armed (`card_motion_metrics::interval_line`): presented card frames, those that showed at least
 # one card without a texture, card draws and the draws without a texture (the placeholder
 # tile-frames). It is its own event-log line, not a heartbeat field.
@@ -728,7 +728,7 @@ def describe_burst(window, route, walk, prelude_keys):
     seen = any("pupf=" in ln for ln in beats)
     tally = placeholder_tally(window, walk, prelude_keys)
     if tally is None:
-        ph = ("placeholders: n/a (no `phcount:` line in the walk window: is plxnative-phcount "
+        ph = ("placeholders: n/a (no `phcount:` line in the walk window: is dispatcharrtv-phcount "
               "armed, and is this a devtriggers build?)")
     else:
         b = tally["bursts"]
@@ -787,7 +787,7 @@ class KeyWalk(threading.Thread):
             self.cancel.wait(2.0)
         if not found:
             what = (f"the {self.scene['route']} screen never logged a `focus route={self.scene['route']}` "
-                    "fingerprint (is `plxnative-focus` armed?)" if self.walk.get("reach") else
+                    "fingerprint (is `dispatcharrtv-focus` armed?)" if self.walk.get("reach") else
                     "the Library never logged `libhubs: section "
                     f"{library_section_index(self.scene)} landed`"
                     if self.walk.get("landed") == "library" else "Home never logged `hubs: landed`")

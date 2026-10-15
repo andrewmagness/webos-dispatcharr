@@ -2,7 +2,7 @@
 
 Headless regression tests for the native webOS Plex player. Nothing on the host decodes a frame or
 talks to Starfish/ACB, so every test here drives the **real app on the real TV** via the
-`plxnative-*` dev triggers and asserts on the on-device event log (`plxnative-events.log`) — both
+`dispatcharrtv-*` dev triggers and asserts on the on-device event log (`dispatcharrtv-events.log`) — both
 of them inside that install's **runtime root**, which is `/tmp` for the stable install and
 `/tmp/<app id>` for a flavoured one. See *Which install it drives*, below: it decides every path
 on this page, and the default is the **debug** build.
@@ -55,7 +55,7 @@ so that a recording of the UI can be COMMITTED to this public repository:
   — and `scrub.rs` cannot recognise a title anyway. `--selftest` proves the shapes and the
   determinism (two servers, one seed, byte-identical answers) with no app. Boot the simulator
   against it with `make sim-shot SIM_PMS=127.0.0.1 SIM_PORT=32499` and any non-empty
-  `$SIM_DIR/plxnative-token`.
+  `$SIM_DIR/dispatcharrtv-token`.
 
 It says nothing about frame rate — the simulator's heartbeat is tagged `sim=1` and the
 harness refuses to grade it.
@@ -139,7 +139,7 @@ resolved and the flavour it kills, launches, arms triggers in and greps for cann
 closing install A while launching install B reproduces SAM's stale-"running" no-op and then grades
 the other app's log, which is *plausible wrong data*, not a clean failure.
 
-- **The runtime root moved; the names did not.** Every `plxnative-*` trigger, the `plxnative-remote`
+- **The runtime root moved; the names did not.** Every `dispatcharrtv-*` trigger, the `dispatcharrtv-remote`
   FIFO and the three `*.log` files are named exactly as before — only the directory they sit in
   changed. Ask for it (`make -s print-rundir FLAVOR=debug`) rather than writing it out.
 - **The root is created `1777` — `mkdir` then an explicit `chmod`** (umask masks `mkdir`'s mode),
@@ -161,7 +161,7 @@ appdir: /media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.de
 
 `run.py` grades it as the log arrives and **aborts the whole run**, once and by name, if `id=` is
 not the app id it drove or `features=` is not `dev` (`check_install`). Nothing else can answer that
-question: both binaries are named `plxnative`, and `pkg/plxnative` is a path every flavour *and*
+question: both binaries are named `dispatcharrtv`, and `pkg/dispatcharrtv` is a path every flavour *and*
 every configuration writes, so an md5 against the local build proves only that *some* build
 matches. An absent boot line is refused too — it means a deployed binary that predates the line,
 and an unattributable log.
@@ -178,13 +178,13 @@ dev build on the stable id without `ALLOW_DEV_ON_STABLE=1`, so that install *is*
 
 | | scope | matches |
 |---|---|---|
-| `fuser <appdir>/plxnative` | **inode** | exactly the install at that path |
+| `fuser <appdir>/dispatcharrtv` | **inode** | exactly the install at that path |
 | `luna-send … closeByAppId {"id":…}` | **app id** | exactly that install |
-| `pidof plxnative` | **name** | **both installs** — both binaries are called `plxnative` |
+| `pidof dispatcharrtv` | **name** | **both installs** — both binaries are called `dispatcharrtv` |
 
 `make kill` uses the first two and carries `FLAVOR=`, which is what leaves the *other* install
-alone — including its running app. **`pidof plxnative` is no longer a liveness test**: it returns
-two pids, in an order busybox does not promise. Use `fuser <appdir>/plxnative`, or resolve
+alone — including its running app. **`pidof dispatcharrtv` is no longer a liveness test**: it returns
+two pids, in an order busybox does not promise. Use `fuser <appdir>/dispatcharrtv`, or resolve
 `readlink /proc/<pid>/exe` per pid. And any match on the app id must be **anchored on a delimiter**:
 `com.magness.dispatcharrtv` is a prefix of `com.magness.dispatcharrtv.debug`.
 
@@ -199,7 +199,7 @@ device I/O (no new secret is introduced).
 
 Every other token the harness uses is **derived from that one at run time and stored nowhere**: the
 managed user's per-server token (below), and a second server's access token (further below). Both
-are written to a `plxnative-*` file in the TV's runtime root and cleared by the same glob wipe —
+are written to a `dispatcharrtv-*` file in the TV's runtime root and cleared by the same glob wipe —
 before every case, and again by `teardown()` on *every* exit path, including Ctrl-C and a crash.
 
 ## Test identity — runs as a managed user (no watch-history pollution)
@@ -212,21 +212,21 @@ account stays clean. It works without storing any new secret:
   access token** from `GET https://plex.tv/api/servers/<machineId>/shared_servers` (keyed by
   `userID` — which is what `test_user.id` is). The managed user must already have the libraries
   shared with it.
-- That token is used for the `/:/progress` resume seed **and** written to `plxnative-token` in the
+- That token is used for the `/:/progress` resume seed **and** written to `dispatcharrtv-token` in the
   TV's runtime root. The binary carries **no** token, so this file is the only way an automated run
   gets PMS access at all (see `plex_run`); the **app itself** then plays and scrobbles as the
   managed user, not just the seed. The token value is never printed (redacted to
-  `<…, redacted>`), and `plxnative-token` is cleared between cases like every other trigger.
+  `<…, redacted>`), and `dispatcharrtv-token` is cleared between cases like every other trigger.
 - Pass **`--owner`** to run as the `config.local.h` owner token instead (history *will* be
   affected). If the overlay has no `test_user`, the runner falls back to owner with a warning.
 
 ## A second server (a friend's shared one)
 
-`plxnative-token` carries exactly **one** token, and a shared server is a **separate
+`dispatcharrtv-token` carries exactly **one** token, and a shared server is a **separate
 authority**: its own `machineIdentifier`, its own per-(user,server) access token, and a 401 for
 anybody else's. So a screen that shows two sources at once could only ever be checked by hand, one
-capture at a time. `plxnative-servers` is the second credential channel — **purely additive**:
-the primary server is still `plxnative-token` against the compiled-in host, unchanged, and a run
+capture at a time. `dispatcharrtv-servers` is the second credential channel — **purely additive**:
+the primary server is still `dispatcharrtv-token` against the compiled-in host, unchanged, and a run
 that names one server behaves exactly as it always did.
 
 **Configure it once**, in the gitignored `manifest.local.json` (the block is optional — delete it if
@@ -262,9 +262,9 @@ server is needed, never *which*):
 ```
 
 - With `shared_server` configured, the runner resolves it **before touching the TV** and writes
-  `plxnative-servers` for those cases only — a JSON array of
-  `{name, machine_id, host, port, token}` — beside `plxnative-token`. Value never on stdout; the
-  printed line is `plxnative-servers: <nas-home @ 10.0.0.9:32400, token redacted>`.
+  `dispatcharrtv-servers` for those cases only — a JSON array of
+  `{name, machine_id, host, port, token}` — beside `dispatcharrtv-token`. Value never on stdout; the
+  printed line is `dispatcharrtv-servers: <nas-home @ 10.0.0.9:32400, token redacted>`.
 - Without it, those cases are **SKIPPED**, with the reason, and appear as `[SKIP]` in the summary —
   an installation with no friend's server is a normal installation. Anything unresolvable *is* a
   loud exit that names it (server no longer shared, no `accessToken`, no address).
@@ -282,8 +282,8 @@ servers: 1 extra server(s) injected, 1 usable
 
 — never a token (`DevServer` has no `Debug`, and `describe()` prints everything but). That pair of
 lines is the headless proof the credentials arrived, and is what a shared-server case can assert on
-before any of its screen exists. `plxnative-servers` is deliberately **not** on `dev.rs`'s `DIAG`
-exemption list: it names a host *and* the token to trust it with, so like `plxnative-token` it marks
+before any of its screen exists. `dispatcharrtv-servers` is deliberately **not** on `dev.rs`'s `DIAG`
+exemption list: it names a host *and* the token to trust it with, so like `dispatcharrtv-token` it marks
 the boot automated and skips the who's-watching picker — a run that landed on the picker would grade
 the wrong screen.
 
@@ -403,7 +403,7 @@ A separate mode that guards **UI framerate**, not playback correctness. The app 
 `loop=<n> route=<login|profiles|library|detail|person|search|player|home>
 [overlay=<the topmost surface's own screen name, or `none` on a bare player>]
 fps=<n>` heartbeat; each
-*scene* in the manifest's `fps_scenes` sets its `plxnative-*` triggers (profiler **off**), runs, and
+*scene* in the manifest's `fps_scenes` sets its `dispatcharrtv-*` triggers (profiler **off**), runs, and
 asserts its gates. This is the automated form of the by-hand FPS hunting that found the hero /
 cast+about / info-panel regressions.
 
@@ -455,7 +455,7 @@ true` marks a scene that runs ONLY under `--mock` (it is skipped, with a reason,
 `--fps`). An exact scene name as `--filter` selects that scene alone (`home-grid` does not pull in
 `home-grid-deep`).
 
-`home-grid-deep` is the Home-with-many-rows scene (#395): `--home-hubs 170`. `plxnative-homeosc`
+`home-grid-deep` is the Home-with-many-rows scene (#395): `--home-hubs 170`. `dispatcharrtv-homeosc`
 only sweeps about nine rows either side of the top, so it instead presses **Down once per landed
 row** at about three keys a second, rests, and presses **Up** back, through one ssh paced from the
 Mac (the keys go into the app's own remote FIFO; only `down` and `up` are ever sent). The row count
@@ -473,9 +473,9 @@ wait included (a harness test holds every `walk` scene to that).
 library is unchanged), 40 of them promoted collections (`custom.collection.<section>.<rk>.<n>`
 keyed `/library/collections/<rk>/children`, which the mock resolves) whose headings the app links.
 Without the flags `/hubs/sections/<id>` is byte-for-byte what it was. The scene arms
-`plxnative-library` (the preferred Movies library), `plxnative-framedrop` and `plxnative-focus`,
+`dispatcharrtv-library` (the preferred Movies library), `dispatcharrtv-framedrop` and `dispatcharrtv-focus`,
 and the walk (`"landed": "library"`) is sized from the **seated section's**
-`libhubs: section N landed S shelves` line (index 0 for Movies; `plxnative-library` content `1`
+`libhubs: section N landed S shelves` line (index 0 for Movies; `dispatcharrtv-library` content `1`
 seats Shows, index 1 — the last landing of that section, not the last such line in the log):
 **Down once per shelf, a second time for each linked shelf** (its heading is a stop of its own,
 then its row), and `extra_rows` more (6) to cross the toolbar into the grid, then **Up** back. It
@@ -497,7 +497,7 @@ never rests, so it cannot show a strategy that warms upcoming rows while the gri
 per landed shelf plus `extra_rows` into the grid, rests, then `bursts` (8) bursts of `burst` (4)
 Downs `key_ms` (125) apart, each followed by `rest_ms` (1500), then the same bursts of Up. The
 count is the `phcount: frames=F ph_frames=P draws=D ph=N` line the app writes once a second while
-`plxnative-phcount` is armed (scene-armed; `ui::card_motion_metrics`, counted at the card primitive:
+`dispatcharrtv-phcount` is armed (scene-armed; `ui::card_motion_metrics`, counted at the card primitive:
 `ph` is card draws that showed a skeleton, `ph_frames` the presented card frames that showed at
 least one, `frames`/`draws` the totals). Printed, not graded: `ph` in total, in the prelude, in the
 bursts and per burst (a sample belongs to the burst of the last key before it), the share of card
@@ -506,13 +506,13 @@ tally; `n/a` when no `phcount:` line is in the window (never a zero). Graded: th
 keys sent == the plan, and a `focus route=library … region=grid` fingerprint in the window. Dev
 triggers pass through like any scene's. The app ships with 3 rows of at-rest poster lookahead and
 no moving-card decline, so a plain run measures the shipping behaviour; the two triggers rebuild
-the baselines it was measured against (`plxnative-lookahead=0` is no lookahead, `=1`..`=4` another
-depth; `plxnative-cardspeed=120` is the old decline of poster work for a card moving over 120 px/s):
+the baselines it was measured against (`dispatcharrtv-lookahead=0` is no lookahead, `=1`..`=4` another
+depth; `dispatcharrtv-cardspeed=120` is the old decline of poster work for a card moving over 120 px/s):
 
 ```bash
 tools/tv-lock.sh with --why "fps burst" -- ./tests/run.py --fps --mock --filter library-burst
 tools/tv-lock.sh with --why "fps burst" -- ./tests/run.py --fps --mock --filter library-burst \
-    --extra-trigger plxnative-cardspeed=120 --extra-trigger plxnative-lookahead=0
+    --extra-trigger dispatcharrtv-cardspeed=120 --extra-trigger dispatcharrtv-lookahead=0
 ```
 
 `library-hold` is `library-burst`'s sibling for a long held scroll: the same mock, triggers, printing
@@ -619,7 +619,7 @@ marks pacing invalid if a render-profiler trigger is armed.
     only to separate a frozen animator (~0.5/s, `plx_machine::idle`'s keepalive) from a running one. Raise it
     to a real median the first time it runs green on a television — the scene's own
     `_fps_floor_note` says so, and the neighbours all quote a date.
-  - **`plxnative-search`'s value is a literal query, not a symbolic key.** `run.py` resolves `item`
+  - **`dispatcharrtv-search`'s value is a literal query, not a symbolic key.** `run.py` resolves `item`
     keys against your overlay; it has no notion of a query, so the manifest carries the text. If
     your library matches nothing for it there are no shelves, and `search-type` degrades to grading
     the tab strip. Change the literal, never the floor.
@@ -662,18 +662,18 @@ pieces make that reproducible:
 
   | surface | what is walked | boot |
   |---|---|---|
-  | `home-row` | Home > Recently Added Movies (Shelf, 24-card window) | `plxnative-grid` |
-  | `library-section-hub-row` | Library > a pageable section shelf (`--section-hubs 3`) | `plxnative-library=0` |
-  | `library-grid` | Library > the 1000-movie poster grid (6 columns, row-band window) | `plxnative-library=0` |
-  | `search-row` | Search > the Movies result row of a 2-letter query | `plxnative-search=sf` |
-  | `detail-related-row` | Detail > the related row (head of 8, tail from `/similar`) | `plxnative-detail=1001 plxnative-detailsec=2` |
-  | `collection` | a ~130-member collection (Grid over a paged listing) | `plxnative-collection=50002` |
-  | `long-season` | Detail > the episode strip of a 150-episode season (pages of 60) | `plxnative-detail=2001` |
+  | `home-row` | Home > Recently Added Movies (Shelf, 24-card window) | `dispatcharrtv-grid` |
+  | `library-section-hub-row` | Library > a pageable section shelf (`--section-hubs 3`) | `dispatcharrtv-library=0` |
+  | `library-grid` | Library > the 1000-movie poster grid (6 columns, row-band window) | `dispatcharrtv-library=0` |
+  | `search-row` | Search > the Movies result row of a 2-letter query | `dispatcharrtv-search=sf` |
+  | `detail-related-row` | Detail > the related row (head of 8, tail from `/similar`) | `dispatcharrtv-detail=1001 dispatcharrtv-detailsec=2` |
+  | `collection` | a ~130-member collection (Grid over a paged listing) | `dispatcharrtv-collection=50002` |
+  | `long-season` | Detail > the episode strip of a 150-episode season (pages of 60) | `dispatcharrtv-detail=2001` |
 
   The read-out is one shared hook, `plx_ui::card_probe` (cargo feature `devtriggers`, so a release
   build has none of it), called from the two functions every card section draws through
-  (`Shelf::draw_card`, `Grid::draw_card`) and the episode strip. With `plxnative-focus` and
-  `plxnative-focusx` armed the focus fingerprint gains, per frame, the focused card's drawn rect
+  (`Shelf::draw_card`, `Grid::draw_card`) and the episode strip. With `dispatcharrtv-focus` and
+  `dispatcharrtv-focusx` armed the focus fingerprint gains, per frame, the focused card's drawn rect
   (`cdx cdy cdw`), its slot in the run of cards the section holds and that run's length (`cdi cdn`),
   its index in the source (`cdg`), the ratingKey in its artwork path (`cdk`, the stable item key),
   whether its texture was resident (`cda`), the caption's left edge and width (`cdc cdcw`) and two
@@ -683,7 +683,7 @@ pieces make that reproducible:
   (reported as `art_returned_bare`, not graded: the poster store holds 64 pictures).
   `--trigger imgtrace` arms one more dev trigger and puts its lines in `--dump`: each
   `HIDDEN ... gap=1f cause=...` is one `cdr`, with the store's reason.
-  Without `plxnative-focusx` the fingerprint is byte-for-byte what it was (the replay recordings
+  Without `dispatcharrtv-focusx` the fingerprint is byte-for-byte what it was (the replay recordings
   do not change). Asserted on every surface: the last item and then the first are focused; one
   key moves one card (one grid row), and keys held while the list could not move may land together
   but never move more than they were pressed for; no focus change without a key; no slot jump (the
@@ -718,24 +718,24 @@ pieces make that reproducible:
 1. `make kill` — close the app (luna-send `closeByAppId` + `fuser -k`) **first**.
 2. If the case sets `viewOffset_ms`: `PUT /:/progress` to seed the resume point — done
    **after** the close so the app's `timeline_thread` can't re-scrobble over it.
-3. Create the runtime root (`mkdir` + `chmod 1777`), clear every `plxnative-*` trigger in it,
+3. Create the runtime root (`mkdir` + `chmod 1777`), clear every `dispatcharrtv-*` trigger in it,
    then write only the ones this case needs.
 4. `make run TV=<tv> RUN_SECS=<n> FLAVOR=<f>` — relaunch, wait, and cat that install's
-   `plxnative-events.log` back.
+   `dispatcharrtv-events.log` back.
 5. Filter the `smp_cb type=43 num=0 str=` flood and evaluate the assertions.
 
-## The `plxnative-play=<rk>` trigger (added for this harness)
+## The `dispatcharrtv-play=<rk>` trigger (added for this harness)
 
-Tests use `plxnative-play=<ratingKey>` instead of the fragile `plxnative-detail`. `plxnative-detail`
+Tests use `dispatcharrtv-play=<ratingKey>` instead of the fragile `dispatcharrtv-detail`. `dispatcharrtv-detail`
 only *plays* if the rk is in the home catalog (Continue Watching / hubs); off-catalog it loads
-data-only and never plays. `plxnative-play` fetches the item's metadata fresh (`metadata::load_detail`,
+data-only and never plays. `dispatcharrtv-play` fetches the item's metadata fresh (`metadata::load_detail`,
 works for **any** rk) and drives the same field-based play path the detail Play button uses
 (`route::play_episode` — generic over movie/episode — + `player::begin_resume`, whose transcode rebuild is a
 flight landed by `player::land_resume`, + `start_bufferfeed`),
 bypassing the catalog lookup entirely. It honors the server `viewOffset` for resume and logs
-`plxnative-play: rk=<rk> server=<slot> start` so the harness can confirm both halves of the item
-identity that fired. A bare `plxnative-play` keeps the historical current-server behaviour;
-`plxnative-server=<slot>` makes a by-hand/direct-screen run target a registered secondary PMS and
+`dispatcharrtv-play: rk=<rk> server=<slot> start` so the harness can confirm both halves of the item
+identity that fired. A bare `dispatcharrtv-play` keeps the historical current-server behaviour;
+`dispatcharrtv-server=<slot>` makes a by-hand/direct-screen run target a registered secondary PMS and
 fails closed when that slot does not exist. `tools/tv-session.sh up --screen player=<rk> --server
 <slot>` writes the pair without navigating the UI, boots from the signed-in stored roster (rather
 than the singular injected-token server), and exits nonzero unless the log confirms the exact
@@ -864,11 +864,11 @@ Append an entry to `manifest.json` → `cases`:
 }
 ```
 
-`run.py` derives the triggers from `operations` (`play`→`plxnative-play`, `seek`→`plxnative-autoseek`
+`run.py` derives the triggers from `operations` (`play`→`dispatcharrtv-play`, `seek`→`dispatcharrtv-autoseek`
 — for `"mode":"rapid"` the op's `script` becomes the trigger content: optional `gap=<ms>` +
 comma-separated steps, absolute `120` or tap-relative `+10`/`-10`, fired one per gap;
-`pause_resume`→one `plxnative-autopause=delay=<ms>,hold=<ms>` script;
-`audio_switch`/`subtitle`→`plxnative-menupick`) and picks the
+`pause_resume`→one `dispatcharrtv-autopause=delay=<ms>,hold=<ms>` script;
+`audio_switch`/`subtitle`→`dispatcharrtv-menupick`) and picks the
 per-op assertions from the `op`/`mode`. Track-menu row semantics: **audio tab** row = the
 metadata audio index (0-based, file order); **subtitles tab** row 0 = *Off*, row *r* = subtitle
 index *r−1*.
@@ -891,11 +891,11 @@ make fixtures-pipeline          # ~0.9 GB into $FIXTURES_OUT/pipeline; ~4 min, o
 Nothing else is required — no `manifest.local.json`, no PMS, no token, no ratingKey, no library, no
 sharing. The TV address comes from the overlay's `tv` if you have one, else from `tools/tv-config.sh`
 (this checkout's gitignored `.tv-host`, the main checkout's, then the per-user
-`~/.config/plxnative/tv-host` — set that one once and every worktree has it), else `--tv`. That is the
+`~/.config/dispatcharrtv/tv-host` — set that one once and every worktree has it), else `--tv`. That is the
 whole configuration.
 
 **How it works.** `run.py` starts `serve_fixtures.py` on this machine, then arms
-`/tmp/plxnative-playurl` per case — one JSON object carrying the clip's URL **and the Load payload
+`/tmp/dispatcharrtv-playurl` per case — one JSON object carrying the clip's URL **and the Load payload
 declaration to play it with**:
 
 ```json
@@ -910,13 +910,13 @@ byte for byte; only the *choosing* is bypassed.
 **Why the declaration is carried separately, and why it is the interesting half.** The Starfish
 `Load` payload takes its codecs from `route::stream_vcodec`/`stream_acodec` and its Dolby nodes from
 `stream_dovi`/`stream_immersive` — five fields normally installed together by `route::apply_plan`
-from a PMS decision and replaced together by later route transitions. The older `plxnative-url`
+from a PMS decision and replaced together by later route transitions. The older `dispatcharrtv-url`
 trigger hands over a URL and nothing else, so a URL-fed 4K HEVC file was declared to the television
 as whatever the route happened to hold. An absent or unsupported audio declaration now fails
 before Load instead of silently declaring AC3.
 The declaration is precisely what governs HEVC-vs-H264 payload selection, LG's `"AC3 PLUS"`
 renaming of E-AC-3, and both Dolby nodes — so a tier that cannot set it cannot test any of them.
-`plxnative-playurl` sets all five in one write (`route::set_stream_declaration`).
+`dispatcharrtv-playurl` sets all five in one write (`route::set_stream_declaration`).
 
 The matrix carries codec-specific `load_audio` expectations, including `"AC3 PLUS"`, `"AAC"` and
 `"DTS"`. Together with the `load_decl` assertion, these prove that each fixture supplies its
@@ -1054,8 +1054,8 @@ harness's own close included.
 
 **And the second half — starting the same content *again* — is `pipe_replay_after_eos`**, which
 plays the same clip, lets it end, and restarts it. That needed an app change and got the smallest
-one that works: `/tmp/plxnative-replay[=N]` re-arms `app.rs`'s one-shot `auto_tried` latch N times
-when a `plxnative-playurl` playback reaches EOS, so the next frame goes back through the entry it
+one that works: `/tmp/dispatcharrtv-replay[=N]` re-arms `app.rs`'s one-shot `auto_tried` latch N times
+when a `dispatcharrtv-playurl` playback reaches EOS, so the next frame goes back through the entry it
 booted through. `teardown` clears the URL and the `ended` flag on a real stop, and
 `engine::start_bufferfeed` re-reads `player::playurl::playurl()` whenever `route::url()` is empty. One more
 piece was NOT in place until 2026-09-02: the fixture entry asks the route reducer for a start
@@ -1112,7 +1112,7 @@ clips, served from the host, fed by boot trigger — and a gap becomes a case by
 `make_fixtures.py` and an entry to `pipeline_cases`. Two corrections to how this paragraph used to
 read, both of which would send you down a dead end: the server is **`tests/serve_fixtures.py`**, not
 `python3 -m http.server`, which has no `Range` support and silently corrupts every seek; and the
-trigger is **`plxnative-playurl`**, not `plxnative-url`, because the latter carries no declaration
+trigger is **`dispatcharrtv-playurl`**, not `dispatcharrtv-url`, because the latter carries no declaration
 and several of these gaps (HLG, HDR10+, 8-bit HEVC) are *about* what the payload declares. Still
 secondary to the real item shapes, and still to be labelled synthetic:
 
@@ -1149,7 +1149,7 @@ secondary to the real item shapes, and still to be labelled synthetic:
   human in front of the television is whether the panel engages Dolby Vision at all on the P8 file
   that does direct-play.
   **And since 2026-08-21 the P5 half of that refusal is CONDITIONAL, so read the paragraph above as
-  the behaviour with `plxnative-dv` absent — which is what this suite runs and what a
+  the behaviour with `dispatcharrtv-dv` absent — which is what this suite runs and what a
   `RELEASE=1` build compiles in.** Arming that trigger makes the Load payload declare the stream
   (`contents.DolbyHdrInfo`, the node LG's own pipeline has parsed all along), and a declared
   single-layer Profile 5 direct-plays *correctly* — so with it armed the P5 item's expectation is a

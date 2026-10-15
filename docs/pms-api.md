@@ -211,10 +211,10 @@ the spec but **this server does not emit it on `Role[]`** — treat 0 as unknown
   `X-Plex-Token` it answers `401 {"error":"Unauthorized","message":"You must provide a token!"}`,
   where `/library/people/{tagKey}` answers 200 unauthenticated. And the token it wants is the
   plex.tv **account** token, not a PMS server token — which is what puts the whole filmography out
-  of reach of every automated boot in this repo: those sign in with `/tmp/plxnative-token`, a
+  of reach of every automated boot in this repo: those sign in with `/tmp/dispatcharrtv-token`, a
   server token, and leave `Session::account_token` empty. It is the same wall
-  `/tmp/plxnative-personbio` exists for one step further along — the biography degrades to a blank
-  line, the filmography to nothing at all — and it is why `/tmp/plxnative-personcredits` had to be
+  `/tmp/dispatcharrtv-personbio` exists for one step further along — the biography degrades to a blank
+  line, the filmography to nothing at all — and it is why `/tmp/dispatcharrtv-personcredits` had to be
   written. Reaching either with real data needs a signed-in account (`make sim` with a real
   session, or the debug install with `--no-token`).
 - **The person's titles:** `GET /library/people/{personId}/media` → `Metadata[]`, everything the

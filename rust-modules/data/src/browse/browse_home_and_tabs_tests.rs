@@ -38,7 +38,7 @@ fn pin_choice_survives_refresh(fail: bool) {
         }
     }
     if fail {
-        std::fs::write(t.path(), br#"{"format":"plxnative-secure-session","version":99,"sealed":{}}"#).unwrap();
+        std::fs::write(t.path(), br#"{"format":"dispatcharrtv-secure-session","version":99,"sealed":{}}"#).unwrap();
     }
     release_tx.send(()).unwrap();
     plx_base::storage_worker::drain_for_test();
@@ -329,7 +329,7 @@ fn a_commit_the_session_refuses_leaves_the_answer_on_screen() {
     // under a record this process already wrote would leave it.
     std::fs::write(
         t.path(),
-        br#"{"format":"plxnative-secure-session","version":99,"sealed":{}}"#,
+        br#"{"format":"dispatcharrtv-secure-session","version":99,"sealed":{}}"#,
     )
     .expect("the locked fixture");
     plx_plex::plex::session::invalidate_for_test();

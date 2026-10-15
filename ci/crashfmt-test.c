@@ -14,7 +14,7 @@
  * `com.magness.dispatcharrtv` is a PREFIX of `com.magness.dispatcharrtv.debug`.
  *
  * **Written by watching it fail.** `plx_names_our_binary` was reverted to the bare substring test
- * before this file was trusted, and exactly one assertion below went red — `plxnative-sim`. That
+ * before this file was trusted, and exactly one assertion below went red — `dispatcharrtv-sim`. That
  * result is itself the finding: it disproved the justification `src/main.c` had carried since the
  * tracer was written (that a substring test would also match `libturbojpeg.so.0` beside the
  * binary), because the needle carries a slash and the directory component is `/com.magness.dispatcharrtv`.
@@ -127,9 +127,9 @@ int main(void) {
      * `pc` sits inside the executable's text mapping, which is the ordinary case. */
     static const char BIN[] =
         "00010000-0097f000 r-xp 00000000 b3:35 12345 "
-        "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv/plxnative\n";
-    /* Deployed beside the binary, inside a directory whose own name ends in `.plxnative`. NOT a
-     * trap, in the end: the needle is `/plxnative` and this path's slash is followed by `c`, so
+        "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv/dispatcharrtv\n";
+    /* Deployed beside the binary, inside a directory whose own name ends in `.dispatcharrtv`. NOT a
+     * trap, in the end: the needle is `/dispatcharrtv` and this path's slash is followed by `c`, so
      * even a bare substring test rejects it. Kept because it is the shape main.c's comment named
      * for years, and a case that pins "this is not our binary" is worth having whichever argument
      * makes it true. */
@@ -144,33 +144,33 @@ int main(void) {
     eq_int("our binary, not containing it", kind(BIN, 0xb5100000UL, 0), PLX_MAP_BIN);
     eq_int("a library beside the binary is NOT the binary", kind(JPEG, 0x00020000UL, 0), 0);
     /* THE case the separator actually buys, and the only assertion that went red when the token
-     * test was reverted to a substring one. `plxnative-sim` is the host simulator and
-     * `plxnative.new` is what `make deploy` scp's before renaming it over the running binary;
+     * test was reverted to a substring one. `dispatcharrtv-sim` is the host simulator and
+     * `dispatcharrtv.new` is what `make deploy` scp's before renaming it over the running binary;
      * neither is mapped on a television today, which is what makes this a test rather than a
      * hope — nothing else would notice if the guard were dropped. */
-    eq_int("plxnative.new is a different name",
+    eq_int("dispatcharrtv.new is a different name",
            kind("00010000-00020000 r-xp 0 0:0 1 /media/developer/apps/usr/palm/applications/"
-                "com.magness.dispatcharrtv/plxnative.new\n", 0, 0), 0);
+                "com.magness.dispatcharrtv/dispatcharrtv.new\n", 0, 0), 0);
     eq_int("a library beside it, containing the pc", kind(JPEG, 0xb6a10000UL, 0), PLX_MAP_AT);
     eq_int("a TV library containing the pc", kind(LGLIB, 0xb5100000UL, 0), PLX_MAP_AT);
 
     /* The `(deleted)` form, and the other half of what the separator buys. `make deploy` writes
-     * `plxnative.new` and renames it over the running binary (the ETXTBSY dance), so the kernel
+     * `dispatcharrtv.new` and renames it over the running binary (the ETXTBSY dance), so the kernel
      * appends this on every development iteration — the space-terminated spelling is the NORMAL
-     * one while iterating, and a test for `"/plxnative\n"` alone would fail to find our own binary
+     * one while iterating, and a test for `"/dispatcharrtv\n"` alone would fail to find our own binary
      * exactly when it is being worked on. */
     static const char DELETED[] =
         "00010000-0097f000 r-xp 00000000 b3:35 12345 "
-        "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv/plxnative (deleted)\n";
+        "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv/dispatcharrtv (deleted)\n";
     eq_int("the (deleted) form is still our binary", kind(DELETED, 0, 0), PLX_MAP_BIN);
 
     /* And the flavoured install, whose directory name has `.debug` after the token — the prefix
      * trap from the other side. Still our binary: both installs' executables are named
-     * `plxnative`, and it is `crash-report.sh` that decides WHICH install a `bin:` line belongs
+     * `dispatcharrtv`, and it is `crash-report.sh` that decides WHICH install a `bin:` line belongs
      * to, by matching the app id in the path. This test pins that division of labour. */
     static const char DEBUG_BIN[] =
         "00010000-0097f000 r-xp 00000000 b3:35 12347 "
-        "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.debug/plxnative\n";
+        "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.debug/dispatcharrtv\n";
     eq_int("the debug install's binary is also a bin: line", kind(DEBUG_BIN, 0, 0), PLX_MAP_BIN);
 
     /* The LR is checked as well as the PC: on a jump through a bad function pointer the PC is
@@ -189,7 +189,7 @@ int main(void) {
     eq_int("a truncated range", kind("00010000-\n", 0, 0), 0);
     eq_int("an empty line", kind("\n", 0, 0), 0);
 
-    eq_int("plxnative-sim is a different name", kind("00010000-00020000 r-xp 0 0:0 1 /x/plxnative-sim\n", 0, 0), 0);
+    eq_int("dispatcharrtv-sim is a different name", kind("00010000-00020000 r-xp 0 0:0 1 /x/dispatcharrtv-sim\n", 0, 0), 0);
 
     if (failures) {
         fprintf(stderr, "crashfmt: %d assertion(s) failed\n", failures);

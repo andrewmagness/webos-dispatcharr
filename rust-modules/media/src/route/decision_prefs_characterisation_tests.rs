@@ -181,7 +181,7 @@ fn the_unwritable_fixture_is_a_readable_session_whose_write_is_not_durable() {
     drop(fixture);
 
     // the OTHER way to fail, for contrast: an unreadable session never reaches the write
-    let dir = std::env::temp_dir().join(format!("plxnative-prefs-char-blocked-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("dispatcharrtv-prefs-char-blocked-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("blocker"), b"x").unwrap();

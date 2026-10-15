@@ -83,17 +83,17 @@ STORAGE_PERMISSIONS = ["database.operation", "securitykey.operation"]
 
 def stage_storage_service(repo: Path, data: Path, app: dict) -> Path:
     """Stage the native owner whose installer-generated LS2 name survives app restarts."""
-    executable = repo / "pkg/plxnative-storage"
+    executable = repo / "pkg/dispatcharrtv-storage"
     if not executable.is_file() or executable.is_symlink():
-        raise SystemExit("native storage helper is missing; build pkg/plxnative-storage first")
+        raise SystemExit("native storage helper is missing; build pkg/dispatcharrtv-storage first")
     service_id = app["id"] + ".storage"
     target = data / "usr/palm/services" / service_id
     target.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(executable, target / "plxnative-storage")
-    (target / "plxnative-storage").chmod(0o755)
+    shutil.copyfile(executable, target / "dispatcharrtv-storage")
+    (target / "dispatcharrtv-storage").chmod(0o755)
     (target / "services.json").write_text(json.dumps({
         "id": service_id, "description": "PlxNative private storage",
-        "engine": "native", "executable": "plxnative-storage",
+        "engine": "native", "executable": "dispatcharrtv-storage",
         "services": [{"name": service_id, "commands": []}],
     }, indent=4) + "\n")
     return target
@@ -113,9 +113,9 @@ def storage_archive_errors(blob: bytes, app_id: str) -> list[str]:
             if any(n.startswith(f"usr/palm/applications/{app_id}/state") for n in members):
                 errors.append("obsolete writable app state is forbidden")
             files = {n for n, m in members.items() if m.isfile() and n.startswith("usr/palm/services/")}
-            if files != {prefix + "services.json", prefix + "plxnative-storage"}:
+            if files != {prefix + "services.json", prefix + "dispatcharrtv-storage"}:
                 errors.append("service payload must contain exactly this flavor's descriptor and helper")
-            executable = members.get(prefix + "plxnative-storage")
+            executable = members.get(prefix + "dispatcharrtv-storage")
             if executable is None or not executable.isfile() or executable.mode & 0o7777 != 0o755:
                 errors.append("storage helper must be a regular executable with mode 0755")
             elif executable.uid != 0 or executable.gid != 0:
@@ -131,7 +131,7 @@ def storage_archive_errors(blob: bytes, app_id: str) -> list[str]:
                     continue
                 metadata = json.load(tf.extractfile(member))
                 if name.endswith("services.json"):
-                    if metadata != {"id": service_id, "description": "PlxNative private storage", "engine": "native", "executable": "plxnative-storage", "services": [{"name": service_id, "commands": []}]}:
+                    if metadata != {"id": service_id, "description": "PlxNative private storage", "engine": "native", "executable": "dispatcharrtv-storage", "services": [{"name": service_id, "commands": []}]}:
                         errors.append("service identity/activation-only metadata differs")
                 else:
                     if metadata.get("id") != app_id or metadata.get("requiredPermissions") != STORAGE_PERMISSIONS:
@@ -162,7 +162,7 @@ def add_tree(tf: tarfile.TarFile, src: Path, arc_root: str, skip: set = ()) -> N
         ti.mtime = EPOCH
         # Normalise mode: the binary and directories executable, everything else 0644. Otherwise
         # a stray local chmod changes the archive.
-        ti.mode = 0o755 if (ti.isdir() or p.name in {"plxnative", "plxnative-storage", "sentry-crash"}) else 0o644
+        ti.mode = 0o755 if (ti.isdir() or p.name in {"dispatcharrtv", "dispatcharrtv-storage", "sentry-crash"}) else 0o644
         if ti.isfile():
             with open(p, "rb") as fh:
                 tf.addfile(ti, fh)

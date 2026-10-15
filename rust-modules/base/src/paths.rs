@@ -79,7 +79,7 @@ const LEGACY_APP_DIR: &str = "/media/developer/apps/usr/palm/applications/com.ma
 /// this repository can settle; `docs/two-installs.md` §6 keeps it on the device list rather than
 /// asserting it here.) Deriving the id here means:
 ///
-///   * `pkg/plxnative` stays ONE artifact. Nothing about the flavour reaches codegen, so there is
+///   * `pkg/dispatcharrtv` stays ONE artifact. Nothing about the flavour reaches codegen, so there is
 ///     no second `--target-dir`, no second stamp, and no way for `make deploy` to ship a binary
 ///     compiled for the other install — the identity comes from where it LANDS. That matters here
 ///     specifically: this project's classic failure is the stale artifact that make thinks is
@@ -176,7 +176,7 @@ enum AppDirSource {
 pub fn app_dir_line() -> String {
     let (dir, source) = app_dir_resolved();
     match source {
-        AppDirSource::Env => format!("appdir: {} (PLXNATIVE_APP_DIR)", dir.display()),
+        AppDirSource::Env => format!("appdir: {} (DISPATCHARRTV_APP_DIR)", dir.display()),
         AppDirSource::MacosBundle => format!("appdir: {} (macOS bundle)", dir.display()),
         AppDirSource::CurrentExe => format!("appdir: {} (from current_exe)", dir.display()),
         // Not expected on device — worth a line in the log if it ever happens, because everything
@@ -193,7 +193,7 @@ fn app_dir_resolved() -> &'static (PathBuf, AppDirSource) {
         // build, the simulator is told where the payload is. Compile-time gated, so a television
         // build has no such override and resolves exactly as documented above.
         if ENV_STEERABLE {
-            if let Some(d) = std::env::var_os("PLXNATIVE_APP_DIR") {
+            if let Some(d) = std::env::var_os("DISPATCHARRTV_APP_DIR") {
                 let p = PathBuf::from(d);
                 if !p.as_os_str().is_empty() {
                     return (p, AppDirSource::Env);
@@ -228,8 +228,8 @@ pub fn in_app_dir(name: &str) -> PathBuf {
 /// `None` — the one platform where the app's payload is not the executable's own directory.
 ///
 /// Structural, not name-based: it asks whether the two directories above the binary are literally
-/// `Contents/MacOS`, which is what makes something a bundle. A `PlxNative.app` renamed by the
-/// person it was sent to still answers yes; a loose `plxnative-sim` in `target-sim/debug` still
+/// `Contents/MacOS`, which is what makes something a bundle. A `DispatcharrTV.app` renamed by the
+/// person it was sent to still answers yes; a loose `dispatcharrtv-sim` in `target-sim/debug` still
 /// answers no, so the dev loop is untouched.
 ///
 /// Must not log — [`runtime_dir`] calls the sibling below and that function's doc explains why a
@@ -263,7 +263,7 @@ fn macos_bundle_resources(_exe: &Path) -> Option<PathBuf> {
 /// signed bundle writing inside `Contents/` invalidates the signature.
 ///
 /// `None` unless this really is a bundle: a plain `make sim-run` keeps taking `/tmp` (or its
-/// `PLXNATIVE_RUNTIME_DIR` instance root) exactly as before, so no harness recipe moves.
+/// `DISPATCHARRTV_RUNTIME_DIR` instance root) exactly as before, so no harness recipe moves.
 #[cfg(target_os = "macos")]
 fn macos_app_support() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
@@ -280,7 +280,7 @@ fn macos_app_support() -> Option<PathBuf> {
     None
 }
 
-/// Where this instance's RUNTIME surfaces live — the `plxnative-*` dev triggers, the remote FIFO,
+/// Where this instance's RUNTIME surfaces live — the `dispatcharrtv-*` dev triggers, the remote FIFO,
 /// and the logs Rust itself writes (the event log and the panic hook's crash log). Not the app's
 /// own files; that is [`app_dir`].
 ///
@@ -293,11 +293,11 @@ fn macos_app_support() -> Option<PathBuf> {
 /// system `/tmp`, and every tool, skill and harness recipe addresses those files by absolute path
 /// — which is why `make -s print-rundir` exists rather than a second copy of the rule.
 ///
-/// `PLXNATIVE_RUNTIME_DIR` overrides it for exactly one reason: the television serializes the whole
+/// `DISPATCHARRTV_RUNTIME_DIR` overrides it for exactly one reason: the television serializes the whole
 /// dev loop. There is one set, one app instance, and `tests/run.py` jobs kill each other's app if
-/// two run at once — so the single global `/tmp/plxnative-*` namespace has never cost anything. A
+/// two run at once — so the single global `/tmp/dispatcharrtv-*` namespace has never cost anything. A
 /// host build removes that constraint, and then the namespace becomes the constraint instead: two
-/// simulators booting different screens would read one `plxnative-library` trigger and drain one
+/// simulators booting different screens would read one `dispatcharrtv-library` trigger and drain one
 /// FIFO. Pointing each instance at its own directory is what lets several run side by side, and
 /// keeps every existing recipe — the trigger names, the `ok`/`down`/`ck:X,Y` tokens — working
 /// verbatim inside it.
@@ -317,7 +317,7 @@ pub fn runtime_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
         let d = resolve_runtime_dir(
-            std::env::var_os("PLXNATIVE_RUNTIME_DIR"),
+            std::env::var_os("DISPATCHARRTV_RUNTIME_DIR"),
             macos_app_support(),
             app_id(),
         );
@@ -346,7 +346,7 @@ pub fn runtime_dir() -> &'static Path {
 fn ensure_runtime_dir(d: &Path) {
     // Television builds only, and only for a flavoured root. A host build's root is created by
     // `make sim` and written by exactly one uid, so there is nothing here to solve — and
-    // `PLXNATIVE_RUNTIME_DIR` can point anywhere, including inside somebody's home directory,
+    // `DISPATCHARRTV_RUNTIME_DIR` can point anywhere, including inside somebody's home directory,
     // which is not a thing to silently chmod 1777.
     if ENV_STEERABLE || d == Path::new(DEFAULT_RUNTIME_DIR) {
         return;
@@ -404,7 +404,7 @@ const DEFAULT_RUNTIME_DIR: &str = "/tmp";
 ///
 /// **A flavoured install gets its own root, and the app users get keeps `/tmp` byte for byte.**
 /// Two installs on one television otherwise share one event log (the launching one TRUNCATES it),
-/// one append-only crash log with nothing in it saying which binary faulted, one `plxnative-remote`
+/// one append-only crash log with nothing in it saying which binary faulted, one `dispatcharrtv-remote`
 /// FIFO, one `:8910` capture listener and one trigger namespace — a set of collisions whose
 /// symptom is never an error, only evidence about the wrong process. Because every one of those
 /// surfaces already composes on [`in_runtime_dir`], moving the ROOT separates all of them at once,
@@ -412,10 +412,10 @@ const DEFAULT_RUNTIME_DIR: &str = "/tmp";
 /// exactly as they are — inside the new root.
 ///
 /// **The separator is a DOT and that is load-bearing.** `dev::any_trigger_present` scans this
-/// directory for entries beginning `plxnative-` to decide whether the boot is automated, so a
-/// sibling root spelled with a HYPHEN after `plxnative` would itself read as an armed trigger and
+/// directory for entries beginning `dispatcharrtv-` to decide whether the boot is automated, so a
+/// sibling root spelled with a HYPHEN after `dispatcharrtv` would itself read as an armed trigger and
 /// silently suppress the OTHER install's who's-watching picker — changing which screen it boots to,
-/// with no log line anywhere. The full app id contains no `plxnative-`, so it cannot. (The bad name
+/// with no log line anywhere. The full app id contains no `dispatcharrtv-`, so it cannot. (The bad name
 /// is deliberately not written out here: the trigger catalog this project publishes is a `grep` for
 /// that very prefix over these sources, so spelling it would mint a catalog entry for a trigger
 /// that must never exist.) (That function also
@@ -491,14 +491,14 @@ pub unsafe extern "C" fn plx_runtime_path(
 /// test below extracts the C boot shim's sinks too, so adding one cannot leave Delete all local
 /// data with a stale second list.
 pub mod runtime_file {
-    pub const EVENTS: &str = "plxnative-events.log";
-    pub const CRASH: &str = "plxnative-crash.log";
-    pub const STDERR: &str = "plxnative-stderr.log";
-    pub const STORAGE_DIAGNOSTICS: &str = "plxnative-diag.log";
-    pub const ANIMATION: &str = "plxnative-anim.log";
-    pub const GST: &str = "plxnative-gst.log";
-    pub const GPU_TIME: &str = "plxnative-gputime.jsonl";
-    pub const HARDWARE_COUNTERS: &str = "plxnative-hwcnt.jsonl";
+    pub const EVENTS: &str = "dispatcharrtv-events.log";
+    pub const CRASH: &str = "dispatcharrtv-crash.log";
+    pub const STDERR: &str = "dispatcharrtv-stderr.log";
+    pub const STORAGE_DIAGNOSTICS: &str = "dispatcharrtv-diag.log";
+    pub const ANIMATION: &str = "dispatcharrtv-anim.log";
+    pub const GST: &str = "dispatcharrtv-gst.log";
+    pub const GPU_TIME: &str = "dispatcharrtv-gputime.jsonl";
+    pub const HARDWARE_COUNTERS: &str = "dispatcharrtv-hwcnt.jsonl";
 
     pub const LOGS: [&str; 8] = [
         EVENTS,
@@ -512,7 +512,7 @@ pub mod runtime_file {
     ];
 }
 
-/// A runtime surface inside [`runtime_dir`], addressed by its bare name (`plxnative-…` included).
+/// A runtime surface inside [`runtime_dir`], addressed by its bare name (`dispatcharrtv-…` included).
 ///
 /// Everything that opens one of these goes through here, so the instance root has a single
 /// definition. `dev.rs` is still the only module allowed to name a TRIGGER — this is the path
@@ -539,7 +539,7 @@ pub fn in_runtime_dir(name: &str) -> PathBuf {
 /// (Dev Mode, no ssh) signed in successfully and then hit `session: could not persist to ANY
 /// candidate path` — none of `/media/developer`, `/media/internal` or the app dir accepted the
 /// write on that jail. But the app's own event log was reaching
-/// `/tmp/<app id>/plxnative-events.log` on that same television: `/tmp` is `mount rw, mode 1777`
+/// `/tmp/<app id>/dispatcharrtv-events.log` on that same television: `/tmp` is `mount rw, mode 1777`
 /// in both jail profiles and the per-install runtime root under it is app-owned (see
 /// [`runtime_dir`]), so it is the one thing this jail class guarantees is writable. It is offered
 /// last, never first, because `/tmp` is swept on reboot — a save that lands only here is NOT
@@ -612,7 +612,7 @@ pub fn session_candidates() -> Vec<PathBuf> {
 /// channel DELETES its identifier rather than merely disabling it. Recorded in `PRIVACY.md`,
 /// because a user cannot audit a file they cannot reach.
 ///
-/// Outside the `plxnative-` trigger namespace by construction, since it is not in the runtime root
+/// Outside the `dispatcharrtv-` trigger namespace by construction, since it is not in the runtime root
 /// at all — so it cannot suppress the who's-watching picker the way anything in `/tmp` would.
 /// Where the image cache may live (`imgcache`), best first: the session file's search
 /// order, as DIRECTORIES. `/media/developer` under the Developer Mode jail, `/media/internal`
@@ -657,7 +657,7 @@ pub fn telemetry_spool_candidates() -> Vec<PathBuf> {
 /// How much of the append-only crash log has already been reported, beside the spool.
 ///
 /// **A watermark rather than a truncation, and that is the whole reason this file exists.**
-/// `plxnative-crash.log` is append-only and survives a relaunch BY DESIGN — `docs/agent-reference.md` names it the
+/// `dispatcharrtv-crash.log` is append-only and survives a relaunch BY DESIGN — `docs/agent-reference.md` names it the
 /// thing to read after a crash-and-restart and `tools/crash-report.sh` parses it — so the telemetry
 /// reader may not consume it. Recording a byte offset lets a human and this module read the same
 /// file without either disturbing the other.
@@ -850,10 +850,10 @@ mod tests {
     #[test]
     fn the_app_id_is_the_install_directory_and_only_a_real_one() {
         use std::path::Path;
-        let dev = "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.debug/plxnative";
-        let hbc = "/media/cryptofs/apps/usr/palm/applications/com.magness.dispatcharrtv/plxnative";
+        let dev = "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.debug/dispatcharrtv";
+        let hbc = "/media/cryptofs/apps/usr/palm/applications/com.magness.dispatcharrtv/dispatcharrtv";
         let nightly =
-            "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.nightly/plxnative";
+            "/media/developer/apps/usr/palm/applications/com.magness.dispatcharrtv.nightly/dispatcharrtv";
         assert_eq!(
             super::installed_app_id(Path::new(dev)).as_deref(),
             Some("com.magness.dispatcharrtv.debug")
@@ -870,12 +870,12 @@ mod tests {
         // Without this arm the simulator would mint an app called `debug`, take `/tmp/debug` as its
         // runtime root and look for a session file named after it.
         assert!(super::installed_app_id(Path::new(
-            "/repo/rust-modules/target-sim/debug/plxnative-sim"
+            "/repo/rust-modules/target-sim/debug/dispatcharrtv-sim"
         ))
         .is_none());
         // The macOS bundle layout, for the same reason.
         assert!(super::installed_app_id(Path::new(
-            "/A/PlxNative.app/Contents/MacOS/plxnative-sim"
+            "/A/DispatcharrTV.app/Contents/MacOS/dispatcharrtv-sim"
         ))
         .is_none());
         // …and the real process resolves to SOMETHING, on either platform, without panicking.
@@ -917,7 +917,7 @@ mod tests {
     /// exactly — every skill recipe, harness glob and doc line addresses those paths absolutely.
     ///
     /// The dot in the flavoured root is asserted on purpose: `dev::any_trigger_present` scans the
-    /// root for entries starting `plxnative-`, so a root spelled with a hyphen there would read as
+    /// root for entries starting `dispatcharrtv-`, so a root spelled with a hyphen there would read as
     /// an armed trigger from the OTHER install and silently suppress its boot picker. (Asserted on
     /// the prefix rather than on a literal, for the catalog-grep reason `resolve_runtime_dir` gives.)
     #[test]
@@ -932,23 +932,23 @@ mod tests {
         assert_eq!(debug, std::path::Path::new("/tmp/com.magness.dispatcharrtv.debug"));
         assert_eq!(nightly, std::path::Path::new("/tmp/com.magness.dispatcharrtv.nightly"));
         assert_ne!(
-            stable.join("plxnative-events.log"),
-            debug.join("plxnative-events.log")
+            stable.join("dispatcharrtv-events.log"),
+            debug.join("dispatcharrtv-events.log")
         );
         assert_ne!(
-            debug.join("plxnative-events.log"),
-            nightly.join("plxnative-events.log")
+            debug.join("dispatcharrtv-events.log"),
+            nightly.join("dispatcharrtv-events.log")
         );
         for flavoured in [&debug, &nightly] {
             let name = flavoured.file_name().unwrap().to_string_lossy().into_owned();
             assert!(
-                !name.starts_with("plxnative-"),
+                !name.starts_with("dispatcharrtv-"),
                 "{name} would read as an armed trigger to another install"
             );
         }
     }
 
-    /// An absent or empty `PLXNATIVE_RUNTIME_DIR` must resolve to the television's `/tmp`. Empty
+    /// An absent or empty `DISPATCHARRTV_RUNTIME_DIR` must resolve to the television's `/tmp`. Empty
     /// matters on its own: `FOO= cmd` sets the variable to an empty string rather than unsetting
     /// it, and joining a name onto an empty root yields a RELATIVE path — trigger reads would then
     /// silently follow the process's working directory.
@@ -966,7 +966,7 @@ mod tests {
 
     /// A macOS app bundle writes under `~/Library/Application Support`, and an explicit instance
     /// root still beats it. Both halves matter: the first is what keeps a friend's sign-in from
-    /// being swept out of `/tmp`, the second is what keeps `make sim-shot`'s `PLXNATIVE_RUNTIME_DIR`
+    /// being swept out of `/tmp`, the second is what keeps `make sim-shot`'s `DISPATCHARRTV_RUNTIME_DIR`
     /// authoritative if the binary is ever run out of a bundle by the harness.
     #[test]
     fn a_bundled_app_writes_to_its_own_support_dir_unless_told_otherwise() {
@@ -996,13 +996,13 @@ mod tests {
     fn only_a_real_contents_macos_layout_reads_as_a_bundle() {
         use std::path::Path;
         // No `Contents` above it → not a bundle, whatever it is called.
-        assert!(super::macos_bundle_resources(Path::new("/x/MacOS/plxnative")).is_none());
+        assert!(super::macos_bundle_resources(Path::new("/x/MacOS/dispatcharrtv")).is_none());
         // Right shape, but `Resources/` does not exist on this filesystem → still None, because
         // the point of the probe is finding the payload, not recognising a layout.
-        assert!(super::macos_bundle_resources(Path::new("/x/Contents/MacOS/plxnative")).is_none());
+        assert!(super::macos_bundle_resources(Path::new("/x/Contents/MacOS/dispatcharrtv")).is_none());
         // The dev-loop binary must keep resolving to its own directory.
         assert!(
-            super::macos_bundle_resources(Path::new("/repo/target-sim/debug/plxnative-sim"))
+            super::macos_bundle_resources(Path::new("/repo/target-sim/debug/dispatcharrtv-sim"))
                 .is_none()
         );
     }
@@ -1016,9 +1016,9 @@ mod tests {
             return; // a television build cannot be redirected, by design
         }
         let a = super::resolve_runtime_dir(Some("/run/sim-a".into()), None, super::STABLE_APP_ID)
-            .join("plxnative-library");
+            .join("dispatcharrtv-library");
         let b = super::resolve_runtime_dir(Some("/run/sim-b".into()), None, super::STABLE_APP_ID)
-            .join("plxnative-library");
+            .join("dispatcharrtv-library");
         assert_ne!(a, b);
         assert!(a.is_absolute() && b.is_absolute());
     }

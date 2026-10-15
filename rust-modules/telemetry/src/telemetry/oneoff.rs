@@ -144,7 +144,7 @@ mod tests {
 
     fn setup(name: &str) -> Reset {
         let dir =
-            std::env::temp_dir().join(format!("plxnative-oneoff-{name}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("dispatcharrtv-oneoff-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         crate::telemetry::spool::set_test_path(Some(dir.join("spool.bin")));

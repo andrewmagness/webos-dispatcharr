@@ -245,9 +245,9 @@ becomes an Error card with a retry instead of a permanent black screen.
 
 - `tests/run.py` (all 18, especially the two rapid-seek-burst cases — they exercise Phase A
   hardest) and `tests/run.py --fps --fps-player`.
-- Proposed new regression gate: a `/tmp/plxnative-slowpms=<ms>` dev trigger injecting an
+- Proposed new regression gate: a `/tmp/dispatcharrtv-slowpms=<ms>` dev trigger injecting an
   artificial per-request delay in `stream.rs`'s one-shot wrappers, so "the HUD stays live through
   a slow resolve" becomes an assertable case rather than a manual observation.
-- On device: `/tmp/plxnative-framedrop` armed at `22`, drive `ok` then `back` through
-  `/tmp/plxnative-remote`, and confirm no long frame; `/tmp/plxnative-capture` +
+- On device: `/tmp/dispatcharrtv-framedrop` armed at `22`, drive `ok` then `back` through
+  `/tmp/dispatcharrtv-remote`, and confirm no long frame; `/tmp/dispatcharrtv-capture` +
   `tools/stream-screen.py` to watch the HUD appear within one frame of the press.

@@ -18,7 +18,7 @@ use crate::tv::secure::{Backend, Sealed};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU8, Ordering};
 
-const KEY_NAME: &str = "plxnative.session.v1";
+const KEY_NAME: &str = "dispatcharrtv.session.v1";
 const UNKNOWN: u8 = 0;
 const MODERN: u8 = 1;
 const UNAVAILABLE: u8 = 3;

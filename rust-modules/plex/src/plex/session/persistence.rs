@@ -824,7 +824,7 @@ mod db8_policy_tests {
     fn previous_json_wrapper_yields_its_nested_session_payload_and_tombstone() {
         let _serial = plx_base::testlock::serial();
         let root = std::env::temp_dir().join(format!(
-            "plxnative-prior-session-wrapper-{}",
+            "dispatcharrtv-prior-session-wrapper-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&root);
@@ -884,7 +884,7 @@ mod db8_policy_tests {
     impl TempPersistenceRoot {
         fn new(tag: &str) -> TempPersistenceRoot {
             let dir = std::env::temp_dir().join(format!(
-                "plxnative-persistence-cleanup-outcome-{}-{tag}",
+                "dispatcharrtv-persistence-cleanup-outcome-{}-{tag}",
                 std::process::id()
             ));
             let _ = std::fs::remove_dir_all(&dir);
@@ -927,7 +927,7 @@ mod db8_policy_tests {
     impl TempLegacyCandidate {
         fn new(tag: &str) -> TempLegacyCandidate {
             let dir = std::env::temp_dir().join(format!(
-                "plxnative-persistence-legacy-candidate-{}-{tag}",
+                "dispatcharrtv-persistence-legacy-candidate-{}-{tag}",
                 std::process::id()
             ));
             let _ = std::fs::remove_dir_all(&dir);
@@ -1144,7 +1144,7 @@ fn decode_legacy_at_depth(
         .unwrap()
         .remove(super::FALLBACK_MARKER);
     match value.get("format").and_then(serde_json::Value::as_str) {
-        Some("plxnative-record") => {
+        Some("dispatcharrtv-record") => {
             match plx_platform::storage::parse_record(bytes, RecordKey::Session)?.state {
                 RecordState::Data { payload } => {
                     decode_legacy_at_depth(payload.as_bytes(), opener, depth + 1)
@@ -1152,7 +1152,7 @@ fn decode_legacy_at_depth(
                 RecordState::Cleared => Ok(LegacySession::Cleared),
             }
         }
-        Some("plxnative-secure-session") => {
+        Some("dispatcharrtv-secure-session") => {
             if value.get("version").and_then(serde_json::Value::as_u64) != Some(1) {
                 return Err(StoreError::UnsupportedVersion);
             }

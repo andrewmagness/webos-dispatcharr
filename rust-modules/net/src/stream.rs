@@ -170,7 +170,7 @@ impl HttpStream {
 /// `X-Plex-Token=…` to what it is given, and the poster store's paths arrive with one already in
 /// them (`Client::fetch_built`, where the built path *is* the LRU key, so the key and the request
 /// have to be the same bytes). The event log is this app's support channel: a user is asked to paste
-/// `/tmp/plxnative-events.log` into a public issue thread, so a line carrying a query string is a
+/// `/tmp/dispatcharrtv-events.log` into a public issue thread, so a line carrying a query string is a
 /// credential leak rather than a possible one — the same rule, for the same reason, that
 /// `app::diagnostics` applies to the diagnostics panel. The endpoint on its own is what makes a line
 /// diagnosable ("which request failed") and it carries no secret.
@@ -964,7 +964,7 @@ fn host_header(host: &str, port: c_int) -> String {
 /// levers, none of them this file's to pull, are an interruptible resolver or an application-owned
 /// resolution worker.
 unsafe fn resolve(host: &str, port: c_int) -> Option<AddrList> {
-    // The offline reproduction (`/tmp/plxnative-nowan`): a name that would have gone to the
+    // The offline reproduction (`/tmp/dispatcharrtv-nowan`): a name that would have gone to the
     // resolver is refused here, exactly where a dead resolver would have refused it. A literal is
     // untouched — the plaintext transport never needed DNS for one, which is the whole point of
     // the twin `probe::candidates` synthesizes.

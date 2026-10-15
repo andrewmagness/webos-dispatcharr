@@ -16,7 +16,7 @@ import json
 import os
 import sys
 
-CRATE = "plxnative_modules"
+CRATE = "dispatcharrtv"
 
 
 def artifacts(lines):

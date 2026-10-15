@@ -9,8 +9,8 @@
  * which the Rust player engine defines (player/mod.rs). This is the one piece that
  * stays C in the Rust-first app — porting the mangled-C++ FFI to Rust is
  * worse-than-C. */
-#ifndef PLXNATIVE_STARFISH_H
-#define PLXNATIVE_STARFISH_H
+#ifndef DISPATCHARRTV_STARFISH_H
+#define DISPATCHARRTV_STARFISH_H
 
 #define PLAYER_TYPE_MSE 10   /* ACB playerType (default) */
 
@@ -71,4 +71,4 @@ void acb_unload(void);                                     /* setState(UNLOADED)
 void sf_on_event(unsigned int epoch, int type, long long num, const char *str);
 void acb_on_event(long ev, const char *reply);
 
-#endif /* PLXNATIVE_STARFISH_H */
+#endif /* DISPATCHARRTV_STARFISH_H */

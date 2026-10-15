@@ -12,7 +12,7 @@ Two halves, both reading cargo's own `--message-format=json` records (only lines
 objects with a `reason` are looked at; `cargo test` also prints harness text on stdout):
 
 * `SecondBuildIsFreshTests` builds the real crate twice from `rust-modules/` and demands that the
-  second run recompiled nothing of the crate: every `plxnative_modules` (and `plx_platform`, the
+  second run recompiled nothing of the crate: every `dispatcharrtv` (and `plx_platform`, the
   layer crate whose own build script generates the catalog, and `plx_gfx`, whose build script
   compiles the nanosvg object for its own test binary) compiler-artifact is `fresh`, and the
   crate's build script did not write its output again (cargo replays a
@@ -57,8 +57,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 RUST = ROOT / "rust-modules"
-CRATE = "plxnative_modules"  # the lib target's name (underscored)
-PACKAGE = "plxnative-modules"  # the package's name, as it appears in a package_id
+CRATE = "dispatcharrtv"  # the lib target's name (underscored)
+PACKAGE = "dispatcharrtv"  # the package's name, as it appears in a package_id
 # The layer crate that owns a build script of its own (catalog + install identities): it must not be
 # always-dirty either, or every crate above it would rebuild with it.
 PLATFORM_CRATE = "plx_platform"
@@ -66,9 +66,9 @@ GFX_CRATE = "plx_gfx"
 NIGHTLY = os.environ.get("RUST_NIGHTLY", "nightly")
 
 
-# The invocation `make check`'s lab line runs (Makefile, "cargo check --lib --tests -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --features
+# The invocation `make check`'s lab line runs (Makefile, "cargo check --lib --tests -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --features
 # lab-diagnostics"); identical arguments and CARGO_INCREMENTAL make the first run here a reuse.
-LIB_ARGS = ["check", "--lib", "--tests", "-p", "plxnative-modules", "-p", "plx_base", "-p", "plx_machine", "-p", "plx_platform", "-p", "plx_gfx", "-p", "plx_net", "-p", "plx_ui", "-p", "plx_plex", "-p", "plx_dispatcharr", "-p", "plx_telemetry", "-p", "plx_data", "-p", "plx_media", "-p", "plx_appkit", "-p", "plx_screens", "--features", "lab-diagnostics"]
+LIB_ARGS = ["check", "--lib", "--tests", "-p", "dispatcharrtv", "-p", "plx_base", "-p", "plx_machine", "-p", "plx_platform", "-p", "plx_gfx", "-p", "plx_net", "-p", "plx_ui", "-p", "plx_plex", "-p", "plx_dispatcharr", "-p", "plx_telemetry", "-p", "plx_data", "-p", "plx_media", "-p", "plx_appkit", "-p", "plx_screens", "--features", "lab-diagnostics"]
 
 
 def cargo_env():
@@ -99,7 +99,7 @@ def json_records(stdout):
 def package_of(record):
     """The package name inside a record's `package_id`, for both the old and the new id spelling."""
     pid = record.get("package_id") or ""
-    if "#" in pid:  # `path+file:///…/rust-modules#plxnative-modules@0.7.0` or `…/name#0.7.0`
+    if "#" in pid:  # `path+file:///…/rust-modules#dispatcharrtv@0.7.0` or `…/name#0.7.0`
         head, tail = pid.rsplit("#", 1)
         if "@" in tail:
             return tail.split("@", 1)[0]
@@ -268,7 +268,7 @@ class MakeAndBareCargoShareAFingerprintTests(unittest.TestCase):
 
 STUB_MANIFEST = """\
 [package]
-name = "plxnative-modules"
+name = "dispatcharrtv"
 version = "0.7.0"
 edition = "2021"
 build = "build.rs"

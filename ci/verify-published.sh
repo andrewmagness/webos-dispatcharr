@@ -89,7 +89,7 @@ PY
   [ "$UP" = "github-actions[bot]" ] && ok "assets uploaded by CI" \
     || bad "assets uploaded by '$UP' — hand-published, so the build/verify gates were skipped"
 
-  # Every payload file, not just the binary. check-elf.sh only ever looked at pkg/plxnative, which
+  # Every payload file, not just the binary. check-elf.sh only ever looked at pkg/dispatcharrtv, which
   # is how the maintainer's working directory shipped inside three FFmpeg libraries.
   ( cd "$WORK" && python3 -c "
 d=open('$(basename "$IPK")','rb').read(); i=d.find(b'data.tar.gz')

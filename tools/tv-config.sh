@@ -18,7 +18,7 @@
 #   2. the same file in the MAIN checkout (a linked worktree has none of its own; setups that keep
 #      the file only there keep working),
 #   3. `tv-host` / `tv-mac` in the per-USER directory
-#         ${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/plxnative}
+#         ${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dispatcharrtv}
 #      -- set it ONCE per machine and every checkout and worktree sees it. That is the reason it
 #      exists: the address and MAC are properties of the television and of this person's network,
 #      not of a checkout, and copying a file into each worktree goes stale the day the TV's DHCP
@@ -38,8 +38,8 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 user_dir() {
   if [ -n "${PLX_TV_CONFIG_DIR:-}" ]; then printf '%s' "$PLX_TV_CONFIG_DIR"
-  elif [ -n "${XDG_CONFIG_HOME:-}" ]; then printf '%s/plxnative' "$XDG_CONFIG_HOME"
-  elif [ -n "${HOME:-}" ]; then printf '%s/.config/plxnative' "$HOME"
+  elif [ -n "${XDG_CONFIG_HOME:-}" ]; then printf '%s/dispatcharrtv' "$XDG_CONFIG_HOME"
+  elif [ -n "${HOME:-}" ]; then printf '%s/.config/dispatcharrtv' "$HOME"
   fi
 }
 

@@ -211,7 +211,7 @@ impl Rung {
     }
 }
 
-/// **Pin Auto's HLS ladder to one actuator, by request rate** — `plxnative-abrpin=<kbps>`.
+/// **Pin Auto's HLS ladder to one actuator, by request rate** — `dispatcharrtv-abrpin=<kbps>`.
 ///
 /// Measurement-only, for step M4 of `docs/adaptive-playback-plan.md`: reading a settled reserve at
 /// a given rung means holding that rung for minutes, and nothing in the app could do that.

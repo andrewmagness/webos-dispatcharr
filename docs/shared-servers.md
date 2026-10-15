@@ -231,7 +231,7 @@ not have), so the household's own server used to be unreachable exactly when it 
 left. `rust-modules/net/src/net/origin.rs`'s `ResolvePin` (re-exported as `plex::ResolvePin`) keeps the https origin and hands libcurl the
 `address` plex.tv advertised beside it through `CURLOPT_RESOLVE`, on both the control and the media
 plane; the certificate is still validated against the name. `rust-modules/plex/src/plex/CLAUDE.md` has
-the rules, and `/tmp/plxnative-nowan` is the reproduction.
+the rules, and `/tmp/dispatcharrtv-nowan` is the reproduction.
 
 **Offline, the who's-watching pick (2026-09-06).** A profile pick is a plex.tv call, so the pinned
 origin alone still left the picker unable to seat anybody the first time the uplink really went
@@ -290,7 +290,7 @@ asked for is how to read what shipped.
 | 4 **LANDED** | **Probe + race.** `plex/probe.rs` retains the advertised HTTPS URI but suppresses plaintext for unmatched non-owned LAN connections (§2a), drops HTTP when `httpsRequired`, and ranks local→remote→relay. `auth.rs` races candidates within one server, verifies `machineIdentifier`, and activates the first VERIFIED answer this build can put a credential on (`Candidate::credential_eligible`, stamped once at synthesis from `CredentialPolicy` — issue #95: a verified plaintext answer no longer counts as reached in a store build), may re-point once to the best such answer, and persists only that winner. Servers remain serial with a 4 s gap; relay is a second phase whenever nothing eligible verified directly; a verified plaintext-only answer ends as `Reach::InsecureOnly` ("Not secure"), which outranks a `401`. | 1–1½ d | **The share becomes reachable** |
 | 5 | **Persist the registry; boot from the hint.** `session.rs` gains `servers: Vec<ServerRec>` + `current_machine_id`, every field `#[serde(default)]`, legacy `ServerRef` still written for one release. A corrupt `servers` array must not fail the whole `Session` parse — that is a silent sign-out at every boot. No timestamps: this TV's wall clock is ~3 h skewed. | 1 d | Fast boot |
 | 6 **LANDED** | **TLS control plane.** Shipped as `rust-modules/plex/src/http.rs`: `Scheme::Http` keeps the raw `stream.rs` arm, while `Scheme::Https` uses `net.rs`/libcurl. The curl request surface now carries per-call deadlines, a bounded response sink, body-less `CUSTOMREQUEST` PUT, HTTP(S)-only redirect policy for the public QR fetch, and one fresh easy handle per call so no request state can survive into the next. Probe ranking is TLS-first, status remains distinct from reachability, and every PMS/account request conditionally carries the validated inherited locale as `X-Plex-Language`. | 1–1½ d | Any https-only share browses |
-| 7 **LANDED** | **TLS media plane.** Shipped as `rust-modules/media/src/curlio.rs`: the second `dynlib!` table (seven `curl_multi_*`, device-probed PRESENT and inventory-confirmed on all 14 releases; `curl_multi_poll`/`curl_multi_wakeup` probed ABSENT and therefore banned — they first appear at 7.4.0, so binding them would have emptied the table on four of the nine gated releases), `AvioState`'s source enum, the `read_cb`/`seek_cb` dispatch, the preserved seek abort guard and the two extended abort-guard tests, all as this row asked. **One deviation, deliberate:** teardown is a **wake pipe** handed to `curl_multi_wait` as an application-owned extra fd, NOT `curl_multi` pumped from inside `read_cb`. The row's outcome — teardown collapses to "set the flag, join" — is preserved, and that is the reason: self-polling puts a 10–100 ms floor on every teardown, while a byte on a pipe wakes a blocked wait at once. The one gap the pipe cannot close is a thread already inside `curl_multi_perform` doing SYNCHRONOUS name resolution; the dev set reports `AsynchDNS`, and the designed fallback (our own `getaddrinfo` + `CURLOPT_RESOLVE`, hostname untouched so SNI and certificate identity survive) is written into `curlio`'s module doc and deliberately not built. With step 6 present, ordinary HTTPS browse/play now reaches this source; `plxnative-servers` and `plxnative-playurl` remain the isolation routes for device diagnosis. | 2–4 d | Any share plays |
+| 7 **LANDED** | **TLS media plane.** Shipped as `rust-modules/media/src/curlio.rs`: the second `dynlib!` table (seven `curl_multi_*`, device-probed PRESENT and inventory-confirmed on all 14 releases; `curl_multi_poll`/`curl_multi_wakeup` probed ABSENT and therefore banned — they first appear at 7.4.0, so binding them would have emptied the table on four of the nine gated releases), `AvioState`'s source enum, the `read_cb`/`seek_cb` dispatch, the preserved seek abort guard and the two extended abort-guard tests, all as this row asked. **One deviation, deliberate:** teardown is a **wake pipe** handed to `curl_multi_wait` as an application-owned extra fd, NOT `curl_multi` pumped from inside `read_cb`. The row's outcome — teardown collapses to "set the flag, join" — is preserved, and that is the reason: self-polling puts a 10–100 ms floor on every teardown, while a byte on a pipe wakes a blocked wait at once. The one gap the pipe cannot close is a thread already inside `curl_multi_perform` doing SYNCHRONOUS name resolution; the dev set reports `AsynchDNS`, and the designed fallback (our own `getaddrinfo` + `CURLOPT_RESOLVE`, hostname untouched so SNI and certificate identity survive) is written into `curlio`'s module doc and deliberately not built. With step 6 present, ordinary HTTPS browse/play now reaches this source; `dispatcharrtv-servers` and `dispatcharrtv-playurl` remain the isolation routes for device diagnosis. | 2–4 d | Any share plays |
 | 8 **LANDED** | **N servers live** — the Sources list is a chip at the head of the Library's document with a one-level picker panel (§6; it was a toolbar chip with a two-level panel until 2026-09-05), `sourceTitle` is the row subtitle, and attribution stays in **text not artwork**. Profile activation only installs prepared identity and queues catalog work; hubs and sections use per-source workers/mailboxes, lifecycle generations reject stale landings after a repoint, and a dead share no longer blocks the SDL loop or blanks another source. A failed catalog request also queues a single-flight `/resources` re-probe for that exact granted machine, so a Wi-Fi/LAN transition can publish a newly reachable origin without copying the account owner's token into a managed profile or changing its grants. Continue Watching is merged by `lastViewedAt`. | 2–4 d | The product |
 | 9 **LANDED, UNVERIFIABLE** | **Relay policy.** The relay clamps no bitrate: `maxVideoBitrate` is a literal on the re-encode branch only. (`TranscodeSpec` gained a `ceiling` field on 2026-08-23 for the USER's ladder — same mechanism, different input; the relay still names no rate.) Respecting relay's 2 Mbps means **forcing a transcode decision** in `build_stream` — a policy change, not a parameter. | ½–1 d | Correctness on relay |
 
@@ -405,11 +405,11 @@ from "the unwatched angle", which `23f28ce6` replaced with the white tick over a
    at 31 Mbit/s; TrueHD is not in the direct-play audio set, so this goes down the transcode path
    over a WAN link measured at 38.8 Mbit/s. Expect this, not direct play, to be the common case —
    and it argues for a remote-aware bitrate policy well before relay does (step 9).
-2. ~~**The harness cannot grade any of this yet.**~~ **ANSWERED** (§9): `/tmp/plxnative-servers`
+2. ~~**The harness cannot grade any of this yet.**~~ **ANSWERED** (§9): `/tmp/dispatcharrtv-servers`
    carries a JSON array of ADDITIONAL servers — host, port, an optional `"scheme"` (`http`, the
    default, or `https` — the only way to put a TLS origin through the registry without an account
    that has one), machineIdentifier and the token to trust
-   them with — beside the unchanged `/tmp/plxnative-token`, and `run.py` resolves the second token
+   them with — beside the unchanged `/tmp/dispatcharrtv-token`, and `run.py` resolves the second token
    from `/api/v2/resources` so no new secret is stored. One limitation stands and is not a bug to
    fix: there is **no managed-user token for someone else's server**, so a case that PLAYS from a
    share plays as YOU there. `test_user` isolation stops at the account boundary.
@@ -515,7 +515,7 @@ publish old credentials. Historical test totals below are snapshots; re-derive t
   nothing else, so `total` stayed `-1`, `loading_initial()` was `total < 0`, and the grid spun for
   the rest of the session with nothing on screen admitting it. An EMPTY answer is `Ready`, never
   `Failed`. Section discovery now has its own Loading/Empty/Failed state and Retry path.
-- **The harness can hand the TV a second server** — `/tmp/plxnative-servers`, a JSON array of
+- **The harness can hand the TV a second server** — `/tmp/dispatcharrtv-servers`, a JSON array of
   additional servers beside the unchanged token file, deliberately **not** DIAG-exempt (it must
   suppress the who's-watching picker like the token file, or a headless run grades the wrong
   screen). Its own connection ranking does **not** copy the app's sign-in rule, for the reason §2(a)
@@ -582,7 +582,7 @@ Step 1's registry now has its first real consumer, and deliverable A of the desi
   (declared but never painted before) and `Section::dim`.
 - **The roster's own facts** (machine name, owner handle, owned) live beside the registry as
   `plex::ServerFacts`, merged rather than replaced so plex.tv and a server naming itself over `GET /`
-  can land in either order. `/tmp/plxnative-servers` gained a `handle` field, and `run.py` fills it
+  can land in either order. `/tmp/dispatcharrtv-servers` gained a `handle` field, and `run.py` fills it
   from the resource's `sourceTitle`, so a two-source run is gradeable headlessly.
 
 - **The temporary current-server seam is retired.** Stored rows carry `ServerId`, request paths
@@ -739,9 +739,9 @@ column, section-label anchor, content column and bottom action slot used by Sett
 Legal. The source picker therefore owns rows only; it no longer carries its own route top, list x
 or action coordinates.
 
-**`/tmp/plxnative-firstrun` forces the route.** A screen asked once per profile is otherwise
+**`/tmp/dispatcharrtv-firstrun` forces the route.** A screen asked once per profile is otherwise
 unreachable the moment you have answered it, and the two-source roster it needs comes from
-`/tmp/plxnative-servers`, which marks the boot automated — and an automated boot is exempt from the
+`/tmp/dispatcharrtv-servers`, which marks the boot automated — and an automated boot is exempt from the
 question, exactly as it is from the who's-watching picker. Both halves are why looking at this
 screen headlessly needs a trigger of its own.
 
@@ -941,7 +941,7 @@ Then, per cache:
   because the surface materialises its `TableView` once and `draw` renders that snapshot — so the rows
   keep their old text *and their old order* otherwise, and the order is not cosmetic, `owner` is the
   own-before-a-friend's tiebreak. The one place `AltCopy::owner` is decided is `metadata::alt_regrade`,
-  applied at both boundaries, and skipped whole while the `/tmp/plxnative-shared` stand-in owns the
+  applied at both boundaries, and skipped whole while the `/tmp/dispatcharrtv-shared` stand-in owns the
   list (its entire purpose is to fabricate a borrowed copy on a slot the registry calls ours).
 
 ### What is NOT fixed, and is worth knowing
@@ -979,7 +979,7 @@ Then, per cache:
   Such a session deserializes to `owned:false, home:false, ownerId:0`, which `is_household` grades
   as an outsider's until the first online roster re-derive corrects it — the safe direction, and
   the same one every other unknown here falls in.
-- **The `/tmp/plxnative-servers` dev trigger still derives `owned` as `handle.is_empty()`**
+- **The `/tmp/dispatcharrtv-servers` dev trigger still derives `owned` as `handle.is_empty()`**
   (`app.rs`), which is the derivation `ServerFacts::owned` documents as wrong. It is left alone
   because there the operator states the handle by hand and means it; but it cannot express an
   unnamed share or a household server, so it is an exception to the rule above rather than an

@@ -197,7 +197,7 @@ send timeline bandwidth reports as the managed test profile; that is why it is o
 Offline verification (no PMS or device access):
 
 ```sh
-PYTHONPYCACHEPREFIX=/private/tmp/plxnative-pycache \
+PYTHONPYCACHEPREFIX=/private/tmp/dispatcharrtv-pycache \
   python3 -m py_compile tools/pms-hls-probe.py tools/test_pms_hls_probe.py
 python3 tools/test_pms_hls_probe.py
 python3 tools/pms-hls-probe.py --help

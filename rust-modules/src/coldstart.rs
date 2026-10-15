@@ -66,7 +66,7 @@ mod tests {
     fn cold_boot_discards_previous_route_and_stays_home() {
         let dir = std::env::temp_dir();
         let path = dir.join(format!(
-            "plxnative-retired-coldstart-{}.json",
+            "dispatcharrtv-retired-coldstart-{}.json",
             std::process::id()
         ));
         let tmp = tmp_sibling(&path).unwrap();

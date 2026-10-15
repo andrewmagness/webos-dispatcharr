@@ -87,13 +87,13 @@ on:
       fwcompat:
         description: >
           Run the per-binary firmware-database compatibility check (tools/fwcompat.py) against
-          pkg/plxnative and pkg/plxnative-storage, in addition to webosbrew-ipk-verify. Nightly and
+          pkg/dispatcharrtv and pkg/dispatcharrtv-storage, in addition to webosbrew-ipk-verify. Nightly and
           release both pass this true; a non-publishing caller can still opt out.
         type: boolean
         default: false
       upload-debug-files:
         description: >
-          Upload pkg/plxnative.debug and the binary to Sentry. Defaults true, the fail-closed
+          Upload pkg/dispatcharrtv.debug and the binary to Sentry. Defaults true, the fail-closed
           choice: a release or a real nightly whose native crashes could not be symbolicated is
           not a working crash-reporting build. Only a nightly's dry run on a PULL REQUEST passes
           false (nightly.yml): that run publishes nothing, so the upload would only fill Sentry
@@ -251,8 +251,8 @@ jobs:
           # nobody shipped.
           grep -q '+symbols' pkg/.build-config \
             || { echo "::error::SYMBOLS=1 did not take — pkg/.build-config says [$(cat pkg/.build-config)]"; exit 1; }
-          test -s pkg/plxnative.debug \
-            || { echo "::error::pkg/plxnative.debug is missing or empty"; exit 1; }
+          test -s pkg/dispatcharrtv.debug \
+            || { echo "::error::pkg/dispatcharrtv.debug is missing or empty"; exit 1; }
           # Every bundled shared object has a symbol file, and nothing else is in the directory.
           # `make symbols-libs` already refused a library without a build id or symbols; this is the
           # count, so a library added to the package without being added to the target cannot ship
@@ -269,9 +269,9 @@ jobs:
           # The build id is what pairs the two. Assert it here rather than trusting the upload:
           # `sentry-cli` will happily accept a .debug whose id matches nothing that shipped.
           idof() { readelf -n "$1" | awk '/Build ID/{print $3}'; }
-          [ "$(idof pkg/plxnative)" = "$(idof pkg/plxnative.debug)" ] \
+          [ "$(idof pkg/dispatcharrtv)" = "$(idof pkg/dispatcharrtv.debug)" ] \
             || { echo "::error::build id mismatch between the shipped binary and its .debug"; exit 1; }
-          echo "build-id $(idof pkg/plxnative)"
+          echo "build-id $(idof pkg/dispatcharrtv)"
           if [ "$TELEMETRY" = production ]; then
             # **The telemetry configuration FAILS CLOSED here, and only here.** For a local build,
             # "no endpoint -> telemetry compiled out" is the right default and the safe one. For an
@@ -296,9 +296,9 @@ jobs:
             # took the production branch, and so that `ENVIRONMENT` is `production` and every event
             # from this release lands in the right project. Substring, not whole-line: Rust string
             # literals are not NUL-terminated and adjacent ones merge into one `strings` record.
-            strings pkg/plxnative | grep -qF "$PLX_SENTRY_DSN" \
+            strings pkg/dispatcharrtv | grep -qF "$PLX_SENTRY_DSN" \
               || { echo "::error::the packaged binary does not carry the production Sentry DSN"; exit 1; }
-            strings pkg/plxnative | grep -qF "$PLX_POSTHOG_KEY" \
+            strings pkg/dispatcharrtv | grep -qF "$PLX_POSTHOG_KEY" \
               || { echo "::error::the packaged binary does not carry the production PostHog key"; exit 1; }
             # Fingerprints, not values. These are publishable, but they are also usable to write junk
             # into the project and burn a free-tier quota, and a workflow log is a far more casually
@@ -312,7 +312,7 @@ jobs:
             [ -n "$PLX_POSTHOG_KEY_DEV" ] || { echo '::error::PLX_POSTHOG_KEY_DEV is required for a development-telemetry build.'; exit 1; }
             [ -z "$PLX_SENTRY_DSN$PLX_POSTHOG_KEY" ] || { echo '::error::production telemetry is present in a development-telemetry build.'; exit 1; }
             grep -q 'tel:' pkg/.build-config
-            python3 -c 'import os; b=open("pkg/plxnative","rb").read(); assert os.environ["PLX_SENTRY_DSN_DEV"].encode() in b; assert os.environ["PLX_POSTHOG_KEY_DEV"].encode() in b'
+            python3 -c 'import os; b=open("pkg/dispatcharrtv","rb").read(); assert os.environ["PLX_SENTRY_DSN_DEV"].encode() in b; assert os.environ["PLX_POSTHOG_KEY_DEV"].encode() in b'
           fi
           # ...and carry the stamp to the caller's downstream jobs under a NON-HIDDEN name:
           # upload-artifact silently drops dotfiles, so `pkg/.build-config` would never arrive and
@@ -331,7 +331,7 @@ jobs:
             || { echo "::error::packaged the wrong flavour — pkg/ holds $(ls pkg/*.ipk 2>&1)"; exit 1; }
 
       - name: Upload debug files to Sentry
-        # **In the same job as the build, deliberately.** `pkg/plxnative.debug` is 75 MB and exists
+        # **In the same job as the build, deliberately.** `pkg/dispatcharrtv.debug` is 75 MB and exists
         # only here; carrying it between jobs as an artifact would cost an upload and a download to
         # move a file whose only consumer is this step. It also keeps the pairing local: the binary
         # and its .debug are asserted to share a build id twenty lines up, and nothing can come
@@ -375,13 +375,13 @@ jobs:
           # object with nothing in it, and an upload of one is silent until a real crash fails to
           # symbolicate. That check needs no token, so a pull request's dry run keeps it.
           SENTRY_CLI="npx --yes @sentry/cli@3.7.0" \
-            python3 ci/check-debug-files.py pkg/plxnative.debug pkg/symbols/*.debug
+            python3 ci/check-debug-files.py pkg/dispatcharrtv.debug pkg/symbols/*.debug
           if [ "$UPLOAD" != true ]; then
             echo "Skipping the Sentry upload: upload-debug-files is '$UPLOAD' (a pull request's nightly dry run)."
             exit 0
           fi
           npx --yes @sentry/cli@3.7.0 debug-files upload \
-              --include-sources pkg/plxnative.debug pkg/plxnative
+              --include-sources pkg/dispatcharrtv.debug pkg/dispatcharrtv
           # The bundled libraries: `sentry-crash` is deliberately NOT uploaded (a separate process
           # that sends nothing, so no event frame lands in it). No `--include-sources`: the
           # libraries' DWARF names third-party source files, not this repository's.
@@ -440,8 +440,8 @@ jobs:
         if: inputs.fwcompat
         run: |
           set -euo pipefail
-          ./tools/fwcompat.py --db /usr/share/webosbrew/compat-checker/data --min-release 4.4.2 pkg/plxnative | tee -a "$GITHUB_STEP_SUMMARY"
-          ./tools/fwcompat.py --db /usr/share/webosbrew/compat-checker/data --min-release 4.4.2 pkg/plxnative-storage | tee -a "$GITHUB_STEP_SUMMARY"
+          ./tools/fwcompat.py --db /usr/share/webosbrew/compat-checker/data --min-release 4.4.2 pkg/dispatcharrtv | tee -a "$GITHUB_STEP_SUMMARY"
+          ./tools/fwcompat.py --db /usr/share/webosbrew/compat-checker/data --min-release 4.4.2 pkg/dispatcharrtv-storage | tee -a "$GITHUB_STEP_SUMMARY"
           # The bundled FFmpeg libraries are dlopen'd, so neither line above nor webosbrew-ipk-verify
           # (which grades the app and service executables only) resolves THEIR DT_NEEDED against a
           # firmware; #235's `libz.so.1` on libavformat was graded by nobody. `--shipped pkg` takes
@@ -584,11 +584,11 @@ jobs:
           # bundle 0.6.0 that way). A stable build's is the one in the ipk's own filename (the
           # Makefile's IPK_VERSION). A nightly's is NOT: its package version carries the cut date as
           # its patch (`X.Y.<date>`), so `<filename version>-nightly-<date>` would name a version
-          # nothing reports and sit beside an ipk called plxnative-v<X.Y.Z>-nightly-<date>.ipk.
+          # nothing reports and sit beside an ipk called dispatcharrtv-v<X.Y.Z>-nightly-<date>.ipk.
           # `ci/check-package.py --print-nightly-label` derives the reported `X.Y.Z-nightly-<date>`
           # from Cargo.toml and the `+nightly:<date>` field of pkg/.build-config — the Makefile's
           # record of the date it built with, the same stamp the binary is graded against. It
-          # prints nothing for a build with no such field, which keeps plxnative-source-X.Y.Z.
+          # prints nothing for a build with no such field, which keeps dispatcharrtv-source-X.Y.Z.
           version=${ipk##*/"${appid}"_}; version=${version%_arm.ipk}
           nightly_label=$(python3 ci/check-package.py --print-nightly-label pkg/.build-config)
           rc=$(python3 ci/check-package.py --print-rc pkg/.build-config)
@@ -598,7 +598,7 @@ jobs:
           label="${nightly_label:-$version${rc:+-rc.$rc}}"
           [[ "$label" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-nightly-[0-9]{8}|-rc\.[1-9][0-9]*)?$ ]] \
             || { echo "::error::cannot name the source bundle: got version label '$label' from $ipk"; exit 1; }
-          source="pkg/plxnative-source-$label.tar.gz"
+          source="pkg/dispatcharrtv-source-$label.tar.gz"
           python3 ci/prepare-source-release.py --inputs "$RUNNER_TEMP/gpl-source-inputs" \
             --output "$source" --rust-toolchain nightly-2026-07-02 --binary "$ipk" --private-values "$private_values"
           snapshot=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_snapshot_sha256"])' "$source.release.json")
@@ -618,12 +618,12 @@ jobs:
             pkg/ipk-verify.md
             pkg/gates.md
             pkg/build-config.txt
-            pkg/plxnative-source-*.tar.gz*
+            pkg/dispatcharrtv-source-*.tar.gz*
             pkg/source-rebuild.json
           if-no-files-found: error
 
       # The bundled libraries' symbol files, kept as a build artifact of their own: small (~0.1 MB
-      # each), so unlike pkg/plxnative.debug (75 MB, uploaded to Sentry in the step above and
+      # each), so unlike pkg/dispatcharrtv.debug (75 MB, uploaded to Sentry in the step above and
       # nowhere else) they cost nothing to keep, and a crash inside one can be re-symbolicated by
       # hand from the build that shipped it. A SEPARATE artifact, because the one above becomes
       # the release's `dist/` and these are not release assets.

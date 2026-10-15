@@ -22,11 +22,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOL = ROOT / "tools" / "test-crate.py"
-SUITE = "plxnative-modules plx_base plx_machine plx_ui plx_screens"
+SUITE = "dispatcharrtv plx_base plx_machine plx_ui plx_screens"
 
 # plx_base <- plx_machine <- plx_ui <- plx_screens <- app; plx_ui also names a third-party crate.
 WORKSPACE = {
-    "plxnative-modules": ["plx_base", "plx_machine", "plx_ui", "plx_screens"],
+    "dispatcharrtv": ["plx_base", "plx_machine", "plx_ui", "plx_screens"],
     "plx_base": [],
     "plx_machine": ["plx_base"],
     "plx_ui": ["plx_base", "plx_machine", "image"],
@@ -34,7 +34,7 @@ WORKSPACE = {
 }
 # What the FULL build enabled, per package (a union over its units).
 FULL_FEATURES = {
-    "plxnative-modules": ["default", "devtriggers"],
+    "dispatcharrtv": ["default", "devtriggers"],
     "plx_base": ["devtriggers", "test-support", "threadcheck"],
     "plx_machine": ["devtriggers", "test-support"],
     "plx_ui": ["devtriggers", "threadcheck"],
@@ -122,9 +122,9 @@ class CommandShape(unittest.TestCase):
         with World() as w:
             for name in ("ui", "plx_ui"):
                 self.assertEqual(packages_of(w.command(name)), ["plx_ui"])
-            for name in ("app", "plxnative-modules", "plxnative_modules"):
+            for name in ("app", "dispatcharrtv", "dispatcharrtv"):
                 cmd = w.command(name)
-                self.assertEqual(packages_of(cmd), ["plxnative-modules"])
+                self.assertEqual(packages_of(cmd), ["dispatcharrtv"])
                 self.assertNotIn("--features", cmd, "the app crate resolves its own default features")
 
     def test_an_unknown_crate_is_refused_and_lists_the_suite(self):
@@ -136,9 +136,9 @@ class CommandShape(unittest.TestCase):
     def test_deps_adds_the_direct_dependents_from_cargo_metadata(self):
         with World() as w:
             self.assertEqual(sorted(packages_of(w.command("--deps", "machine"))),
-                             ["plx_machine", "plx_ui", "plxnative-modules"])
+                             ["plx_machine", "plx_ui", "dispatcharrtv"])
             self.assertEqual(sorted(packages_of(w.command("--deps", "screens"))),
-                             ["plx_screens", "plxnative-modules"])
+                             ["plx_screens", "dispatcharrtv"])
 
     def test_the_filter_goes_to_the_runner(self):
         with World() as w:
@@ -173,7 +173,7 @@ class MakeWiring(unittest.TestCase):
         out = self.make("-n", "test-crate", "C=ui", "T=route::", "DEPS=1").stdout
         self.assertIn("CARGO_INCREMENTAL=1", out)
         self.assertIn("CARGO_TARGET_DIR=target-fast", out)
-        self.assertIn("PLXNATIVE_RUNTIME_DIR=", out)
+        self.assertIn("DISPATCHARRTV_RUNTIME_DIR=", out)
         self.assertIn("--deps", out)
         self.assertIn("--filter 'route::'", out)
         fast = self.make("-n", "test-fast").stdout

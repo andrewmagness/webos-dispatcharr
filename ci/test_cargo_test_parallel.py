@@ -9,7 +9,7 @@ the gate:
 * every binary's literal `test result:` line reaches stdout;
 * a package that built no test executable, or a build that reported none, is a failure, not a pass;
 * a failed build returns cargo's own status and runs nothing;
-* each binary gets its own PLXNATIVE_RUNTIME_DIR under the caller's, runs in its package directory,
+* each binary gets its own DISPATCHARRTV_RUNTIME_DIR under the caller's, runs in its package directory,
   and receives the --filter (and only there);
 * no binary inherits the caller's proxy (NO_PROXY=* for each);
 * a binary killed by a signal fails the run;
@@ -56,11 +56,11 @@ for i, a in enumerate(args):
 FAKE_BIN = """#!/bin/sh
 name=$(basename "$0")
 echo "noproxy=$NO_PROXY,$no_proxy" >> "$FAKE_HOME/proxy.log"
-echo "bin=$name cwd=$(pwd) runtime=$PLXNATIVE_RUNTIME_DIR tmpdir=$TMPDIR args=$*" >> "$FAKE_HOME/bins.log"
+echo "bin=$name cwd=$(pwd) runtime=$DISPATCHARRTV_RUNTIME_DIR tmpdir=$TMPDIR args=$*" >> "$FAKE_HOME/bins.log"
 case "$name" in
   fail_*) echo "test result: FAILED. 0 passed; 1 failed; 0 ignored"; exit 101;;
   kill_*) kill -9 $$;;
-  leak_*) mkdir -p "$TMPDIR/plxnative-fixture-$$/sealed"; : > "$TMPDIR/plxnative-fixture-$$/sealed/f"; chmod 500 "$TMPDIR/plxnative-fixture-$$/sealed";;
+  leak_*) mkdir -p "$TMPDIR/dispatcharrtv-fixture-$$/sealed"; : > "$TMPDIR/dispatcharrtv-fixture-$$/sealed/f"; chmod 500 "$TMPDIR/dispatcharrtv-fixture-$$/sealed";;
 esac
 echo "running 1 test"
 echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
@@ -91,7 +91,7 @@ class Fixture:
             self.binary(name)
         runtime = self.home / "runtime"
         runtime.mkdir(exist_ok=True)
-        full = dict(os.environ, FAKE_HOME=str(self.home), PLXNATIVE_RUNTIME_DIR=str(runtime), **(env or {}))
+        full = dict(os.environ, FAKE_HOME=str(self.home), DISPATCHARRTV_RUNTIME_DIR=str(runtime), **(env or {}))
         cmd = [sys.executable, str(RUNNER), *runner_args, "--", self.cargo, "+nightly", "test", "--lib"]
         for name in packages:
             cmd += ["-p", name]
@@ -192,7 +192,7 @@ class RunnerEnvironment(unittest.TestCase):
             out = f.run(["plx_a", "leak_b"])
             self.assertNotEqual(out.returncode, 0, out.stdout + out.stderr)
             self.assertIn("FAILED leak_b", out.stdout)
-            self.assertIn("plxnative-fixture-", out.stdout)
+            self.assertIn("dispatcharrtv-fixture-", out.stdout)
             self.assertNotIn("FAILED plx_a", out.stdout)
             self.assertEqual(list((f.home / "runtime" / "leak_b" / "tmp").iterdir()), [],
                              "the sweep must remove what it reports, read-only subdirectories included")
@@ -225,14 +225,14 @@ class RunnerEnvironment(unittest.TestCase):
     def test_no_runtime_dir_from_the_caller_gets_a_private_one_that_is_removed(self):
         with Fixture() as f:
             f.binary("plx_a")
-            env = {k: v for k, v in os.environ.items() if k != "PLXNATIVE_RUNTIME_DIR"}
+            env = {k: v for k, v in os.environ.items() if k != "DISPATCHARRTV_RUNTIME_DIR"}
             env["FAKE_HOME"] = str(f.home)
             cmd = [sys.executable, str(RUNNER), "--", f.cargo, "test", "--lib", "-p", "plx_a"]
             out = subprocess.run(cmd, capture_output=True, text=True, env=env)
             self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
             (line,) = f.started()
             runtime = dict(part.split("=", 1) for part in line.split(" ") if "=" in part)["runtime"]
-            self.assertIn("plxnative-check.", runtime)
+            self.assertIn("dispatcharrtv-check.", runtime)
             self.assertFalse(Path(runtime).exists())
 
 

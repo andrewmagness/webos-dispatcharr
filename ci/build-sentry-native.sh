@@ -2,7 +2,7 @@
 # Build the pinned Sentry Native out-of-process crash handler for the webOS ARM target.
 #
 # The SDK's own HTTP transport is deliberately disabled. The crash daemon writes a self-contained
-# event envelope, relaunches plxnative in its tiny spool-only mode, and the existing consent-aware
+# event envelope, relaunches dispatcharrtv in its tiny spool-only mode, and the existing consent-aware
 # Rust sender posts it on the next healthy boot. That keeps one TLS/libcurl implementation and one
 # retry queue in the application.
 set -euo pipefail
@@ -100,7 +100,7 @@ patch -d "$SOURCE" -p1 < "$PATCH"
     -DSENTRY_BUILD_SHARED_LIBS=OFF \
     -DSENTRY_BUILD_TESTS=OFF \
     -DSENTRY_BUILD_EXAMPLES=OFF \
-    -DSENTRY_SDK_NAME=plxnative
+    -DSENTRY_SDK_NAME=dispatcharrtv
 "$CMAKE" --build "$BUILD" --parallel "${JOBS:-8}"
 
 cp "$SOURCE/include/sentry.h" "$PREFIX/include/sentry.h"

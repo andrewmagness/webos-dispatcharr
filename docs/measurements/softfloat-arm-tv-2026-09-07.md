@@ -9,7 +9,7 @@ through the same code on both targets and compares one hash.
 
 - **Set:** the dev LG 49SM9000PLA, webOS 4.5, Cortex-A9, armv7-a soft-float.
 - **Build:** `FLAVOR=debug`, dev configuration (the probe is a `devtriggers` surface).
-- **Recipe:** `make softfloat-probe` — arms `plxnative-softfloat` in the install's runtime root,
+- **Recipe:** `make softfloat-probe` — arms `dispatcharrtv-softfloat` in the install's runtime root,
   launches, reads the `softfloat:` line back, and fetches the word table to
   `tests/fixtures/softfloat/arm.tbl` (gitignored: it is a word-by-word diff aid for a DIVERGENCE,
   not a fixture anything reads).

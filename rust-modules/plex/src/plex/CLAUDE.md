@@ -82,7 +82,7 @@ hostname; `register_origin`/`install` take it, the `Client` carries it for the c
 `net::resolve` holds an append-only table the media plane (`curlio`) consults by host and port.
 TLS validation is untouched here: the name stays in the URL and in SNI. (The only relaxation of CA
 verification on the ordinary request path, issue #378's key mode below, is a separate and narrower rule about a wrong clock; a pin
-changes where an address comes from and nothing about what is trusted.) `/tmp/plxnative-nowan` makes
+changes where an address comes from and nothing about what is trusted.) `/tmp/dispatcharrtv-nowan` makes
 every unpinned name fail as a dead resolver would, which is how the case is reproduced on a desk.
 **Since issue #95 the DISCOVERY PROBE is pinned too, not only the winning `Client`.**
 `auth::race_batch` builds a `ResolvePin` for each `https://…plex.direct` candidate from the same

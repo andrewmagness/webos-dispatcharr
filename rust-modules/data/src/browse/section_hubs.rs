@@ -473,7 +473,7 @@ impl SecHubs {
     /// **The FIRST landing stages too, and that is a correction (2026-09-05).** It used to commit
     /// itself whenever nothing had been published, on the reasoning that inside the first-paint
     /// window there is no layout yet to protect. That reasoning is about the first FRAMES and the
-    /// window is four SECONDS: `/tmp/plxnative-library` boots straight into this screen, two
+    /// window is four SECONDS: `/tmp/dispatcharrtv-library` boots straight into this screen, two
     /// presses reach the grid, and the shelves then inserted themselves above a grid row somebody
     /// was already looking at — the exact 6,588px jump the rest of this machine exists to prevent,
     /// arriving through the one path that did not ask. Whether the ground may move is the SCREEN's
@@ -1960,7 +1960,7 @@ mod tests {
 
     /// **A landing INSIDE the window still asks whether the ground may move.** It used to commit
     /// itself, on the reasoning that a page with no layout yet has nothing to protect — but the
-    /// window is four SECONDS, and `/tmp/plxnative-library` plus two presses is a viewer standing
+    /// window is four SECONDS, and `/tmp/dispatcharrtv-library` plus two presses is a viewer standing
     /// in the grid well inside it. So the first paint takes the same permission every later one
     /// does; at the head that is granted in the same frame the landing pumps, which is why nothing
     /// waits in the ordinary case.

@@ -17,7 +17,7 @@ body:
     validations:
       required: true
   - type: input
-    id: plxnative-version
+    id: dispatcharrtv-version
     attributes:
       label: PlxNative version
       description: For example `0.7.0`, or the nightly's version.

@@ -1,6 +1,6 @@
 # rust-modules — the Rust app core
 
-This crate's ARM build is a `staticlib` linked into the C binary (`pkg/plxnative`). It began as a
+This crate's ARM build is a `staticlib` linked into the C binary (`pkg/dispatcharrtv`). It began as a
 gradual, module-by-module C→Rust migration; today it IS the app — UI, event loop, player
 engine, demux pipeline, and the Plex data layer all live here (see `docs/agent-reference.md`
 for the architecture). The C side boots the process, records an async-signal-safe fallback crash

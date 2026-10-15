@@ -305,7 +305,7 @@ fn probe_jail() {
 /// failed — the log line says what was ASKED, never that it worked, and the screenshot is what
 /// says whether it did.
 ///
-/// `/tmp/plxnative-gohome=<sam|minimize>` forces one leg, so both can be exercised in one device
+/// `/tmp/dispatcharrtv-gohome=<sam|minimize>` forces one leg, so both can be exercised in one device
 /// session instead of only whichever happens to answer first. Compiled out under `RELEASE=1`.
 ///
 /// **Not rate-limited here** — [`crate::tv::home::take_root_press`] is, and `app.rs` claims the
@@ -532,7 +532,7 @@ pub fn bind_window(_win: *mut std::os::raw::c_void) {}
 /// `keymanager::platform::Client` (a registration kept alive across begin → finish, 4 s budget).
 /// Until 2026-09-04 it was two private copies, both registering with
 /// `LSRegisterApplicationService(NULL, app_id)`, and on this set that registration is REFUSED:
-/// `ls-hubd LSHUB_ROLE_FILE: Can not find service "" permissions for executable ".../plxnative"`
+/// `ls-hubd LSHUB_ROLE_FILE: Can not find service "" permissions for executable ".../dispatcharrtv"`
 /// once per root press, the app logging `stage=register after 2ms` having freed the LSError
 /// unread. The role file appinstalld generates for a native app
 /// (`/var/palm/ls2-dev/roles/{prv,pub}/<app id>.json` on a Developer-Mode set, read off the
@@ -907,7 +907,7 @@ pub mod ls2 {
         registration.call(uri, payload, BUDGET)
     }
 
-    /// `/tmp/plxnative-gohome=probe`: try every registration shape the role file could accept, log
+    /// `/tmp/dispatcharrtv-gohome=probe`: try every registration shape the role file could accept, log
     /// what the hub answers to each — the LSError text this app freed unread for a whole device
     /// session — and, through whichever registered, ONE read-only SAM call. Evidence, not a leg:
     /// its answer is the table in the module doc and decided [`register`]'s shape, and it runs

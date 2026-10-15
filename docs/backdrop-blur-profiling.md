@@ -105,19 +105,19 @@ this note assumed.
 `GL_EXT_disjoint_timer_query` **is** advertised by this driver, with all six entry points and
 `GL_QUERY_COUNTER_BITS_EXT = 64`. The extension string and the entry points are present in
 `/usr/lib/libmali.so.0.1`; the app resolves them and collects results with no disjoint intervals
-across thousands of samples. Put one exact phase name in `/tmp/plxnative-profile` (empty selects
-`frame.ui`) and retrieve `/tmp/plxnative-gputime.jsonl`:
+across thousands of samples. Put one exact phase name in `/tmp/dispatcharrtv-profile` (empty selects
+`frame.ui`) and retrieve `/tmp/dispatcharrtv-gputime.jsonl`:
 
 ```sh
 make fetch-profile
-tools/analyze-gputime.py pkg/plxnative-gputime.jsonl --phase blur.up --discard 60
+tools/analyze-gputime.py pkg/dispatcharrtv-gputime.jsonl --phase blur.up --discard 60
 ```
 
 **The limit: it can only see work rendered into an FBO, never work rendered into framebuffer 0.**
 Midgard defers a render target's fragment work until that target's pass is flushed. An FBO pass is
 flushed when the next target is bound, so it lands inside its own interval; framebuffer 0 is not
 resolved until the swap, which is always outside the phase. Measured, on one scene (Account panel
-over a Home grid swept by `plxnative-homeosc`, `plxnative-noidle` armed), p50 in ms:
+over a Home grid swept by `dispatcharrtv-homeosc`, `dispatcharrtv-noidle` armed), p50 in ms:
 
 | phase | target | before the flush fix | after |
 |---|---|---|---|
@@ -142,7 +142,7 @@ beside any phase result; a phase whose p95 is under the floor measured nothing.
 ### `frame.ui` measures the frame PERIOD, not GPU time
 
 Do not read whole-frame timer numbers as GPU cost. The same scene, with and without the glass
-panel, `plxnative-noidle` armed so presents are continuous:
+panel, `dispatcharrtv-noidle` armed so presents are continuous:
 
 | leg | `fps=` (profiler ARMED — see below) | `frame.ui` p50 |
 |---|---|---|
@@ -169,12 +169,12 @@ split it forces on the tiler, and the full-resolution `fs_glass` and frost quads
 
 ### HWCNT is the attribution instrument, and its unit is CYCLES
 
-Put one exact phase name in `/tmp/plxnative-hwcnt`, launch the same warmed scene, retrieve
-`/tmp/plxnative-hwcnt.jsonl`. Never arm both triggers in one run — `app.rs` refuses if both are
+Put one exact phase name in `/tmp/dispatcharrtv-hwcnt`, launch the same warmed scene, retrieve
+`/tmp/dispatcharrtv-hwcnt.jsonl`. Never arm both triggers in one run — `app.rs` refuses if both are
 present.
 
 ```sh
-tools/analyze-hwcnt.py pkg/plxnative-hwcnt.jsonl --phase blur.copy --discard 10
+tools/analyze-hwcnt.py pkg/dispatcharrtv-hwcnt.jsonl --phase blur.copy --discard 10
 ```
 
 The reader is validated independently by `tools/mali-hwcnt-probe.c` (`make mali-hwcnt-probe`); its
@@ -211,15 +211,15 @@ are identical, because the raw words outlive the build that captured them.
 
 Run one phase per leg, on a warmed scene, and discard the leading samples. The blur chain only
 executes on a **refresh**, and `Glass::EveryThirdPresent` only invalidates when the underlay
-actually changed — so on a settled Home the blur phases never sample at all. Pair `plxnative-acct`
-with `plxnative-homeosc` (a moving underlay) and `plxnative-noidle` (continuous presents), which
+actually changed — so on a settled Home the blur phases never sample at all. Pair `dispatcharrtv-acct`
+with `dispatcharrtv-homeosc` (a moving underlay) and `dispatcharrtv-noidle` (continuous presents), which
 yields about 20 refreshes a second. Collect production frame pacing, p50/p95/worst frame and
 presented FPS in a separate run with both triggers absent.
 
 
 ## The direct-render experiment: result
 
-`/tmp/plxnative-blurdirect` (empty = 1/4 per axis; a power of two ≥ 4 selects the divisor) replaces
+`/tmp/dispatcharrtv-blurdirect` (empty = 1/4 per axis; a power of two ≥ 4 selects the divisor) replaces
 the capture path's `glCopyTexSubImage2D` + two reductions with a second render of the page, drawn
 directly into the quarter-resolution tap target. The capture path stays the default, so the two are
 an A/B on one binary.
@@ -282,7 +282,7 @@ a nicety:
 > 60.0. **Never quote `fps=` from a run with either profiler armed.**
 
 
-**Correctness first.** With the hero pinned (`plxnative-heroidx`) so rotation cannot confound it,
+**Correctness first.** With the hero pinned (`dispatcharrtv-heroidx`) so rotation cannot confound it,
 the two paths are pixel-near-identical: mean absolute difference 0.01/765 over the frame, **maximum
 3/255, confined entirely to the glass panel**, and every pixel outside the blur region bit-identical.
 
@@ -389,7 +389,7 @@ rougher, because the Kawase tap offsets scale with the source while the bilinear
 ## Part 5 — the other 88.6%: what the MAIN UI submits, and why removing 37% of it bought 0.8%
 
 > **The instruments this part describes ARE in the tree now** — `plx_gfx::overdraw`,
-> `/tmp/plxnative-overdraw`, `/tmp/plxnative-drawmask` and `/tmp/plxnative-heroground`. They were
+> `/tmp/dispatcharrtv-overdraw`, `/tmp/dispatcharrtv-drawmask` and `/tmp/dispatcharrtv-heroground`. They were
 > hand-transplanted from `blur/e4-overdraw` rather than merged: that branch's history was rewritten
 > with `filter-branch`, so it shares no ancestry with the baseline commits here, and a direct merge
 > conflicts in fifteen files while sitting ~24,000 lines behind — resolving it in the branch's
@@ -424,20 +424,20 @@ note, for two reasons this part settles with measurements: **most of the 3.65x i
 `FRAG_QUADS_RAST` is GPU-global, so it cannot say whose quads it counted. Two things were added to
 answer that without guessing.
 
-**`/tmp/plxnative-overdraw`** — a CPU-side ledger (`plx_gfx::overdraw`) that sums, per draw class, the
+**`/tmp/dispatcharrtv-overdraw`** — a CPU-side ledger (`plx_gfx::overdraw`) that sums, per draw class, the
 screen-VISIBLE area of every quad the app submits, clipped to the panel and to `Painter::clip`'s
 live box. It is not `glFinish`-serialised and it cannot be billed for another process's work. It
 runs in the desktop simulator too, and gives the same authored-pixel answer there, because it works
 in authored coordinates.
 
-**`/tmp/plxnative-drawmask=<classes>`** — refuse every draw of the named classes, so a whole-frame
+**`/tmp/dispatcharrtv-drawmask=<classes>`** — refuse every draw of the named classes, so a whole-frame
 `frame.ui` HWCNT A/B against the unmasked control prices that class **as the frame sees it**,
 un-serialised. `all` draws nothing, and is therefore the **compositor floor**. Every leg it
 produces except the control is a broken picture by construction; it is a measurement knob.
 
 ### The frame, decomposed
 
-Scene: Home, `plxnative-homeosc` + `plxnative-noidle`, no glass. Three interleaved repeats per leg,
+Scene: Home, `dispatcharrtv-homeosc` + `dispatcharrtv-noidle`, no glass. Three interleaved repeats per leg,
 first 60 samples discarded, ~1,050 samples per run, within-leg spread 0.05–0.07%.
 
 | leg | GPU_ACTIVE / frame | FRAG_QUADS_RAST | as pixels | tiles |
@@ -470,14 +470,14 @@ validates the ledger):
 | `shadow` | 25,364 | 2 | 0.5% |
 | **total** | **5,386,592** | ~58 | **2.60x the panel** |
 
-**The established scene is the HERO, not the grid.** `plxnative-homeosc` moves the grid's focus
+**The established scene is the HERO, not the grid.** `dispatcharrtv-homeosc` moves the grid's focus
 indices; it does not dive the snap, so Home stays on its billboard. Three stacked full-panel layers
 — the photograph, the atmospheric ramp and the corner wedge — are **90% of everything the screen
 submits**. The card composites everyone assumes are the expensive part are 5%.
 
 ### The experiment: fold the hero's whole ground into one pass
 
-`/tmp/plxnative-heroground` (`ui::widgets::hero_ground` + `shaders/fs_hero.frag`) draws the
+`/tmp/dispatcharrtv-heroground` (`ui::widgets::hero_ground` + `shaders/fs_hero.frag`) draws the
 photograph and BOTH scrim fields in **one** quad instead of the art plus four blended gradient
 quads over it. Both fields are closed forms of the authored pixel position — `home::base_scrim_a`
 and `hero_scrim_a` feathered over `[HERO_SCRIM_TOP, HERO_SCRIM_KNEE]` — and both are
@@ -494,18 +494,18 @@ Exact in real arithmetic; what differs is 8-bit rounding, because the shipped pa
 framebuffer three times where this quantises once. The screen owns the preconditions (one art layer
 at a time, so a hero flip falls back; no photograph yet, so the scrims still have the wash).
 
-**It is the same picture.** Simulator, hero pinned with `plxnative-heroidx=0`, 960x540: **maximum
+**It is the same picture.** Simulator, hero pinned with `dispatcharrtv-heroidx=0`, 960x540: **maximum
 absolute difference 1/255**, mean 0.081/255, over 101,018 of 518,400 pixels — and **not one pixel
 differs by 2**. That is the double-rounding, and nothing else. Ledger, same pair: 5,387,031 px
 (x2.60) to 2,608,407 px (x1.26), `grad` 2 quads to 0, `rect` 36 draws to 34; on the television the
 same pair reads 5,362,974 px (x2.59) to 2,584,350 px (x1.25).
 
 **The first on-panel capture pair was thrown away, and the reason is worth writing down**:
-`plxnative-heroidx` JUMPS the billboard to a pool page, it does not stop it rotating. `HERO_AUTO_S`
+`dispatcharrtv-heroidx` JUMPS the billboard to a pool page, it does not stop it rotating. `HERO_AUTO_S`
 is 8 s, so a capture taken 16 s after launch had already advanced two pages, and the control frame
 was caught mid-FLIP — which is also exactly the state the fold declines. The diff was 249/255 and
 said nothing about the shader. A capture comparison on this screen has to be taken inside the first
-rotation window, with `plxnative-homeosc` absent (its 350 ms focus step moves the peek row under
+rotation window, with `dispatcharrtv-homeosc` absent (its 350 ms focus step moves the peek row under
 the shutter).
 
 Retaken that way — no oscillator, shot 6 s after launch — the ON-PANEL pair
@@ -598,13 +598,13 @@ Two consequences worth carrying:
 ## 2026-09-02: the Home motion regression — a census, and what a full-screen fragment costs
 
 Reported: Hero paging ~46 fps and the Hero→first-shelf fold ~38 fps against a 50 fps gate (the
-`home-hero` / `home-fold` scenes, `plxnative-heroosc` / `plxnative-homefoldosc`). The previous
+`home-hero` / `home-fold` scenes, `dispatcharrtv-heroosc` / `dispatcharrtv-homefoldosc`). The previous
 diagnosis blamed the profile chip's second glass surface and the top bar's blur source pass. Both
 were measured and both were wrong; what follows is the record, because every step of it
 contradicted a reasonable expectation.
 
-**1. The frame-drop detector reads as CPU and is not.** `plxnative-framedrop=1` on the hero scene:
-`draw=24.0 ms p50, swap=0.3 ms`. A new profiler mode, **`/tmp/plxnative-cpuprof`** — the render
+**1. The frame-drop detector reads as CPU and is not.** `dispatcharrtv-framedrop=1` on the hero scene:
+`draw=24.0 ms p50, swap=0.3 ms`. A new profiler mode, **`/tmp/dispatcharrtv-cpuprof`** — the render
 thread's own inclusive wall time per `ui::profile::phase`, every phase at once, no `glFinish` —
 put 26 ms of that in **`hm.clear`**, the frame's first framebuffer-0 command, and ~2 ms in the whole
 of Home's real work (`hm.hero` 0.9, `hm.grid` 0.5, `hm.tabs` 0.2, the blur source pass 0.8 CPU
@@ -616,8 +616,8 @@ that needs the back buffer, so a fat `draw=` is a GPU-bound frame until this mod
 | leg | hero fps | fold fps | GPU_ACTIVE / frame (hero) |
 |---|---|---|---|
 | shipped: glass, refresh every present (`glasshz=1`) | 46 | 38 | 14.44M |
-| `plxnative-flattabs` — no glass, no source pass | 35 | 30 | 13.81M |
-| `plxnative-glasshz=8` — glass, refresh 1 present in 8 | 36 | 30 | — |
+| `dispatcharrtv-flattabs` — no glass, no source pass | 35 | 30 | 13.81M |
+| `dispatcharrtv-glasshz=8` — glass, refresh 1 present in 8 | 36 | 30 | — |
 
 More GPU work, seven milliseconds less frame period. The only structural difference is that the
 direct source pass submits FBO render passes immediately after the swap, before anything touches
@@ -627,7 +627,7 @@ starting the frame's fragment work earlier is NOT settled — but the consequenc
 the glass cadence or removing the source pass to "save work" costs 20% of the frame rate, and any
 change to that path has to be re-measured on the set.**
 
-**3. The census: `plxnative-hwcnt` (`frame.ui`) + `plxnative-drawmask=<class>`, hero paging,
+**3. The census: `dispatcharrtv-hwcnt` (`frame.ui`) + `dispatcharrtv-drawmask=<class>`, hero paging,
 flat tabs.** Control 13.81M GPU_ACTIVE per frame — against 8.76M for a hero frame on 2026-08-22,
 which is the regression stated in cycles.
 
@@ -740,7 +740,7 @@ be a second channel plus an add on 2M fragments; storing the mean of two indepen
 the fragment expression byte-for-byte identical and moves the entire difference into `u_noise`'s
 scale (`1/255` → `2/255`). **Zero shader change.** The only cost that exists is the tile's footprint.
 
-**Cost, `fps:settings-root` with `plxnative-hwcnt`, phase `frame.ui`, n=60 per sample, steady state
+**Cost, `fps:settings-root` with `dispatcharrtv-hwcnt`, phase `frame.ui`, n=60 per sample, steady state
 (the first sample after launch is a 13.7M settle frame and is discarded):**
 
 | counter, per frame | 64px RPDF | 256px TPDF | Δ |
@@ -799,7 +799,7 @@ above), so nothing here should be "saved" by lowering `DEFAULT_DYNAMIC_PERIOD` w
 
 **Three overlays remain without a scene, and all three are blocked on something outside this file.**
 `more_menu` (`overlay=more`) and `alt_sources` have no boot trigger at all — reaching them needs a
-new `dev::flag` in `app.rs`. `tracks_panel` has `plxnative-tracks` but emits no `overlay=` tag, so a
+new `dev::flag` in `app.rs`. `tracks_panel` has `dispatcharrtv-tracks` but emits no `overlay=` tag, so a
 scene naming one would fail as "never entered this screen"; it needs the tag added beside the other
 five in `app.rs`'s heartbeat match. `person_bio` is the interesting one — the ONLY
 `Glass::DYNAMIC_BACKDROP` popover in the app, so it is the only surface where the refresh cadence is
@@ -810,8 +810,8 @@ live — and it is opened by a key press on the person page, which no boot trigg
 Four reported frame-rate items were one renderer census: hero paging at ~50 fps, the hero→shelf
 fold under its floor, the Settings entry ramp with 89 ms frames and a grey pause, the Library
 popovers at ~20 fps beside a smooth account menu, and the Cast & Crew row dropping frames. Every
-number below is from the debug install on the dev set (`tests/run.py --fps`, `plxnative-hwcnt=frame.ui`,
-`plxnative-cpuprof`, `plxnative-framedrop=1`), and the "before" column is `f3bdbdce`.
+number below is from the debug install on the dev set (`tests/run.py --fps`, `dispatcharrtv-hwcnt=frame.ui`,
+`dispatcharrtv-cpuprof`, `dispatcharrtv-framedrop=1`), and the "before" column is `f3bdbdce`.
 
 **The bisect.** `fps:home-hero` / `fps:home-fold` medians across the last five commits:
 `a0a682af` 57/53, `2365a525` 57/53, `f361b776` 57/–, `becb4e56` **50/48**, `f3bdbdce` 50/48. One
@@ -914,9 +914,9 @@ wash now takes the noise": PR1 (`ecab5d13`) took `fps:library-scroll` from 60 to
 `fps:home-grid` from 56 to 51. The goal set for this pass was the owner's: every screen with the
 wash at ~60 fps, the wash dithered on every frame including mid-animation, no global motion gate.
 Every number below is the set (LG webOS 4.5, Mali-T820), `tests/run.py --fps` after `make deploy`
-with the deployed binary's md5 checked against `pkg/plxnative`, panel and sound off. GPU numbers
-are `plxnative-hwcnt=frame.ui` means per frame (fps in those legs is not a measurement); `mask`
-is `plxnative-drawmask=<class>`.
+with the deployed binary's md5 checked against `pkg/dispatcharrtv`, panel and sound off. GPU numbers
+are `dispatcharrtv-hwcnt=frame.ui` means per frame (fps in those legs is not a measurement); `mask`
+is `dispatcharrtv-drawmask=<class>`.
 
 **Baseline, interleaved, two runs each** — fps median (loop robust_min):
 
@@ -955,7 +955,7 @@ is `plxnative-drawmask=<class>`.
    colour arithmetic at all. Fold 10.68M → 9.64M (58.5 fps), grid 9.73M (58), detail 60.
 
 **Then the gate went.** Steps 1–4 were measured with PR1's art gate still in, and a mid-dive
-capture of `plxnative-homefoldosc` showed what that gate costs the picture: the band of wash under
+capture of `dispatcharrtv-homefoldosc` showed what that gate costs the picture: the band of wash under
 the diving hero — wash-only, nothing over it — had an adjacent-pixel change fraction of **0.023**
 (undithered treads) against ~0.70 dithered. `gfx::page_wash_dither`, `home::Backdrop::still` and
 `detail::art_still` are deleted; `gfx::draw_ambient` and `Painter::ambient` take no dither flag.
@@ -991,7 +991,7 @@ menu steps rather than the render rate; their loop robust_min is the render meas
 sit at 55–60 (main read 58 and 46 on two consecutive runs of the same binary).
 
 **Mid-animation captures** (`tools/capture-screen.sh`, six 0.4 s apart during
-`plxnative-grid`+`plxnative-homeosc` and during `plxnative-homefoldosc`). Metric: fraction of
+`dispatcharrtv-grid`+`dispatcharrtv-homeosc` and during `dispatcharrtv-homefoldosc`). Metric: fraction of
 horizontally/vertically adjacent pixels that differ, on a wash-only region (luma std < 3); an
 undithered field reads ~0.02, the dithered one ~0.5–0.7.
 
@@ -1172,7 +1172,7 @@ tracks, alt sources, person bio, library menu) calls `widgets::panel_ground` dir
 would not help the bench anyway: a settled modal stops presenting, so every graded frame is a ramp
 frame.
 
-**Where the open's cost went.** A trace with every frame logged (`plxnative-framedrop=1`) of the
+**Where the open's cost went.** A trace with every frame logged (`dispatcharrtv-framedrop=1`) of the
 16-cycle bench showed the pattern. The capture frame's CPU is short, 4–10 ms, because the CPU runs
 a frame ahead. Its GPU is a whole host render plus the composite. The second presented frame after
 it then waited 25–35 ms for a buffer, with under 1 ms of spans.
@@ -1248,7 +1248,7 @@ Regression scenes on the final binary:
   1280x720 backdrop (3600 kB) to the bounded `TexCache`.
 - The ledger reaches 132 textures / 76 MB by cycle 31.
 - It then stays flat to cycle 100: RSS is 112.4 ± 0.7 MB from cycle 30 on.
-- Pinning `plxnative-heroidx` does not stop the rotation. The ledger sequence was identical with it.
+- Pinning `dispatcharrtv-heroidx` does not stop the rotation. The ledger sequence was identical with it.
 
 **Dismissals.** The first frame of every dismissal is 25–29 M GPU cycles and 14,298 tiles (HWCNT,
 previous lane). That is roughly seven full-screen passes. The bench does not grade it, but it is a

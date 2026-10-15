@@ -37,7 +37,7 @@ answers what a QA pass would find.
 4. `X-Plex-Product: Plex for webOS` — Plex's own first-party naming pattern, on a platform that has an official Plex app.
 5. ~~Release builds bake in the developer's LAN IP and home-directory paths.~~ **CLEARED:** release
    CI has no local config and the artifact gates inspect the compiled bytes.
-6. ~~The release opens the squattable `/tmp/plxnative-remote`.~~ **CLEARED:** the whole developer
+6. ~~The release opens the squattable `/tmp/dispatcharrtv-remote`.~~ **CLEARED:** the whole developer
    trigger/FIFO/capture surface is compiled out and asserted absent from release artifacts.
 7. ~~Only the Dev Mode prefix can retain fonts and login.~~ **CLEARED:** font assets are packaged
    and persistent state uses the probed Dev Mode/Homebrew/retail candidate order in §3.5. Store
@@ -112,7 +112,7 @@ anywhere in this chain — sha256 over HTTPS is the entire integrity story.
 
 ### 1.4 This is where this project gets caught
 
-Our actual `DT_NEEDED` (verified with the NDK readelf on `pkg/plxnative`):
+Our actual `DT_NEEDED` (verified with the NDK readelf on `pkg/dispatcharrtv`):
 
 ```
 libSDL2-2.0.so.0  libSDL2_ttf-2.0.so.0  libGLESv2.so.2  libluna-service2.so.3  libglib-2.0.so.0
@@ -539,10 +539,10 @@ world-readable `/tmp` on the TV across many runs.
   the GitHub noreply alias, and `ci/check-package.py` now asserts the field is not a personal
   mailbox, so it cannot come back by an edit nobody reviews.
 
-**What a public build would leak (verified by `strings` on `pkg/plxnative` and inside the ipk):**
+**What a public build would leak (verified by `strings` on `pkg/dispatcharrtv` and inside the ipk):**
 
 1. `PMS_HOST` — `PMS_HOST` from `config.local.h` is compiled in. *(Only used on the
-   `/tmp/plxnative-token` automation branch — `app.rs:436-438` — so a public build with no
+   `/tmp/dispatcharrtv-token` automation branch — `app.rs:436-438` — so a public build with no
    `config.local.h` compiles the `"YOUR_PMS_HOST"` placeholder and never uses it. Still, don't ship a
    binary built on this machine.)*
    **Measured 2026-08-02, and better than this list implied: the TOKEN never reaches the binary.**
@@ -553,7 +553,7 @@ world-readable `/tmp` on the TV across many runs.
    is present, so `make ipk` on this machine still produces a fully valid, correctly-hashed
    package with that address inside it and every check passing. Release comes from CI.
 2. ~~~40~~ **252** `/Users/gleblinnik/…` panic paths — **FIXED 2026-08-02**, count corrected by
-   measurement (`strings -a pkg/plxnative | grep -c /Users/`): 113 from `-Z build-std` compiling
+   measurement (`strings -a pkg/dispatcharrtv | grep -c /Users/`): 113 from `-Z build-std` compiling
    std out of `$RUSTUP_HOME`, 139 from dependency panic locations under `$CARGO_HOME`. 250 of the
    252 are in `.rodata`, which is why **`strip` does not touch them** — this section used to list
    the two as adjacent chores and they are independent fixes. The Makefile now always sets
@@ -569,7 +569,7 @@ world-readable `/tmp` on the TV across many runs.
 
 **Runtime surfaces that must not ship enabled:**
 
-- `remote.rs:36-38` mkfifos `/tmp/plxnative-remote` and drains it every frame on **every boot with
+- `remote.rs:36-38` mkfifos `/tmp/dispatcharrtv-remote` and drains it every frame on **every boot with
   no trigger gate** (`app.rs:1603`). *Corrected 2026-08-01:* the requested `0o666` is masked by the
   process umask (0022), so the live FIFO on the device is `prw-r--r-- 6910:5000` — another uid can
   **read** it (stealing whatever the host driver writes) but cannot drive the UI through it. The
@@ -578,10 +578,10 @@ world-readable `/tmp` on the TV across many runs.
   is already at that path. Any process that creates its own 0666 FIFO there first owns the UI.
   Fix: gate it behind a dev feature, and `stat` the path and refuse anything not owned by our euid.
 - `capture.rs:208` binds `INADDR_ANY` with no authentication.
-- **`/tmp` is the shared system `/tmp`, in the production jail too** — so the whole `/tmp/plxnative-*`
+- **`/tmp` is the shared system `/tmp`, in the production jail too** — so the whole `/tmp/dispatcharrtv-*`
   trigger surface is squattable by any co-resident process on an ordinary unrooted TV.
-  `/tmp/plxnative-token` beats the stored session outright (`app.rs:362`), and any unrecognised
-  `plxnative-*` file suppresses the who's-watching picker (`app.rs:402-413`). The clean fix is a
+  `/tmp/dispatcharrtv-token` beats the stored session outright (`app.rs:362`), and any unrecognised
+  `dispatcharrtv-*` file suppresses the who's-watching picker (`app.rs:402-413`). The clean fix is a
   cargo feature the release build does not enable, so a public binary reads nothing from `/tmp`.
 - **A crash writes a ~200 MB core into the app directory.** The tracer (now `src/crashtrace.c`)
   restores `SIG_DFL` and re-raises, the jail sets `setrlimit CORE INF INF`, and
@@ -637,7 +637,7 @@ world-readable `/tmp` on the TV across many runs.
   stderr).** `src/main.c`'s `open_fd_log` and `eventlog::open_log_append` create them owner
   read/write, the app's own group (gid 5000 on the television) read, and nothing for "other";
   the `fchmod` makes that independent of the umask and corrects a 0600 file left by an older
-  release. `plxnative-diag.log` has always shipped the same 0640. **Both openers refuse a sink
+  release. `dispatcharrtv-diag.log` has always shipped the same 0640. **Both openers refuse a sink
   whose `fstat` shows more than one link** (and anything that is a symlink, not a regular file or
   not ours), on the OPENED descriptor, and only create a missing name, with `O_EXCL`: a co-resident
   app in gid 5000 that can link names in the sticky `/tmp` could otherwise `link(2)` one of our 0600
@@ -677,7 +677,7 @@ world-readable `/tmp` on the TV across many runs.
   `gfx.rs`'s GL shader info log and a fixed "link failed"; libcurl is never put in verbose mode and
   no `CURLOPT_STDERR` is set (neither `net.rs` nor `curlio.rs` names either option); every
   `avformat_open_input` in a shipped build opens a custom AVIO with a NULL url, so libavformat has
-  no URL to print (the one call that does take a URL is the `plxnative-ffprobe` developer trigger,
+  no URL to print (the one call that does take a URL is the `dispatcharrtv-ffprobe` developer trigger,
   compiled out of a release); Sentry's debug logger is off; and the production panic sites that
   were read are static invariant messages, mutex/`Option` unwraps and `serde_json::to_*`
   serialisations, none of which formats a credential. This is an audit of the code that exists,
@@ -979,12 +979,12 @@ Listed because each could change a decision above.
    unresolved part is an end-to-end run against a remote/shared server on real TV firmware.
 8. **What should the app do on unsupported firmware?** `requirements.webosRelease` does **not** hide
    the app from a webOS 6 user browsing the channel (§1.4). It needs a graceful failure.
-9. **Support model.** A Dev Mode user has no shell, so "send me `/tmp/plxnative-events.log`" does
+9. **Support model.** A Dev Mode user has no shell, so "send me `/tmp/dispatcharrtv-events.log`" does
    not work as a bug-report path **by shell**. Their one tool is webOS Dev Manager, which reads files
    as an unprivileged user that is in the app's group (gid 5000) but is not the app's uid. As of
    2026-10-04 the event, crash and stderr logs are mode 0640 in `/tmp` (§4 has why, and the
    residual risk of a co-resident app in the same group), so those three files can be downloaded
-   with Dev Manager without root, exactly as `plxnative-diag.log` already could. **Not yet proven
+   with Dev Manager without root, exactly as `dispatcharrtv-diag.log` already could. **Not yet proven
    on a real unrooted set**: the host tests prove the mode (under a restrictive umask, from a fresh
    create and from a 0600 survivor), not that Dev Manager's reader is in the group the file lands
    in on the television.
@@ -1055,7 +1055,7 @@ Listed because each could change a decision above.
    regardless. Both fixed, and the host-path assertion was split out of the config-dependent ones so
    it runs on a dev machine too — it had never once executed against a real build.
    ~~Replace the control-file Maintainer~~ **DONE**, plus `Homepage`/`License`, all three asserted.
-10. ~~Put the whole `/tmp/plxnative-*` surface behind a cargo feature~~ **DONE.** New `devtriggers`
+10. ~~Put the whole `/tmp/dispatcharrtv-*` surface behind a cargo feature~~ **DONE.** New `devtriggers`
     feature (a *second* feature, not more things under `devtools`, whose stated contract is
     draw-only — that promise is worth keeping) and a new `src/dev.rs` every read goes through.
     Verified on the built ARM binary: a `RELEASE=1` build's only `/tmp` strings are its three log
@@ -1092,7 +1092,7 @@ Listed because each could change a decision above.
 15. ~~Add `Installed-Size`~~ (done, §9) / ~~add `Homepage` / `License`~~ **DONE 2026-08-02, and
     asserted** / ~~strip the binary~~ **DONE**: measured 7,835,376 → 5,495,476 (−2.34 MB, 30%),
     `Installed-Size` 10117 → 7781 KiB, ipk 4.85 MB. Only the **staged** copy is stripped, never
-    `pkg/plxnative` — `tools/crash-report.sh` symbolizes against that local binary *and* md5-compares
+    `pkg/dispatcharrtv` — `tools/crash-report.sh` symbolizes against that local binary *and* md5-compares
     it to the on-TV copy, so stripping in place would break the identity check and lose function
     names from every release crash report. ~~make the ipk reproducible~~ (done — byte-identical
     rebuilds, re-verified after the strip landed).
@@ -1226,7 +1226,7 @@ others do not:
   mechanism rather than a rule.
 - **`ci/check-package.py` grades the same thing on the packaged BYTES**, which is the half that
   survives somebody reaching for the hatch and forgetting: the stable package must not contain the
-  `plxnative-noidle` dev witness. It also derives the packaged id from the staged
+  `dispatcharrtv-noidle` dev witness. It also derives the packaged id from the staged
   `applications/<dir>` name rather than from the tracked `pkg/appinfo.json`, because assuming the
   stable id would make every path below it grade a debug package **vacuously** — an empty `rglob`
   prints nothing, fails nothing, and reports success.
@@ -1363,7 +1363,7 @@ one in any way that could change behaviour, only in what it paints.
 
 Three traps this cost, all found by measurement rather than reasoning, all silent:
 
-1. **Both feature sets wrote the same `libplxnative_modules.a`.** Cargo fingerprints the build but
+1. **Both feature sets wrote the same `libdispatcharrtv.a`.** Cargo fingerprints the build but
    does not hash its output, so after a `RELEASE=1` build it reports the dev build
    *"Finished in 0.04s"* and leaves the release `.a` in place — which `make` then links with no
    comment. Fixed by giving each configuration its own `--target-dir`.
@@ -1371,7 +1371,7 @@ Three traps this cost, all found by measurement rather than reasoning, all silen
    target's up-to-dateness from a stat taken *before* its prerequisites' recipes run, and (b)
    compares mtimes at **one-second granularity** — a stamp written 0.5 s after the binary compares
    *equal*. Both were observed directly. So the config check runs at **parse** time and **deletes
-   `pkg/plxnative`** when the configuration changes; "the target does not exist" is not a timestamp
+   `pkg/dispatcharrtv`** when the configuration changes; "the target does not exist" is not a timestamp
    comparison and cannot be defeated by either.
 3. **`make RELEASE=1 && make deploy` deploys a DEV binary** — the second invocation has no
    `RELEASE`, so it rebuilds and ships that. The flag must be on *every* invocation that produces
@@ -1494,7 +1494,7 @@ survives the rewrite (two consecutive `make RELEASE=1 ipk` runs agree byte for b
 
 **Cost of the miss, had it shipped:** the manifest's sha256 would have matched, the download would
 have succeeded, and every install would have failed at extraction — on a channel where the
-developer has no shell on the user's TV and `/tmp/plxnative-events.log` was unreachable at 0600
+developer has no shell on the user's TV and `/tmp/dispatcharrtv-events.log` was unreachable at 0600
 (§6.9; since 2026-10-04 the user can fetch it with Dev Manager — and a failed install never reaches
 the app to write one anyway).
 
@@ -1674,7 +1674,7 @@ Plex: `plex.tv/about/privacy-legal/plex-terms-of-service/`,
 `plex.tv/about/privacy-legal/plex-trademarks-and-guidelines/`, `developer.plex.tv`, forum announcement 2025-09-15.
 Third-party marks: Rotten Tomatoes Developer Network (archive 2025-02-19), Fandango Data Feed Terms
 (archive 2024-11-05), `themoviedb.org/api-terms-of-use` (rev. 2023-10-20).
-On-device evidence: `.abi-cache/libavcodec.so.57.89.100` build-config string; NDK `readelf -d pkg/plxnative`;
+On-device evidence: `.abi-cache/libavcodec.so.57.89.100` build-config string; NDK `readelf -d pkg/dispatcharrtv`;
 fontTools dumps of `pkg/appfont*.ttf`; `tar tzf ipkroot/data.tar.gz`.
 
 ---

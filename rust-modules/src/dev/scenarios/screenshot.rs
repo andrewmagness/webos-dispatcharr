@@ -30,7 +30,7 @@ impl ScreenshotArms {
     }
 }
 
-/// `/tmp/plxnative-stillclock=<ms>` — hold every free-running clock animator (`motion::Phase`:
+/// `/tmp/dispatcharrtv-stillclock=<ms>` — hold every free-running clock animator (`motion::Phase`:
 /// spinners, stall timers) at `<ms>` elapsed. A waiting screen then draws one fixed picture and
 /// comes to rest, which is what a settled capture needs; springs and ramps are untouched, they
 /// settle on their own.
@@ -41,11 +41,11 @@ pub(crate) fn arm_stillclock() {
     if let Some(v) = plx_base::devtrig::read("stillclock") {
         let ms = v.parse().unwrap_or(0);
         plx_machine::motion::hold_phase_clocks(Some(ms));
-        plx_base::eventlog::log(&format!("motion: free-running clocks held at {ms} ms by /tmp/plxnative-stillclock"));
+        plx_base::eventlog::log(&format!("motion: free-running clocks held at {ms} ms by /tmp/dispatcharrtv-stillclock"));
     }
 }
 
-/// `/tmp/plxnative-clockstop=<ms>` — simulator only: stop the clock sink at that movie position
+/// `/tmp/dispatcharrtv-clockstop=<ms>` — simulator only: stop the clock sink at that movie position
 /// and leave the transport PLAYING, so the player holds a moment of playback that pausing would
 /// change (the Up Next tile, which exists only while playing). Logs once when the playhead is
 /// there. The stop is a stall of the sink's own making (`ffi_host.rs::stop_clock_at`), re-armed

@@ -101,14 +101,14 @@ overwrites the regular app's logs.
 
 | Install | Where the log files are |
 | --- | --- |
-| PlxNative (release) | directly in `/tmp/`, for example `/tmp/plxnative-events.log` |
+| PlxNative (release) | directly in `/tmp/`, for example `/tmp/dispatcharrtv-events.log` |
 | PlxNative Nightly | in the folder `/tmp/com.magness.dispatcharrtv.nightly/` |
 
 The three files have the same names in both places:
 
-- `plxnative-events.log` — the event log: what the app did, line by line.
-- `plxnative-crash.log` — the crash log: a record each time the app was stopped by a fault.
-- `plxnative-stderr.log` — what the app and the TV's own libraries printed to the error stream.
+- `dispatcharrtv-events.log` — the event log: what the app did, line by line.
+- `dispatcharrtv-crash.log` — the crash log: a record each time the app was stopped by a fault.
+- `dispatcharrtv-stderr.log` — what the app and the TV's own libraries printed to the error stream.
 
 ### Fetch them before you reopen the app
 

@@ -227,7 +227,7 @@ something else entirely, which is the part worth keeping.*
 and device-**unobserved**, because no case seeks during Auto. It cannot close it on this tier, and
 the reason is structural rather than incidental. A transcode seek restarts the encode at a new
 `&offset`; `route::transcode_seek` builds that from a PMS ratingKey and client; a
-`plxnative-playurl` playback has neither. So the seek is refused before a single segment is
+`dispatcharrtv-playurl` playback has neither. So the seek is refused before a single segment is
 fetched, and the reserve the seek would have disturbed is never touched.
 
 `unreadable reserve: 0/38`. **R11 remains host-proven and device-unobserved**, and the

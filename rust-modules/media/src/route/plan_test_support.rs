@@ -68,7 +68,7 @@ pub(super) fn sub(id: i64, index: i64, lang: &str, external: bool) -> plx_data::
 pub(super) use plx_data::metadata::{Dovi, DvPresentation};
 
 
-/// The two inputs of the boot-latched `/tmp/plxnative-nodv` diagnostic, named so assertions state
+/// The two inputs of the boot-latched `/tmp/dispatcharrtv-nodv` diagnostic, named so assertions state
 /// which signal they exercise. Capability and codec are passed separately; `DECLARED` alone does
 /// not authorize a node on an unsupported/unknown set.
 pub(super) const DECLARED: bool = true;

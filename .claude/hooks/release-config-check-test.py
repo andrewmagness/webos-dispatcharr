@@ -132,11 +132,11 @@ CASES = [
 # which sends the reader to the diff instead of to rustup.
 E0428 = ("error[E0428]: the name `density_max_sweep` is defined multiple times\n"
          " --> src/ui/widgets.rs:812:1\n"
-         "error: could not compile `plxnative-modules` (lib) due to 1 previous error")
+         "error: could not compile `dispatcharrtv` (lib) due to 1 previous error")
 DENIED_LINT = ("error: unused import: `crate::dev`\n"
                " --> src/gfx.rs:44:5\n"
                "  = note: `-D unused-imports` implied by `-D warnings`\n"
-               "error: could not compile `plxnative-modules` (lib) due to 1 previous error")
+               "error: could not compile `dispatcharrtv` (lib) due to 1 previous error")
 
 # The real SMB output from 2026-08-25, which is the case this pair of patterns is ordered for: it
 # ends in `could not compile`, so a `COMPILE_FAIL`-first reading calls a healthy tree broken.
@@ -146,7 +146,7 @@ SMB_NO_LOCK = (
     "  |\n"
     "  = note: the filesystem for the incremental path at /repo/rust-modules/target/debug/"
     "incremental/… does not appear to support locking, consider changing the incremental path\n"
-    "error: could not compile `plxnative-modules` (build script) due to 1 previous error")
+    "error: could not compile `dispatcharrtv` (build script) due to 1 previous error")
 
 VERDICTS = [
     ("ok", 0, "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.55s"),
@@ -158,9 +158,9 @@ VERDICTS = [
     ("unusable", 1, "error: failed to acquire package cache lock"),
     ("unusable", 101, SMB_NO_LOCK),                     # a build DIRECTORY fault, not a code fault
     ("unusable", 101, "error: failed to create directory `/full/target/debug`\n"
-                      "error: could not compile `plxnative-modules` (lib) due to 1 previous error"),
+                      "error: could not compile `dispatcharrtv` (lib) due to 1 previous error"),
     ("unusable", 101, "error: No space left on device (os error 28)\n"
-                      "error: could not compile `plxnative-modules` (lib) due to 1 previous error"),
+                      "error: could not compile `dispatcharrtv` (lib) due to 1 previous error"),
 ]
 
 # Where the artifacts go. An explicit CARGO_TARGET_DIR wins (the escape hatch back to the crate's
@@ -178,7 +178,7 @@ TARGET_DIRS = [
 # `Checking …` banner first, and a note that quotes the banner names nothing the reader can act on.
 FIRST_ERROR = [
     ("error: toolchain 'nightly-2026-07-02' is not installed",
-     "    Checking plxnative-modules v0.4.1 (/repo/rust-modules)\n"
+     "    Checking dispatcharrtv v0.4.1 (/repo/rust-modules)\n"
      "error: toolchain 'nightly-2026-07-02' is not installed"),
     ("error: could not run cargo: [Errno 2] No such file or directory: 'cargo'",
      "error: could not run cargo: [Errno 2] No such file or directory: 'cargo'"),
@@ -188,7 +188,7 @@ FIRST_ERROR = [
     ("no output", "   \n\n"),
 ]
 
-NOISY = """    Checking plxnative-modules v0.4.1 (/repo/rust-modules)
+NOISY = """    Checking dispatcharrtv v0.4.1 (/repo/rust-modules)
 error[E0428]: the name `x` is defined multiple times
  --> src/ui/widgets.rs:812:1
     Finished `dev` profile in 0.55s"""
@@ -234,7 +234,7 @@ def main():
             print(f"  FAIL  first_error expected {want!r}, got {got!r}")
 
     trimmed = hook.trim(NOISY)
-    if "Checking plxnative-modules" in trimmed or "Finished" in trimmed:
+    if "Checking dispatcharrtv" in trimmed or "Finished" in trimmed:
         fails += 1
         print("  FAIL  trim kept cargo's progress lines")
     if "error[E0428]" not in trimmed or "--> src/ui/widgets.rs:812:1" not in trimmed:

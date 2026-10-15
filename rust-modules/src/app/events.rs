@@ -468,7 +468,7 @@ pub(crate) fn dispatch_remote_token(tok: &str, ps: &plx_media::route::PlaybackSe
         true
     } else if cfg!(feature = "hostsim") && tok == "shot" {
         // Simulator only. Screenshotting has to be a TOKEN rather than a launch option, because
-        // the interesting frame is the one AFTER driving, and `PLXNATIVE_SHOT_FRAME` is fixed
+        // the interesting frame is the one AFTER driving, and `DISPATCHARRTV_SHOT_FRAME` is fixed
         // before the app starts — worse, presented frames only accrue when something repaints
         // (the idle gate), so no frame number can be predicted from outside. This makes
         // `down down right ok shot` a single composable line.

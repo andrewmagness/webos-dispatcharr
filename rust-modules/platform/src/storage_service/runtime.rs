@@ -5,7 +5,7 @@ use super::wire::{Descriptor, DESCRIPTOR_NAME, PROTOCOL, SOCKET_NAME};
 use std::path::Path;
 
 pub fn app_identity(executable: &Path) -> Result<&str, ErrorCode> {
-    if executable.file_name().and_then(|n| n.to_str()) != Some("plxnative-storage") {
+    if executable.file_name().and_then(|n| n.to_str()) != Some("dispatcharrtv-storage") {
         return Err(ErrorCode::Invalid);
     }
     let dir = executable.parent().ok_or(ErrorCode::Invalid)?;
@@ -261,17 +261,17 @@ mod tests {
 
     #[test]
     fn nightly_app_identity() {
-        assert_eq!(app_identity(Path::new("/media/developer/apps/usr/palm/services/com.magness.dispatcharrtv.nightly.storage/plxnative-storage")), Ok("com.magness.dispatcharrtv.nightly"));
+        assert_eq!(app_identity(Path::new("/media/developer/apps/usr/palm/services/com.magness.dispatcharrtv.nightly.storage/dispatcharrtv-storage")), Ok("com.magness.dispatcharrtv.nightly"));
     }
 
     #[test]
     fn rejects_foreign_or_malformed_install_paths() {
         for path in [
-            "/usr/palm/services/com.magness.dispatcharrtv.typo.storage/plxnative-storage",
-            "/usr/palm/services/com.magness.dispatcharrtv.nightly/plxnative-storage",
-            "/usr/palm/applications/com.magness.dispatcharrtv.nightly.storage/plxnative-storage",
+            "/usr/palm/services/com.magness.dispatcharrtv.typo.storage/dispatcharrtv-storage",
+            "/usr/palm/services/com.magness.dispatcharrtv.nightly/dispatcharrtv-storage",
+            "/usr/palm/applications/com.magness.dispatcharrtv.nightly.storage/dispatcharrtv-storage",
             "/usr/palm/services/com.magness.dispatcharrtv.nightly.storage/other",
-            "plxnative-storage",
+            "dispatcharrtv-storage",
         ] {
             assert_eq!(app_identity(Path::new(path)), Err(ErrorCode::Invalid));
         }

@@ -346,7 +346,7 @@ impl TempSession {
     /// which profile it is says so with [`TempSession::watching`].
     pub fn new(tag: &str) -> TempSession {
         let dir =
-            std::env::temp_dir().join(format!("plxnative-session-{}-{tag}", std::process::id()));
+            std::env::temp_dir().join(format!("dispatcharrtv-session-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("a writable temp dir");
         redirect_for_test(Some(dir.join("auth.json")));
@@ -741,7 +741,7 @@ pub fn split_canonical(
     // ambiguous v2 write; only the typed field is permitted to carry active credentials.
     if session.extensions.0.contains_key("profiles") { return Err(()); }
     let auth = serde_json::to_string(&CanonicalSessionAuth {
-        format: "plxnative-session-auth".into(),
+        format: "dispatcharrtv-session-auth".into(),
         version: 2,
         profiles: Some(serde_json::to_value(valid_profiles(session.profiles.clone())).map_err(|_| ())?),
         account_token: session.account_token.clone(),
@@ -798,7 +798,7 @@ pub fn join_canonical(
     protected: &str,
 ) -> Result<Session, ()> {
     let auth: CanonicalSessionAuth = serde_json::from_str(protected).map_err(|_| ())?;
-    if auth.format != "plxnative-session-auth" || !matches!(auth.version, 1 | 2) {
+    if auth.format != "dispatcharrtv-session-auth" || !matches!(auth.version, 1 | 2) {
         return Err(());
     }
     let profiles = match (auth.version, auth.profiles) {
@@ -2304,7 +2304,7 @@ impl Session {
     /// Interactive boot with a multi-user Plex Home shows the who's-watching picker unless
     /// Automatically Sign In is on and a profile is already seated.
     ///
-    /// `force_pick` is `/tmp/plxnative-pickuser`: it wins even on an automated boot. An empty
+    /// `force_pick` is `/tmp/dispatcharrtv-pickuser`: it wins even on an automated boot. An empty
     /// `user.uuid` still raises the picker when the switch is on — that is the abandoned-at-picker
     /// session whose PMS token falls back to the owner. A uuid that is no longer in
     /// [`Session::home_users`] (removed Home user, stale roster) raises it too: the switch is an
@@ -3459,7 +3459,7 @@ fn session_from_read(read: &ReadState) -> Session {
     }
 }
 
-const SECURE_FORMAT: &str = "plxnative-secure-session";
+const SECURE_FORMAT: &str = "dispatcharrtv-secure-session";
 
 #[derive(Deserialize, Serialize)]
 struct SecureEnvelope {
@@ -3601,7 +3601,7 @@ fn read_legacy_locked() -> ReadState {
     read_legacy_filtered_locked(false)
 }
 
-const FALLBACK_MARKER: &str = "_plxnative_session_fallback";
+const FALLBACK_MARKER: &str = "_dispatcharrtv_session_fallback";
 /// An in-place sign-out tombstone, distinct from Session's permissive empty object.
 const SESSION_TOMBSTONE: &[u8] = b"null\n";
 
@@ -4972,7 +4972,7 @@ pub fn client_id_from_entropy(mut b: [u8; 16]) -> String {
 pub struct Account {
     /// **This device** holds a session: a plex.tv account token, or at least a server + PMS token
     /// it can stream on. The opposite of "offer them Sign in". Note it describes the session ON
-    /// DISK, not the identity currently in use: an automated boot on `/tmp/plxnative-token` streams
+    /// DISK, not the identity currently in use: an automated boot on `/tmp/dispatcharrtv-token` streams
     /// on an injected token yet still reports the stored account here — deliberately, because the
     /// stored account is exactly what a "Sign out" would clear.
     pub signed_in: bool,

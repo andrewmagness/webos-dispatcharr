@@ -23,7 +23,7 @@ pub mod ass_source; // bounded embedded scripts and subtitle presentation clock
 pub mod engine;
 pub mod lifecycle;
 pub mod machine;
-pub mod playurl; // the `plxnative-playurl` dev trigger: a stream and its Load declaration, parsed beside the engine that acts on it
+pub mod playurl; // the `dispatcharrtv-playurl` dev trigger: a stream and its Load declaration, parsed beside the engine that acts on it
 pub mod preview;
 // `test` here is THIS crate's own test build only, not `any(test, feature = "test-support")`: the
 // application crate's `port.rs` names `StarfishSink` in every build of its library that is not its
@@ -42,7 +42,7 @@ mod foreground_flight_tests;
 mod resume_tests;
 mod shared;
 pub mod sidecar;
-pub mod subside; // the side subtitle reader's thread and state (dev trigger `plxnative-subside`)
+pub mod subside; // the side subtitle reader's thread and state (dev trigger `dispatcharrtv-subside`)
 #[cfg(feature = "hostsim")]
 pub mod sim_video; // the simulator's decoded picture, for screenshots (see its doc)
 pub mod threads;
@@ -76,10 +76,10 @@ fn sink() -> &'static dyn plx_platform::tv::sink::VideoSink {
     &ffi_host::HostSink
 }
 
-/// `/tmp/plxnative-tracknames[=<audio>;<subs>]` — **stand in for the container's own track names**,
+/// `/tmp/dispatcharrtv-tracknames[=<audio>;<subs>]` — **stand in for the container's own track names**,
 /// which nothing off-device can read.
 ///
-/// It exists for the same reason `/tmp/plxnative-personbio` does, and the shape of the problem is
+/// It exists for the same reason `/tmp/dispatcharrtv-personbio` does, and the shape of the problem is
 /// identical: the data comes from a source no automated or host run can reach, so without a seed
 /// every headless look at the screen shows the degenerate state. Here the source is the DEMUXER —
 /// `ff::track_names` publishes these when it opens a part — and the desktop simulator has no
@@ -127,7 +127,7 @@ pub fn seed_dev_track_names() {
     let (audio, subs) = (list(a), list(sub));
     #[cfg(feature = "devtriggers")]
     plx_base::eventlog::log(&format!(
-        "player: DEV track names seeded (a={} s={}) — /tmp/plxnative-tracknames",
+        "player: DEV track names seeded (a={} s={}) — /tmp/dispatcharrtv-tracknames",
         audio.len(),
         subs.len()
     ));
@@ -1261,7 +1261,7 @@ pub fn error_now(ps: &crate::route::PlaybackSession) -> ErrorShape {
 const FAILTEST_VERDICT: &str =
     "Cannot convert this item. Implementation for video encoder 'hevc' not found.";
 
-/// dev: `/tmp/plxnative-failtest=<arm>` — force one variant of the failure read-out.
+/// dev: `/tmp/dispatcharrtv-failtest=<arm>` — force one variant of the failure read-out.
 ///
 /// The read-out is the one screen in the app that **cannot be reached on purpose**: it needs a
 /// server that refuses, which is exactly the state a working setup does not have. It is also the
@@ -1270,7 +1270,7 @@ const FAILTEST_VERDICT: &str =
 /// audience. So the arms are selectable, and there is no other way to grade them on a panel.
 ///
 /// Arms: `verdict` (the pre-flight refusal, with the server's own sentence quoted), `audio` (the
-/// audio-only transcode — pair with `/tmp/plxnative-nopass` for the PLEX PASS capsule), `novideo`
+/// audio-only transcode — pair with `/tmp/dispatcharrtv-nopass` for the PLEX PASS capsule), `novideo`
 /// (an audio-only file that direct-played), `stream` (no usable media), `connection` (an interrupted
 /// transfer), `tv` (the native pipeline refused Load), `jail` (this device's jail is missing
 /// `/dev/rtkmem` — forces [`jail_error_shape`] regardless of the real device probe, since most
@@ -1280,7 +1280,7 @@ const FAILTEST_VERDICT: &str =
 /// `player_hud::busy` has the other half — the state itself — for the same reason.
 ///
 /// The subscription comes from [`playing_subscription`], the same reader the real path uses, so the
-/// arm being photographed is the real resolver on real state. `/tmp/plxnative-nopass` is what makes
+/// arm being photographed is the real resolver on real state. `/tmp/dispatcharrtv-nopass` is what makes
 /// the capsule reachable and it applies to EVERY server, so the pairing `docs/agent-reference.md`
 /// documents is unaffected — but note the arm still has to be looked at from the player route,
 /// i.e. after a play, which is when `route::cur_sid` names a server at all.
@@ -1313,7 +1313,7 @@ fn failtest_arm(ps: &crate::route::PlaybackSession) -> Option<ErrorShape> {
         ),
     })
 }
-/// dev: the `policy` arm of `/tmp/plxnative-failtest` stands for a Force Direct Play session, so
+/// dev: the `policy` arm of `/tmp/dispatcharrtv-failtest` stands for a Force Direct Play session, so
 /// the action table sees the Force the arm's shape claims.
 fn failtest_forced() -> bool {
     plx_base::devtrig::read("failtest").is_some_and(|a| a.trim() == "policy")
@@ -1321,7 +1321,7 @@ fn failtest_forced() -> bool {
 
 /// Publish the jail read-out fixture on the same session fact the owned confirmation reads.
 /// Only ordinary development scenarios call this; controlled replay never reads this trigger.
-/// It lives beside [`failtest_arm`], the other reader of `/tmp/plxnative-failtest`, because it
+/// It lives beside [`failtest_arm`], the other reader of `/tmp/dispatcharrtv-failtest`, because it
 /// only reads that trigger and writes a `PlaybackSession` field — nothing of the app's.
 pub fn failure_fixture(session: &mut crate::route::PlaybackSession) {
     if plx_base::devtrig::read("failtest").is_some_and(|arm| arm.trim() == "jail") {
@@ -2451,7 +2451,7 @@ fn sf_on_event_inner(ty: c_int, num: i64, s: *const c_char) {
         // through the fault it exists to catch is worse than no instrument, because it is quoted.
         //
         // The real per-frame cadence is only observable from LG's own tracing — `GST_DEBUG=
-        // dualsequencer:6` via `/tmp/plxnative-gstlog`, whose `push_dual` and `lxvideosink`
+        // dualsequencer:6` via `/tmp/dispatcharrtv-gstlog`, whose `push_dual` and `lxvideosink`
         // timestamps give one line per frame. That was long avoided as perturbing; it is not, at
         // level 6: the same scene measured 123 LUT misses uninstrumented and 122 with the trace
         // running. Level 9 IS perturbing and is what that reputation came from.

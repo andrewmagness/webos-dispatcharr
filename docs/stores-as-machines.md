@@ -12,7 +12,7 @@ locally and share the temporary app-side Session command executor with Bridge. D
 no longer execute auth recovery directly. Physical Session ownership remains the next R2B
 package: the temporary executor still calls the existing auth controller.
 
-The design note for spec v4 (`ui-plxnative-structured-phoenix.md`) phase 4, written from the
+The design note for spec v4 (`ui-dispatcharrtv-structured-phoenix.md`) phase 4, written from the
 code rather than from the spec's sentence, because the sentence hides four decisions the tree
 forces. Read `rust-modules/data/src/stores/mod.rs` for the vocabulary; this is the reasoning.
 
@@ -215,7 +215,7 @@ an ownership slice.
 - **`dev_flags_reach_machines_only_as_recorded_sys_results` stays pending — 5b did NOT close it.**
   This section predicted the Settings family would be the `Sys` result path's first consumer; it
   is not. `AppFx` (`screens/registry.rs`) has `Store`/`Consent`/`Loop` and no `Sys` variant, the
-  Settings family's own boot-target trigger (`/tmp/plxnative-settings=privacy|home`) is read by
+  Settings family's own boot-target trigger (`/tmp/dispatcharrtv-settings=privacy|home`) is read by
   `devtrig::read` directly in `app/run.rs` before any screen mounts, and the pending test
   (`ui/fixture.rs`'s `phase_2` module) is still `#[ignore]`d. No machine reads a dev flag yet.
 

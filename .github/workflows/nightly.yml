@@ -265,7 +265,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          ipk="plxnative-v${LABEL}.ipk"
+          ipk="dispatcharrtv-v${LABEL}.ipk"
           cp raw/com.magness.dispatcharrtv.nightly_*_arm.ipk "dist/$ipk"
           ( cd dist && sha256sum "$ipk" > nightly.sha256 )
           # The package's manifest, with its bare `ipkUrl` pointed at the name the .ipk has on the
@@ -287,7 +287,7 @@ jobs:
           # regardless of which install it is.
           cp raw/ffmpeg-*.tar.xz dist/
           cp raw/build-ffmpeg.sh dist/
-          cp raw/plxnative-source-*.tar.gz* dist/
+          cp raw/dispatcharrtv-source-*.tar.gz* dist/
           echo "ipk=$ipk" >> "$GITHUB_OUTPUT"
         id: stage
       - name: Render release notes
@@ -320,7 +320,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$TAG" \
-            "dist/$IPK" dist/nightly.sha256 dist/com.magness.dispatcharrtv.nightly.manifest.json dist/ffmpeg-*.tar.xz dist/build-ffmpeg.sh dist/plxnative-source-*.tar.gz* \
+            "dist/$IPK" dist/nightly.sha256 dist/com.magness.dispatcharrtv.nightly.manifest.json dist/ffmpeg-*.tar.xz dist/build-ffmpeg.sh dist/dispatcharrtv-source-*.tar.gz* \
             --target "$SHA" \
             --title "PlxNative $LABEL" \
             --prerelease \

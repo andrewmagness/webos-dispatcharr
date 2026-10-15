@@ -130,7 +130,7 @@ space. Prefer coherent surfaces (a bar, a sheet, a card) and measure each new ge
 **A modal costs its host page every frame, and on this GPU that is the whole cost of having one up.**
 Measured 2026-09-02 on the debug install, detail page 2012 with the track-information panel open and
 paging with DOWN: every presented frame `draw≈83 ms`, `loop=41`, `fps=9`. The same page with no
-panel presents at 60 with worst frames ≈29 ms. The draw-class bisect (`/tmp/plxnative-drawmask`)
+panel presents at 60 with worst frames ≈29 ms. The draw-class bisect (`/tmp/dispatcharrtv-drawmask`)
 priced it as fill and nothing else.
 
 `ui::popover::host` is the answer, and it applies to every popover that asks for it rather than to
@@ -330,7 +330,7 @@ no longer priced by §2.
 `chrome_alpha` exists so it holds still while the pages swap under it — so a material that changes
 when you cross between those three breaks the one illusion that code was written to preserve. Either
 all three or none; "glass on Home only" is not an option, however tempting the frame budget makes it.
-It ships, and `/tmp/plxnative-flattabs` is the way back to the flat capsule for a comparison.
+It ships, and `/tmp/dispatcharrtv-flattabs` is the way back to the flat capsule for a comparison.
 Its density is not a constant — see §6.
 
 **No:** anything on the player route (§1), and a second far-away glass cluster that the frame walk merges

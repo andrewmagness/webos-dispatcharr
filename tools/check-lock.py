@@ -13,7 +13,7 @@ Usage:
 
 SLOTS. The lock is N slots, not one. A run takes any free slot (it tries each without
 blocking, then polls every POLL_INTERVAL s) and holds it for CMD's lifetime. Slot 0 is the
-lock file itself (`${PLX_CHECK_LOCK:-~/.cache/plxnative/check.lock}`) and slot i is
+lock file itself (`${PLX_CHECK_LOCK:-~/.cache/dispatcharrtv/check.lock}`) and slot i is
 `<lock>.i`; keeping slot 0 at the historical path means an older single-lock wrapper still
 running in some other worktree holds a slot of this scheme instead of being invisible to
 it. The directory is deliberately OUTSIDE any git worktree so every checkout on the machine
@@ -91,7 +91,7 @@ import subprocess
 import sys
 import time
 
-DEFAULT_LOCK = os.path.expanduser("~/.cache/plxnative/check.lock")
+DEFAULT_LOCK = os.path.expanduser("~/.cache/dispatcharrtv/check.lock")
 POLL_INTERVAL = 2
 REPORT_INTERVAL = 60
 EX_TEMPFAIL = 75

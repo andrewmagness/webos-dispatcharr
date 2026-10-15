@@ -6,7 +6,7 @@
 //! new start at the new offset), `stop` once per teardown; there is no in-place seek.
 //!
 //! Started by the engine for a route whose presenter is `ClientOverRemux` for an embedded track
-//! (`route::side_reader_target`), or, for diagnostics, by the dev trigger `plxnative-subside`
+//! (`route::side_reader_target`), or, for diagnostics, by the dev trigger `dispatcharrtv-subside`
 //! ([`dev_armed_ordinal`]) with no subtitle selected; the reader itself is not dev-gated. Everything is main-thread driven except the one reader thread, whose
 //! only inputs are the [`Spec`], `SHARED`'s playhead and clock atomics, and the main demuxer's
 //! published keyframe anchor.
@@ -93,7 +93,7 @@ pub fn raise_failure() {
     FAILED.store(true, Ordering::Release);
 }
 
-/// The subtitle ordinal `plxnative-subside` asks to draw, or `None` when the trigger is absent or
+/// The subtitle ordinal `dispatcharrtv-subside` asks to draw, or `None` when the trigger is absent or
 /// holds no non-negative number. Read at each playback start (a live trigger: no relaunch needed).
 /// Always `None` in a build without the dev triggers.
 pub fn dev_armed_ordinal() -> Option<i32> {

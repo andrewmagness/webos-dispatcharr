@@ -360,7 +360,7 @@ Option<Home>` (`home.rs:398`). Finish the contract:
   `update/draw/move_focus` onto methods. Make the existing pub fns `open/open_rk/
   open_rk_season/close/update/draw/move_focus/on_ok/last_resume_ns/selected_ptr` **thin
   wrappers** forwarding to methods — so `app.rs` routing, `route.rs`, and the dev-triggers
-  (`plxnative-detail*`, `app.rs:886-1053`) compile **unchanged**. *Checkpoint:* `make`.
+  (`dispatcharrtv-detail*`, `app.rs:886-1053`) compile **unchanged**. *Checkpoint:* `make`.
 - **6b** section rows (episodes/related/cast) become child sub-views composed by
   `DetailView::draw` under the translated `ps = p.translate(0,-scroll)` painter. Unify the two
   horizontal-scroll models: adopt the sprung `ep_hscroll` glide for Related/Cast too (kill the
@@ -535,7 +535,7 @@ tests/manifest.json
 |---|---|
 | `screens/<name>.rs` | the screen: its `Screen`/`Machine`/`Focusable`/`LogicalState` impls, its `SHAPE`, its own tests (§15.1 `a_new_screen_is_unit_tested_with_no_sdl` — a host of its own, three lines of it, never a sibling's) |
 | `screens/registry.rs` | the `AppArg` variant, its `ScreenId`, its canon tag, `ARG_SHAPE`, the one `mount` arm, `every_surface_arg`, `SCREEN_SHAPES` + the pin, and — for a page-owned panel — the `ContentPanel` variant and its `surface()` arm |
-| `dev/scenarios.rs` | the headless trigger that reaches it (`/tmp/plxnative-<name>`), which is what makes a capture and an fps scene possible at all |
+| `dev/scenarios.rs` | the headless trigger that reaches it (`/tmp/dispatcharrtv-<name>`), which is what makes a capture and an fps scene possible at all |
 | `tests/manifest.json` | the fps scene, keyed on the `overlay=` word the screen's own `Screen::name` prints |
 
 ### The four the criterion does not, and why each is honest
@@ -596,7 +596,7 @@ The criterion is only worth as much as the boundary underneath it.
    interactive press uses, and gate it on the host page's own predicate so the trigger cannot open
    what a press would refuse.
 5. Add the fps scene to `tests/manifest.json`.
-6. Re-record the replay fixtures (`tools/plxnative-rec rerecord`), because the pin moved.
+6. Re-record the replay fixtures (`tools/dispatcharrtv-rec rerecord`), because the pin moved.
 
 ---
 

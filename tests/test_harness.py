@@ -2152,7 +2152,7 @@ class NetcondRate(unittest.TestCase):
         with open(self.ctl, "w") as f:
             f.write(raw)
 
-    def _pull(self, path="/library/parts/1/file.mkv"):
+    def _pull(self, path="/library/parts/1/file.mkv", on_first_bytes=None):
         netcond.BUCKET.reset()
         c = socket.create_connection(("127.0.0.1", self.port), timeout=30)
         try:
@@ -2163,6 +2163,8 @@ class NetcondRate(unittest.TestCase):
                 b = c.recv(65536)
                 if not b:
                     break
+                if not got and on_first_bytes:
+                    on_first_bytes()
                 got += b
             return time.monotonic() - t0, got
         finally:
@@ -2264,10 +2266,9 @@ class NetcondRate(unittest.TestCase):
         """One scripted run has to cover four CASE1 legs; four launches is not the same experiment,
         because the app's own state differs between them."""
         self._set(f"rate:{self.KBPS / 4:g}")
-        t = threading.Timer(0.1, self._set, args=("pass",))
-        t.start()
-        self.addCleanup(t.cancel)
-        live_s, body = self._pull()
+        # Released when the first throttled bytes arrive, not on a timer: a timer thread that a
+        # loaded host runs late released nothing in time, and the test failed on the scheduler.
+        live_s, body = self._pull(on_first_bytes=lambda: self._set("pass"))
         self.assertEqual(len(body), self.N)
         # A quarter of the rate is four times the floor; releasing it has to land well inside that.
         self.assertLess(live_s, self.FLOOR_S * 4,

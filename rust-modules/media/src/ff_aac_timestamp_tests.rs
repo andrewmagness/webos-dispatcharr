@@ -153,3 +153,15 @@ fn adts_framed_packets_are_recognised() {
     assert!(packet_has_adts(&[0xFF, 0xF1, 0x50, 0x80, 0x40, 0x1F, 0xFC]));
     assert!(!packet_has_adts(&[0x21, 0x10, 0x05, 0x00, 0x00, 0x00, 0x00]), "raw AAC from MKV/MP4");
 }
+
+/// A live channel's open waits out a one-stream source freeing the slot the last channel held;
+/// nothing else is retried, and the wait ends.
+#[test]
+fn only_a_live_channels_busy_open_is_retried_and_not_forever() {
+    assert!(live_busy_retry(true, 503, 0));
+    assert!(live_busy_retry(true, 503, LIVE_BUSY_RETRIES - 1));
+    assert!(!live_busy_retry(true, 503, LIVE_BUSY_RETRIES), "the wait ends");
+    assert!(!live_busy_retry(false, 503, 0), "a file's 503 is the server's answer");
+    assert!(!live_busy_retry(true, 404, 0), "a missing channel is not busy");
+    assert!(!live_busy_retry(true, 0, 0), "nor is a server that never answered");
+}

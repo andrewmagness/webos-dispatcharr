@@ -24,6 +24,7 @@
 
 mod ass_subtitles;
 pub mod input;
+pub mod live;
 pub mod overlay;
 #[cfg(test)]
 mod overlay_tests;
@@ -62,7 +63,8 @@ pub const WORD: &str = "player";
 pub const SHAPE: &str =
     "PlayerScreen{hud:{focus:i32,btn:i32,tab:i32,until:u32,dismissed:bool,visible_at_press:bool,\
      offer:Option<(u32,i64)>,was_standin:bool},scrub:{dir:i32,hold:bool,reveal:bool,drag:bool,\
-     ns:i64,commit_at:u32},origin:Option<u32>,repair_alert:{open:bool,confirm:bool,scroll:u32}}";
+     ns:i64,commit_at:u32},origin:Option<u32>,repair_alert:{open:bool,confirm:bool,scroll:u32},\
+     live:{seen:Option<(u64,i64)>,seen_ms:u32,banner_until:u32,typed:str,typed_at:u32,missing:str,missing_until:u32,ok_down:Option<u32>,ok_fired:bool}}";
 
 /// **The page this playback was launched from**, as the container's own identity.
 ///
@@ -156,6 +158,9 @@ pub struct PlayerScreen {
     failure_up: bool,
     /// The transport clocks' prewarm memo — a render resource, not logical state (`prepare`).
     clock_warm: plx_appkit::player_hud::ClockWarm,
+    /// The live-TV controls: the banner, the typed number and the tune they belong to. Default
+    /// (and inert) whenever what is playing is not a live channel.
+    live: live::LiveControls,
 }
 
 impl PlayerScreen {
@@ -181,6 +186,7 @@ impl PlayerScreen {
             failure_sel: 0,
             failure_up: false,
             clock_warm: Default::default(),
+            live: live::LiveControls::default(),
         }
     }
 
@@ -389,6 +395,17 @@ impl PlayerScreen {
         )));
         mix(plx_media::player::active_bitmap_key(pos).unwrap_or(0) as u64);
         mix(u64::from(hud_up));
+        // The live chrome: the banner coming and going (and its progress bar, which moves with the
+        // wall-clock second), the typed digits and the no-such-channel note.
+        if let Some(tune) = plx_media::route::live_tune(ps) {
+            let banner = self.live.banner_visible(now);
+            mix(u64::from(banner));
+            if banner {
+                mix(self.live.wall_now(tune, now) as u64);
+            }
+            mix(self.live.typed.len() as u64);
+            mix(u64::from(self.live.missing_visible(now)));
+        }
         mix(u64::from(
             self.row
                 .since_play_ms(now)
@@ -415,6 +432,10 @@ impl PlayerScreen {
     /// gated HERE, not just at the draw call site, so [`Self::clock_fingerprint`] (which calls this
     /// too) sees the same answer the frame draws.
     pub fn hud_up(&self, ps: &plx_media::route::PlaybackSession, now: u32) -> bool {
+        // Live TV has no transport: nothing to seek in, and its banner is its chrome.
+        if plx_media::route::live_tune(ps).is_some() {
+            return false;
+        }
         self.hud.visible(ps, now, plx_media::player::TX.paused.load(std::sync::atomic::Ordering::Relaxed))
             && self.hud_policy != HudPolicy::Hidden
     }
@@ -566,6 +587,8 @@ impl<H: PlayerLike + crate::registry::MetadataLike> Machine<H> for PlayerScreen 
                 // armed by a real release must not then be answered twice.
                 self.step_scrub_hold(tick.ms, fx);
                 self.step_tap_commit(tick.ms, fx);
+                let action = self.live.tick(plx_media::route::live_tune(H::session(cx)), tick.ms);
+                Self::live_act(action, fx);
                 self.publish();
                 Handled::Yes
             }
@@ -580,7 +603,11 @@ impl<H: PlayerLike + crate::registry::MetadataLike> Machine<H> for PlayerScreen 
                 let ps = H::session(cx);
                 match &input.kind {
                     InputKind::Key { key, sym, wcode, edge, .. } => {
-                        self.handle_key(ps, consts::classify_input(*key, *sym, *wcode), *edge, input.at.ms, fx, H::metadata(cx))
+                        let classified = consts::classify_input(*key, *sym, *wcode);
+                        if let Some(handled) = self.live_key(ps, classified, *sym, *wcode, *edge, input.at.ms, fx) {
+                            return handled;
+                        }
+                        self.handle_key(ps, classified, *edge, input.at.ms, fx, H::metadata(cx))
                     }
                     InputKind::Click { hit, x, .. } => {
                         self.handle_click(ps, *hit, *x, input.at.ms, fx)
@@ -593,6 +620,13 @@ impl<H: PlayerLike + crate::registry::MetadataLike> Machine<H> for PlayerScreen 
                     // dismissal, which is how a Magic Remote user finds the HUD over full-screen
                     // video. `app/run.rs`'s own motion arm did this and then RETURNED, so the page
                     // never saw a pointer event at all.
+                    InputKind::Pointer { .. } if plx_media::route::live_tune(ps).is_some() => {
+                        if let Some(tune) = plx_media::route::live_tune(ps) {
+                            self.live.key(tune, live::LivePress::Wake, input.at.ms);
+                        }
+                        plx_machine::idle::invalidate();
+                        Handled::Yes
+                    }
                     InputKind::Pointer { .. } => {
                         self.hud.dismissed = false;
                         self.hud.extend(input.at.ms, input::HUD_LINGER_MS);
@@ -789,6 +823,59 @@ impl PlayerScreen {
     }
 
     /// Classify → dispatch, the one entry every `Input(Key)` event goes through.
+    /// **A key on live TV** (see [`live`]): `Some` when the live player answered it, `None` for a
+    /// key the player answers as it always has (BACK, STOP, EXIT) or when nothing live plays. A
+    /// failure read-out keeps OK and its own row: a channel that failed can still be changed, and
+    /// its *Try again* still answers OK.
+    fn live_key<H: AppLike>(
+        &mut self,
+        ps: &plx_media::route::PlaybackSession,
+        key: consts::Key,
+        sym: std::os::raw::c_uint,
+        wcode: std::os::raw::c_uint,
+        edge: Edge,
+        now: u32,
+        fx: &mut Effects<'_, H>,
+    ) -> Option<Handled> {
+        let tune = plx_media::route::live_tune(ps)?;
+        let press = live::press_of(key, sym, wcode)?;
+        if plx_appkit::player_hud::transport_hidden(ps) && matches!(press, live::LivePress::Ok | live::LivePress::Swallow) {
+            return None;
+        }
+        // OK is answered on all three edges (tap on release, hold for recall). Everything else
+        // acts on the press alone: a held CH▲ does not race through the lineup, one Load a repeat.
+        let action = match press {
+            live::LivePress::Ok => self.live.ok(tune, edge, now),
+            _ if edge == Edge::Down => self.live.key(tune, press, now),
+            _ => return Some(Handled::Yes),
+        };
+        Self::live_act(action, fx);
+        plx_machine::idle::invalidate();
+        Some(Handled::Yes)
+    }
+
+    fn live_act<H: AppLike>(action: live::LiveAction, fx: &mut Effects<'_, H>) {
+        if let live::LiveAction::Tune(tune) = action {
+            Self::ask(fx, PlayerReq::Tune(tune));
+        }
+    }
+
+    /// The live chrome: the banner while it is up, and the typed number (or that it matched
+    /// nothing) in the corner.
+    fn draw_live<H: AppLike>(&self, ps: &plx_media::route::PlaybackSession, now: u32, f: &mut DrawFrame<'_, '_, H>) {
+        let Some(tune) = plx_media::route::live_tune(ps) else { return };
+        if self.live.banner_visible(now) {
+            if let Some(channel) = tune.channel() {
+                plx_appkit::live_banner::draw(f.painter, channel, self.live.wall_now(tune, now), f.measure);
+            }
+        }
+        if !self.live.typed.is_empty() {
+            plx_appkit::live_banner::draw_typed(f.painter, &self.live.typed, false, f.measure);
+        } else if self.live.missing_visible(now) {
+            plx_appkit::live_banner::draw_typed(f.painter, &self.live.missing, true, f.measure);
+        }
+    }
+
     fn handle_key<H: AppLike>(
         &mut self,
         ps: &plx_media::route::PlaybackSession,
@@ -1315,6 +1402,19 @@ impl LogicalState for PlayerScreen {
             c.u32(o.entry.0);
         });
         c.bool(self.repair_alert.is_open()).bool(self.repair_alert.choice() == plx_ui::decision_alert::Choice::Destructive).u32(self.repair_scroll);
+        c.option(self.live.seen.as_ref(), |c, (index, at)| {
+            c.u64(*index as u64).u64(*at as u64);
+        });
+        c.u32(self.live.seen_ms)
+            .u32(self.live.banner_until)
+            .str(&self.live.typed)
+            .u32(self.live.typed_at)
+            .str(&self.live.missing)
+            .u32(self.live.missing_until);
+        c.option(self.live.ok_down.as_ref(), |c, t| {
+            c.u32(*t);
+        });
+        c.bool(self.live.ok_fired);
     }
     fn probe(&self, out: &mut String) {
         out.push_str(WORD);
@@ -1382,6 +1482,7 @@ impl<H: PlayerLike + crate::registry::MetadataLike> Screen<H> for PlayerScreen {
         // terminal `Error` (which is not `is_busy()`, so it does not pin the HUD) keeps its message
         // instead of vanishing with the 4.5 s linger. AFTER the transport, so it is never dimmed by
         // the scrim; BEFORE the overlay panels, which the container draws above this page.
+        self.draw_live(ps, now, f);
         plx_appkit::player_hud::draw_readout(ps, self.busy, now, self.failure_sel, f.measure);
         if self.repair_alert.visible() {
             self.repair_alert.draw_scrim();
@@ -2726,6 +2827,40 @@ mod repair_confirmation_tests {
     fn key_event(sym: u32, wcode: u32) -> ScreenEvent<TestHost> {
         ScreenEvent::Input(InputEvent { kind: InputKind::Key { key: plx_machine::machine::Key::Other, sym, wcode, edge: Edge::Down, at_edge: false }, at: Tick::default(), source: Source::Sdl })
     }
+    fn live() -> plx_media::route::PlaybackSession {
+        use plx_media::route::{LiveChannel, LiveLineup, LiveTune};
+        let channels = (1..=3)
+            .map(|n| LiveChannel { id: n, number: n.to_string(), name: format!("C{n}"), url: format!("http://192.0.2.1:9191/{n}"),
+                logo: None, programmes: Vec::new() })
+            .collect();
+        let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
+        let mut ps = plx_media::route::PlaybackSession::IDLE;
+        assert!(plx_media::route::request_live(&mut ps, LiveTune { lineup, index: 0, previous: None, at: 0 }, 1_000));
+        ps
+    }
+
+    /// The live player end to end through the page's own `step`: CH▲ asks for the next channel,
+    /// a typed number for its channel on OK, the film transport never rises, and BACK still
+    /// leaves for the Guide.
+    #[test]
+    fn on_live_tv_the_remote_changes_channel_and_back_still_leaves() {
+        let _g = plx_base::testlock::serial();
+        let ps = live();
+        let here = plx_media::route::live_tune(&ps).unwrap().clone();
+        let mut page = PlayerScreen::new(EntryId(1));
+        let reqs = deliver(&mut page, &ps, None, key_event(0, consts::WCODE_CH_UP_KEY));
+        assert_eq!(reqs, vec![PlayerReq::Tune(here.to(1))]);
+        assert_eq!(deliver(&mut page, &ps, None, key_event(b'3' as u32, 0)), vec![PlayerReq::Tune(here.to(2))],
+            "3 can only mean channel 3");
+        let ok = |edge| ScreenEvent::Input(InputEvent { kind: InputKind::Key { key: plx_machine::machine::Key::Ok, sym: 0,
+            wcode: 0, edge, at_edge: false }, at: Tick::default(), source: Source::Sdl });
+        assert!(deliver(&mut page, &ps, None, ok(Edge::Down)).is_empty(), "OK's press waits: it may be a hold");
+        assert!(deliver(&mut page, &ps, None, ok(Edge::Up)).is_empty(), "its release only toggles the banner");
+        assert!(deliver(&mut page, &ps, None, key_event(0, consts::WCODE_PAUSE)).is_empty(), "no pausing live TV");
+        assert!(!page.hud_up(&ps, 0), "live TV has no transport");
+        assert_eq!(deliver(&mut page, &ps, None, key_event(0, consts::WCODE_BACK)), vec![PlayerReq::Exit]);
+    }
+
     fn blocked() -> plx_media::route::PlaybackSession {
         let mut ps = plx_media::route::PlaybackSession::IDLE;
         ps.jail_load_blocked = true;

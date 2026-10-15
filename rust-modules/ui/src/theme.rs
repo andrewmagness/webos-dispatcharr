@@ -804,6 +804,9 @@ pub const WASH_WARM: [f32; 4] = SAND_100;
 /// [`crate::route_screen::RouteGround`] uses that instead.
 pub const ROUTE_GROUND_FALLBACK: [[f32; 4]; 4] =
     [ATMOS_WARM_GREY, ATMOS_CHARCOAL, ATMOS_UMBER, ATMOS_ASH];
+/// A favourite channel's star (the Guide's rows and its favourites switch). The amber of a mark
+/// that is a fact about the item, like [`RESUME_FILL`], on the same palette stop.
+pub const FAVOURITE_MARK: [f32; 4] = AMBER_300;
 /// Warm amber Continue-Watching progress fill (Plex-specific; no player equivalent). `#fab82e`.
 pub const RESUME_FILL: [f32; 4] = with_a(AMBER_300, 0.95);
 /// Plex's own "Plex Pass" gold, `#e5a00d` — a BRAND REFERENCE, not a palette member

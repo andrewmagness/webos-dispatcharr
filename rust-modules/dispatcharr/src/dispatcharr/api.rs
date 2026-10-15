@@ -21,6 +21,14 @@ impl std::fmt::Debug for Account {
     }
 }
 
+/// The television's wall clock in Unix seconds: the one reading behind the guide's "now" and a
+/// live tune's "on now". Read here, in the data layer, so the app's logical clock stays ticks.
+pub fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
 impl Account {
     fn get(&self, path: &str) -> Result<Vec<u8>, Error> {
         client::send(&self.server, Method::Get, path, Auth::ApiKey(&self.api_key), None)
@@ -69,9 +77,7 @@ impl Account {
     /// the stamp a screen counts on from with its own logical ticks, so the wall clock is read here,
     /// once per fetch, and never by the UI.
     pub fn guide_now(&self, channels: &[Channel]) -> Result<(Guide, i64), Error> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs() as i64);
+        let now = unix_now();
         Ok((self.guide(channels, now)?, now))
     }
 

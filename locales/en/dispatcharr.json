@@ -178,5 +178,36 @@
       "episode": "i64"
     },
     "description": "A programme's episode number when the listing gives no season"
+  },
+  "dispatcharr.live.next": {
+    "value": "Next {time} · {title}",
+    "args": {
+      "time": "str",
+      "title": "str"
+    },
+    "description": "Live TV banner: the programme after the one on now. {time} is its start, a clock time in the viewer's format"
+  },
+  "dispatcharr.live.no_channel": {
+    "value": "No channel {number}",
+    "args": {
+      "number": "str"
+    },
+    "description": "Live TV: the number typed on the remote matches no channel in the lineup"
+  },
+  "dispatcharr.guide.favourites": {
+    "value": "Favourites",
+    "description": "Guide header switch, while every channel is shown: show only the favourite channels"
+  },
+  "dispatcharr.guide.all_channels": {
+    "value": "All channels",
+    "description": "Guide header switch, while only favourites are shown: show every channel again"
+  },
+  "dispatcharr.guide.no_favourites": {
+    "value": "No favourites yet",
+    "description": "Guide verdict when only favourites are shown and there are none"
+  },
+  "dispatcharr.guide.no_favourites_reason": {
+    "value": "Hold OK on a channel to add it to your favourites.",
+    "description": "Under 'No favourites yet': how to add one"
   }
 }

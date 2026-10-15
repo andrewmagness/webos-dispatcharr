@@ -3862,6 +3862,33 @@ enum MediaOpenFail {
     Failed,
 }
 
+/// How long to wait between a live channel's busy opens, and how many to make: long enough for a
+/// one-stream IPTV source to free the slot the channel just left. Measured on a real server
+/// (2026-10-14): zero to two 503s, each answered at once, before the next channel opened.
+const LIVE_BUSY_WAIT: std::time::Duration = std::time::Duration::from_millis(500);
+const LIVE_BUSY_RETRIES: u32 = 16;
+
+/// Whether an open that failed with HTTP `status` is retried, after `tries` retries already: only
+/// a live channel's 503 (its server's stream slot is still held), and only for a while.
+fn live_busy_retry(live: bool, status: i32, tries: u32) -> bool {
+    live && status == 503 && tries < LIVE_BUSY_RETRIES
+}
+
+/// Sleep `d`, waking every 50 ms to see whether teardown aborted the queue. `false` = aborted.
+fn wait_unless_aborted(aq: *mut AuQueue, d: std::time::Duration) -> bool {
+    let step = std::time::Duration::from_millis(50);
+    let mut left = d;
+    while !left.is_zero() {
+        if unsafe { crate::aq::aq_is_aborted(aq) } {
+            return false;
+        }
+        let nap = left.min(step);
+        std::thread::sleep(nap);
+        left -= nap;
+    }
+    !unsafe { crate::aq::aq_is_aborted(aq) }
+}
+
 /// Open an https redirect target on the curl source at byte `at`. The reservation publishes
 /// teardown's wake target BEFORE the abort check — the order `demux`'s own TLS open keeps.
 fn open_curl_hop(
@@ -8469,8 +8496,30 @@ pub fn demux(
                         }
                     }
                 } else {
-                    // Redirects followed; an https hop comes back as the curl source.
-                    match open_plain_progressive(hs_p, &origin, &path, aq_p) {
+                    // Redirects followed; an https hop comes back as the curl source. A live
+                    // channel's 503 is retried while the server frees the slot it just held.
+                    let mut busy = 0u32;
+                    let opened = loop {
+                        let result = open_plain_progressive(hs_p, &origin, &path, aq_p);
+                        let retry = matches!(result, Err(MediaOpenFail::Failed))
+                            && live_busy_retry(
+                                SHARED.live_source.load(Ordering::Acquire),
+                                SHARED.dg_http_status.load(Ordering::Relaxed),
+                                busy,
+                            );
+                        if !retry {
+                            break result;
+                        }
+                        busy += 1;
+                        crate::player::log(&format!(
+                            "ff: live stream busy (503), retry {busy} in {}ms",
+                            LIVE_BUSY_WAIT.as_millis()
+                        ));
+                        if !wait_unless_aborted(aq_p, LIVE_BUSY_WAIT) {
+                            break Err(MediaOpenFail::Aborted);
+                        }
+                    };
+                    match opened {
                         Ok(opened) => opened,
                         Err(MediaOpenFail::Aborted) => {
                             crate::player::log("ff: aborted during open");

@@ -137,6 +137,11 @@ fn parse(bytes: &[u8]) -> Option<Record> {
 /// The file at `path`: `Ok(None)` when there is none, `Err` when one is there that this process
 /// must not read (not a regular file, another owner, too large, unreadable).
 fn read_owned(path: &Path) -> Result<Option<Vec<u8>>, ()> {
+    read_owned_up_to(path, MAX_FILE)
+}
+
+/// [`read_owned`] with the caller's own size bound.
+pub(super) fn read_owned_up_to(path: &Path, max: u64) -> Result<Option<Vec<u8>>, ()> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
     let file = match std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC).open(path) {
         Ok(file) => file,
@@ -146,15 +151,15 @@ fn read_owned(path: &Path) -> Result<Option<Vec<u8>>, ()> {
     // The metadata of the descriptor the bytes come from, not of the name: a swap between a check
     // and the read cannot change what was checked.
     let meta = file.metadata().map_err(|_| ())?;
-    if !meta.file_type().is_file() || meta.uid() != euid() || meta.len() > MAX_FILE {
+    if !meta.file_type().is_file() || meta.uid() != euid() || meta.len() > max {
         return Err(());
     }
     let mut bytes = Vec::new();
-    file.take(MAX_FILE + 1).read_to_end(&mut bytes).map_err(|_| ())?;
+    file.take(max + 1).read_to_end(&mut bytes).map_err(|_| ())?;
     Ok(Some(bytes))
 }
 
-fn remove(path: &Path) {
+pub(super) fn remove(path: &Path) {
     let _ = std::fs::remove_file(path);
     plx_base::atomic_file::remove_temp_siblings(path);
 }

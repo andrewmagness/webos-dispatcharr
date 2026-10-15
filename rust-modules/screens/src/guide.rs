@@ -26,10 +26,12 @@
 use std::borrow::Cow;
 use std::ffi::CString;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
 
 use plx_dispatcharr::dispatcharr::guide::{slot_at, Guide, Slot, Window};
 use plx_dispatcharr::dispatcharr::models::{Channel, Programme};
 use plx_dispatcharr::dispatcharr::Error;
+use plx_media::route::{LiveChannel, LiveLineup, LiveProgramme, LiveTune};
 use plx_machine::machine::{
     Canon, Cx, Delivery, Edge, Effects, EntryId, FocusKey, Fx, GroupId, Handled, InputEvent,
     InputKind, InstanceId, Key, LogicalState, Machine, MachineId, Tick,
@@ -56,12 +58,15 @@ use super::registry::{word, AppFx, AppLike, ContentReq, DispatcharrCmd, GuideOut
 const ACCOUNT: u32 = plx_ui::dispatch::STRIP_BASE - 1;
 /// A failed read-out's action (*Try again*, or *Sign in again* for a refused key).
 const RETRY: u32 = plx_ui::dispatch::STRIP_BASE - 2;
+/// The header's favourites switch: every channel, or only the favourites. The lowest reserved
+/// element: everything below it is a cell.
+const FAVOURITES: u32 = plx_ui::dispatch::STRIP_BASE - 3;
 /// A cell's element: its row above these bits, its slot in them. A lane is capped at
 /// `1 << SLOT_BITS` cells — a 13-hour window of one-minute programmes is 780.
 const SLOT_BITS: u32 = 12;
 const MAX_SLOTS: usize = 1 << SLOT_BITS;
 /// Rows that fit beside the reserved elements above.
-const MAX_ROWS: usize = ((RETRY >> SLOT_BITS) - 1) as usize;
+const MAX_ROWS: usize = ((FAVOURITES >> SLOT_BITS) - 1) as usize;
 
 /// The grid. `GroupId(0)` is the container's own fresh-mount target (`stack.rs::fresh`).
 const GRID: GroupId = GroupId(0);
@@ -74,13 +79,13 @@ fn cell(row: usize, slot: usize) -> u32 {
 
 /// A cell element's `(row, slot)`; `None` for the reserved elements.
 fn split(elem: u32) -> Option<(usize, usize)> {
-    (elem < RETRY).then(|| ((elem >> SLOT_BITS) as usize, (elem & (MAX_SLOTS as u32 - 1)) as usize))
+    (elem < FAVOURITES).then(|| ((elem >> SLOT_BITS) as usize, (elem & (MAX_SLOTS as u32 - 1)) as usize))
 }
 
 /// The recorded shape of [`GuideScreen`]'s logical state (`registry::SCREEN_SHAPES`). Instants are
 /// written as their `u64` bit patterns.
 pub const SHAPE: &str = "GuideScreen{phase:u8,rows:u64,window:Option<(u64,u64)>,anchor:u64,view_start:u64,\
-    view_top:f32,pending:bool,failure:Option<u8>}";
+    view_top:f32,pending:bool,failure:Option<u8>,favourites:u64,only_favourites:bool}";
 
 mod layout {
     use plx_ui::consts::{MARGIN_X, MARGIN_Y, SCR_H, SCR_W};
@@ -134,13 +139,35 @@ impl Phase {
     }
 }
 
-/// What a fetch brought: the channels in guide order, their programmes, and each row's lane.
+/// Everything the last fetch brought, whatever the page is showing of it: the favourites switch
+/// filters this into a [`Listing`] without asking the server again.
+struct Source {
+    channels: Vec<Channel>,
+    logos: Vec<Option<String>>,
+    streams: Vec<String>,
+    guide: Guide,
+    fetched_at: i64,
+}
+
+/// Where a [`GuideScreen::relist`] puts focus.
+#[derive(Clone, Copy, Debug)]
+enum Refocus {
+    /// Onto a cell: the carried `(channel id, time)` when that channel is still listed, else row
+    /// `row` (or the last row) at that time, or at now.
+    Cell { carry: Option<(i64, i64)>, row: usize },
+    /// Leave it where it is (the header switch keeps it).
+    Keep,
+}
+
+/// What the page shows: the channels in guide order, their programmes, and each row's lane.
 struct Listing {
     channels: Vec<Channel>,
     /// Each channel's logo URL (`None` for one without), row for row.
     logos: Vec<Option<String>>,
-    /// Each channel's live stream URL (empty for one the answer did not give), row for row.
-    streams: Vec<String>,
+    /// What OK hands the player: every row as a live channel, built once per landing.
+    lineup: Arc<LiveLineup>,
+    /// Which rows are favourites.
+    stars: Vec<bool>,
     guide: Guide,
     lanes: Vec<Vec<Slot>>,
     /// Each channel's number as a viewer reads it, kept so a frame does not format sixty of them.
@@ -150,13 +177,36 @@ struct Listing {
 }
 
 impl Listing {
-    fn new(mut channels: Vec<Channel>, mut logos: Vec<Option<String>>, mut streams: Vec<String>, guide: Guide,
-        fetched_at: i64) -> Option<Self> {
+    fn new(mut channels: Vec<Channel>, mut logos: Vec<Option<String>>, mut streams: Vec<String>,
+        favourites: &[String], guide: Guide, fetched_at: i64) -> Option<Self> {
         let window = guide.window()?;
         channels.truncate(MAX_ROWS);
         // Row for row with the channels whatever the answer held: a short list means no logos.
         logos.resize(channels.len(), None);
         streams.resize(channels.len(), String::new());
+        let lineup = Arc::new(LiveLineup {
+            channels: channels
+                .iter()
+                .zip(streams)
+                .zip(&logos)
+                .map(|((c, url), logo)| LiveChannel {
+                    id: c.id,
+                    number: c.number_label(),
+                    name: c.name.clone(),
+                    url,
+                    logo: logo.clone(),
+                    programmes: guide
+                        .programmes(c.id)
+                        .iter()
+                        .map(|p| LiveProgramme { start: p.start, end: p.end, title: p.title.clone() })
+                        .collect(),
+                })
+                .collect(),
+            // Every channel sampled on a real server (2026-10-14) was H.264 + AAC. The Load must
+            // be declared before the stream is opened; reading it from the stream is M5's work.
+            vcodec: "h264".to_owned(),
+            acodec: "aac".to_owned(),
+        });
         let lanes = channels
             .iter()
             .map(|c| {
@@ -166,7 +216,8 @@ impl Listing {
             })
             .collect();
         let numbers = channels.iter().map(Channel::number_label).collect();
-        Some(Listing { channels, logos, streams, guide, lanes, numbers, window, fetched_at })
+        let stars = channels.iter().map(|c| favourites.contains(&c.uuid)).collect();
+        Some(Listing { channels, logos, lineup, stars, guide, lanes, numbers, window, fetched_at })
     }
 
     fn rows(&self) -> usize {
@@ -213,6 +264,8 @@ struct GuideState {
     view_top: f32,
     pending: bool,
     failure: Option<u8>,
+    favourites: usize,
+    only_favourites: bool,
 }
 
 impl LogicalState for GuideState {
@@ -225,6 +278,7 @@ impl LogicalState for GuideState {
         c.option(self.failure, |c, d| {
             c.u8(d);
         });
+        c.u64(self.favourites as u64).bool(self.only_favourites);
     }
     fn probe(&self, out: &mut String) {
         out.push_str(&format!("guide phase={} rows={} pending={}", self.phase, self.rows, self.pending));
@@ -235,7 +289,12 @@ pub struct GuideScreen {
     entry: EntryId,
     instance: InstanceId,
     phase: Phase,
+    source: Option<Source>,
     listing: Option<Listing>,
+    /// The favourite channels' UUIDs, in the order they were added (what is saved).
+    favourites: Vec<String>,
+    /// The page shows only the favourites.
+    only_favourites: bool,
     pending: Option<Receiver<GuideOutcome>>,
     clock: Option<WallClock>,
     /// The latest tick's wall-clock second (0 until the first answer).
@@ -266,7 +325,10 @@ impl GuideScreen {
             entry,
             instance,
             phase: Phase::Loading,
+            source: None,
             listing: None,
+            favourites: Vec::new(),
+            only_favourites: false,
             pending: None,
             clock: None,
             now: 0,
@@ -282,7 +344,7 @@ impl GuideScreen {
             ground: RouteGround::new(),
             state: GuideState {
                 phase: 0, rows: 0, window: None, anchor: 0, view_start: 0.0, view_top: 0.0, pending: false,
-                failure: None,
+                failure: None, favourites: 0, only_favourites: false,
             },
         };
         screen.sync_state();
@@ -306,6 +368,8 @@ impl GuideScreen {
                 Phase::Failed(e) => Some(failure_disc(e)),
                 _ => None,
             },
+            favourites: self.favourites.len(),
+            only_favourites: self.only_favourites,
         };
     }
 
@@ -379,46 +443,95 @@ impl GuideScreen {
                     self.reseat(RETRY, fx);
                 }
             }
-            GuideOutcome::Loaded { channels, logos, streams, guide, fetched_at } => {
+            GuideOutcome::Loaded { channels, logos, streams, favourites, guide, fetched_at } => {
                 self.clock = Some(WallClock { unix: fetched_at, ms });
                 self.now = fetched_at;
                 self.drawn_now = fetched_at;
-                let Some(listing) = Listing::new(channels, logos, streams, guide, fetched_at) else {
-                    self.phase = Phase::Failed(Error::BadResponse("guide window".into()));
-                    self.reseat(RETRY, fx);
-                    return;
-                };
-                if listing.rows() == 0 {
-                    self.listing = None;
-                    self.phase = Phase::Empty;
-                    self.reseat(ACCOUNT, fx);
-                    return;
-                }
-                let first = self.listing.is_none();
+                self.favourites = favourites;
+                self.source = Some(Source { channels, logos, streams, guide, fetched_at });
                 // The channel and the time under the cursor, before the old listing goes.
                 let carry = self.carry.take();
-                self.listing = Some(listing);
-                self.phase = Phase::Ready;
-                let listing = self.listing.as_ref().expect("just stored");
-                let (row, t) = match carry {
-                    Some((channel, t)) => {
-                        (listing.channels.iter().position(|c| c.id == channel).unwrap_or(0), t)
-                    }
-                    None => (0, fetched_at),
-                };
-                let floor = listing.window.start;
-                let elem = listing.at(row, t).unwrap_or(cell(0, 0));
-                if first {
-                    // The view opens on the half hour now falls in, the first rows in place.
-                    let start = layout::grid().slot_start(fetched_at, floor);
-                    self.view = GridView { start, top: 0.0 };
-                    self.start_lag = Spring::at(0.0);
-                    self.top_lag = Spring::at(0.0);
-                    self.anchor = fetched_at;
-                }
-                self.reseat(elem, fx);
+                self.relist(Refocus::Cell { carry, row: 0 }, fx);
             }
         }
+    }
+
+    /// Rebuild what the page shows from the last fetch, the favourites and the switch, and say
+    /// where focus goes: back onto a cell (the carried channel, else row `row` or the last one),
+    /// or nowhere new.
+    fn relist<H: AppLike>(&mut self, refocus: Refocus, fx: &mut Effects<'_, H>) {
+        let Some(src) = &self.source else { return };
+        let keep: Vec<usize> = (0..src.channels.len())
+            .filter(|&i| !self.only_favourites || self.favourites.contains(&src.channels[i].uuid))
+            .collect();
+        let listing = Listing::new(
+            keep.iter().map(|&i| src.channels[i].clone()).collect(),
+            keep.iter().map(|&i| src.logos.get(i).cloned().flatten()).collect(),
+            keep.iter().map(|&i| src.streams.get(i).cloned().unwrap_or_default()).collect(),
+            &self.favourites,
+            src.guide.clone(),
+            src.fetched_at,
+        );
+        let fetched_at = src.fetched_at;
+        let Some(listing) = listing else {
+            self.phase = Phase::Failed(Error::BadResponse("guide window".into()));
+            self.reseat(RETRY, fx);
+            return;
+        };
+        if listing.rows() == 0 {
+            self.listing = None;
+            self.phase = Phase::Empty;
+            if !matches!(refocus, Refocus::Keep) {
+                self.reseat(if self.only_favourites { FAVOURITES } else { ACCOUNT }, fx);
+            }
+            return;
+        }
+        let first = self.listing.is_none();
+        self.listing = Some(listing);
+        self.phase = Phase::Ready;
+        let listing = self.listing.as_ref().expect("just stored");
+        if first {
+            // The view opens on the half hour now falls in, the first rows in place.
+            let start = layout::grid().slot_start(fetched_at, listing.window.start);
+            self.view = GridView { start, top: 0.0 };
+            self.start_lag = Spring::at(0.0);
+            self.top_lag = Spring::at(0.0);
+            self.anchor = fetched_at;
+        }
+        let Refocus::Cell { carry, row } = refocus else { return };
+        let (row, t) = match carry {
+            Some((channel, t)) => (listing.channels.iter().position(|c| c.id == channel).unwrap_or(row), t),
+            None => (row, fetched_at),
+        };
+        let elem = listing.at(row.min(listing.rows() - 1), t).unwrap_or(cell(0, 0));
+        self.reseat(elem, fx);
+    }
+
+    /// Hold OK on a cell: its channel becomes a favourite, or stops being one. Saved at once; with
+    /// only favourites showing, a channel taken off leaves the list and focus stays on its row.
+    fn toggle_favourite<H: AppLike>(&mut self, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) {
+        let Some((row, slot)) = self.cursor(cx) else { return };
+        let Some(listing) = &self.listing else { return };
+        let Some(channel) = listing.channels.get(row) else { return };
+        let (id, uuid) = (channel.id, channel.uuid.clone());
+        let t = listing.slot(row, slot).map_or(self.anchor, |s| s.start.max(self.anchor));
+        match self.favourites.iter().position(|f| *f == uuid) {
+            Some(i) => {
+                self.favourites.remove(i);
+            }
+            None => self.favourites.push(uuid),
+        }
+        fx.push(Fx::App(AppFx::Dispatcharr(DispatcharrCmd::SaveFavourites { favourites: self.favourites.clone() })));
+        self.relist(Refocus::Cell { carry: Some((id, t)), row }, fx);
+        fx.invalidate(Provenance::Input);
+    }
+
+    /// The header switch: only favourites, or every channel. Focus stays on the switch.
+    fn toggle_only_favourites<H: AppLike>(&mut self, fx: &mut Effects<'_, H>) {
+        self.only_favourites = !self.only_favourites;
+        // A different list under the grid: its view starts over at the top.
+        self.listing = None;
+        self.relist(Refocus::Keep, fx);
     }
 
     fn tick<H: AppLike>(&mut self, t: Tick, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) {
@@ -489,6 +602,7 @@ impl GuideScreen {
     fn activate<H: AppLike>(&mut self, elem: u32, fx: &mut Effects<'_, H>) {
         match elem {
             ACCOUNT => fx.push(Fx::App(AppFx::Loop(LoopReq::DispatcharrAccount))),
+            FAVOURITES => self.toggle_only_favourites(fx),
             RETRY => match &self.phase {
                 Phase::Failed(Error::Unauthorized) => fx.push(Fx::App(AppFx::Loop(LoopReq::DispatcharrSetup))),
                 Phase::Failed(_) => {
@@ -508,28 +622,13 @@ impl GuideScreen {
         fx.invalidate(Provenance::Input);
     }
 
-    /// What OK on `elem` plays: its row's channel, live. The line under the title is what airs
-    /// NOW, whichever programme the cursor was on, because live TV can only play the present.
+    /// What OK on `elem` plays: its row's channel, live, whichever programme the cursor was on
+    /// (live TV can only play the present).
     fn tune(&self, elem: u32) -> Option<PlayIntent> {
         let (row, _) = split(elem)?;
         let listing = self.listing.as_ref()?;
-        let url = listing.streams.get(row).filter(|u| !u.is_empty())?.clone();
-        let channel = listing.channels.get(row)?;
-        let context = listing
-            .at(row, self.now)
-            .and_then(split)
-            .and_then(|(r, s)| listing.programme(r, listing.slot(r, s)?))
-            .map(|p| p.title.clone())
-            .unwrap_or_default();
-        // Every channel sampled on a real server (2026-10-14) was H.264 + AAC. The Load must be
-        // declared before the stream is opened; reading it from the stream is M5's codec work.
-        Some(PlayIntent::Live {
-            url,
-            vcodec: "h264".to_owned(),
-            acodec: "aac".to_owned(),
-            title: channel.name.clone(),
-            context,
-        })
+        listing.lineup.channels.get(row).filter(|c| c.tunable())?;
+        Some(PlayIntent::Live(LiveTune { lineup: Arc::clone(&listing.lineup), index: row, previous: None, at: 0 }))
     }
 
     // ── drawing ──────────────────────────────────────────────────────────────────────────────
@@ -538,6 +637,17 @@ impl GuideScreen {
         let h = layout::header();
         let w = Button::pill_w_measured(msg::dispatcharr_guide_account_c(), theme::size::BODY, false, false, measure);
         Rect::new(h.x + h.w - w, h.y, w, layout::HEADER_H)
+    }
+
+    fn favourites_label(&self) -> &'static std::ffi::CStr {
+        if self.only_favourites { msg::dispatcharr_guide_all_channels_c() } else { msg::dispatcharr_guide_favourites_c() }
+    }
+
+    /// The favourites switch, left of *Account*. It wears the star while it offers the favourites.
+    fn favourites_rect(&self, measure: &dyn plx_machine::machine::Measure) -> Rect {
+        let account = Self::account_rect(measure);
+        let w = Button::pill_w_measured(self.favourites_label(), theme::size::BODY, !self.only_favourites, false, measure);
+        Rect::new(account.x - theme::space::MD - w, account.y, w, layout::HEADER_H)
     }
 
     fn retry_label(&self) -> &'static std::ffi::CStr {
@@ -551,6 +661,11 @@ impl GuideScreen {
         let (caption, reason, kind): (Cow<'static, str>, Option<Cow<'static, str>>, StatusKind) = match &self.phase {
             // placeholder-exempt: the caption only; `draw` counts the spinner it stands beside.
             Phase::Loading => (msg::dispatcharr_guide_loading().into(), None, StatusKind::Working),
+            Phase::Empty if self.only_favourites => (
+                msg::dispatcharr_guide_no_favourites().into(),
+                Some(msg::dispatcharr_guide_no_favourites_reason().into()),
+                StatusKind::Empty,
+            ),
             Phase::Empty => {
                 (msg::dispatcharr_guide_empty().into(), Some(msg::dispatcharr_guide_empty_reason().into()), StatusKind::Empty)
             }
@@ -594,11 +709,21 @@ impl GuideScreen {
             .bold()
             .draw(p, Rect::new(h.x, h.y, h.w * 0.5, h.h));
         let account = Self::account_rect(f.measure);
+        let switch = self.favourites_rect(f.measure);
         if self.clock.is_some() {
             let time = CString::new(i18n::wall_time(self.now)).unwrap_or_default();
             let w = f.measure.width(&time, theme::size::BODY, false);
             Label::new(time.as_ptr(), theme::size::BODY, theme::TEXT_SECONDARY)
-                .draw(p, Rect::new(account.x - theme::space::LG - w, h.y, w, h.h));
+                .draw(p, Rect::new(switch.x - theme::space::LG - w, h.y, w, h.h));
+        }
+        if self.source.is_some() {
+            let mut button = Button::new(self.favourites_label().as_ptr(), theme::size::BODY, switch)
+                .focused(focus == Some(FAVOURITES));
+            if !self.only_favourites {
+                button = button.icon(plx_ui::icons::Icon::Star);
+            }
+            button.draw(&Env::inert(), p);
+            self.stop(f, p, FAVOURITES, switch);
         }
         Button::new(msg::dispatcharr_guide_account_c().as_ptr(), theme::size::BODY, account)
             .focused(focus == Some(ACCOUNT))
@@ -663,7 +788,8 @@ impl GuideScreen {
                 plx_ui::tex::resolve_wh_on(plx_ui::tex::DIRECT, url, time_grid::LOGO_W as i32, time_grid::LOGO_H as i32,
                     true)
             });
-            time_grid::draw_row_label(p, grid.label(row, view), &listing.numbers[row], logo, &channel.name, hot,
+            time_grid::draw_row_label(p, grid.label(row, view), &listing.numbers[row], logo, &channel.name,
+                listing.stars.get(row).copied().unwrap_or(false), hot,
                 f.measure);
             for (i, s) in listing.lanes[row].iter().enumerate() {
                 let Some(rect) = grid.cell(row, s.start, s.end, view) else { continue };
@@ -759,14 +885,20 @@ fn failure_reason(e: &Error) -> Cow<'static, str> {
 impl<H: AppLike> Focusable<H> for GuideScreen {
     fn groups(&self, cx: &Cx<'_, H>, out: &mut Vec<GroupSpec>) {
         let account = Self::account_rect(cx.measure);
+        let switch = self.favourites_rect(cx.measure);
+        let switched = self.source.is_some();
         out.push(GroupSpec {
             id: HEADER,
             kind: GroupKind::Row { wrap: false },
             seat: Seat::First,
             reachable: AxisMask::BOTH,
             edge: [EdgeRule::Stop, EdgeRule::Geometric, EdgeRule::Stop, EdgeRule::Stop],
-            extent: account,
-            len: 1,
+            extent: if switched {
+                Rect::new(switch.x, account.y, account.x + account.w - switch.x, account.h)
+            } else {
+                account
+            },
+            len: if switched { 2 } else { 1 },
             // `Bare`: OK on a `Control` arms a press that ends in `PressCommit`, which this page does
             // not handle; it acts on `Activate`, which OK sends a `Bare` element directly.
             elem: ElemKind::Bare,
@@ -783,7 +915,8 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
                     edge: [EdgeRule::Geometric, EdgeRule::Stop, EdgeRule::Stop, EdgeRule::Stop],
                     extent: lanes,
                     len: rows,
-                    elem: ElemKind::Bare,
+                    // A cell's press is holdable: a tap tunes, a hold makes it a favourite.
+                    elem: ElemKind::Card,
                 });
             }
             Phase::Failed(_) => {
@@ -807,6 +940,7 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
     fn group_of(&self, key: &u32, _cx: &Cx<'_, H>) -> Option<GroupId> {
         match *key {
             ACCOUNT => Some(HEADER),
+            FAVOURITES => self.source.is_some().then_some(HEADER),
             RETRY => matches!(self.phase, Phase::Failed(_)).then_some(STATUS),
             elem => {
                 let (row, slot) = split(elem)?;
@@ -817,6 +951,11 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
     }
 
     fn neighbour(&self, key: FocusKey<u32>, dir: Dir, _cx: &Cx<'_, H>) -> Step<u32> {
+        match (key.elem, dir) {
+            (FAVOURITES, Dir::Right) => return Step::Move(self.key(ACCOUNT)),
+            (ACCOUNT, Dir::Left) if self.source.is_some() => return Step::Move(self.key(FAVOURITES)),
+            _ => {}
+        }
         let Some((row, slot)) = split(key.elem) else { return Step::Edge };
         let Some(listing) = &self.listing else { return Step::Edge };
         let lane_len = listing.lanes.get(row).map_or(0, Vec::len);
@@ -832,6 +971,7 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
     fn place(&self, key: &u32, cx: &Cx<'_, H>, at: At) -> Option<Placed> {
         let rect = match *key {
             ACCOUNT => Self::account_rect(cx.measure),
+            FAVOURITES => self.favourites_rect(cx.measure),
             RETRY => self.retry_rect(cx.measure)?,
             elem => {
                 let (row, slot) = split(elem)?;
@@ -888,6 +1028,12 @@ impl GuideScreen {
             ScreenEvent::Mount => self.request(fx),
             ScreenEvent::Tick(t) => self.tick(*t, cx, fx),
             ScreenEvent::Activate(elem) => self.activate(*elem, fx),
+            // A cell's holdable press (`ElemKind::Card`): the tap tunes, the hold is a favourite.
+            ScreenEvent::PressCommit(_) => match cx.focus.current.filter(|k| k.entry == self.entry) {
+                Some(k) => self.activate(k.elem, fx),
+                None => return Handled::No,
+            },
+            ScreenEvent::PressHold(_) => self.toggle_favourite(cx, fx),
             ScreenEvent::FocusMoved { from, to, .. } => {
                 self.focus_moved(*from, *to);
                 fx.invalidate(Provenance::Input);

@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::registry::{AppMsg, DispatcharrCmd, GuideOutcome};
-use plx_machine::machine::{By, FocusRead, Host, InputOwner, PressRead, PresentHandle, Source, Stamped};
+use plx_machine::machine::{By, FocusRead, Host, InputOwner, PressId, PressRead, PresentHandle, Source, Stamped};
 use plx_machine::present::Present;
 use plx_ui::fixture::FixtureMeasure;
 
@@ -132,7 +132,7 @@ fn landed() -> (GuideScreen, u32) {
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, guide, fetched_at: NOW }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(1000), None, 1000);
     let seat = reseated_on(&out).expect("a landing seats the cursor");
     step(&mut screen, ScreenEvent::FocusMoved { from: None, to: FocusKey { entry: EntryId(1), elem: seat }, by: By::Restore }, Some(seat));
@@ -331,7 +331,7 @@ fn a_stale_window_is_fetched_again_and_the_landing_keeps_the_channel_and_the_tim
     let fetched = NOW + Window::MAX_AGE;
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, guide, fetched_at: fetched }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), guide, fetched_at: fetched }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(later + 16), Some(c), later + 16);
     let seat = reseated_on(&out).expect("a refetch re-seats");
     let (row, _) = split(seat).unwrap();
@@ -385,7 +385,7 @@ fn a_failed_refetch_keeps_the_guide_on_screen() {
 fn an_account_with_no_channels_says_so_and_seats_on_account() {
     let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
     let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
-    reply.send(GuideOutcome::Loaded { channels: Vec::new(), logos: Vec::new(), streams: Vec::new(),
+    reply.send(GuideOutcome::Loaded { channels: Vec::new(), logos: Vec::new(), streams: Vec::new(), favourites: Vec::new(),
         guide: Guide::build(&[], &[], [], Window::around(NOW)),
         fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
@@ -407,32 +407,34 @@ fn account_opens_the_server_page_and_back_leaves_the_app() {
     assert_eq!(loop_req(&out), Some(LoopReq::BackAtRoot));
 }
 
-#[test]
-fn ok_on_what_airs_now_tunes_its_channel() {
-    let (mut screen, seat) = landed();
-    let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
-    let Some(ContentReq::Play { play: PlayIntent::Live { url, vcodec, acodec, title, context }, resume_ns }) =
-        content_req(&out)
-    else {
-        panic!("OK on a programme tunes its channel")
-    };
-    assert_eq!(url, "http://192.0.2.10:9191/proxy/ts/stream/u-1");
-    assert_eq!((vcodec.as_str(), acodec.as_str()), ("h264", "aac"));
-    assert_eq!((title.as_str(), context.as_str()), ("Channel 1", "One 0"));
-    assert_eq!(*resume_ns, 0);
+fn tuned(out: &[Stamped<GuideHost>]) -> Option<&LiveTune> {
+    match content_req(out)? {
+        ContentReq::Play { play: PlayIntent::Live(tune), resume_ns: 0 } => Some(tune),
+        _ => None,
+    }
 }
 
 #[test]
-fn ok_on_a_later_programme_tunes_the_channel_to_what_airs_now() {
+fn ok_tunes_the_rows_channel_in_the_whole_lineup() {
+    let (mut screen, seat) = landed();
+    let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
+    let tune = tuned(&out).expect("OK on a programme tunes its channel");
+    assert_eq!((tune.index, tune.previous), (0, None));
+    assert_eq!(tune.lineup.channels.len(), 10, "the player gets every row to change channel in");
+    let c = tune.channel().unwrap();
+    assert_eq!(c.url, "http://192.0.2.10:9191/proxy/ts/stream/u-1");
+    assert_eq!((c.number.as_str(), c.name.as_str()), ("1", "Channel 1"));
+    assert_eq!(c.on_at(NOW).map(|p| p.title.as_str()), Some("One 0"), "with its programmes");
+    assert_eq!((tune.lineup.vcodec.as_str(), tune.lineup.acodec.as_str()), ("h264", "aac"));
+}
+
+#[test]
+fn ok_on_a_later_programme_tunes_the_same_channel() {
     let (mut screen, seat) = landed();
     let c = walk(&mut screen, seat, Dir::Down); // channel 2, "Two long"
     let later = walk(&mut screen, c, Dir::Right); // "Two 0", 13:15
     let out = step(&mut screen, ScreenEvent::Activate(later), Some(later));
-    let Some(ContentReq::Play { play: PlayIntent::Live { url, context, .. }, .. }) = content_req(&out) else {
-        panic!("a later programme still tunes the channel")
-    };
-    assert!(url.ends_with("/u-2"));
-    assert_eq!(context, "Two long", "live TV plays what is on now");
+    assert_eq!(tuned(&out).map(|t| t.index), Some(1), "live TV plays the channel, not the programme");
 }
 
 #[test]
@@ -441,7 +443,7 @@ fn a_channel_with_no_stream_url_does_not_tune() {
     let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
-    reply.send(GuideOutcome::Loaded { channels, logos, streams: Vec::new(), guide, fetched_at: NOW }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, logos, streams: Vec::new(), favourites: Vec::new(), guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     let seat = reseated_on(&out).unwrap();
     let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
@@ -452,9 +454,10 @@ fn a_channel_with_no_stream_url_does_not_tune() {
 fn a_listing_keeps_one_logo_per_row_whatever_the_answer_held() {
     let (channels, guide) = lineup();
     let logos = vec![Some("http://192.0.2.10:9191/api/channels/logos/101/cache/".to_owned())];
-    let listing = Listing::new(channels, logos, Vec::new(), guide, NOW).unwrap();
+    let listing = Listing::new(channels, logos, Vec::new(), &[], guide, NOW).unwrap();
     assert_eq!(listing.logos.len(), listing.rows());
-    assert_eq!(listing.streams.len(), listing.rows(), "and one stream URL, empty when absent");
+    assert_eq!(listing.lineup.channels.len(), listing.rows(), "and one live channel");
+    assert!(listing.lineup.channels.iter().all(|c| !c.tunable()), "no stream URLs were given");
     assert!(listing.logos[0].is_some());
     assert!(listing.logos[1..].iter().all(Option::is_none));
 }
@@ -488,9 +491,10 @@ fn the_detail_line_reads_times_episode_and_episode_title() {
     assert_eq!(meta_line(&slot, None), format!("{start} – {end}"));
 }
 
-/// The page acts on `ScreenEvent::Activate`, which the dispatcher sends on OK only for a `Bare`
-/// element; a `Control` element's OK arms a press that ends in `PressCommit` instead, and the page
-/// would never hear it. That is how *Account* once did nothing on the television.
+/// The page hears OK two ways: `ScreenEvent::Activate`, sent on OK for a `Bare` element (the header,
+/// the failure's action), and a `Card` cell's holdable press (`PressCommit` for the tap, `PressHold`
+/// for the hold, both answered). A `Control` element's OK arms a press the page does not answer,
+/// which is how *Account* once did nothing on the television.
 #[test]
 fn every_element_the_page_activates_is_one_ok_activates_directly() {
     let m = FixtureMeasure;
@@ -504,7 +508,8 @@ fn every_element_the_page_activates_is_one_ok_activates_directly() {
         <GuideScreen as Focusable<GuideHost>>::groups(screen, &cx(&m, None, 0), &mut groups);
         assert!(groups.len() >= 2);
         for g in groups {
-            assert_eq!(g.elem, ElemKind::Bare, "group {:?}", g.id);
+            let want = if g.id == GRID { ElemKind::Card } else { ElemKind::Bare };
+            assert_eq!(g.elem, want, "group {:?}", g.id);
         }
     }
 }
@@ -517,5 +522,92 @@ fn every_element_of_the_page_lies_below_the_strips_range() {
     let strip = plx_ui::dispatch::STRIP_BASE;
     assert!(ACCOUNT < strip, "{ACCOUNT:#x}");
     assert!(RETRY < strip, "{RETRY:#x}");
-    assert!(cell(MAX_ROWS - 1, MAX_SLOTS - 1) < RETRY.min(ACCOUNT));
+    assert!(FAVOURITES < strip, "{FAVOURITES:#x}");
+    assert!(cell(MAX_ROWS - 1, MAX_SLOTS - 1) < FAVOURITES.min(RETRY).min(ACCOUNT));
+}
+
+// ── favourites ───────────────────────────────────────────────────────────────────────────────
+
+/// A page landed with `favourites` already stored; the element the landing seated.
+fn landed_with(favourites: &[&str]) -> (GuideScreen, u32) {
+    let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
+    let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
+    let (channels, guide) = lineup();
+    let logos = vec![None; channels.len()];
+    let streams = streams(&channels);
+    let favourites = favourites.iter().map(|f| (*f).to_owned()).collect();
+    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites, guide, fetched_at: NOW }).unwrap();
+    let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
+    (screen, reseated_on(&out).expect("a landing seats the cursor"))
+}
+
+fn saved(out: Vec<Stamped<GuideHost>>) -> Option<Vec<String>> {
+    match command(out)? {
+        DispatcharrCmd::SaveFavourites { favourites } => Some(favourites),
+        _ => None,
+    }
+}
+
+#[test]
+fn a_tap_on_a_cell_tunes_and_a_hold_makes_its_channel_a_favourite() {
+    let (mut screen, seat) = landed_with(&[]);
+    let out = step(&mut screen, ScreenEvent::PressCommit(PressId(1)), Some(seat));
+    assert_eq!(tuned(&out).map(|t| t.index), Some(0), "the tap tunes");
+    let out = step(&mut screen, ScreenEvent::PressHold(PressId(2)), Some(seat));
+    assert_eq!(saved(out), Some(vec!["u-1".to_owned()]), "the hold saves it");
+    assert!(screen.listing.as_ref().unwrap().stars[0], "and the row wears the star");
+    let out = step(&mut screen, ScreenEvent::PressHold(PressId(3)), Some(seat));
+    assert_eq!(saved(out), Some(Vec::new()), "a second hold takes it off");
+    assert!(!screen.listing.as_ref().unwrap().stars[0]);
+}
+
+#[test]
+fn the_switch_shows_only_the_favourites_and_the_player_zaps_through_them() {
+    let (mut screen, seat) = landed_with(&["u-3", "u-7"]);
+    assert_eq!(screen.listing.as_ref().unwrap().rows(), 10);
+    step(&mut screen, ScreenEvent::Activate(FAVOURITES), Some(FAVOURITES));
+    let listing = screen.listing.as_ref().unwrap();
+    assert_eq!(listing.channels.iter().map(|c| c.id).collect::<Vec<_>>(), vec![3, 7], "guide order, favourites only");
+    assert!(listing.stars.iter().all(|s| *s));
+    assert_eq!(listing.lineup.channels.len(), 2, "CH up/down stays inside the list on screen");
+    step(&mut screen, ScreenEvent::Activate(FAVOURITES), Some(FAVOURITES));
+    assert_eq!(screen.listing.as_ref().unwrap().rows(), 10, "and back to every channel");
+    let _ = seat;
+}
+
+#[test]
+fn only_favourites_with_none_says_how_to_add_one_and_keeps_focus_on_the_switch() {
+    let (mut screen, _) = landed_with(&[]);
+    let out = step(&mut screen, ScreenEvent::Activate(FAVOURITES), Some(FAVOURITES));
+    assert_eq!(screen.phase, Phase::Empty);
+    assert!(reseated_on(&out).is_none(), "focus stays on the switch");
+    let (caption, reason, _) = screen.status_text().unwrap();
+    assert_eq!(caption.to_str().unwrap(), msg::dispatcharr_guide_no_favourites());
+    assert_eq!(reason.unwrap().to_str().unwrap(), msg::dispatcharr_guide_no_favourites_reason());
+}
+
+#[test]
+fn taking_a_favourite_off_while_only_favourites_show_keeps_focus_on_its_row() {
+    let (mut screen, _) = landed_with(&["u-3", "u-7"]);
+    step(&mut screen, ScreenEvent::Activate(FAVOURITES), Some(FAVOURITES));
+    let first = screen.listing.as_ref().unwrap().at(0, NOW).unwrap();
+    let out = step(&mut screen, ScreenEvent::PressHold(PressId(1)), Some(first));
+    let seat = reseated_on(&out).expect("focus re-seats");
+    assert_eq!(screen.listing.as_ref().unwrap().channels.iter().map(|c| c.id).collect::<Vec<_>>(), vec![7]);
+    assert_eq!(split(seat).map(|(row, _)| row), Some(0), "the row the channel left");
+}
+
+#[test]
+fn the_switch_sits_left_of_account_and_left_right_walk_between_them() {
+    let (screen, _) = landed_with(&[]);
+    let m = FixtureMeasure;
+    let c = cx(&m, Some(ACCOUNT), 0);
+    assert!(screen.favourites_rect(&m).x + screen.favourites_rect(&m).w < GuideScreen::account_rect(&m).x);
+    let moved = |step| match step {
+        Step::Move(k) => Some(k.elem),
+        _ => None,
+    };
+    assert_eq!(moved(Focusable::neighbour(&screen, screen.key(ACCOUNT), Dir::Left, &c)), Some(FAVOURITES));
+    assert_eq!(moved(Focusable::neighbour(&screen, screen.key(FAVOURITES), Dir::Right, &c)), Some(ACCOUNT));
+    assert_eq!(split(FAVOURITES), None, "the switch is not a cell");
 }

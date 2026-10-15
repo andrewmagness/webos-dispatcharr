@@ -31,6 +31,7 @@ pub mod client; // the one request door: URL, auth header, body, status → Erro
 pub mod error; // what went wrong, in the terms a Setup screen explains to a person
 pub mod guide; // programmes per channel: the tvg_id mapping and the rolling window
 pub mod models; // the response shapes
+pub mod prefs; // the viewer's choices on this TV: favourite channels, the last one watched
 pub mod time; // ISO 8601 <-> Unix seconds, the grid's two spellings
 
 #[cfg(any(test, feature = "test-support"))]

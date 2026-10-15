@@ -41,5 +41,11 @@
   "dispatcharr.guide.unlisted": "Sin información",
   "dispatcharr.guide.time_range": "{start} – {end}",
   "dispatcharr.guide.season_episode": "T{season} E{episode}",
-  "dispatcharr.guide.episode": "Episodio {episode}"
+  "dispatcharr.guide.episode": "Episodio {episode}",
+  "dispatcharr.live.next": "A continuación {time} · {title}",
+  "dispatcharr.live.no_channel": "No hay canal {number}",
+  "dispatcharr.guide.favourites": "Favoritos",
+  "dispatcharr.guide.all_channels": "Todos los canales",
+  "dispatcharr.guide.no_favourites": "Aún no hay favoritos",
+  "dispatcharr.guide.no_favourites_reason": "Mantén pulsado OK en un canal para añadirlo a tus favoritos."
 }

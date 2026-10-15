@@ -84,6 +84,9 @@ pub enum DispatcharrCmd {
     SignOut { reply: std::sync::mpsc::Sender<SetupOutcome> },
     /// Read the stored account, its channels and the guide around now. Answers once.
     Guide { reply: std::sync::mpsc::Sender<GuideOutcome> },
+    /// Store the favourite channels (UUIDs, in the order added) for the signed-in server. No
+    /// answer: the Guide already shows the change, and a failed write is logged.
+    SaveFavourites { favourites: Vec<String> },
 }
 
 /// The answer to [`DispatcharrCmd::Guide`].
@@ -93,11 +96,13 @@ pub enum GuideOutcome {
     /// The channels in guide order and their programmes, read at `fetched_at` (Unix seconds by the
     /// television's clock — the page's only reading of the wall clock). `logos` is each channel's
     /// logo URL, in the same order (`None` for a channel without one), and `streams` each
-    /// channel's live stream URL (what OK tunes).
+    /// channel's live stream URL (what OK tunes). `favourites` are the UUIDs of the channels the
+    /// viewer marked on this TV.
     Loaded {
         channels: Vec<plx_dispatcharr::dispatcharr::models::Channel>,
         logos: Vec<Option<String>>,
         streams: Vec<String>,
+        favourites: Vec<String>,
         guide: plx_dispatcharr::dispatcharr::guide::Guide,
         fetched_at: i64,
     },
@@ -197,6 +202,9 @@ pub struct ItemMenuReq {
 /// So the panel decides and the loop performs, exactly as `LibraryReq` does for the Library.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlayerReq {
+    /// Change channel: stop this stream and play `0`'s channel (the live player's CH▲/▼, UP/DOWN
+    /// and typed number). The loop performs it because the stop and the start need the engine.
+    Tune(plx_media::route::LiveTune),
     /// Accepted only after the owned player confirmation. Never emitted by boot or Play.
     RepairSandbox,
     /// The failure read-out's *Try again*: resolve the failed item again, unchanged, at the
@@ -1123,9 +1131,8 @@ pub enum PlayIntent {
     /// boundary, and once Detail's `selected` becomes an owned per-page snapshot (rather than a
     /// process-wide catalog read) there is no `'static` row left to borrow.
     Movie(plx_data::pms::PmsMovie),
-    /// A live channel (the Guide's OK): its stream URL and the codecs to declare for it.
-    /// `title` is the channel, `context` what is on now.
-    Live { url: String, vcodec: String, acodec: String, title: String, context: String },
+    /// A live channel (the Guide's OK): the channel, in the lineup the player changes channel in.
+    Live(plx_media::route::LiveTune),
 }
 
 pub trait ContentLike: AppLike<Memory = PageMemory> {}
@@ -2314,7 +2321,10 @@ pub const SCREEN_SHAPES: &[&str] = &[
 // the previous pin was 0x6a55_c53a_d931_3acf. Re-record replay fixtures before trusting one.
 // Dispatcharr Guide: `ARG_SHAPE` gains `Guide` and `Server`, `screens::guide::SHAPE` joins the
 // inventory and `screens::setup::SHAPE` gains its mode; the previous pin was 0xb65f_df1d_138b_f7d1.
-const SCREEN_SHAPES_PIN: u64 = 0xe8d0_26d5_2943_05e6;
+// Live TV (M4): `screens::player::SHAPE` gains the live controls (`live:{seen,banner,typed,
+// missing,ok_down,ok_fired}`) and `screens::guide::SHAPE` the favourites (`favourites:u64,
+// only_favourites:bool`); the previous pin was 0xe8d0_26d5_2943_05e6.
+const SCREEN_SHAPES_PIN: u64 = 0x99ec_fc56_b8d6_cda6;
 
 #[cfg(test)]
 mod arg_tests {

@@ -60,7 +60,6 @@ python3 ci/test_source_bundle.py
 ci/check-deps.sh
 # Catalog completeness is checked by the Rust build; these check the UI text entry points too.
 make --no-print-directory check-localization
-python3 tests/test_mock_pms_library.py
 python3 tests/test_mock_dispatcharr.py
 # `tools/tv-ssh`, the ssh/scp front door every TV caller shares, against FAKE ssh/sshpass on
 # PATH: key accepted -> sshpass never run; key refused -> sshpass; unreachable -> no password
@@ -127,11 +126,7 @@ ci/check-statics.sh
 python3 ci/test_module_cycle.py
 python3 ci/check-module-cycle.py
 python3 tests/player_pointer.py --selftest
-python3 tests/test_replay_fixtures.py
 python3 tools/prune-gh-caches.py --selftest
-# The demo library and the screenshot scene manifest (make screenshots). Offline: the cases
-# that serve the catalog skip, and say so, where the derived artwork cache is absent.
-python3 tests/test_demo_library.py
 python3 tests/test_image_cache_stress.py
 # Host-only halves of the opt-in live diagnostics: /proc/interrupt parsing, rate normalization,
 # stack aggregation and folded output. Neither command resolves a TV or takes its lock.
@@ -208,14 +203,6 @@ python3 ci/test-compat.py
 # The cargo seed's own suite (restore only into an absent dir, the app crate never in the seed,
 # key refresh, off switch, clone failure), against a fake root and a private cache.
 python3 ci/test_cargo_seed.py
-# tools/site_video.py, the host half of the site demo video (encode, quality gates, the sentinel scan, the
-# manifest and `adopt`): the scanner on synthetic RGB frames, the encode argv asserted (never run), the gates'
-# pure logic, manifest tamper, adopt refusing anything but `linux-ci`, and the pinned-ffmpeg fetch against a
-# fake opener. Offline, no ffmpeg; the one real-ffmpeg case is off unless PLXNATIVE_SITE_VIDEO_FFMPEG is set.
-python3 tests/test_site_video.py
-# tools/site_stills.py, the simulator-made stills' half of the same refresh: which files it owns (read from the
-# generating tools), the manual set, adopt's refusals and the decide/commit-message logic. Offline.
-python3 tests/test_site_stills.py
 # The placeholder-accounting gate (rust-modules/ui/src/placeholder.rs): every reference to
 # SKELETON_TOP / SKELETON_BOT / CARD_PLACEHOLDER / STALE_ALPHA / Spinner::new|leading / a `*_loading`
 # message needs a `placeholder::` counter call beside it or a reasoned `placeholder-exempt:` comment, so

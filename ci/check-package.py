@@ -499,15 +499,16 @@ const DIAG: [&str; 6] = [
     # whole set instead of one string), and the historic witness must still be a member of it. Each
     # file is checked on its own: `noidle` is in BOTH arrays, so the witness alone would not notice
     # one of the two regexes going blind.
+    # `dev.rs` no longer declares a `DIAG` array (it served the who's-watching boot rule, gone with
+    # the Plex screens), so `devtrig.rs`'s `CONTROLLED` is the one array that must parse.
     real_catalog = dev_trigger_catalog()
-    diag_part = parse_dev_trigger_catalog(DEV_RS.read_text())
     controlled_part = parse_dev_trigger_catalog(DEVTRIG_RS.read_text())
     catalog_vacuous = (not real_catalog or "plxnative-noidle" not in real_catalog
-                       or not diag_part or not controlled_part)
+                       or not controlled_part)
     if catalog_vacuous:
         print(f"  FAIL — dev_trigger_catalog() against the real dev.rs/devtrig.rs is "
-              f"{sorted(real_catalog) or 'EMPTY'} (wants plxnative-noidle, and names from BOTH "
-              f"dev.rs's DIAG ({len(diag_part)}) and devtrig.rs's CONTROLLED ({len(controlled_part)}))")
+              f"{sorted(real_catalog) or 'EMPTY'} (wants plxnative-noidle, and names from "
+              f"devtrig.rs's CONTROLLED ({len(controlled_part)}))")
     print(f"check-package: dev_trigger_catalog() against the real dev.rs and devtrig.rs "
           f"{'is non-vacuous' if not catalog_vacuous else 'WENT VACUOUS'}")
 

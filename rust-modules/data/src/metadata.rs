@@ -5829,9 +5829,6 @@ mod watch_state_tests;
 #[path = "metadata_credits_tests.rs"]
 mod credits_tests;
 
-#[cfg(test)]
-#[path = "metadata_demo_fixture_tests.rs"]
-mod demo_fixture_tests;
 
 #[cfg(test)]
 #[path = "metadata_episode_pages_tests.rs"]

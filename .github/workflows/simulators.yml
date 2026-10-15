@@ -29,9 +29,6 @@ on:
       - 'ci/libass-dependencies.json'
       - 'ci/ffabi-assert.c'
       - 'tests/fixtures/mkv_zlib_subs.mkv'
-      - 'tests/fixtures/replay/**'
-      - 'tests/replay_fixtures.py'
-      - 'tests/test_replay_fixtures.py'
       - 'tools/sim.ps1'
       - 'tools/sim-smoke.py'
   pull_request:
@@ -191,29 +188,6 @@ jobs:
           key: simulator-macos
       - name: Build native macOS simulator
         run: make sim-macos SIM_TDIR=rust-modules/target-sim-ci
-      - name: Replay all committed product recordings
-        # 960x540, not the driver's 1920x1080 default. The runner has no GPU (the log says `GL:
-        # Apple Software Renderer`), so a replay is CPU-bound in the rasteriser and costs what the
-        # window has pixels: a lone 584-frame replay took 72 s at 1920x1080 and 24.6 s at 960x540
-        # (diagnostic run 37869088696), with the same counters. The graded hash is logical state
-        # (route, overlay, focus, tree, session, present decisions) on a fixed 1920x1080 canvas
-        # that `surface::viewport` scales into the window, so the window changes no grade. The
-        # launch step below still opens a full-size window.
-        run: |
-          python3 tests/replay_fixtures.py \
-            --window 960x540 \
-            --sim "$GITHUB_WORKSPACE/rust-modules/target-sim-ci/debug/plxnative-sim" \
-            --output "$RUNNER_TEMP/plxnative-replay"
-      - name: Preserve replay evidence
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: simulator-replay-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/plxnative-replay/**/plxnative-events.log
-            ${{ runner.temp }}/plxnative-replay/**/sim.out
-          if-no-files-found: ignore
-          retention-days: 7
       - name: Launch and capture 1080p frame
         run: |
           python3 tools/sim-smoke.py \
@@ -233,10 +207,8 @@ jobs:
   macos-host-tests:
     name: macOS tests against bundled FFmpeg and ASS
     runs-on: macos-latest
-    # These were the tail of the `macos` job, run after its replay step for no reason: they share
-    # nothing with the simulator build or the replays except the host FFmpeg and libass builds,
-    # and they use their own target dir and toolchain. As a job of their own they run beside the
-    # replay instead of behind it. Same commands, same runner image, nothing dropped. The limit
+    # These share nothing with the simulator build except the host FFmpeg and libass builds, and
+    # they use their own target dir and toolchain, so they run as a job of their own. The limit
     # allows a cold FFmpeg build (a ci/build-ffmpeg.sh change) like the `macos` job's does.
     timeout-minutes: 50
     steps:

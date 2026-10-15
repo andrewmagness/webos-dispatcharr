@@ -56,16 +56,8 @@ so that a recording of the UI can be COMMITTED to this public repository:
   determinism (two servers, one seed, byte-identical answers) with no app. Boot the simulator
   against it with `make sim-shot SIM_PMS=127.0.0.1 SIM_PORT=32499` and any non-empty
   `$SIM_DIR/plxnative-token`.
-- **`tests/focusfp.sh`** drives eleven focus flows (boot → grid, grid → detail → BACK, the
-  Library, Search with a seeded query, detail ↔ person, the Settings family, first-run consent,
-  press-and-hold, the player read-out, pointer clicks; flow 10 — root BACK — is a television flow
-  and is SKIPPED here) on the simulator against that server, and writes one `.fp` file per flow:
-  every `focus …` fingerprint (`crate::focusprobe`, `plxnative-focus`) and every heartbeat route
-  transition. In phase 0 it is a live-sim SMOKE (the app must survive and fingerprint); from
-  phase 2 the flows replay from a committed recording, and from 3b `--resolve` grades the focus
-  engine against these lines pointwise.
 
-Neither says anything about frame rate — the simulator's heartbeat is tagged `sim=1` and the
+It says nothing about frame rate — the simulator's heartbeat is tagged `sim=1` and the
 harness refuses to grade it.
 
 ### What the synthetic cases actually cover

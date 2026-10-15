@@ -1,23 +1,20 @@
 #!/usr/bin/env python3
 """Pins the shape of CI changes whose failure is silent (everything stays green).
 
-* the site film refreshes after a stable release only, never blocks one, and holds its one write token in `publish` (`SiteVideoRelease`);
 * `cache-cleanup.yml` runs on `pull_request_target`, which is safe only while it never checks out
   or runs pull request code and holds nothing but `actions: write`;
 * the nightly's and the release candidate's Sentry debug-file upload is skipped on a pull
   request's dry run and nowhere else (a release, the schedule and a dispatched dry run keep it);
-* the tests against the bundled FFmpeg and libass run in a job of their own, beside the replays,
-  and still run;
+* the tests against the bundled FFmpeg and libass run in a job of their own, and still run;
 * the host FFmpeg and libass builds in the simulator jobs are CACHED where the build scripts really
   write, under a key that names every input the scripts key on (a cache that "hits" and still
   rebuilds, or one that outlives a changed input, both stay green);
 * ci.yml's `paths` filter (`CiPathFilter`): evaluated with GitHub's rules, a docs-only or
   repository-metadata-only change (issue forms, a PR template, prose, images) starts no run, while
-  every file a gate reads (PRIVACY.md, the credits pair, an `include_str!` target, the workflows)
+  every file a gate reads (PRIVACY.md, an `include_str!` target, the workflows)
   still does, and no other workflow carries a catch-all `'**'` filter;
 * the nightly Homebrew Channel repository: the nightly build generates its manifest (and debug never
-  does), a real nightly can only be cut from main, the manifest reaches the release, and the site
-  stages the repository and the guide.
+  does), a real nightly can only be cut from main, and the manifest reaches the release.
 
 Text-level on purpose, like ci/test_ci_timeouts.py (no YAML library on a stock runner).
 """
@@ -202,18 +199,9 @@ class NightlyHomebrewRepository(unittest.TestCase):
         self.assertIn('label="${nightly_label:-$version${rc:+-rc.$rc}}"', build)
         self.assertNotIn('label="$version${nightly_date:+-nightly-$nightly_date}', build)
 
-    def test_the_site_stages_the_repository_and_the_guide(self):
-        pages = code("pages.yml")
-        self.assertIn('ci/nightly.py repo-json --repo "${{ github.repository }}" --out-dir _site/nightly', pages)
-        self.assertIn("render-doc-page.py docs/nightly-builds.md > _site/nightly/index.html", pages)
-        self.assertIn('"docs/nightly-builds.md"', pages)
-        # the repository files must land AFTER the guide page, in the same directory
-        self.assertLess(pages.index("docs/nightly-builds.md > _site/nightly/index.html"),
-                        pages.index("ci/nightly.py repo-json"))
-
 
 class HostToolTests(unittest.TestCase):
-    def test_ffmpeg_and_ass_tests_run_in_their_own_job_not_behind_the_replay(self):
+    def test_ffmpeg_and_ass_tests_run_in_their_own_job(self):
         sim = code("simulators.yml")
         macos, tests = job_body("simulators.yml", "macos"), job_body("simulators.yml", "macos-host-tests")
         for gate in ("make check-ffmpeg", "make check-ass"):
@@ -222,7 +210,7 @@ class HostToolTests(unittest.TestCase):
             self.assertNotIn(gate, macos)
         self.assertNotIn("needs:", tests)
         # The simulator job keeps everything else it had.
-        for step in ("make sim-macos", "tests/replay_fixtures.py", "tools/sim-smoke.py"):
+        for step in ("make sim-macos", "tools/sim-smoke.py"):
             self.assertIn(step, macos)
 
 
@@ -569,12 +557,11 @@ class CiPathFilter(unittest.TestCase):
         "Makefile", ".gitignore", "ci/check-package.py", "ci/check-python-steps.txt",
         "tests/test_harness.py", "tests/README.md", "tools/check-parallel.py", "locales/en/settings.json",
         "pkg/appinfo.json", "assets/icons/play.svg",
-        ".github/workflows/ci.yml", ".github/workflows/pages.yml", ".github/workflows/release.yml",
+        ".github/workflows/ci.yml", ".github/workflows/release.yml",
         ".github/actions/host-rust/action.yml",
         ".claude/hooks/outbound-guard.py", ".claude/hooks/outbound-guard-test.py",
         ".agents/skills/wake-tv/wake-tv.sh",
         "PRIVACY.md", "LICENSE", "LICENSING.md", "TRADEMARKS.md", "THIRD-PARTY-NOTICES.md",
-        "docs/screenshots/CREDITS.md", "site/credits.html", "site/index.html", "site/ci/index.html",
         "docs/measurements/p1b-logs/pipe_abr_pin_320.log",
     )
     # Prose, images and repository metadata: no gate reads them (the evidence is in ci.yml).
@@ -584,9 +571,8 @@ class CiPathFilter(unittest.TestCase):
         ".github/CODEOWNERS", ".github/dependabot.yml",
         "README.md", "CONTRIBUTING.md", "SECURITY.md", "AGENTS.md", "CLAUDE.md",
         "docs/agent-reference.md", "docs/troubleshooting.md", "docs/release-notes/v0.8.0.md",
-        "docs/plex-openapi.json", "docs/screenshots/home.jpg", "docs/assets/sentry-wordmark-dark.svg",
+        "docs/plex-openapi.json", "docs/assets/sentry-wordmark-dark.svg",
         "docs/webosbrew-package.yml", "docs/measurements/m2-verbose-rerun.txt",
-        "site/404.html", "site/media/closeup-glass.jpg", "tools/render-doc-page.py",
         "rust-modules/media/src/player/CLAUDE.md", ".agents/skills/ui-sim/SKILL.md",
         ".claude/settings.json", ".claude/workflows/swarm-gate.js", ".claude/agents/doc-claim-auditor.md",
         ".codex/agents/doc-claim-auditor.toml",
@@ -632,223 +618,6 @@ class CiPathFilter(unittest.TestCase):
         for wf in sorted(WORKFLOWS.glob("*.yml")):
             catch_all = re.findall(r"(?m)^\s+- ['\"]?\*\*['\"]?\s*$", code(wf.name))
             self.assertEqual(len(catch_all), 1 if wf.name == "ci.yml" else 0, wf.name)
-
-
-class SiteVideoRelease(unittest.TestCase):
-    """The site's film refreshes after a STABLE release and never blocks one (docs/agent-reference.md, "The site
-    demo video"). A hole in any of these stays green: a schedule would render hourly-long jobs for nothing, a
-    write token on the render job would hand it to the code being rendered, a failing hook would turn a published
-    release red, and a push with GITHUB_TOKEN deploys nothing."""
-
-    def jobs(self):
-        lines = code("site-video.yml").splitlines()
-        start = lines.index("jobs:")
-        return [m.group(1) for l in lines[start + 1:] if (m := re.match(r"^  ([A-Za-z0-9_-]+):\s*$", l))]
-
-    def test_it_is_dispatched_only_never_scheduled_nor_started_by_a_push_or_a_pull_request(self):
-        body = code("site-video.yml")
-        on = body[body.index("\non:") + 1:body.index("\npermissions:")]
-        self.assertEqual(re.findall(r"(?m)^  ([a-z_]+):", on), ["workflow_dispatch"])
-        self.assertNotIn("cron", on)
-        # No input names a ref: the run renders its own checkout (CodeQL: cache poisoning via execution of untrusted code)
-        self.assertEqual(re.findall(r"(?m)^      ([a-z_]+):", on), ["force", "publish"])
-        self.assertNotIn("inputs.ref", code("site-video.yml"))
-
-    def test_the_jobs_are_decide_render_publish_pages_in_that_chain(self):
-        self.assertEqual(self.jobs(), ["decide", "render", "stills", "publish", "pages"])
-        self.assertIn("needs: decide", job_body("site-video.yml", "render"))
-        self.assertIn("needs.decide.outputs.needs_render == 'true'", job_body("site-video.yml", "render"))
-        publish = job_body("site-video.yml", "publish")
-        self.assertIn("needs: [decide, render, stills]", publish)
-        self.assertIn("needs.render.result == 'success' || needs.stills.result == 'success'", publish)
-        # a failed or cancelled film stops the publish; a failed stills job (a scene over its noise bound) leaves the
-        # film's refresh alone and the run red
-        self.assertIn("needs.render.result != 'failure'", publish)
-        self.assertIn("needs.render.result != 'cancelled'", publish)
-        self.assertNotIn("needs.stills.result != 'failure'", publish)
-        stills = job_body("site-video.yml", "stills")
-        self.assertIn("needs: decide", stills)
-        self.assertIn("needs.decide.outputs.needs_stills == 'true'", stills)
-
-    def test_only_publish_holds_a_write_token_and_the_workflow_default_is_read(self):
-        body = code("site-video.yml")
-        self.assertRegex(body, r"(?m)^permissions:\n  contents: read\n")
-        self.assertEqual(body.count("contents: write"), 1)
-        self.assertIn("contents: write", job_body("site-video.yml", "publish"))
-        for job in ("decide", "render", "stills"):
-            self.assertNotIn("write", job_body("site-video.yml", job).replace("--write", ""))
-        # nothing the workflow checks out for rendering keeps the token on disk
-        self.assertIn("persist-credentials: false", job_body("site-video.yml", "render"))
-        self.assertIn("persist-credentials: false", job_body("site-video.yml", "stills"))
-        self.assertIn("persist-credentials: false", job_body("site-video.yml", "decide"))
-        # a dry run holds no credential either: only the checkout that a publish uses keeps it
-        publish = job_body("site-video.yml", "publish")
-        self.assertEqual(publish.count("persist-credentials: true"), 1)
-        self.assertEqual(publish.count("persist-credentials: false"), 1)
-        self.assertNotIn("secrets.", body)
-
-    def checkouts(self, job):
-        """[(step text)] for each `actions/checkout` step of a job."""
-        body = job_body("site-video.yml", job)
-        steps = re.split(r"(?m)^      - ", body)
-        return [st for st in steps if "actions/checkout@" in st]
-
-    def test_nothing_renders_a_ref_a_job_computed_and_the_write_token_never_runs_the_rendered_code(self):
-        """The CodeQL finding: a checkout whose `ref:` comes from an input or a job output, followed by cache steps that
-        execute what they restored, is cache poisoning from a dispatched ref into main's caches."""
-        for job in ("decide", "render", "stills"):
-            for step in self.checkouts(job):
-                self.assertNotRegex(step, r"(?m)^\s+ref:", f"{job}'s checkout names a ref")
-        render = job_body("site-video.yml", "render")
-        self.assertEqual(len(self.checkouts("render")), 1)
-        self.assertNotIn("needs.decide.outputs.sha", "\n".join(self.checkouts("render")))
-        # the publish job checks out MAIN literally (the trusted code that lands the commit) for a publish; its other
-        # checkout is the dispatched ref's own, for a dry run that holds no credential. Neither names an expression.
-        publish_checkouts = self.checkouts("publish")
-        self.assertEqual(len(publish_checkouts), 2)
-        with_main = [c for c in publish_checkouts if re.search(r"(?m)^\s+ref: main\s*$", c)]
-        self.assertEqual(len(with_main), 1)
-        self.assertIn("env.PUBLISH == 'true'", with_main[0])
-        self.assertIn("persist-credentials: true", with_main[0])
-        other = [c for c in publish_checkouts if c not in with_main][0]
-        self.assertIn("env.PUBLISH != 'true'", other)
-        self.assertNotRegex(other, r"(?m)^\s+ref:")
-        self.assertNotIn("${{", "".join(re.findall(r"(?m)^\s+ref:.*$", "\n".join(publish_checkouts))))
-        # caches live in the render job, which holds no write token and no secret; the write job restores nothing
-        publish = job_body("site-video.yml", "publish")
-        for cached in ("actions/cache", "rust-cache", "setup-python", "cache:"):
-            self.assertNotIn(cached, publish)
-            self.assertNotIn(cached, job_body("site-video.yml", "decide"))
-        self.assertIn("actions/cache@", render)
-        # the artifact is named by the commit the render ran on
-        self.assertIn("site-video-${{ github.sha }}", render)
-
-    def test_publishing_is_refused_off_main_and_for_anything_but_a_stable_tag_on_main(self):
-        decide = job_body("site-video.yml", "decide")
-        self.assertIn("refs/heads/main", decide)
-        self.assertIn("release-ref", decide)
-        self.assertIn("github.ref_type", decide)
-        self.assertIn("merge-base --is-ancestor", decide)
-        self.assertIn("merge-base --is-ancestor", job_body("site-video.yml", "publish"))
-        # any other ref renders as a dry run
-        self.assertIn("neither main nor a stable release tag", decide)
-        self.assertIn("--expect-rev", job_body("site-video.yml", "publish"))
-
-    def test_publish_adopts_through_the_tool_and_rebases_before_it_pushes_never_forcing(self):
-        publish = job_body("site-video.yml", "publish")
-        self.assertIn("site_video.py adopt", publish)
-        self.assertIn("--derive", publish)
-        self.assertIn("git pull --rebase", publish)
-        self.assertIn("git push origin HEAD:main", publish)
-        self.assertNotRegex(publish, r"push[^\n]*(--force|-f\b|\+HEAD)")
-        self.assertIn("github-actions[bot]", publish)
-        self.assertIn("commit-message", publish)
-
-    def test_the_stills_ride_the_same_run_and_the_same_commit_on_the_same_terms(self):
-        """The simulator-made stills refresh with the film: every scene captured twice and held to its noise bound
-        (never to byte identity: llvmpipe's blur is not bit-stable), adopted by MAIN's tool from an artifact (data),
-        one allow-listed bot commit, no second workflow."""
-        body = code("site-video.yml")
-        stills, publish = job_body("site-video.yml", "stills"), job_body("site-video.yml", "publish")
-        self.assertEqual(len(re.findall(r"(?m)^name:", body)), 1)
-        self.assertEqual(stills.count("site_stills.py render"), 1)
-        self.assertNotIn("site_stills.py compare", stills)  # no byte-identity gate
-        self.assertIn("site_stills.py stability-table", stills)
-        self.assertNotIn("continue-on-error", stills)
-        self.assertIn("site_stills.py manifest", stills)
-        self.assertIn("actions/upload-artifact@", stills)
-        # the pinned ffmpeg is the only encoder the stills see
-        self.assertIn("site_video.py ffmpeg-fetch", stills)
-        self.assertIn('echo "$RUNNER_TEMP/pinned-bin" >> "$GITHUB_PATH"', stills)
-        # publish: main's tool, the expected revision, the allow-list, one commit
-        self.assertIn('site_stills.py adopt "$RUNNER_TEMP/stills" --write --expect-rev "$SHA"', publish)
-        self.assertIn("allowed=", publish)
-        self.assertNotIn("navblur", publish)
-        # the allow-list admits every file the refresh may write (a scene returned to the automated set once
-        # failed the dry run here: its image was written by `adopt` and refused by the list) and no photograph
-        admitted = re.compile(re.search(r"(?m)^\s*stills='([^']+)'$", publish).group(1))
-        sys.path.insert(0, str(ROOT / "tools"))
-        import site_stills
-        for path in site_stills.output_files():
-            if path.startswith("docs/screenshots/") or path.startswith("site/media/"):
-                self.assertTrue(admitted.search(path), f"{path} is written by the refresh but not allowed to change")
-        self.assertFalse(admitted.search("docs/screenshots/navblur-transition.jpg"))
-        self.assertEqual(publish.count("git commit -F"), 1)
-        self.assertIn("--stills-manifest", publish)
-        self.assertEqual(code("release.yml").count("gh workflow run site-video.yml"), 1)
-        for name in ("rc.yml", "nightly.yml"):
-            self.assertNotIn("site_stills", code(name))
-
-    def publish_runs(self, **results):
-        """Evaluate the publish job's `if:` for the given job results (decide defaults to success)."""
-        publish = job_body("site-video.yml", "publish")
-        cond = re.search(r"(?m)^    if: >-\n((?:      .*\n?)+)", publish).group(1)
-        expr = " ".join(cond.split())
-        results.setdefault("decide", "success")
-        expr = re.sub(r"needs\.(\w+)\.result", lambda m: repr(results.get(m.group(1), "skipped")), expr)
-        expr = expr.replace("always()", "True").replace("&&", " and ").replace("||", " or ").replace("!=", " != ")
-        return eval(expr, {"__builtins__": {}})  # noqa: S307 - the workflow's own boolean expression, over string literals
-
-    def test_a_failed_stills_job_does_not_stop_the_film_and_a_failed_film_stops_everything(self):
-        self.assertTrue(self.publish_runs(render="success", stills="failure"))   # the film lands, the run stays red
-        self.assertTrue(self.publish_runs(render="success", stills="success"))
-        self.assertTrue(self.publish_runs(render="success", stills="skipped"))   # stills' inputs are the committed ones
-        self.assertTrue(self.publish_runs(render="skipped", stills="success"))   # the film's inputs are the committed ones
-        self.assertFalse(self.publish_runs(render="failure", stills="success"))  # a failed film blocks the stills too
-        self.assertFalse(self.publish_runs(render="cancelled", stills="success"))
-        self.assertFalse(self.publish_runs(render="success", stills="cancelled"))
-        self.assertFalse(self.publish_runs(render="skipped", stills="skipped"))  # nothing rendered, nothing to publish
-        self.assertFalse(self.publish_runs(render="skipped", stills="failure"))  # nothing to publish either
-        self.assertFalse(self.publish_runs(decide="failure", render="success", stills="success"))
-
-    def test_each_adopt_step_runs_only_for_the_artifact_that_exists(self):
-        publish = job_body("site-video.yml", "publish")
-        for name, job in (("Adopt the film", "render"), ("Adopt the stills", "stills"), ("Download the film (data)", "render"),
-                          ("Download the stills (data)", "stills")):
-            step = publish[publish.index(f"- name: {name}"):]
-            step = step[:step.index("\n      - ", 1)] if "\n      - " in step[1:] else step
-            self.assertIn(f"needs.{job}.result == 'success'", step, name)
-
-    def test_the_deploy_is_a_dispatch_of_pages_on_main_because_a_tag_run_may_not_deploy_pages(self):
-        """The `github-pages` environment admits deployments from `main` only (checked with the API), so a run on a
-        release tag cannot call pages.yml; it dispatches it on main, where the push's own commit is the tip."""
-        pages = job_body("site-video.yml", "pages")
-        self.assertIn("needs.publish.outputs.committed == 'true'", pages)
-        self.assertIn('gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main', pages)
-        self.assertIn("actions: write", pages)
-        self.assertNotIn("uses: ./.github/workflows/pages.yml", pages)
-        self.assertNotIn("pages: write", pages)
-        self.assertRegex(code("pages.yml"), r"(?m)^  workflow_dispatch:\n")
-        # pages.yml gained nothing for this: it deploys main's tip, which holds the bot's commit
-        self.assertNotIn("inputs.ref", code("pages.yml"))
-
-    def test_every_action_is_pinned_to_a_commit(self):
-        for line in code("site-video.yml").splitlines():
-            m = re.search(r"uses:\s*(\S+)", line)
-            if m and not m.group(1).startswith("./"):
-                self.assertRegex(m.group(1), r"@[0-9a-f]{40}$", line)
-
-    def test_a_published_stable_release_dispatches_it_and_nothing_else_does(self):
-        hook = job_body("release.yml", "site-video")
-        self.assertIn("continue-on-error: true", hook)
-        self.assertIn("needs: [guard, publish]", hook)
-        self.assertIn("needs.publish.result == 'success'", hook)
-        self.assertIn("needs.guard.outputs.line == 'main'", hook)
-        self.assertIn("release-ref", hook)
-        # dispatched ON THE TAG: the run renders its own checkout, and its caches are the tag's, never main's
-        self.assertIn('gh workflow run site-video.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG" -f publish=true', hook)
-        self.assertNotIn("--ref main", hook)
-        self.assertIn("actions: write", hook)
-        self.assertNotIn("contents: write", hook)
-        # the release's own jobs gained no new permission, and the new one exists once
-        self.assertEqual(code("release.yml").count("actions: write"), 1)
-        self.assertEqual(code("site-video.yml").count("actions: write"), 1)
-        # candidates and nightlies never refresh the film
-        for name in ("rc.yml", "nightly.yml"):
-            self.assertNotIn("site-video", code(name))
-        # `publish` is the job that creates the release; the hook must come after it, never gate it
-        self.assertNotIn("site-video", job_body("release.yml", "publish"))
-        self.assertNotIn("site-video", job_body("release.yml", "build"))
 
 
 if __name__ == "__main__":

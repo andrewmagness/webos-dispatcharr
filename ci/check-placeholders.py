@@ -87,8 +87,6 @@ TEST_FILE = re.compile(r'(?:^|_)tests?\.rs$|_harness\.rs$')
 
 # Sites with no watched token of their own: (file under rust-modules, `Reason::` variant it must name).
 REQUIRED = [
-    ('screens/src/home/mod.rs', 'HomeBackdrop'),
-    ('screens/src/detail/mod.rs', 'DetailBackdrop'),
     ('ui/src/hero_logo.rs', 'HeroLogoText'),
     ('ui/src/hero_logo.rs', 'HeroLogoAbsent'),
     ('ui/src/widgets.rs', 'ProfileChip'),

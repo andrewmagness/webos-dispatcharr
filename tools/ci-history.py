@@ -3,10 +3,9 @@
 
 usage: tools/ci-history.py --in FILE (--out FILE | --dry-run) [--repo OWNER/NAME] [--max-pages N] [--full] [--workers N]
 
-This is the data behind the live page at https://plxnative.com/ci/ (site/ci/index.html). The
-`ci-metrics` workflow runs it after every CI / Simulator CI / Nightly run (a push to main or a pull
-request) and commits the result to the orphan `ci-metrics` branch; the page fetches that file from
-raw.githubusercontent.com. tools/ci-summary.py derives the page's "now" block from it.
+The `ci-metrics` workflow runs it after every CI / Simulator CI / Nightly run (a push to main or a pull
+request) and commits the result to the orphan `ci-metrics` branch.
+tools/ci-summary.py derives a summary from it.
 
 The file is `{"updated": ISO time, "ci": [row...], "sim": [row...], "nightly": [row...],
 "cancelled": {day: {"push": n, "pull_request": n}}, "daily": [entry...]}`. A row is

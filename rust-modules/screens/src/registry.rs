@@ -646,7 +646,7 @@ pub const SCREEN_SHAPES: &[&str] = &[
 /// the Plex pages and panels and the Settings family left the alphabet, and `PageMemory` lost
 /// every page's arm.
 #[cfg(test)]
-const SCREEN_SHAPES_PIN: u64 = 0x72fb_3258_bff6_7e57;
+const SCREEN_SHAPES_PIN: u64 = 0xb076_c643_f4b1_5aac;
 
 #[cfg(test)]
 mod arg_tests {

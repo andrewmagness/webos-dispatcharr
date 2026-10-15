@@ -1262,6 +1262,7 @@ fn start_bufferfeed_inner(
     // whether the audio ES (E-AC3/Atmos) is what stalls the sink on 4K HEVC.
     let no_audio = plx_base::devtrig::flag("noaudio");
     crate::ff::set_feed_audio(!no_audio);
+    SHARED.live_source.store(crate::route::is_live(ps), Ordering::Release);
     let stream_payload;
     // Every arm below assigns this — the static payloads through `static_envelope`, the streamed
     // one through `sink_envelope_now` — so a new arm that forgets it fails to compile.

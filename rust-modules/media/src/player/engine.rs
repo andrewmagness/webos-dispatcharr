@@ -195,6 +195,8 @@ pub struct Engine {
     /// The post-seek keyframe has installed its segment but has not yet been accepted by
     /// Starfish. Native presentation callbacks remain fenced until that exact AU returns `O`.
     pub presentation_rearm_pending: bool,
+    /// A live channel's frozen-picture watch (`pump::LiveStall`).
+    pub live_stall: super::pump::LiveStall,
     pub max_fed_video_pts: i64, // high-water fed pts, VIDEO lane (g_max_fed_pts)
     pub max_fed_audio_pts: i64, // high-water fed pts, AUDIO lane (two-lane feed)
     /// Fed pts of the AU that opened this timeline's audio — the one the demuxer marked as its
@@ -1543,6 +1545,7 @@ fn start_bufferfeed_inner(
         seek_retries: 0,
         flushed: false,
         presentation_rearm_pending: false,
+        live_stall: Default::default(),
         max_fed_video_pts: 0,
         max_fed_audio_pts: 0,
         audio_start_fp: None,
@@ -3895,6 +3898,7 @@ mod prime_livelock_tests {
             seek_retries: 0,
             flushed: false,
             presentation_rearm_pending: false,
+            live_stall: Default::default(),
             max_fed_video_pts: 0,
             max_fed_audio_pts: 0,
             audio_start_fp: None,

@@ -19,7 +19,10 @@ What it answers, with the shapes `rust-modules/dispatcharr/src/dispatcharr/model
                                           Content-Length at roughly real time, then closed. A live
                                           stream that ENDS is what a dropped connection looks like
                                           to the app, which is what this exists to exercise. 404
-                                          without --ts (no media ships with the repository).
+                                          without --ts (no media ships with the repository). With
+                                          --ts-hang SECONDS the stream instead goes SILENT after that
+                                          long and holds the connection open, the other way a live
+                                          stream fails (only the first stream; a reconnect plays).
 
 Anything else is a 404 and a line on stderr naming it, so extending it is one branch. The lineup is
 generated from --seed, never the clock: two servers started alike answer byte-identically. The
@@ -169,6 +172,7 @@ class State:
         self.epgdata = epgdata(self.channels)
         self.ts = args.ts
         self.ts_rate = args.ts_rate
+        self.ts_hang = args.ts_hang
 
 
 def make_handler(state):
@@ -219,8 +223,16 @@ def make_handler(state):
             self.end_headers()
             self.close_connection = True
             chunk = 188 * 64
+            hang_at = None
+            if state.ts_hang > 0:
+                hang_at = time.monotonic() + state.ts_hang
+                state.ts_hang = 0
             with open(state.ts, "rb") as f:
                 while True:
+                    if hang_at is not None and time.monotonic() >= hang_at:
+                        sys.stderr.write("mock_dispatcharr: --ts-hang: the stream goes silent\n")
+                        while True:
+                            time.sleep(3600)
                     data = f.read(chunk)
                     if not data:
                         return
@@ -296,6 +308,8 @@ def parse_args(argv=None):
     p.add_argument("--ts", default="", help="an MPEG-TS file to serve as every channel's live stream (none ships)")
     p.add_argument("--ts-rate", type=int, default=600_000,
                    help="bytes a second to pace --ts at (about a 4.8 Mb/s channel); 0 = as fast as possible")
+    p.add_argument("--ts-hang", type=float, default=0,
+                   help="seconds into the first --ts stream after which it sends nothing more and stays open")
     return p.parse_args(argv)
 
 

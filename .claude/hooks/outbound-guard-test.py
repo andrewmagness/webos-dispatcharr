@@ -93,8 +93,23 @@ def build_user_config(root):
     return cfg
 
 
+FAKE_DSP_HOST = "dsp-fake.example.lan"
+FAKE_DSP_PASS = "fake-dispatcharr-pass-7"
+
+
+def build_dispatcharr_config(root):
+    """A FAKE `~/.config/dispatcharr-tv/test-server`, reached through DISPATCHARR_TV_CONFIG_DIR."""
+    cfg = os.path.join(root, "user-config", "dispatcharr-tv")
+    os.makedirs(cfg)
+    with open(os.path.join(cfg, "test-server"), "w") as f:
+        f.write("http://%s:9191\nviewer\n%s\n" % (FAKE_DSP_HOST, FAKE_DSP_PASS))
+    os.environ["DISPATCHARR_TV_CONFIG_DIR"] = cfg
+    return cfg
+
+
 ROOT = build_root()
 USER_CFG = build_user_config(ROOT)
+DSP_CFG = build_dispatcharr_config(ROOT)
 SECRETS = guard.load_secrets(ROOT)
 
 BLOCK, ALLOW = True, False
@@ -109,6 +124,10 @@ CASES = [
     (BLOCK, 'gh release create v0.3.0 --notes "verified against %s"' % FAKE_PMS),
     (BLOCK, "gh api repos/x/y/issues/1/comments -f body='the TV is %s'" % FAKE_TV),
     (BLOCK, 'gh pr comment 5 --body "token %s"' % FAKE_TOKEN),
+    # the Dispatcharr test server: every line, and the URL's bare host
+    (BLOCK, 'gh pr create --body "signed in with %s"' % FAKE_DSP_PASS),
+    (BLOCK, 'gh pr create --body "tested against http://%s:9191"' % FAKE_DSP_HOST),
+    (BLOCK, 'git commit -m "the server at %s answers"' % FAKE_DSP_HOST),
     # the shape half: values that are in NO file here, so only (b) can catch them
     (BLOCK, 'gh pr create --body "curl \\"http://host/x?X-Plex-Token=%s\\""' % OTHER_TOKEN),
     (BLOCK, 'gh issue create --title t --body "machineIdentifier=%s"' % OTHER_MACHINE),

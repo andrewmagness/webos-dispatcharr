@@ -235,6 +235,12 @@ PRIVATE_FILES = (
 # network, and `cat ~/.config/plxnative/tv-host` must be as refused in a payload as `cat .tv-host`.
 USER_TV_FILES = ("tv-host", "tv-mac")
 
+# The Dispatcharr test server (`~/.config/dispatcharr-tv/test-server`): three lines — the server's
+# URL, a username, a password — for testing the client against a real server. Outside every
+# checkout, like the TV files. EVERY line is a secret (a plain file otherwise contributes only its
+# first), and so is the URL's bare host, which a payload can carry without the scheme.
+DISPATCHARR_TEST_FILE = "test-server"
+
 # Gitignored DIRECTORIES whose every descendant is private (restructure spec §5.6 rule 1): a
 # recording taken against a real server carries the household's every keypress and every server
 # answer. Matched by path COMPONENT wherever the directory sits (the runtime root on the set, a
@@ -316,6 +322,19 @@ def user_config_dir():
     return os.path.join(h, ".config", "plxnative") if h else ""
 
 
+def dispatcharr_config_dir():
+    """Where the Dispatcharr test-server file lives: ${DISPATCHARR_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-
+    $HOME/.config}/dispatcharr-tv}. "" when HOME is unset and nothing overrides it."""
+    d = os.environ.get("DISPATCHARR_TV_CONFIG_DIR")
+    if d:
+        return d
+    x = os.environ.get("XDG_CONFIG_HOME")
+    if x:
+        return os.path.join(x, "dispatcharr-tv")
+    h = os.environ.get("HOME")
+    return os.path.join(h, ".config", "dispatcharr-tv") if h else ""
+
+
 def private_paths(root):
     """[(label, absolute path)] of every file that holds a private value: the gitignored ones under
     `root`, then the per-user TV files (labelled `plxnative/<name>`, which is how they read in a
@@ -325,6 +344,10 @@ def private_paths(root):
     if d:
         out += [("plxnative/" + n + " (the per-user TV config)", os.path.join(d, n))
                 for n in USER_TV_FILES]
+    d = dispatcharr_config_dir()
+    if d:
+        out.append(("dispatcharr-tv/" + DISPATCHARR_TEST_FILE + " (the Dispatcharr test server)",
+                    os.path.join(d, DISPATCHARR_TEST_FILE)))
     return out
 
 
@@ -354,6 +377,12 @@ def load_secrets(root):
             for m in re.finditer(r"^[ \t]*(?:export[ \t]+)?(\w+)[ \t]*=[ \t]*(.+?)[ \t]*$",
                                  body, re.M):
                 _add(out, "%s (%s)" % (m.group(1), rel), m.group(2))
+        elif rel.startswith("dispatcharr-tv/"):
+            for line in body.splitlines():
+                _add(out, rel, line)
+                host = re.match(r"^\s*https?://(\[[^\]]+\]|[^/:\s]+)", line)
+                if host:
+                    _add(out, rel + " host", host.group(1).strip("[]"))
         else:
             first = (body.strip().splitlines() or [""])[0]
             _add(out, rel, first)

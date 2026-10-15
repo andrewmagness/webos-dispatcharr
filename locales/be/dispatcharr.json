@@ -42,5 +42,7 @@
   "dispatcharr.guide.unlisted": "Няма звестак",
   "dispatcharr.guide.time_range": "{start} – {end}",
   "dispatcharr.guide.season_episode": "С{season} Э{episode}",
-  "dispatcharr.guide.episode": "Серыя {episode}"
+  "dispatcharr.guide.episode": "Серыя {episode}",
+  "dispatcharr.live.next": "Далей {time} · {title}",
+  "dispatcharr.live.no_channel": "Няма канала {number}"
 }

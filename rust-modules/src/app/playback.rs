@@ -175,6 +175,25 @@ pub(crate) fn retry_failed_playback(
     }
 }
 
+/// **Change channel while watching** (`PlayerReq::Tune`): stop the stream being watched, which also
+/// frees the server's stream slot before the next one is asked for, then tune and start the new
+/// channel on the player page that is already up. The page's return target is untouched, so BACK
+/// still goes to the Guide.
+fn tune_channel(
+    ps: &mut plx_media::route::PlaybackSession,
+    pa: &mut plx_media::player::adapter::PlayerAdapter,
+    tune: plx_media::route::LiveTune,
+    pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
+    bridge: &mut super::bridge::Bridge,
+) {
+    plx_media::player::stop_bufferfeed(ps, pa);
+    if plx_media::route::request_live(ps, tune, super::dispatcharr::unix_now()) {
+        start_playback(ps, pa, 0, Origin::Here, HUD_LINGER_MS, None, pages, bridge);
+    } else {
+        log("live: the channel change was refused");
+    }
+}
+
 /// **The failure read-out's fix for Force Direct Play** — `FailureAction::PlayAutomatically`.
 ///
 /// A PERSISTENT switch, deliberately, not a one-shot: Force is what made this play fail, and it
@@ -560,6 +579,7 @@ pub(crate) fn player_requests(
     use plx_screens::registry::PlayerReq;
     for req in reqs {
         match req {
+            PlayerReq::Tune(tune) => tune_channel(ps, pa, tune, pages, bridge),
             PlayerReq::RetryPlayback => {
                 retry_failed_playback(ps, pa, bridge.metadata_mut(), None, AttemptOrigin::UserRetry);
             }

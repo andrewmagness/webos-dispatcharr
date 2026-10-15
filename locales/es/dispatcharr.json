@@ -41,5 +41,7 @@
   "dispatcharr.guide.unlisted": "Sin información",
   "dispatcharr.guide.time_range": "{start} – {end}",
   "dispatcharr.guide.season_episode": "T{season} E{episode}",
-  "dispatcharr.guide.episode": "Episodio {episode}"
+  "dispatcharr.guide.episode": "Episodio {episode}",
+  "dispatcharr.live.next": "A continuación {time} · {title}",
+  "dispatcharr.live.no_channel": "No hay canal {number}"
 }

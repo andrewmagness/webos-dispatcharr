@@ -118,6 +118,9 @@ pub struct PlaybackSession {
     /// to 0 exactly as it does a resume. Set with [`set_live_url`]; cleared by [`set_url`],
     /// [`clear_url`] and a new [`request_play`].
     live: bool,
+    /// The channel a live tune is watching, in the lineup it came from ([`request_live`]).
+    /// Cleared with the URL, like [`live`](Self::live).
+    tune: Option<super::LiveTune>,
     /// The server-side transcode session id, EMPTY on a direct play — that emptiness is the
     /// "is this a transcode?" test ([`is_transcoding`]) and the key the stop is sent with.
     tsession: String,
@@ -449,6 +452,7 @@ impl PlaybackSession {
         requested_resume_ns: 0,
         url: String::new(),
         live: false,
+        tune: None,
         tsession: String::new(),
         play_verdict: None,
         resolve_failed: false,
@@ -525,6 +529,7 @@ impl PlaybackSession {
             requested_resume_ns,
             url,
             live,
+            tune,
             tsession,
             play_verdict,
             resolve_failed,
@@ -582,6 +587,7 @@ impl PlaybackSession {
             requested_resume_ns: *requested_resume_ns,
             url: url.clone(),
             live: *live,
+            tune: tune.clone(),
             tsession: tsession.clone(),
             play_verdict: play_verdict.clone(),
             resolve_failed: *resolve_failed,
@@ -697,15 +703,22 @@ pub fn transport_kbps(ps: &PlaybackSession) -> i64 {
 pub fn set_url(ps: &mut PlaybackSession, s: &str) {
     ps.url = s.to_owned();
     ps.live = false;
+    ps.tune = None;
 }
 pub fn clear_url(ps: &mut PlaybackSession) {
     ps.url.clear();
     ps.live = false;
+    ps.tune = None;
 }
 /// Install a LIVE stream's URL (see [`PlaybackSession::live`]).
 pub fn set_live_url(ps: &mut PlaybackSession, s: &str) {
     ps.url = s.to_owned();
     ps.live = true;
+    ps.tune = None;
+}
+/// The live channel being watched and the lineup it is in, when the play came from the Guide.
+pub fn live_tune(ps: &PlaybackSession) -> Option<&super::LiveTune> {
+    ps.tune.as_ref().filter(|_| is_live(ps))
 }
 /// Is the stream being played live? Read by the engine when it starts a Load.
 pub fn is_live(ps: &PlaybackSession) -> bool {
@@ -730,15 +743,29 @@ mod live_url_tests {
         assert!(!is_live(&ps), "a file URL replaces it");
     }
 
+    fn tune(urls: &[&str], index: usize) -> super::super::LiveTune {
+        let channels = urls.iter().enumerate().map(|(i, u)| super::super::LiveChannel {
+            id: i as i64, number: (i + 1).to_string(), name: format!("C{i}"), url: (*u).into(), logo: None,
+            programmes: vec![super::super::LiveProgramme { start: 0, end: 100, title: format!("P{i}") }],
+        }).collect();
+        let lineup = super::super::LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() };
+        super::super::LiveTune { lineup: std::sync::Arc::new(lineup), index, previous: None, at: 0 }
+    }
+
     #[test]
-    fn a_tune_installs_the_live_url_and_its_declaration() {
+    fn a_tune_installs_the_channel_its_lineup_and_its_declaration() {
         let mut ps = PlaybackSession::IDLE;
-        assert!(!request_live(&mut ps, "", "h264", "aac", "ESPN", ""), "no URL, no tune");
-        assert!(request_live(&mut ps, "http://192.0.2.1:9191/proxy/ts/stream/x", "h264", "aac", "ESPN", "SportsCenter"));
+        assert!(!request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 1), 50), "no stream, no tune");
+        assert!(live_tune(&ps).is_none());
+        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 0), 50));
         assert!(is_live(&ps));
-        assert_eq!(url(&ps), "http://192.0.2.1:9191/proxy/ts/stream/x");
+        assert_eq!(url(&ps), "http://192.0.2.1:9191/a");
         assert_eq!((stream_vcodec(&ps).as_str(), stream_acodec(&ps).as_str()), ("h264", "aac"));
+        assert_eq!(live_tune(&ps).map(|t| (t.index, t.at)), Some((0, 50)), "stamped with the tune's second");
+        assert!(ps.publication().tune.is_some(), "the page reads it from the publication");
         assert!(!play_pending(), "nothing to resolve: the start ritual Loads at once");
+        clear_url(&mut ps);
+        assert!(live_tune(&ps).is_none(), "teardown forgets the channel");
     }
 }
 pub fn transcode_session(ps: &PlaybackSession) -> String {
@@ -7435,32 +7462,30 @@ pub fn request_play(
     )
 }
 
-/// **Tune a live channel** (a Dispatcharr stream): no server resolve, so nothing runs on a
-/// worker. The URL and its Load declaration are installed at once, as `plxnative-playurl` does,
-/// and [`play_pending`] stays false, so the start ritual's `prepare_start` starts the Load
-/// directly. `title` is the channel and `ctx` the line under it (what is on now).
+/// **Tune a live channel** (a Dispatcharr stream): `tune`'s channel in its lineup. There is no
+/// server resolve, so nothing runs on a worker. The URL and its Load declaration are installed at
+/// once, as `plxnative-playurl` does, and [`play_pending`] stays false, so the start ritual's
+/// `prepare_start` starts the Load directly. The HUD title is the channel, and the line under it
+/// what airs at `now` (Unix seconds).
 ///
 /// Refused, leaving everything as it was, while a PMS or native route transition owns the player
-/// (the phases [`request_play`] refuses in), and for an empty URL or a declaration the television
-/// cannot be given.
-pub fn request_live(
-    ps: &mut PlaybackSession,
-    url: &str,
-    vcodec: &str,
-    acodec: &str,
-    title: &str,
-    ctx: &str,
-) -> bool {
-    if url.is_empty() {
+/// (the phases [`request_play`] refuses in), for a channel with no stream, and for a declaration
+/// the television cannot be given.
+pub fn request_live(ps: &mut PlaybackSession, mut tune: super::LiveTune, now: i64) -> bool {
+    let Some(channel) = tune.channel().filter(|c| c.tunable()) else {
         return false;
-    }
+    };
     if route_transition_owns_player() {
         crate::player::log("live: a route transition still owns the player; refusing the tune");
         return false;
     }
-    if !set_stream_declaration(ps, vcodec, acodec, 0.0, plx_data::metadata::Dovi::NONE, false) {
+    let (vcodec, acodec) = (tune.lineup.vcodec.clone(), tune.lineup.acodec.clone());
+    if !set_stream_declaration(ps, &vcodec, &acodec, 0.0, plx_data::metadata::Dovi::NONE, false) {
         return false;
     }
+    let url = channel.url.clone();
+    let title = channel.name.clone();
+    let ctx = channel.on_at(now).map(|p| p.title.clone()).unwrap_or_default();
     { let s = &mut *ps; {
         s.request = None;
         s.requested_resume_ns = 0;
@@ -7469,12 +7494,14 @@ pub fn request_live(
         s.preview = false;
         // SAFETY: as in `request_play_inner`, the lengths are the arrays' own.
         unsafe {
-            set_c(s.title.as_mut_ptr(), s.title.len(), title);
-            set_c(s.ctxline.as_mut_ptr(), s.ctxline.len(), ctx);
+            set_c(s.title.as_mut_ptr(), s.title.len(), &title);
+            set_c(s.ctxline.as_mut_ptr(), s.ctxline.len(), &ctx);
         }
     } };
-    set_live_url(ps, url);
-    crate::player::log(&format!("live: tune v={vcodec} a={acodec}"));
+    crate::player::log(&format!("live: tune #{} v={vcodec} a={acodec}", tune.index));
+    set_live_url(ps, &url);
+    tune.at = now;
+    ps.tune = Some(tune);
     true
 }
 
@@ -7575,6 +7602,7 @@ fn request_play_inner(
     { let s = &mut *ps; {
         s.request = Some(request.clone());
         s.live = false;
+        s.tune = None;
         s.requested_resume_ns = if request.preview {
             0
         } else {
@@ -8159,6 +8187,7 @@ fn apply_plan(ps: &mut PlaybackSession, meta: &mut plx_data::stores::metadata::M
             url: plan.url,
             // A PMS plan is never live.
             live: false,
+            tune: None,
             tsession: plan.tsession,
             // Installed on EVERY landing, not only a refusing one: a plan that resolved is itself
             // the statement that the last refusal is over, and assigning unconditionally is what

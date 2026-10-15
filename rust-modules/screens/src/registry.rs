@@ -197,6 +197,9 @@ pub struct ItemMenuReq {
 /// So the panel decides and the loop performs, exactly as `LibraryReq` does for the Library.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlayerReq {
+    /// Change channel: stop this stream and play `0`'s channel (the live player's CH▲/▼, UP/DOWN
+    /// and typed number). The loop performs it because the stop and the start need the engine.
+    Tune(plx_media::route::LiveTune),
     /// Accepted only after the owned player confirmation. Never emitted by boot or Play.
     RepairSandbox,
     /// The failure read-out's *Try again*: resolve the failed item again, unchanged, at the
@@ -1123,9 +1126,8 @@ pub enum PlayIntent {
     /// boundary, and once Detail's `selected` becomes an owned per-page snapshot (rather than a
     /// process-wide catalog read) there is no `'static` row left to borrow.
     Movie(plx_data::pms::PmsMovie),
-    /// A live channel (the Guide's OK): its stream URL and the codecs to declare for it.
-    /// `title` is the channel, `context` what is on now.
-    Live { url: String, vcodec: String, acodec: String, title: String, context: String },
+    /// A live channel (the Guide's OK): the channel, in the lineup the player changes channel in.
+    Live(plx_media::route::LiveTune),
 }
 
 pub trait ContentLike: AppLike<Memory = PageMemory> {}

@@ -31,6 +31,14 @@ pub(super) fn execute(command: DispatcharrCmd) {
     }
 }
 
+/// The television's wall clock in Unix seconds, as the guide fetch reads it: what a tune's "on
+/// now" line is chosen by.
+pub(super) fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
 fn answer<T>(reply: &Sender<T>, outcome: T) {
     let _ = reply.send(outcome);
     plx_machine::idle::invalidate();

@@ -26,10 +26,12 @@
 use std::borrow::Cow;
 use std::ffi::CString;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::Arc;
 
 use plx_dispatcharr::dispatcharr::guide::{slot_at, Guide, Slot, Window};
 use plx_dispatcharr::dispatcharr::models::{Channel, Programme};
 use plx_dispatcharr::dispatcharr::Error;
+use plx_media::route::{LiveChannel, LiveLineup, LiveProgramme, LiveTune};
 use plx_machine::machine::{
     Canon, Cx, Delivery, Edge, Effects, EntryId, FocusKey, Fx, GroupId, Handled, InputEvent,
     InputKind, InstanceId, Key, LogicalState, Machine, MachineId, Tick,
@@ -139,8 +141,8 @@ struct Listing {
     channels: Vec<Channel>,
     /// Each channel's logo URL (`None` for one without), row for row.
     logos: Vec<Option<String>>,
-    /// Each channel's live stream URL (empty for one the answer did not give), row for row.
-    streams: Vec<String>,
+    /// What OK hands the player: every row as a live channel, built once per landing.
+    lineup: Arc<LiveLineup>,
     guide: Guide,
     lanes: Vec<Vec<Slot>>,
     /// Each channel's number as a viewer reads it, kept so a frame does not format sixty of them.
@@ -157,6 +159,29 @@ impl Listing {
         // Row for row with the channels whatever the answer held: a short list means no logos.
         logos.resize(channels.len(), None);
         streams.resize(channels.len(), String::new());
+        let lineup = Arc::new(LiveLineup {
+            channels: channels
+                .iter()
+                .zip(streams)
+                .zip(&logos)
+                .map(|((c, url), logo)| LiveChannel {
+                    id: c.id,
+                    number: c.number_label(),
+                    name: c.name.clone(),
+                    url,
+                    logo: logo.clone(),
+                    programmes: guide
+                        .programmes(c.id)
+                        .iter()
+                        .map(|p| LiveProgramme { start: p.start, end: p.end, title: p.title.clone() })
+                        .collect(),
+                })
+                .collect(),
+            // Every channel sampled on a real server (2026-10-14) was H.264 + AAC. The Load must
+            // be declared before the stream is opened; reading it from the stream is M5's work.
+            vcodec: "h264".to_owned(),
+            acodec: "aac".to_owned(),
+        });
         let lanes = channels
             .iter()
             .map(|c| {
@@ -166,7 +191,7 @@ impl Listing {
             })
             .collect();
         let numbers = channels.iter().map(Channel::number_label).collect();
-        Some(Listing { channels, logos, streams, guide, lanes, numbers, window, fetched_at })
+        Some(Listing { channels, logos, lineup, guide, lanes, numbers, window, fetched_at })
     }
 
     fn rows(&self) -> usize {
@@ -508,28 +533,13 @@ impl GuideScreen {
         fx.invalidate(Provenance::Input);
     }
 
-    /// What OK on `elem` plays: its row's channel, live. The line under the title is what airs
-    /// NOW, whichever programme the cursor was on, because live TV can only play the present.
+    /// What OK on `elem` plays: its row's channel, live, whichever programme the cursor was on
+    /// (live TV can only play the present).
     fn tune(&self, elem: u32) -> Option<PlayIntent> {
         let (row, _) = split(elem)?;
         let listing = self.listing.as_ref()?;
-        let url = listing.streams.get(row).filter(|u| !u.is_empty())?.clone();
-        let channel = listing.channels.get(row)?;
-        let context = listing
-            .at(row, self.now)
-            .and_then(split)
-            .and_then(|(r, s)| listing.programme(r, listing.slot(r, s)?))
-            .map(|p| p.title.clone())
-            .unwrap_or_default();
-        // Every channel sampled on a real server (2026-10-14) was H.264 + AAC. The Load must be
-        // declared before the stream is opened; reading it from the stream is M5's codec work.
-        Some(PlayIntent::Live {
-            url,
-            vcodec: "h264".to_owned(),
-            acodec: "aac".to_owned(),
-            title: channel.name.clone(),
-            context,
-        })
+        listing.lineup.channels.get(row).filter(|c| c.tunable())?;
+        Some(PlayIntent::Live(LiveTune { lineup: Arc::clone(&listing.lineup), index: row, previous: None, at: 0 }))
     }
 
     // ── drawing ──────────────────────────────────────────────────────────────────────────────

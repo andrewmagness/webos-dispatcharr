@@ -407,32 +407,34 @@ fn account_opens_the_server_page_and_back_leaves_the_app() {
     assert_eq!(loop_req(&out), Some(LoopReq::BackAtRoot));
 }
 
-#[test]
-fn ok_on_what_airs_now_tunes_its_channel() {
-    let (mut screen, seat) = landed();
-    let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
-    let Some(ContentReq::Play { play: PlayIntent::Live { url, vcodec, acodec, title, context }, resume_ns }) =
-        content_req(&out)
-    else {
-        panic!("OK on a programme tunes its channel")
-    };
-    assert_eq!(url, "http://192.0.2.10:9191/proxy/ts/stream/u-1");
-    assert_eq!((vcodec.as_str(), acodec.as_str()), ("h264", "aac"));
-    assert_eq!((title.as_str(), context.as_str()), ("Channel 1", "One 0"));
-    assert_eq!(*resume_ns, 0);
+fn tuned(out: &[Stamped<GuideHost>]) -> Option<&LiveTune> {
+    match content_req(out)? {
+        ContentReq::Play { play: PlayIntent::Live(tune), resume_ns: 0 } => Some(tune),
+        _ => None,
+    }
 }
 
 #[test]
-fn ok_on_a_later_programme_tunes_the_channel_to_what_airs_now() {
+fn ok_tunes_the_rows_channel_in_the_whole_lineup() {
+    let (mut screen, seat) = landed();
+    let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
+    let tune = tuned(&out).expect("OK on a programme tunes its channel");
+    assert_eq!((tune.index, tune.previous), (0, None));
+    assert_eq!(tune.lineup.channels.len(), 10, "the player gets every row to change channel in");
+    let c = tune.channel().unwrap();
+    assert_eq!(c.url, "http://192.0.2.10:9191/proxy/ts/stream/u-1");
+    assert_eq!((c.number.as_str(), c.name.as_str()), ("1", "Channel 1"));
+    assert_eq!(c.on_at(NOW).map(|p| p.title.as_str()), Some("One 0"), "with its programmes");
+    assert_eq!((tune.lineup.vcodec.as_str(), tune.lineup.acodec.as_str()), ("h264", "aac"));
+}
+
+#[test]
+fn ok_on_a_later_programme_tunes_the_same_channel() {
     let (mut screen, seat) = landed();
     let c = walk(&mut screen, seat, Dir::Down); // channel 2, "Two long"
     let later = walk(&mut screen, c, Dir::Right); // "Two 0", 13:15
     let out = step(&mut screen, ScreenEvent::Activate(later), Some(later));
-    let Some(ContentReq::Play { play: PlayIntent::Live { url, context, .. }, .. }) = content_req(&out) else {
-        panic!("a later programme still tunes the channel")
-    };
-    assert!(url.ends_with("/u-2"));
-    assert_eq!(context, "Two long", "live TV plays what is on now");
+    assert_eq!(tuned(&out).map(|t| t.index), Some(1), "live TV plays the channel, not the programme");
 }
 
 #[test]
@@ -454,7 +456,8 @@ fn a_listing_keeps_one_logo_per_row_whatever_the_answer_held() {
     let logos = vec![Some("http://192.0.2.10:9191/api/channels/logos/101/cache/".to_owned())];
     let listing = Listing::new(channels, logos, Vec::new(), guide, NOW).unwrap();
     assert_eq!(listing.logos.len(), listing.rows());
-    assert_eq!(listing.streams.len(), listing.rows(), "and one stream URL, empty when absent");
+    assert_eq!(listing.lineup.channels.len(), listing.rows(), "and one live channel");
+    assert!(listing.lineup.channels.iter().all(|c| !c.tunable()), "no stream URLs were given");
     assert!(listing.logos[0].is_some());
     assert!(listing.logos[1..].iter().all(Option::is_none));
 }

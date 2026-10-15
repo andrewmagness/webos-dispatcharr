@@ -646,23 +646,6 @@ pub fn idle_session_for_test() -> &'static PlaybackSession {
     IDLE.get_or_init(|| PlaybackSession::IDLE)
 }
 
-/// Put a session back to [`PlaybackSession::IDLE`] — the whole session at once, HUD buffers and the
-/// `/identity` cache included.
-///
-/// **Test-only, and that is a statement about the app rather than about scoping.** No production
-/// path ends a session by clearing all of it: a real teardown clears the transcode session, its
-/// remux flag and the URL ([`scrobble_stop`] then [`clear_url`], both from `engine::teardown`) and
-/// deliberately leaves the rest standing, because callers read it AFTER the stop — `app.rs`'s
-/// `exit_player` calls `stop_bufferfeed` and then asks [`cur_rk`] for the episode to open the show
-/// page at.
-/// Widening teardown into a full reset would hand it an empty string. So the reset serves the case
-/// where a session really does end with nothing left to read: a test that installed a plan owes the
-/// next one an idle module, exactly as `fresh_registry` owes it an empty server table.
-#[cfg(test)]
-fn reset_session(ps: &mut PlaybackSession) {
-    *ps = PlaybackSession::IDLE;
-}
-
 // ---- accessors: the player reads the URL/session; the HUD reads the title/ctxline ----
 // Their signatures and meanings are the module's whole public surface — `app.rs`, `player/` and
 // `ui/` call them heavily — so collecting the state behind them changed the BODIES only.
@@ -2755,21 +2738,6 @@ fn take_active_encoder() -> String {
     std::mem::take(&mut active.id)
 }
 
-// Dev-only: used only by the `#[cfg(feature = "devtriggers")]` tests in this module's `tests`
-// submodule below (see the comment on the first one).
-#[cfg(all(test, feature = "devtriggers"))]
-fn replace_active_encoder(expected: &str, replacement: &str) -> bool {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    let active = &mut control.active;
-    if active.id != expected {
-        return false;
-    }
-    advance_route(active);
-    active.id = replacement.to_owned();
-    active.hls = None;
-    true
-}
-
 /// Publish a main-thread route replacement only while the complete action/worker generation is
 /// still current. Unlike the legacy string helper this rejects same-id ABA, a direct seek epoch,
 /// a new Engine and a user contract which superseded an in-flight PMS request.
@@ -2828,26 +2796,6 @@ pub enum ActiveEncoderRefusal {
     RouteMoved,
 }
 
-/// Run one bounded publication while ACTIVE still names `expected`.
-///
-/// Production enters this under the AU queue mutex, fixing the global order at AQ -> ACTIVE. The
-/// callback executes before ACTIVE is released; a check which returned `bool` and published later
-/// would reopen a gap for seek/retranscode to retire this worker between those two operations.
-// Dev-only: used only by the `#[cfg(feature = "devtriggers")]` tests in this module's `tests`
-// submodule below (see the comment on the first one).
-#[cfg(all(test, feature = "devtriggers"))]
-fn with_active_route<T>(
-    expected: &RouteLease,
-    publication: impl FnOnce() -> T,
-) -> Result<T, ActiveEncoderRefusal> {
-    let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    let active = &control.active;
-    if active.epoch != expected.epoch || active.id != expected.encoder {
-        return Err(ActiveEncoderRefusal::RouteMoved);
-    }
-    Ok(publication())
-}
-
 /// Change the process route only if the caller's local transition succeeds while the ACTIVE lock
 /// still proves the expected encoder. Production invokes this under the AU queue's abort mutex,
 /// giving the fixed order AQ -> ACTIVE -> controller/local state. The closure must be bounded and
@@ -2895,24 +2843,6 @@ fn observe_active_hls(
             }
         }
     }
-}
-
-#[cfg(test)]
-fn active_encoder() -> String {
-    PLAYER_CONTROL
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .active
-        .id
-        .clone()
-}
-
-// Dev-only: used only by the `#[cfg(feature = "devtriggers")]` tests in this module's `tests`
-// submodule below (see the comment on the first one).
-#[cfg(all(test, feature = "devtriggers"))]
-fn active_route_lease() -> RouteLease {
-    let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    lease_of(&control.active)
 }
 
 fn active_hls() -> Option<(WorkerTicket, ActiveHlsRoute)> {
@@ -5758,17 +5688,6 @@ impl ScrobbleJoin {
         self.changed.notify_all();
     }
 
-    /// Whether no stop report is still on its way to the server: no worker was ever reserved, the
-    /// last one has been joined, or its thread has returned. Never blocks, and never joins - the
-    /// frame loop asks this every frame while it waits to re-read what the stop committed.
-    fn settled(&self) -> bool {
-        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        state.completed >= state.generation
-            || (!state.spawn_pending
-                && !state.joining
-                && state.handle.as_ref().is_some_and(|(_, handle)| handle.is_finished()))
-    }
-
     fn drain(&self) {
         loop {
             let (generation, handle) = {
@@ -6761,13 +6680,6 @@ fn selection_queue() -> std::sync::MutexGuard<'static, SelectionQueue> {
     SELECTION_QUEUE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Test-only: every queued PUT has been sent and no worker is still draining.
-#[cfg(test)]
-fn selection_queue_idle() -> bool {
-    let queue = selection_queue();
-    !queue.worker_running && queue.pending.is_empty()
-}
-
 /// Same PUT as [`put_selection`], run on a worker instead of the frame thread
 /// (`commit_audio_selection`/`commit_subtitle_selection` are both reached from
 /// `app/playback.rs::commit_track` inside the run-loop's `FrameScope`). Requests are drained
@@ -6965,7 +6877,6 @@ impl ResolveEnv {
         }
     }
 }
-
 
 static PLAY_GEN: AtomicU32 = AtomicU32::new(0);
 static PLAY_BUSY: AtomicBool = AtomicBool::new(false);
@@ -7516,12 +7427,6 @@ pub fn cancel_play(ps: &mut PlaybackSession) {
     }
 }
 
-/// What [`pump_play`] does with the next episode's still: start its fetch, nothing else. Installed
-/// once at boot by `app` (`app::playback::warm_up_next_still`), because the texture cache it
-/// warms is `ui`'s and `route` sits below `ui`. Unset, the landing warms nothing — which is also
-/// what the host suite gets, where [`pump_play`] never calls it.
-static UP_NEXT_STILL_WARM: std::sync::OnceLock<fn(ServerId, &str)> = std::sync::OnceLock::new();
-
 /// MAIN THREAD, once a frame. Returns the generation-owned resume point when a playable fresh plan
 /// was installed. `Some(0)` means start from the beginning; `None` means no playable landing. A
 /// stale landing (and its resume) is dropped.
@@ -7587,25 +7492,6 @@ pub fn pump_play(ps: &mut PlaybackSession, meta: &mut plx_data::stores::metadata
     let _start = apply_plan(ps, meta, plan, &rk);
     if let Some(resources) = refused_resources {
         retire_plan_resources(resources);
-    }
-    // Warm the next episode's still NOW rather than at first draw. The URL has been known since
-    // this plan resolved — tens of minutes before the credits — and the fetch is async, so touching
-    // it here costs nothing and spares the control a skeleton for one image-transcode round trip at
-    // exactly the moment it appears in front of the user. The prefetch itself is `app`'s
-    // ([`install_up_next_still_warm`]): a texture warm is `ui`'s and `route` sits below it.
-    //
-    // It sits HERE, in the once-a-frame pump, rather than inside `apply_plan`: that function's
-    // contract is that it is the sole WRITER OF THE SESSION, and a texture prefetch is not part of
-    // it. Keeping the two apart also keeps the install reachable from the host suite —
-    // the warm pulls in the poster cache and, through it, a GL call the dev Mac cannot link.
-    // The host test binary has no GL symbols; this prefetch is visual-only and production-only.
-    // Keeping it out of cfg(test) makes the generation/resource transaction above testable
-    // without pretending a desktop unit test can exercise the poster texture path.
-    #[cfg(not(any(test, feature = "test-support")))]
-    if let Some(u) = up_next(ps) {
-        if let Some(warm) = UP_NEXT_STILL_WARM.get() {
-            warm(item_sid(cur_sid(ps)), &u.thumb);
-        }
     }
     ok.then_some(resume_ns)
 }
@@ -7947,32 +7833,6 @@ fn install_original_remux(
         s.stream_immersive = false;
     } };
     crate::player::log(&format!("decision output: v={} a={}", prepared.vcodec, prepared.acodec));
-}
-
-/// Re-transcode the current item (the session's `cur_rk`) at `offset_secs`, carrying the CURRENT
-/// audio + subtitle selection (transcode_base). Used by an audio switch AND by a subtitle
-/// (de)select while transcoding. Works from a direct-play OR transcode state — the result
-/// is always a transcode (server always emits AC3, so the pipeline's Loaded codec is
-/// unchanged). Sets `url` + `tsession`, runs /decision, and returns the new start.mkv URL
-/// (the demux re-opens it from byte 0), or None.
-///
-/// Test-only: the whole of today's rebuild in a row on the calling thread. No shipping caller is
-/// left (a claim's rebuild is a flight, the automatic fallback has its own three steps), so it is
-/// built only to grade that a failed preparation publishes nothing.
-#[cfg(test)]
-fn retranscode_for(ps: &mut PlaybackSession, expected: &WorkerTicket, offset_secs: i64) -> Option<String> {
-    let contract = plain_rebuild_precheck(ps, expected)?;
-    let inputs = prepare_retranscode_inputs(ps, expected, offset_secs)?;
-    let off = plx_base::task::OffFrame::for_test();
-    select_streams_for_encode(&off, &inputs);
-    match try_retranscode(&off, &inputs, contract) {
-        RetranscodeWorkerOutcome::Applied(applied) => {
-            install_retranscode_outcome(ps, &applied);
-            stop_encoder_session(applied.client, applied.superseded);
-            Some(applied.url)
-        }
-        RetranscodeWorkerOutcome::Refused => None,
-    }
 }
 
 /// The ticket/HLS-sync check `retranscode_for` runs before building the "rebuild today's route"
@@ -9792,80 +9652,3 @@ pub fn report_timeline(
     }
     true
 }
-
-// ---------------------------------------------------------------------------------------
-#[cfg(test)]
-#[path = "decision_test_support.rs"]
-mod test_support;
-
-#[cfg(all(test, feature = "hostsim"))]
-#[path = "decision_flight_rig.rs"]
-pub(crate) mod flight_rig;
-
-#[cfg(all(test, feature = "hostsim"))]
-#[path = "decision_trial_flight_tests.rs"]
-mod trial_flight_tests;
-
-#[cfg(test)]
-#[path = "decision_next_episode_tests.rs"]
-mod next_episode_tests;
-
-#[cfg(test)]
-#[path = "decision_skip_interval_tests.rs"]
-mod skip_interval_tests;
-
-#[cfg(test)]
-#[path = "decision_deck_press_tests.rs"]
-mod deck_press_tests;
-
-#[cfg(test)]
-#[path = "decision_resolve_route_tests.rs"]
-mod resolve_route_tests;
-
-#[cfg(test)]
-#[path = "decision_plan_tests.rs"]
-mod plan_tests;
-
-#[cfg(test)]
-#[path = "decision_quality_recovery_tests.rs"]
-mod quality_recovery_tests;
-
-#[cfg(test)]
-#[path = "decision_timeline_tests.rs"]
-mod timeline_tests;
-
-#[cfg(test)]
-#[path = "decision_direct_play_mode_tests.rs"]
-mod direct_play_mode_tests;
-
-#[cfg(test)]
-#[path = "decision_subtitle_style_tests.rs"]
-mod subtitle_style_tests;
-
-#[cfg(test)]
-#[path = "decision_selection_known_tests.rs"]
-mod selection_known_tests;
-
-#[cfg(test)]
-#[path = "carried_audio_tests.rs"]
-mod carried_audio_tests;
-
-#[cfg(test)]
-#[path = "plan_audio_enhancement_tests.rs"]
-mod plan_audio_enhancement_tests;
-
-#[cfg(test)]
-#[path = "decision_audio_enhancement_tests.rs"]
-mod audio_enhancement_tests;
-
-#[cfg(test)]
-#[path = "decision_prefs_characterisation_tests.rs"]
-mod prefs_characterisation_tests;
-
-#[cfg(test)]
-#[path = "decision_prefs_door_tests.rs"]
-mod prefs_door_tests;
-
-#[cfg(test)]
-#[path = "decision_memory_tests.rs"]
-mod memory_tests;

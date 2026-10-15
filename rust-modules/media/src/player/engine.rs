@@ -4724,15 +4724,6 @@ mod replay_after_stop_tests {
     }
 }
 
-/// Test-only: an Engine parked at `Stage::Streaming` on the host sink, for the pump-level rigs
-/// that live outside this module (`pump::flight_tests`).
-#[cfg(all(test, feature = "hostsim"))]
-pub(super) fn streaming_engine_for_test(native_epoch: u32) -> Engine {
-    let mut eng = prime_livelock_tests::engine_after_reload();
-    eng.native_epoch = native_epoch;
-    eng
-}
-
 /// issue #74 D.1 regression tests. Real v0.6.0 dispatches every Starfish/ACB verb through
 /// `sf_ready_object()` alone (`src/starfish.c`), which went live at `SMP_SET_READY(1)` BEFORE the
 /// real, blocking `sf_load` call (`g_load_with_context`) returned — nothing waited for that

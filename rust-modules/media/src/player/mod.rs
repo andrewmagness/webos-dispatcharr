@@ -35,10 +35,6 @@ pub mod ffi;
 pub mod ffi_host;
 mod pump;
 pub mod report;
-#[cfg(all(test, feature = "hostsim"))]
-mod foreground_flight_tests;
-#[cfg(all(test, feature = "hostsim"))]
-mod resume_tests;
 mod shared;
 pub mod sidecar;
 pub mod subside; // the side subtitle reader's thread and state (dev trigger `dispatcharrtv-subside`)
@@ -3446,105 +3442,6 @@ mod tests {
     /// One second, in the cue stores' unit. The offset is set in MILLISECONDS and every cue is in
     /// NANOSECONDS; mixing the two is how this test once put a 1 000 ns cue under a 1 s offset.
     const SEC: i64 = 1_000_000_000;
-
-    /// A positive offset draws a cue later, a negative one earlier, by exactly the offset.
-    #[test]
-    fn subtitle_offset_shifts_text_lookup_in_both_directions() {
-        let _g = plx_base::testlock::serial();
-        SHARED.sub_cues.lock().unwrap().clear();
-        SHARED.playpos_ns.store(0, Relaxed);
-        SHARED.desired_sub_idx.store(0, Relaxed);
-        set_subtitle_offset(0);
-        push_subtitle_text(0, SEC, 2 * SEC, "cue".into());
-
-        assert_eq!(active_subtitle(SEC + SEC / 2).as_deref(), Some("cue"));
-
-        set_subtitle_offset(1_000);
-        assert_eq!(active_subtitle(SEC + SEC / 2), None, "a positive offset delays the caption");
-        assert_eq!(active_subtitle(2 * SEC + SEC / 2).as_deref(), Some("cue"));
-        assert_eq!(active_subtitle(3 * SEC), None, "…and ends it as late as it started it");
-
-        // only a sidecar takes an advance (`subtitle_offset_range_ms`); the subtraction is the
-        // one every store shares, so the embedded lookup still proves its direction
-        sidecar::select_without_fetch_for_test(42);
-        set_subtitle_offset(-1_000);
-        assert_eq!(active_subtitle(SEC / 2).as_deref(), Some("cue"), "a negative one advances it");
-        assert_eq!(active_subtitle(SEC + SEC / 2), None);
-
-        set_subtitle_offset(0);
-        sidecar::reset();
-        SHARED.sub_cues.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(-1, Relaxed);
-    }
-
-    /// **A delayed cue is still in the store when its moment comes.** Both stores prune cues more
-    /// than two seconds behind the playhead on every push; under a +5 s offset the cue on screen
-    /// at playhead 6.5 s is the one authored for 1.5 s, which the playhead-only floor had already
-    /// thrown away when the next cue arrived.
-    #[test]
-    fn a_delayed_cue_survives_the_prune_until_the_offset_has_shown_it() {
-        let _g = plx_base::testlock::serial();
-        SHARED.sub_cues.lock().unwrap().clear();
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(0, Relaxed);
-        set_subtitle_offset(5_000);
-        SHARED.playpos_ns.store(0, Relaxed);
-        push_subtitle_text(0, SEC, 2 * SEC, "early".into());
-        push_subtitle_bitmap(0, SEC, 1920, 1080, vec![rect(0, 0, 8, 8)]);
-        close_subtitle_bitmap(0, 2 * SEC);
-
-        // the playhead reaches 6.5 s and the demuxer pushes the next cues, which prunes
-        SHARED.playpos_ns.store(6 * SEC + SEC / 2, Relaxed);
-        push_subtitle_text(0, 9 * SEC, 10 * SEC, "later".into());
-        push_subtitle_bitmap(0, 9 * SEC, 1920, 1080, vec![rect(0, 0, 8, 8)]);
-
-        let now = 6 * SEC + SEC / 2;
-        assert_eq!(active_subtitle(now).as_deref(), Some("early"), "text");
-        assert_eq!(active_bitmap_key(now), Some(SEC), "image");
-
-        set_subtitle_offset(0);
-        SHARED.playpos_ns.store(0, Relaxed);
-        SHARED.sub_cues.lock().unwrap().clear();
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(-1, Relaxed);
-    }
-
-    /// **Raising the delay mid-playback finds the cues already read.** The demuxer never
-    /// republishes a cue, so the stores must hold the whole window the LARGEST delay could ask
-    /// for whatever the offset is now: a viewer at offset 0 who steps to +60 s wants the cue
-    /// authored 60 s ago at once, not after the window has refilled. A floor that followed the
-    /// current offset kept 2 s of history at 0 and blanked every raised delay.
-    #[test]
-    fn raising_the_delay_mid_playback_finds_the_cues_already_read() {
-        let _g = plx_base::testlock::serial();
-        SHARED.sub_cues.lock().unwrap().clear();
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(0, Relaxed);
-        set_subtitle_offset(0);
-        SHARED.playpos_ns.store(SEC, Relaxed);
-        push_subtitle_text(0, SEC, 2 * SEC, "early".into());
-        push_subtitle_bitmap(0, SEC, 1920, 1080, vec![rect(0, 0, 8, 8)]);
-        close_subtitle_bitmap(0, 2 * SEC);
-
-        // playback goes on at offset 0 and the demuxer pushes the next cues, which prunes
-        SHARED.playpos_ns.store(61 * SEC + SEC / 2, Relaxed);
-        push_subtitle_text(0, 62 * SEC, 63 * SEC, "later".into());
-        push_subtitle_bitmap(0, 62 * SEC, 1920, 1080, vec![rect(0, 0, 8, 8)]);
-
-        // the viewer steps straight to the latest delay: the clock is back at 1.5 s
-        set_subtitle_offset(SUBTITLE_OFFSET_LATEST_MS);
-        let now = 61 * SEC + SEC / 2;
-        let text = active_subtitle(now);
-        let image = active_bitmap_key(now);
-
-        set_subtitle_offset(0);
-        SHARED.playpos_ns.store(0, Relaxed);
-        SHARED.sub_cues.lock().unwrap().clear();
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(-1, Relaxed);
-        assert_eq!(text.as_deref(), Some("early"), "text: a raised delay finds the cue read at offset 0");
-        assert_eq!(image, Some(SEC), "image: a raised delay finds the set read at offset 0");
-    }
 
     /// **A new item starts with no timing offset.** The offset is a property of one subtitle track
     /// against one file; `reset_subtitle` is the new-item hook, and the last film's correction

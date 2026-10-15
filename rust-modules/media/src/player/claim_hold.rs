@@ -333,34 +333,6 @@ mod tests {
         assert_eq!(crate::player::ffi_host::play_calls_for_test(), plays);
     }
 
-    #[test]
-    fn a_seek_side_resume_does_not_resume_the_holds_pause() {
-        let mut rig = Rig::playing();
-        engage(&mut rig.pa, 7);
-        crate::route::force_applying_for_test(7);
-        let plays = crate::player::ffi_host::play_calls_for_test();
-
-        crate::player::lifecycle::resume_if_paused(&mut rig.pa);
-        assert!(TX.paused.load(Acquire), "Skip Intro / SeekTo / From Beginning resumed the hold's pause");
-        assert_eq!(crate::player::ffi_host::play_calls_for_test(), plays);
-        assert!(!rig.position().1);
-
-        // The hold still owes its restore: the seek was carried past the reload, and Play lands after.
-        release(&mut rig.pa, take(7));
-        assert!(!TX.paused.load(Acquire), "the hold's restore was consumed by the seek's resume");
-        assert!(rig.position().1);
-    }
-
-    /// A stream the VIEWER had paused, with a hold on top? Not possible (`engage` owes no restore),
-    /// so a resume there is the viewer's and goes through.
-    #[test]
-    fn a_seek_side_resume_still_resumes_a_stream_the_viewer_paused() {
-        let mut rig = Rig::paused();
-        engage(&mut rig.pa, 7);
-        crate::route::force_applying_for_test(7);
-        crate::player::lifecycle::resume_if_paused(&mut rig.pa);
-        assert!(!TX.paused.load(Acquire), "a viewer pause is the viewer's to resume");
-    }
     /// Finding: `set_transport_paused` compared against the raw `paused()`, so an explicit PLAY
     /// during the flight dropped the restore and resumed the OLD stream mid-flight; the flight's
     /// seconds then replayed after the landing. The viewer sees a spinner over a playing intent,

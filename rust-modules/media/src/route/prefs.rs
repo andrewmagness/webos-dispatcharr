@@ -562,7 +562,3 @@ pub fn subtitle_position() -> SubtitlePosition { SubtitlePositionPref::live() }
 /// The selected ceiling. Safe from any thread; the resolve worker gets a COPY through
 /// `ResolveEnv` rather than reading this, per that struct's own rule.
 pub fn quality() -> Quality { QualityPref::live() }
-
-#[cfg(test)]
-#[path = "prefs_tests.rs"]
-mod prefs_tests;

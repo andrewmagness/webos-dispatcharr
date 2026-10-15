@@ -351,12 +351,6 @@ pub(super) enum Fault {
 #[cfg(any(test, feature = "test-support"))]
 static NEXT_FAULT: std::sync::Mutex<Option<Fault>> = std::sync::Mutex::new(None);
 
-/// Test-only: arm `fault` for the next [`spawn_flight`].
-#[cfg(test)]
-pub(super) fn inject_next_fault(fault: Fault) {
-    *NEXT_FAULT.lock().unwrap_or_else(|e| e.into_inner()) = Some(fault);
-}
-
 /// Test-only: consume the armed fault if it is `fault`, and answer whether it was.
 #[cfg(any(test, feature = "test-support"))]
 fn take_fault(fault: Fault) -> bool {
@@ -367,12 +361,6 @@ fn take_fault(fault: Fault) -> bool {
     } else {
         false
     }
-}
-
-/// Test-only: disarm whatever fault a test left behind.
-#[cfg(test)]
-pub(super) fn clear_injected_fault() {
-    *NEXT_FAULT.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
 /// Run the PMS half of `owner`'s flight on a worker. The caller has already recorded it

@@ -488,11 +488,6 @@ pub(super) fn remote_probe_plan(source_kbps: i64) -> Option<crate::abr::SourcePr
     )
 }
 
-#[cfg(test)]
-pub(super) fn remote_probe_target_bytes(source_kbps: i64) -> Option<usize> {
-    remote_probe_plan(source_kbps).map(|plan| plan.target_bytes)
-}
-
 /// **Two ceilings mean the stricter one**, per flavor, and this is the only place the two are put
 /// together. A ceiling can only ever REMOVE a flavor: a fast link cannot restore what a low rung
 /// denied, and a high rung cannot restore what a relay denied.
@@ -2461,74 +2456,12 @@ fn audio_intents<'a>(
     session.into_iter().chain(selection).chain(langs).chain(std::iter::once(AudioIntent::FileDefault)).collect()
 }
 
-/// Pick the audio track to DIRECT-PLAY from the playing item's track store
-/// (metadata::playing(), loaded by build_stream), returning (list_idx, codec, stream_id):
-/// list_idx -1 = codec-default (demuxer matches by payload codec — only when the track list is
-/// unavailable), else the index into `playing().audio`, with that track's Plex stream id so the
-/// timeline can report the truth. [`audio_intents`] ranks what to honour; this takes the first
-/// entry it can carry:
-///   - [`AudioIntent::Selection`]: that track when it is direct-playable, else a direct-playable track
-///     in ITS language (an unsupported English DTS pick plays as the English AC3 beside it, not
-///     as the default dub) — the Load payload uses THAT track's codec so there is no mismatch;
-///   - [`AudioIntent::Language`]: the first direct-playable track in it;
-///   - [`AudioIntent::FileDefault`]: the file's flagged default track if its codec
-///     is direct-playable — by EXPLICIT index (matching by codec alone fed the first same-codec
-///     stream, not the flagged default, when another track of that codec preceded it);
-///   - then any other direct-playable track (TrueHD/DTS-default item with an AC3 sibling —
-///     smart-DP), under `StandIn::Any` only (this `#[cfg(test)]` wrapper; production uses it only
-///     when forced direct play has no session pick or the video cannot be copied).
-/// Under `StandIn::SameKind`, the production default, an intent this path cannot carry is
-/// answered only by a same-language, non-commentary direct-playable track, else None. None
-/// means no direct-playable track serves the intent: the server carries the intended track on a
-/// video-copy remux, not a transcode of the video.
-///
-/// Under `StandIn::Any` an intent this path cannot carry falls through to the default rather than
-/// forcing a transcode to obey it, which would drop the whole smart-direct-play class (a
-/// TrueHD/DTS pick with an AC3 sibling) onto the server's video-downscaling encoder for one
-/// audio track.
-///
-/// PURE: takes the playing item's audio tracks explicitly instead of reaching into
-/// `metadata::playing()`. That matters twice over. (a) `playing()` (via `MetadataView`) hands out
-/// a `&'a PlayingItem` whose `Vec`s `appkit/track_menu.rs` and `appkit/info_panel.rs` hold slices into
-/// during playback — a worker replacing the store would drop those out from under the draw path,
-/// so the resolve must never touch it. (b) Being pure makes the selection ladder host-testable,
-/// which it has never been; see the tests at the foot of this file.
-#[cfg(test)]
-pub(super) fn pick_dp_audio(
-    tracks: &[plx_data::metadata::Stream],
-    default_acodec: &str,
-) -> Option<(i32, String, i64)> {
-    pick_dp_audio_pref(tracks, default_acodec, AudioLangPrefs::default())
-}
-
-/// [`pick_dp_audio`] with the item's Plex language preferences. The SHOW's setting mattered
-/// first: it lives on the SHOW, an episode's part carries nothing of it, and when the preferred
-/// dub is the file's default flag the server's selection cannot tell it from no choice — so a
-/// series set to Hungarian opened in English (#160).
-#[cfg(test)]
-pub(super) fn pick_dp_audio_pref(
-    tracks: &[plx_data::metadata::Stream],
-    default_acodec: &str,
-    prefs: AudioLangPrefs<'_>,
-) -> Option<(i32, String, i64)> {
-    pick_dp_audio_mode(tracks, default_acodec, prefs, DirectPlayMode::Auto)
-}
-
 pub(super) fn audio_direct_plays(mode: DirectPlayMode, codec: &str, channels: i64) -> bool {
     if mode == DirectPlayMode::Forced {
         plx_plex::plex::DP_AUDIO_CODECS.split(',').any(|c| c.eq_ignore_ascii_case(codec))
     } else {
         plx_plex::plex::is_dp_audio_track(codec, channels)
     }
-}
-
-#[cfg(test)]
-fn pick_dp_audio_mode(
-    tracks: &[plx_data::metadata::Stream], default_acodec: &str,
-    prefs: AudioLangPrefs<'_>, mode: DirectPlayMode,
-) -> Option<(i32, String, i64)> {
-    pick_dp_audio_eligible(tracks, default_acodec, prefs, 0, StandIn::Any,
-        |codec, channels| audio_direct_plays(mode, codec, channels))
 }
 
 fn pick_dp_audio_eligible(
@@ -2811,17 +2744,6 @@ pub(super) fn pick_dp_subtitle(subs: &[plx_data::metadata::Stream]) -> Option<(i
     Some((subs[i].id, ord))
 }
 
-/// Stream id named on the MDE `/decision` handshake, or `0`.
-///
-/// [`pick_dp_subtitle`] is what Original will client-render. MDE only sees that id when the
-/// codec is in [`plx_plex::plex::DP_SUBTITLE_CODECS`]: a sidecar, or a selected embedded track
-/// we render but do not advertise (`vplayer`, …), is sent as `0` so MDE evaluates subs off
-/// instead of answering transcode (which then forbids a codec-copy remux).
-#[cfg(test)]
-fn mde_subtitle_stream_id(subs: &[plx_data::metadata::Stream]) -> i64 {
-    mde_subtitle_id_of(subs, pick_dp_subtitle(subs))
-}
-
 /// [`mde_subtitle_stream_id`] for a subtitle already decided — the resolve decides ONCE
 /// (`pick_dp_subtitle_pref`) and names the result here.
 fn mde_subtitle_id_of(subs: &[plx_data::metadata::Stream], pick: Option<(i64, i32)>) -> i64 {
@@ -2843,13 +2765,6 @@ pub(super) struct SubtitleLangPrefs<'a> {
     pub language: Option<&'a str>,
     pub mode: i64,
     pub forced: i64,
-}
-
-#[cfg(test)]
-pub(super) fn pick_dp_subtitle_pref(
-    subs: &[plx_data::metadata::Stream], prefs: &plx_plex::plex::ShowLangPrefs, audio_lang: &str,
-) -> Option<(i64, i32)> {
-    pick_dp_subtitle_account(subs, prefs, SubtitleLangPrefs::default(), audio_lang)
 }
 
 fn pick_dp_subtitle_account(
@@ -3201,35 +3116,3 @@ pub(super) fn take_resume_for(pending: &mut Option<(u32, i64)>, gen: u32) -> i64
         None => 0,
     }
 }
-
-#[cfg(test)]
-#[path = "plan_test_support.rs"]
-mod test_support;
-
-#[cfg(test)]
-#[path = "plan_session_tests.rs"]
-mod session_tests;
-
-#[cfg(test)]
-#[path = "plan_quality_ceiling_tests.rs"]
-mod quality_ceiling_tests;
-
-#[cfg(test)]
-#[path = "plan_track_selection_tests.rs"]
-mod track_selection_tests;
-
-#[cfg(test)]
-#[path = "plan_dolby_vision_tests.rs"]
-mod dolby_vision_tests;
-
-#[cfg(test)]
-#[path = "plan_mde_decision_tests.rs"]
-mod mde_decision_tests;
-
-#[cfg(test)]
-#[path = "plan_av1_tests.rs"]
-mod av1_tests;
-
-#[cfg(test)]
-#[path = "plan_codec_agreement_tests.rs"]
-mod codec_agreement_tests;

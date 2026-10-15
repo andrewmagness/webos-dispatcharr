@@ -2236,6 +2236,10 @@ pub(crate) unsafe fn heartbeat(app: &mut App, fr: &mut Frame) {
             } else {
                 String::new()
             };
+            // A channel change's time to its first picture (`player::mark_tune`), once per change.
+            if let Some(ms) = plx_media::player::tune_take() {
+                plx_base::eventlog::log(&format!("live: channel change picture_ms={ms}"));
+            }
             // `fps=<n>` — frames actually SWAPPED this second, which is what `plx_machine::idle` moves,
             // and the only field here that is a frame rate. `loop=` counts LOOP iterations: it
             // is the app's liveness signal and `pos=` is anchored to it, so it must not read 0

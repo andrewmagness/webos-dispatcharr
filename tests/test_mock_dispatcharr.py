@@ -132,6 +132,34 @@ class MockDispatcharr(unittest.TestCase):
         q = "/api/epg/grid/?start=2026-10-14T11:00:00Z&end=2026-10-15T00:00:00Z"
         self.assertEqual(self.call("GET", q, {"X-API-Key": "K"}), self.call("GET", q, {"X-API-Key": "K"}))
 
+    def test_ts_hang_goes_silent_on_the_first_stream_only(self):
+        import socket
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix=".ts", delete=False) as f:
+            f.write((b"\x47" + b"\x00" * 187) * 64 * 40)
+        self.addCleanup(Path(f.name).unlink)
+        self.start("--ts", f.name, "--ts-rate", "2000000", "--ts-hang", "0.05")
+        port = int(self.base.rsplit(":", 1)[1])
+
+        def get():
+            s = socket.create_connection(("127.0.0.1", port), timeout=1.0)
+            self.addCleanup(s.close)
+            s.sendall(b"GET /proxy/ts/stream/00000000-0000-4000-8000-000000000000 HTTP/1.1\r\nHost: x\r\n\r\n")
+            got = b""
+            try:
+                while chunk := s.recv(4096):
+                    got += chunk
+            except socket.timeout:
+                return got, "open"
+            return got, "closed"
+
+        got, state = get()
+        self.assertEqual(state, "open", "the first stream stays open and silent")
+        self.assertLess(len(got), 188 * 64 * 40, "it went silent before the end")
+        got, state = get()
+        self.assertEqual(state, "closed", "the reconnect is served whole")
+        self.assertTrue(got.endswith((b"\x47" + b"\x00" * 187) * 64 * 40))
+
     def test_unknown_paths_are_404(self):
         self.start()
         self.assertEqual(self.call("GET", "/api/epg/programs/")[0], 404)

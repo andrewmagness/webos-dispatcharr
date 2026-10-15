@@ -39,7 +39,8 @@ off.
 
 ## Status
 
-Early and under active development. Nothing here has been released.
+Early and under active development. Nothing here has been released yet; the first release will be
+0.1.0.
 
 | Milestone | State |
 |---|---|
@@ -48,7 +49,7 @@ Early and under active development. Nothing here has been released.
 | M2 — live MPEG-TS playback on the television | done — H.264/AAC channels play on the TV's hardware decoder |
 | M3 — the programme guide | done — grid, logos, OK to tune |
 | M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, hold-OK recall, favourites, start on the last channel |
-| M5 — codec coverage, error handling, packaging and release | in progress — dropped streams reconnect, a busy server is retried, a channel's real codecs are detected and declared (H.264/HEVC video; AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio); an MPEG-2 video channel says how to fix it in Dispatcharr |
+| M5 — codec coverage, error handling, packaging and release | in progress — dropped or frozen streams reconnect, a busy server is retried, a channel's real codecs are detected and declared (H.264/HEVC video; AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio); an MPEG-2 video channel says how to fix it in Dispatcharr |
 
 Development targets a webOS 6 set. Features are verified in the desktop simulator against a mock
 Dispatcharr server (`tests/mock_dispatcharr.py`), and on the television against a real Dispatcharr

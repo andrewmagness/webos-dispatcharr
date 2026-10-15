@@ -1869,6 +1869,113 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             super::log(&format!("EOS reached: no duration, presented to {}s → ended", pos / 1_000_000_000));
         }
     }
+
+    // ---------- a live channel whose picture stopped: the producer went quiet without reaching
+    // EOF (measured in the 2026-10-15 soak: after 1 h 46 min the feed stopped, no read error, no
+    // EOF, and the panel held its last frame for the remaining 14 minutes). Nothing above can see
+    // that, because nothing ended. A playhead that stands still while the viewer is not paused
+    // ends the stream, and the app's reconnect tunes the channel again. ----------
+    let watching = crate::route::is_live(ps)
+        && eng.stage >= Stage::Playing
+        && SHARED.seen_frame.load(Relaxed)
+        && !SHARED.ended.load(Relaxed)
+        && !SHARED.seeking.load(Relaxed)
+        && !super::lifecycle::paused();
+    let rx = SHARED.dg_net_rx.load(Relaxed);
+    if let Some(stalled) = eng.live_stall.observe(watching, SHARED.playpos_ns.load(Relaxed), rx, now) {
+        SHARED.ended.store(true, Relaxed);
+        super::log(&format!(
+            "live: stalled {}ms at pos={}s rx+{}B fed_v={}ms → ended",
+            stalled.ms,
+            SHARED.playpos_ns.load(Relaxed) / 1_000_000_000,
+            stalled.rx_bytes,
+            eng.max_fed_video_pts / 1_000_000
+        ));
+    }
+}
+
+/// A live picture that has not moved for this long is a stalled stream, not a slow one: the
+/// position ticks every 200 ms while anything is shown.
+pub(crate) const LIVE_STALL_MS: u32 = 10_000;
+
+/// What [`LiveStall::observe`] reports when it fires: how long the playhead stood, and how many
+/// bytes the transport received meanwhile (zero: the server stopped sending; more: the bytes did
+/// not become pictures).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stalled {
+    pub ms: u32,
+    pub rx_bytes: i64,
+}
+
+/// Watches a live playhead for [`LIVE_STALL_MS`] without a second's movement.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LiveStall {
+    armed: bool,
+    pos: i64,
+    since: u32,
+    rx: i64,
+}
+
+impl LiveStall {
+    /// One frame's look. `watching` is false whenever a still playhead is expected (not live,
+    /// not yet playing, paused, seeking, ended); it disarms. Fires once, then disarms.
+    pub fn observe(&mut self, watching: bool, pos: i64, rx: i64, now: u32) -> Option<Stalled> {
+        if !watching {
+            self.armed = false;
+            return None;
+        }
+        // Within a second of where it stood counts as standing: a stalled pipeline's position
+        // may still creep by a tick, a playing one moves a second a second.
+        if !self.armed || (pos - self.pos).abs() >= 1_000_000_000 {
+            *self = Self { armed: true, pos, since: now, rx };
+            return None;
+        }
+        let ms = now.wrapping_sub(self.since);
+        if ms < LIVE_STALL_MS {
+            return None;
+        }
+        self.armed = false;
+        Some(Stalled { ms, rx_bytes: rx - self.rx })
+    }
+}
+
+#[cfg(test)]
+mod live_stall_tests {
+    use super::{LiveStall, Stalled, LIVE_STALL_MS};
+    const S: i64 = 1_000_000_000;
+
+    #[test]
+    fn a_live_picture_that_stops_moving_ends_the_stream() {
+        let mut w = LiveStall::default();
+        assert_eq!(w.observe(true, 6347 * S, 100, 1_000), None);
+        assert_eq!(w.observe(true, 6347 * S + S / 5, 100, 1_000 + LIVE_STALL_MS - 1), None, "a creeping tick");
+        assert_eq!(
+            w.observe(true, 6347 * S, 100, 1_000 + LIVE_STALL_MS),
+            Some(Stalled { ms: LIVE_STALL_MS, rx_bytes: 0 })
+        );
+        assert_eq!(w.observe(true, 6347 * S, 100, 1_000 + 2 * LIVE_STALL_MS), None, "fires once, then re-arms");
+    }
+
+    #[test]
+    fn a_moving_or_paused_picture_is_not_a_stall() {
+        let mut w = LiveStall::default();
+        for i in 0..100u32 {
+            assert_eq!(w.observe(true, i64::from(i) * S / 5, 0, i * 200), None);
+        }
+        let mut p = LiveStall::default();
+        assert_eq!(p.observe(true, S, 0, 0), None);
+        assert_eq!(p.observe(false, S, 0, LIVE_STALL_MS / 2), None, "paused");
+        assert_eq!(p.observe(true, S, 0, LIVE_STALL_MS + 1), None, "resuming re-arms the clock");
+        assert!(p.observe(true, S, 7, 2 * LIVE_STALL_MS + 1).is_some_and(|s| s.rx_bytes == 7));
+    }
+
+    #[test]
+    fn the_clock_survives_the_tick_wrap() {
+        let mut w = LiveStall::default();
+        let t = u32::MAX - 100;
+        assert_eq!(w.observe(true, S, 0, t), None);
+        assert!(w.observe(true, S, 0, t.wrapping_add(LIVE_STALL_MS)).is_some());
+    }
 }
 
 /// Whether a stream with no duration (`dur <= 0`), its producer at EOF, has presented

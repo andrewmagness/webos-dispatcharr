@@ -832,6 +832,14 @@ pub struct Shared {
     /// nothing across a seek, and a gap measured over that pause is the harness reporting the seek
     /// as a stutter.
     pub dg_vpres_ct: AtomicU32,
+    /// **A channel change's start, and how long its picture took.** `tune_mark` is the `vclock_ms`
+    /// a live channel change stopped the old stream at (`+1`, so 0 means none pending), set on the
+    /// main thread ([`crate::player::mark_tune`]); the first `FRAMEREADY` after it swaps it out
+    /// and leaves the elapsed milliseconds in `tune_ms` (`+1` likewise), which the heartbeat drains
+    /// ([`crate::player::tune_take`]). Never cleared by a session reset: the change itself resets
+    /// the session after marking.
+    pub tune_mark: AtomicU32,
+    pub tune_ms: AtomicU32,
     pub dg_vpres_at: AtomicU32,
     pub dg_vpres_gap: AtomicU32,
     /// Bytes queued in each AU lane at the last tick, against `engine::aq_caps`.
@@ -946,6 +954,8 @@ impl Shared {
             dg_load_at: AtomicU32::new(0),
             dg_frame_at: AtomicU32::new(0),
             dg_vpres_ct: AtomicU32::new(0),
+            tune_mark: AtomicU32::new(0),
+            tune_ms: AtomicU32::new(0),
             dg_vpres_at: AtomicU32::new(0),
             dg_vpres_gap: AtomicU32::new(0),
             dg_aq_video: AtomicI64::new(0),

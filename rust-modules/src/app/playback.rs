@@ -238,6 +238,7 @@ pub(super) fn tune_channel(
     bridge: &mut super::bridge::Bridge,
 ) {
     plx_media::player::stop_bufferfeed(ps, pa);
+    plx_media::player::mark_tune();
     let uuid = tune.channel().map(|c| c.uuid.clone()).unwrap_or_default();
     let tune = super::dispatcharr::with_known_codecs(tune);
     if plx_media::route::request_live(ps, tune, plx_dispatcharr::dispatcharr::api::unix_now()) {

@@ -111,7 +111,6 @@ RUN_TOGETHER = (
     'python3 tools/plxnative-lab selftest',
     'python3 ci/test_libass_fetch.py',
     'python3 ci/test_deploy_manifest.py',
-    'python3 tests/test_mock_pms_library.py',
     'python3 tests/test_image_cache_stress.py',
     'python3 ci/test_verify_deploy.py',
 )

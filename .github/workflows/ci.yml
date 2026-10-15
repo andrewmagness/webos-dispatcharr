@@ -34,10 +34,8 @@ on:
     #     telemetry/src/diag/schema.rs), `LICENSE` (`include_str!`ed by screens/src/legal.rs and
     #     packaged), and `LICENSING.md`, `TRADEMARKS.md`, `THIRD-PARTY-NOTICES.md` (ci/check-package.py
     #     grades the packaged payload against them; the Makefile ships them in the .ipk);
-    #   * `docs/screenshots/CREDITS.md` and `site/credits.html` (tests/test_demo_library.py
-    #     cross-checks the two), `site/index.html` (same file, footer link) and `site/ci/**`
-    #     (tools/test_ci_history.py reads the CI page), and `docs/measurements/*-logs/*.log` (the tools/test_abr_*.py and
-    #     tools/test_scrub_logs.py suites replay them).
+    #   * `docs/measurements/*-logs/*.log` (the tools/test_abr_*.py and tools/test_scrub_logs.py
+    #     suites replay them).
     # What is NOT read, and is excluded below, with the evidence on each line.
     #
     # One thing every excluded file does touch: ci/test_source_bundle.py's `RepositoryTreeScan`
@@ -46,7 +44,7 @@ on:
     # re-runs over the whole tree on the next push that does trigger this workflow, and again on
     # the release source bundle (ci/make-source-bundle.py) before anything ships; excluding prose
     # from this trigger defers it, it does not remove it. (This has always been true of the
-    # `docs/**/*.md` and `site/**` excludes; it is written down here so the comment stays honest.)
+    # `docs/**/*.md` exclude; it is written down here so the comment stays honest.)
     # Likewise `docs/release-notes/v*.md` and `docs/release-audits/v*.md` are linted by
     # ci/check-package.py only for the STABLE flavour (release.yml and rc.yml); this workflow
     # builds `FLAVOR=debug` (see the cross-build job), so they stay excluded.
@@ -61,30 +59,13 @@ on:
       - '!SECURITY.md'
       - '!AGENTS.md'
       - '!CLAUDE.md'
-      # docs: nothing under docs/ is read by a gate except the two re-includes below
+      # docs: nothing under docs/ is read by a gate except the re-include below
       # (docs/macos-app-readme.md is only copied into the macOS bundle by `make macapp`, which
       # this workflow does not run; docs/plex-openapi.json and the images are referenced by prose)
       - '!docs/**'
-      # graded by tests/test_demo_library.py (make check): must stay a trigger
-      - 'docs/screenshots/CREDITS.md'
       # replayed by tools/test_abr_calibrate_plant.py, test_abr_transfer_bound.py and
       # test_scrub_logs.py (make check): must stay a trigger
       - 'docs/measurements/*-logs/*.log'
-      - '!site/**'
-      # graded by tests/test_demo_library.py (make check): must stay a trigger
-      - 'site/credits.html'
-      # tests/test_demo_library.py:744 greps the landing page's footer link to the credits page
-      - 'site/index.html'
-      # tools/test_ci_history.py (make check) reads the CI page's index.html and asserts that
-      # milestones.json stays gone, so the whole directory is a trigger
-      - 'site/ci/**'
-      # Site-build tooling: run only by pages.yml, which exercises it on every deploy. No gate
-      # here (make check, ci/, tests/) reads or imports these. NOT .github/workflows/pages.yml:
-      # ci/test_ci_timeouts.py reads every workflow file, so that one must stay a trigger.
-      - '!tools/render-doc-page.py'
-      - '!tools/subset-site-fonts.py'
-      - '!tools/render-site-glows.py'
-      - '!tools/requirements-docs.txt'
       - '!.agents/**/*.md'
       - '!rust-modules/**/*.md'
       # Agent/editor configuration: the hooks are gates (.claude/hooks stays a trigger), the rest
@@ -173,7 +154,7 @@ jobs:
         # (`cargo metadata` resolves; it compiles nothing), plus an informational line count.
         # The binary-size budget runs in cross-build, where the binary exists. Limits and how to
         # raise one deliberately: ci/build-budgets.json, docs/agent-reference.md.
-        run: python3 ci/check-build-budgets.py --graph --src rust-modules/src --src rust-modules/base/src --src rust-modules/machine/src --src rust-modules/net/src --src rust-modules/platform/src --src rust-modules/gfx/src --src rust-modules/ui/src --src rust-modules/plex/src --src rust-modules/telemetry/src --src rust-modules/data/src --src rust-modules/session/src --src rust-modules/media/src --src rust-modules/appkit/src --src rust-modules/screens/src
+        run: python3 ci/check-build-budgets.py --graph --src rust-modules/src --src rust-modules/base/src --src rust-modules/machine/src --src rust-modules/net/src --src rust-modules/platform/src --src rust-modules/gfx/src --src rust-modules/ui/src --src rust-modules/plex/src --src rust-modules/telemetry/src --src rust-modules/data/src --src rust-modules/media/src --src rust-modules/appkit/src --src rust-modules/screens/src
 
       - name: Type-check the simulator feature set
         # The host simulator is a real build configuration with real users (the `ui-sim` skill, and
@@ -214,7 +195,7 @@ jobs:
         # for plxnative-modules both ways), so the `cargo test --lib` below finds everything built
         # and this step is where the compile happens, not an extra one. The upload below carries it.
         shell: bash
-        run: cd rust-modules && cargo "+$RUST_NIGHTLY" test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_session -p plx_media -p plx_appkit -p plx_screens --no-run --timings
+        run: cd rust-modules && cargo "+$RUST_NIGHTLY" test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --timings
 
       - name: make check-cargo-unit-default
         # Teed to a file so the size step below can read the `test result:` lines this run already

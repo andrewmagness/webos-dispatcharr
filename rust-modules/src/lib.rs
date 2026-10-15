@@ -63,6 +63,4 @@ pub fn sim_events_log() -> std::path::PathBuf {
 pub mod port;
 #[cfg(not(feature = "hostsim"))]
 mod port;
-#[cfg(feature = "hostsim")]
-pub use app::synthetic_home_initial;
 

@@ -185,7 +185,7 @@ def seed_key(root, kind):
     part("manifest-plex", manifest_bytes(os.path.join(root, "rust-modules", "plex", "Cargo.toml")))
     part("manifest-telemetry", manifest_bytes(os.path.join(root, "rust-modules", "telemetry", "Cargo.toml")))
     part("manifest-data", manifest_bytes(os.path.join(root, "rust-modules", "data", "Cargo.toml")))
-    part("manifest-session", manifest_bytes(os.path.join(root, "rust-modules", "session", "Cargo.toml")))
+    part("manifest-dispatcharr", manifest_bytes(os.path.join(root, "rust-modules", "dispatcharr", "Cargo.toml")))
     part("manifest-media", manifest_bytes(os.path.join(root, "rust-modules", "media", "Cargo.toml")))
     part("manifest-appkit", manifest_bytes(os.path.join(root, "rust-modules", "appkit", "Cargo.toml")))
     part("manifest-screens", manifest_bytes(os.path.join(root, "rust-modules", "screens", "Cargo.toml")))

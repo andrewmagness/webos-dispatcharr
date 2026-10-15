@@ -167,8 +167,7 @@ fn numbered(base: &std::path::Path) -> std::path::PathBuf {
 
 /// The viewport read back as top-left-origin pixels with `ch` channels (3 RGB, 4 RGBA).
 ///
-/// The one readback the screenshot and the frame dump (`dev::framedump`) share, so a dump frame is
-/// byte for byte what a screenshot of the same frame holds.
+/// The screenshot's readback.
 pub(crate) fn read_flipped(vx: c_int, vy: c_int, vw: c_int, vh: c_int, ch: usize) -> Vec<u8> {
     // The viewport rect, not the whole window: `surface::probe` letterboxes the logical canvas
     // into the drawable, so the bars around it are not part of the interface and only make the

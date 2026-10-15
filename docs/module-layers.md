@@ -8,7 +8,8 @@ L14, which a split hides from them, and the gate does not check impl coherence. 
 off behind a port, so that another TV OS can be a second port. L15 is **gate-complete**: its 44
 entries are gone, and the gate fails on any reference from outside the port to a member of it. It
 is not done in the sense of its own goal. L15b, the OS-neutral port, is open (below). Neither holds
-up the split. **Thirteen of the fourteen layers, `base`, `machine`, `platform`, `gfx`, `net`, `ui`,
+up the split. (Dispatcharr TV has since deleted the `session` crate, plex.tv sign-in, with the Plex
+client; the record below is the split as it was done.) **Thirteen of the fourteen layers, `base`, `machine`, `platform`, `gfx`, `net`, `ui`,
 `plex`, `telemetry`, `data`, `session`, `media`, `appkit` and `screens`, are their own crates,
 `plx_base`, `plx_machine`, `plx_platform`, `plx_gfx`, `plx_net`, `plx_ui`, `plx_plex`, `plx_telemetry`,
 `plx_data`, `plx_session`, `plx_media`, `plx_appkit` and `plx_screens`** (`rust-modules/base/`,
@@ -1360,7 +1361,7 @@ not ship:
   development credential policy is on, and failed. `plx_session/devtriggers` is forwarded from the
   application (and forwards to the six layers below, `plx_telemetry`'s included, so its
   production-credentials guard keeps seeing the feature); `hostsim` is forwarded the same way.
-  `cargo test -p plx_session` *alone* built the layers below with the shipping credential policy,
+  `cargo test` *alone* built the layers below with the shipping credential policy,
   and `a_changed_refresh_republishes_reached_unauthorized_and_offline_after_registry_replacement`
   failed (it registers plaintext test servers). That configuration did not exist before the split
   either: the application's own tests do not compile with `--no-default-features`. The combination
@@ -1418,7 +1419,7 @@ not ship:
   `SessionHost` are implemented in the application's tests for the application's own types, which
   is legal; the compiler was the checker (`cargo check --lib --tests` of all ten crates, the
   hostsim set and the lab set passed after the move).
-- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_telemetry -p plx_data -p plx_session`)
+- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_telemetry -p plx_data`)
   in the Makefile, the workflow, `tools/build-bench.py` and the tests that pin them, and in the
   docs that quote them; `--src rust-modules/session/src` for the line budget; `RUST_INPUTS`;
   `ci/test_no_host_staticlib.py` holds the crate to `rlib`; and `make build-bench` has a `session`
@@ -1449,7 +1450,7 @@ they were combined) and landed as one change. Combining them:
   a configuration nothing else builds (the plex layer with the dev policy, the data crate without
   its own feature: 422 tests, three missing). `plx_session` could not do that at all: its two
   `cfg(not(feature = "devtriggers"))` shipping-policy cases would have been built against a plex
-  layer that has the development policy, so it left `cargo test -p plx_session` failing one test.
+  layer that has the development policy, so it left `cargo test` failing one test.
   Both manifests now say `plx_<layer> = { path = ".", features = ["devtriggers"] }` under
   `[dev-dependencies]`. Alone, each crate builds itself and every layer below as the Makefile's
   suite does and runs the same tests (425 and 258, twice each, green); `make test-fast T=…` is
@@ -1465,7 +1466,7 @@ they were combined) and landed as one change. Combining them:
   --crate-type staticlib --no-default-features`), `strings` and `nm` find none of `plx_data`'s 22
   seam names (the 21 of Split 9 and `a_source`) and none of `plx_session`'s 20; the
   `--features test-support` control builds of the two crates find 22 of 22 and 19 of 20
-  (`test_policy` is inlined). A control has to be built per crate: `-p plx_data -p plx_session
+  (`test_policy` is inlined). A control has to be built per crate: `-p plx_data
   --features plx_data/test-support,...` from the workspace root built both without the feature and
   found nothing, which reads exactly like a clean shipping build. `browse::a_source`, which the data
   lane moved out of a `cfg(test)`-only module, is `cfg(any(test, feature = "test-support"))` and is

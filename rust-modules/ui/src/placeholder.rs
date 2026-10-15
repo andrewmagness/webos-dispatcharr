@@ -87,8 +87,8 @@
 //!    spinner is counter-only for practical purposes: its dots are 6.16 px (page) or 3.36 px
 //!    (inline) radius with antialiased edges, so a page dot is an ~84-pixel blob and never a 64-pixel
 //!    scanline run; only a component scan sees them. COUNTER-ONLY reasons, which no pixel scan can
-//!    see and which the run report must list as such: [`Reason::HomeBackdrop`],
-//!    [`Reason::DetailBackdrop`], [`Reason::WorkingReadout`] and every other caption,
+//!    see and which the run report must list as such: [`Reason::WorkingReadout`] and every other
+//!    caption,
 //!    [`Reason::HeroLogoText`] (thin strokes), anything under a scrim or glass, and a held image.
 //! 8. **Build the sentinel in CI** (the `site-video-sim` target) and run the plan's negative tests
 //!    against both oracles.
@@ -140,10 +140,6 @@ pub enum Reason {
     SkeletonSheet,
     /// The Detail page's spinner while its metadata loads.
     DetailSpinner,
-    /// The Detail page's spinner while a season's episodes reload.
-    SeasonSpinner,
-    /// The Library's standalone loading spinner.
-    LibrarySpinner,
     /// A page-sized spinner of a screen outside the content pages (onboarding, sign-in, the profile
     /// picker); the key names which. An inline (`R_INLINE`) spinner marking one line or control is
     /// a busy mark, not a stand-in, and is exempt (`placeholder-exempt:`).
@@ -151,10 +147,6 @@ pub enum Reason {
     /// A `StatusKind::Working` read-out (`widgets::StatusOverlay`): Home's hub load, a collection's
     /// load, the Library's, a sign-in wait.
     WorkingReadout,
-    /// The Detail hero's title is the "Loading" message because no item has landed yet.
-    DetailTitle,
-    /// The episode strip drawn dimmed at `STALE_ALPHA` while its season reloads.
-    StaleEpisodes,
     /// The hero's title typed out as text while its clearLogo is still on its way
     /// (`hero_logo::HeroLogo`; a logo that has settled as a miss is [`Reason::HeroLogoAbsent`]).
     HeroLogoText,
@@ -163,10 +155,6 @@ pub enum Reason {
     /// not a wait. Reported in [`Frame::absent`] only, so a driver whose storyboard promises a
     /// logo can fail fast on it instead of reading the frame as clean.
     HeroLogoAbsent,
-    /// The Home hero's backdrop art (path non-empty) has no texture yet.
-    HomeBackdrop,
-    /// The Detail page's backdrop art (path non-empty) has no texture yet.
-    DetailBackdrop,
 }
 
 impl Reason {
@@ -180,16 +168,10 @@ impl Reason {
             Reason::SkeletonBar => "skeleton-bar",
             Reason::SkeletonSheet => "skeleton-sheet",
             Reason::DetailSpinner => "detail-spinner",
-            Reason::SeasonSpinner => "season-spinner",
-            Reason::LibrarySpinner => "library-spinner",
             Reason::PageSpinner => "page-spinner",
             Reason::WorkingReadout => "working-readout",
-            Reason::DetailTitle => "detail-title",
-            Reason::StaleEpisodes => "stale-episodes",
             Reason::HeroLogoText => "hero-logo-text",
             Reason::HeroLogoAbsent => "hero-logo-absent",
-            Reason::HomeBackdrop => "home-backdrop",
-            Reason::DetailBackdrop => "detail-backdrop",
         }
     }
 }
@@ -614,9 +596,9 @@ mod tests {
         assert_eq!(count(), 1);
         reset();
         assert_eq!(count(), 0);
-        note(Painter::root(), Reason::LibrarySpinner, "");
+        note(Painter::root(), Reason::PageSpinner, "");
         let f = take();
-        assert_eq!((f.count, f.of(Reason::LibrarySpinner)), (1, 1));
+        assert_eq!((f.count, f.of(Reason::PageSpinner)), (1, 1));
         assert_eq!(count(), 0, "take clears the frame");
         disarm();
     }
@@ -638,14 +620,14 @@ mod tests {
             note(Painter::root(), Reason::CardSkeleton, "before");
             let m = mark();
             note(Painter::root(), Reason::DetailSpinner, "");
-            note(Painter::root(), Reason::DetailTitle, "rk");
+            note(Painter::root(), Reason::WorkingReadout, "rk");
             note_absent(Painter::root(), Reason::HeroLogoAbsent, "rk");
             since(m)
         });
         assert!(!debt.is_empty());
         let ((), frame) = capture(|| renote(&debt));
         assert_eq!(frame.count, 2, "only what was drawn after the mark: {frame:?}");
-        assert_eq!(frame.entries.iter().map(|e| e.reason).collect::<Vec<_>>(), [Reason::DetailSpinner, Reason::DetailTitle]);
+        assert_eq!(frame.entries.iter().map(|e| e.reason).collect::<Vec<_>>(), [Reason::DetailSpinner, Reason::WorkingReadout]);
         assert_eq!(frame.absent.len(), 1, "an absence is carried too: {frame:?}");
     }
 

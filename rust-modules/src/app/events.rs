@@ -320,30 +320,6 @@ pub(crate) fn remote_synth_pointer(et: u32, x: i32, y: i32) {
     unsafe { SDL_PushEvent(ev.as_ptr() as *const c_void) };
 }
 
-/// One app lifecycle event (`0x103`–`0x106`), as the compositor would send it — the replay
-/// driver's re-injection of a recorded background/foreground edge.
-pub(crate) fn remote_synth_lifecycle(code: u32) {
-    let mut ev = [0u8; 128];
-    ev[0..4].copy_from_slice(&code.to_ne_bytes());
-    unsafe { SDL_PushEvent(ev.as_ptr() as *const c_void) };
-}
-
-/// A remote token that acts DIRECTLY rather than by pushing SDL events — the recorder writes
-/// these as `token` records (the SDL kinds are recorded where they are polled), and the replay
-/// driver re-dispatches them. `txt:` is here because its payload never becomes an SDL event on
-/// this host (`dispatch_remote_token`'s arm says why).
-pub(crate) fn token_is_direct(tok: &str) -> bool {
-    #[cfg(feature = "devtriggers")]
-    if crate::remote::HangProbe::parse(tok).is_some() {
-        return true;
-    }
-    tok == "shot"
-        || tok == "diag"
-        || tok == "diagnostics"
-        || tok.starts_with("pat:")
-        || tok.starts_with("txt:")
-}
-
 /// Synthesize a full remote-key press (key-down then key-up) and push both onto SDL's
 /// own event queue, so the existing poll loop consumes them as if they came off the
 /// wayland input path. The LG SDL fork's `SDL_KeyboardEvent` carries state@16 /
@@ -435,17 +411,6 @@ mod input_event_tests {
                     assert_eq!(ev[17], u8::from(et == SDL_MOUSEBUTTONDOWN));
                 }
             }
-        }
-    }
-
-    #[cfg(feature = "devtriggers")]
-    #[test]
-    fn hang_probes_are_direct_recorder_tokens() {
-        for token in ["hang:1", "hang-raw:1", "hang:5001"] {
-            assert!(token_is_direct(token));
-        }
-        for token in ["down", "hang:", "hang:-1", "hang-raw:bad"] {
-            assert!(!token_is_direct(token));
         }
     }
 

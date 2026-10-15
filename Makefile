@@ -904,7 +904,7 @@ $(FFABI_STAMP): ci/ffabi-assert.c $(FFMPEG_INC)/libavformat/avformat.h Makefile
 # rule would leave every later `make` linking a library built by the OLD one. Cargo's own
 # `rerun-if-changed` cannot save that — it is only consulted when make decides to invoke cargo at
 # all, and this target is an ordinary timestamp comparison.
-RUST_INPUTS := $(shell find rust-modules/src rust-modules/base rust-modules/machine rust-modules/net rust-modules/platform rust-modules/gfx rust-modules/ui rust-modules/plex rust-modules/telemetry rust-modules/data rust-modules/session rust-modules/media rust-modules/appkit rust-modules/screens rust-modules/build_support locales assets -type f 2>/dev/null)
+RUST_INPUTS := $(shell find rust-modules/src rust-modules/base rust-modules/machine rust-modules/net rust-modules/platform rust-modules/gfx rust-modules/ui rust-modules/plex rust-modules/telemetry rust-modules/data rust-modules/media rust-modules/appkit rust-modules/screens rust-modules/build_support locales assets -type f 2>/dev/null)
 $(RUST_LIB): LICENSE $(RUST_INPUTS) rust-modules/Cargo.toml rust-modules/Cargo.lock rust-modules/build.rs ci/install-identities.json rust-modules/.cargo/config.toml Makefile ci/check-staticlib-artifact.py $(FFABI_STAMP)
 	@# BEFORE the mkdir: the seed is only ever cloned into a target dir that does not exist yet.
 	$(CARGO_SEED) restore $(RUST_TDIR) rust-modules/$(RUST_TDIR)
@@ -1495,11 +1495,10 @@ check-cargo-lint: lint
 	@# gate has nothing to reuse a cache for. No `pkg/lab.json` is involved — that file is `make
 	@# LAB=1`'s requirement (a live session secret), not the compiler's.
 	@set -e; cd rust-modules && CARGO_INCREMENTAL=0 PATH="$$HOME/.cargo/bin:$$PATH" \
-	  cargo +$(RUST_NIGHTLY) check --lib --tests -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_session -p plx_media -p plx_appkit -p plx_screens --features lab-diagnostics
-	@# And the demo-video dump build's pixel oracle, `placeholder-sentinel`: in no default set and
-	@# built only by `make site-video-sim`, which no gate runs and which compiles no `plx_ui` tests, so
-	@# this line is what keeps it compiling (its code AND its tests, `--tests`). `plx_ui` is the only
-	@# crate with a `cfg` on it.
+	  cargo +$(RUST_NIGHTLY) check --lib --tests -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --features lab-diagnostics
+	@# And the placeholder pixel oracle, `placeholder-sentinel`: in no default set, so this line is
+	@# what keeps it compiling (its code AND its tests, `--tests`). `plx_ui` is the only crate with a
+	@# `cfg` on it.
 	@set -e; cd rust-modules && CARGO_INCREMENTAL=0 PATH="$$HOME/.cargo/bin:$$PATH" \
 	  cargo +$(RUST_NIGHTLY) check --lib --tests -p plx_ui --features placeholder-sentinel
 
@@ -1514,7 +1513,7 @@ check-cargo-lint: lint
 # `-p` lists in the recipes below (those stay literal because ci/test_ci_split.py greps for them);
 # ci/test_test_crate.py pins the two equal.
 UNIT_RUN = python3 ../tools/cargo-test-parallel.py
-UNIT_SUITE = plxnative-modules plx_base plx_machine plx_platform plx_gfx plx_net plx_ui plx_plex plx_dispatcharr plx_telemetry plx_data plx_session plx_media plx_appkit plx_screens
+UNIT_SUITE = plxnative-modules plx_base plx_machine plx_platform plx_gfx plx_net plx_ui plx_plex plx_dispatcharr plx_telemetry plx_data plx_media plx_appkit plx_screens
 
 # The default-feature unit suite and everything that drives cargo through ci/ self-tests.
 check-cargo-unit-default:
@@ -1543,7 +1542,7 @@ check-cargo-unit-default:
 	cd rust-modules && PATH="$$HOME/.cargo/bin:$$PATH" PLXNATIVE_RUNTIME_DIR="$$d" \
 	  $(TELEMETRY_ENV) \
 	  $(HOST_ENV) \
-	  $(UNIT_RUN) -- cargo +$(RUST_NIGHTLY) test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_session -p plx_media -p plx_appkit -p plx_screens
+	  $(UNIT_RUN) -- cargo +$(RUST_NIGHTLY) test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens
 	RUST_NIGHTLY=$(RUST_NIGHTLY) python3 ci/test_storage_service_package.py
 	cd rust-modules && PATH="$$HOME/.cargo/bin:$$PATH" cargo +$(RUST_NIGHTLY) test -p plxnative-storage --bin plxnative-storage
 	@# The helper is its own package, so building it compiles no copy of the app library; this reads
@@ -1577,7 +1576,7 @@ check-cargo-unit-hostsim:
 	cd rust-modules && PATH="$$HOME/.cargo/bin:$$PATH" PLXNATIVE_RUNTIME_DIR="$$d" \
 	  $(TELEMETRY_ENV) \
 	  $(HOST_ENV) \
-	  $(UNIT_RUN) -- cargo +$(RUST_NIGHTLY) test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_session -p plx_media -p plx_appkit -p plx_screens --features hostsim
+	  $(UNIT_RUN) -- cargo +$(RUST_NIGHTLY) test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --features hostsim
 
 # OPT-IN incremental inner loop: the default-feature unit suite (the same `cargo test --lib` as
 # `check-cargo-unit-default`, same throwaway runtime root and telemetry env) with
@@ -1601,7 +1600,7 @@ test-fast:
 	  PATH="$$HOME/.cargo/bin:$$PATH" PLXNATIVE_RUNTIME_DIR="$$d" \
 	  $(TELEMETRY_ENV) \
 	  $(HOST_ENV) \
-	  $(UNIT_RUN) $(if $(T),--filter '$(T)') -- cargo +$(RUST_NIGHTLY) test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_session -p plx_media -p plx_appkit -p plx_screens
+	  $(UNIT_RUN) $(if $(T),--filter '$(T)') -- cargo +$(RUST_NIGHTLY) test --lib -p plxnative-modules -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens
 
 # `make test-crate C=plx_ui [T=filter] [DEPS=1]` -- build and run ONLY the named crate's lib tests, in
 # the same incremental `$(TEST_FAST_TDIR)` tree and with the same flags as `test-fast`, so the two
@@ -2140,49 +2139,6 @@ sim-macos: $(FFMPEG_HOST_STAGED) $(LIBASS_HOST_STAGED) pkg/.ffabi-host-ok
 	$(TELEMETRY_ENV) \
 	  cargo build --manifest-path rust-modules/Cargo.toml --target-dir $(SIM_TDIR)$(if $(LAB),-lab,) --features hostsim$(if $(LAB), --features lab-diagnostics,) --bin plxnative-sim
 
-# Full product replay is a renderer-backed host gate. Keep the fast unit suite usable without
-# a window system; Simulator CI runs this same driver against the simulator it just built.
-.PHONY: check-replay
-check-replay: sim-macos
-	python3 tests/replay_fixtures.py --sim "$$SIM_MACOS_BIN_ENV"
-
-# **`make screenshots` — the documentation screenshots, regenerated.** Boots the simulator once per
-# scene in `tests/screenshots/scenes.json` against the mock server's DEMO LIBRARY (openly licensed
-# films, `tests/demo_library/`), waits for each scene's settled frame, and writes the JPEGs, and
-# the CREDITS.md that goes with them, into `docs/screenshots/` (or `SHOT_OUT=dir`), then the website's
-# `site/credits.html` from the same manifests. No Plex account, no
-# television, no gitignored file.
-#   make screenshots                         # every scene
-#   make screenshots SHOT_SCENES=home,ux-detail            # some
-#   make screenshots SHOT_OUT=/tmp/shots SHOT_CHECK=1      # render twice, compare (the determinism check)
-#   make screenshots SHOT_HERO=sintel SHOT_OUT=/tmp/h      # the home shots with another film in the hero
-#   make screenshots SHOT_HERO_VARIANTS=1                  # also home-hero-<film>.jpg for each hero candidate
-# The knobs are SHOT_-prefixed because make takes a variable from the ENVIRONMENT too: a generic
-# OUT or CHECK exported by some other script (tests/focusfp.sh has an OUT) would otherwise move
-# the figures elsewhere or silently render everything twice.
-# Its own simulator build: `--no-default-features` drops `devtools` (the on-screen frame counter is
-# not part of the product) and `devtriggers` comes back because scenes are reached through them.
-# Its own target dir, for this file's feature-set rule. `CARGO_INCREMENTAL=0`: a one-shot build.
-SHOT_TDIR ?= $(SIM_TDIR)-shots
-SHOT_BIN   = $(SHOT_TDIR)/debug/plxnative-sim
-SHOT_SCENES ?=
-SHOT_OUT    ?=
-SHOT_CHECK  ?=
-SHOT_HERO   ?=
-SHOT_HERO_VARIANTS ?=
-screenshots-sim: $(FFMPEG_HOST_STAGED) $(LIBASS_HOST_STAGED) pkg/.ffabi-host-ok
-	CARGO_INCREMENTAL=0 cargo build --manifest-path rust-modules/Cargo.toml --target-dir $(SHOT_TDIR) \
-	  --no-default-features --features hostsim,devtriggers --bin plxnative-sim
-
-demo-library:
-	python3 tools/demo_library.py derive
-
-screenshots: screenshots-sim demo-library
-	python3 tools/screenshots.py --bin $(SHOT_BIN) $(if $(SHOT_OUT),--out $(SHOT_OUT),) \
-	  $(if $(SHOT_SCENES),--only $(SHOT_SCENES),) $(if $(SHOT_CHECK),--check-determinism,) $(if $(SHOT_HERO),--hero $(SHOT_HERO),) \
-	  $(if $(SHOT_HERO_VARIANTS),--hero-variants,)
-	python3 tools/demo_library.py site-credits
-
 # Optimized Linux UI/Plex simulator with no host FFmpeg prerequisite. It runs natively on Linux;
 # Windows/WSLg uses the same binary through `tools/sim.ps1`. Play intentionally reaches the host
 # seam's existing "no video path" result.
@@ -2190,21 +2146,6 @@ sim-linux: $(LIBASS_HOST_STAGED)
 	$(TELEMETRY_ENV) \
 	  cargo build --release --manifest-path rust-modules/Cargo.toml --target-dir "$$SIM_LINUX_TDIR_ENV" \
 	  --features hostsim --bin plxnative-sim
-
-# The demo video's frame-dump simulator (`rust-modules/src/dev/framedump.rs`; `tools/site_video.py render`
-# drives it). Release, because a dump is a render of thousands of 1080p frames; its own target dir,
-# because the feature set differs from every other simulator build; `--no-default-features` because
-# `devtools` draws a frame counter into the picture, and `placeholder-sentinel` because the second
-# oracle is the sentinel colour. Like `sim-linux` it needs only libass: the storyboard plays no
-# video, so no host FFmpeg (whose staged names are `.dylib`s, which is what keeps
-# `screenshots-sim` macOS-only). It builds on macOS (previews) and on Linux, where
-# `.github/workflows/site-video.yml` builds and runs it: that render is the canonical one.
-SITE_VIDEO_TDIR ?= $(SIM_TDIR)-video
-SITE_VIDEO_BIN   = $(SITE_VIDEO_TDIR)/release/plxnative-sim
-site-video-sim: $(LIBASS_HOST_STAGED)
-	CARGO_INCREMENTAL=0 cargo build --release --manifest-path rust-modules/Cargo.toml \
-	  --target-dir $(SITE_VIDEO_TDIR) --no-default-features \
-	  --features hostsim,devtriggers,placeholder-sentinel --bin plxnative-sim
 
 # Compatibility spelling used by the Windows launcher and existing documentation.
 sim-wsl: sim-linux
@@ -2346,5 +2287,5 @@ fetch-profile:
 	-$(SCP) tv:$(RUNDIR)/plxnative-hwcnt.jsonl pkg/plxnative-hwcnt.jsonl
 	@ls -l pkg/plxnative-*.jsonl 2>/dev/null || echo "no profiler output in $(RUNDIR) on the TV ($(APPID))"
 
-.PHONY: libass libass-host screenshots screenshots-sim demo-library disk symbols symbols-libs sentry-symbols sentry-native all setup-env telemetry-local deploy verify-deploy run run-stream kill check check-unlocked check-ffmpeg lint test ipk clean tv-lock-require threadprobe sockprobe logmprobe mali-hwcnt-probe tv-capture-bench mali-irq-sample plxnative-stackwalk sim sim-macos sim-linux site-video-sim sim-wsl sim-run sim-macos-run sim-shot sim-macos-shot sim-token sim-macos-token sim-play sim-macos-play sim-clean sim-macos-clean macapp macapp-zip fixtures fixtures-quick fixtures-pipeline fetch-profile \
+.PHONY: libass libass-host  disk symbols symbols-libs sentry-symbols sentry-native all setup-env telemetry-local deploy verify-deploy run run-stream kill check check-unlocked check-ffmpeg lint test ipk clean tv-lock-require threadprobe sockprobe logmprobe mali-hwcnt-probe tv-capture-bench mali-irq-sample plxnative-stackwalk sim sim-macos sim-linux sim-wsl sim-run sim-macos-run sim-shot sim-macos-shot sim-token sim-macos-token sim-play sim-macos-play sim-clean sim-macos-clean macapp macapp-zip fixtures fixtures-quick fixtures-pipeline fetch-profile \
         release-guard lab-guard install uninstall $(QUERY_GOALS)

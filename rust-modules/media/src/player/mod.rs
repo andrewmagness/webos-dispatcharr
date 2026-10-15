@@ -2289,6 +2289,23 @@ fn vclock_ms() -> u32 {
 /// whether the pipeline still thinks it is running. A steady `5 / 201` through a picture the
 /// viewer says is stuttering is a real and useful finding: it rules the fault OUT of everything
 /// this process can see, and sends the search to the display side.
+/// **Start timing a channel change**: called as the old stream has been stopped, before the new
+/// one is asked for. The first picture tick after it ends the measurement ([`tune_take`]).
+pub fn mark_tune() {
+    SHARED.tune_mark.store(vclock_ms().wrapping_add(1).max(1), Relaxed);
+    SHARED.tune_ms.store(0, Relaxed);
+}
+
+/// **How long the last channel change took to put up a picture**, in milliseconds, once: from
+/// [`mark_tune`] to the first `FRAMEREADY` after it. That tick is ~5 Hz (see [`sf_on_event`]), so
+/// the figure is good to about 200 ms. Draining; the heartbeat is the caller.
+pub fn tune_take() -> Option<u32> {
+    match SHARED.tune_ms.swap(0, Relaxed) {
+        0 => None,
+        ms => Some(ms - 1),
+    }
+}
+
 pub fn vplane_take() -> (u32, u32) {
     (
         SHARED.dg_vpres_ct.swap(0, Relaxed),
@@ -2444,6 +2461,10 @@ fn sf_on_event_inner(ty: c_int, num: i64, s: *const c_char) {
         let t = vclock_ms();
         let prev = SHARED.dg_vpres_at.swap(t, Relaxed);
         SHARED.dg_vpres_ct.fetch_add(1, Relaxed);
+        let mark = SHARED.tune_mark.swap(0, Relaxed);
+        if mark != 0 {
+            SHARED.tune_ms.store(t.wrapping_sub(mark - 1).saturating_add(1), Relaxed);
+        }
         if prev != 0 {
             let gap = t.saturating_sub(prev);
             SHARED.dg_vpres_gap.fetch_max(gap, Relaxed);

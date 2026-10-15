@@ -49,7 +49,7 @@ Scenarios (each a named row; `--only ID,ID` selects, `--quick` is `noop,leaf,siz
             `plx_gfx`, `plx_ui`, `plx_plex`, `plx_telemetry`, `plx_data` and `plx_media` stay
             fresh, the appkit crate and the app crate behind it recompile.
   screens   ...after appending one to a leaf file of the SCREENS layer crate
-            (rust-modules/screens/src/clock_readout.rs, in `plx_screens`): `plx_base`, `plx_platform`,
+            (rust-modules/screens/src/registry/tile_facts.rs, in `plx_screens`): `plx_base`, `plx_platform`,
             `plx_gfx`, `plx_ui`, `plx_plex`, `plx_telemetry`, `plx_data`, `plx_media` and `plx_appkit`
             stay fresh, the screens crate and the app crate behind it recompile.
   app       ...after appending one to a leaf file of the app crate (rust-modules/src/coldstart.rs):
@@ -139,7 +139,7 @@ DATA_LEAF_FILE = "rust-modules/data/src/stores/tape.rs"
 SESSION_LEAF_FILE = "rust-modules/session/src/auth/scripted.rs"
 MEDIA_LEAF_FILE = "rust-modules/media/src/abr/units.rs"
 APPKIT_LEAF_FILE = "rust-modules/appkit/src/skip_pill.rs"
-SCREENS_LEAF_FILE = "rust-modules/screens/src/clock_readout.rs"
+SCREENS_LEAF_FILE = "rust-modules/screens/src/registry/tile_facts.rs"
 APP_LEAF_FILE = "rust-modules/src/coldstart.rs"
 HUB_FILE = "rust-modules/ui/src/lib.rs"
 TOUCH_FILE = "rust-modules/src/lib.rs"
@@ -187,7 +187,7 @@ TITLES = {
     "session": "Edit leaf (plx_session scripted.rs), non-incremental",
     "media": "Edit leaf (plx_media units.rs), non-incremental",
     "appkit": "Edit leaf (plx_appkit skip_pill.rs), non-incremental",
-    "screens": "Edit leaf (plx_screens clock_readout.rs), non-incremental",
+    "screens": "Edit leaf (plx_screens tile_facts.rs), non-incremental",
     "app": "Edit leaf (app coldstart.rs), non-incremental",
     "hub": "Edit hub (plx_ui lib.rs), non-incremental",
     "leaf-inc": "Edit leaf (plx_base cbuf.rs), incremental",

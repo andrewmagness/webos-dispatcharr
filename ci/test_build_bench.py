@@ -57,7 +57,7 @@ def read(p):
         return open(p).read()
     except OSError:
         return ""
-EDITED = ("base/src/cbuf.rs", "machine/src/landgate.rs", "platform/src/devcaps.rs", "gfx/src/overdraw.rs", "net/src/stream_redirect.rs", "ui/src/dwell.rs", "plex/src/plex/retry.rs", "telemetry/src/telemetry/window.rs", "data/src/stores/tape.rs", "session/src/auth/scripted.rs", "media/src/abr/units.rs", "appkit/src/skip_pill.rs", "screens/src/clock_readout.rs", "src/coldstart.rs", "ui/src/lib.rs")
+EDITED = ("base/src/cbuf.rs", "machine/src/landgate.rs", "platform/src/devcaps.rs", "gfx/src/overdraw.rs", "net/src/stream_redirect.rs", "ui/src/dwell.rs", "plex/src/plex/retry.rs", "telemetry/src/telemetry/window.rs", "data/src/stores/tape.rs", "session/src/auth/scripted.rs", "media/src/abr/units.rs", "appkit/src/skip_pill.rs", "screens/src/registry/tile_facts.rs", "src/coldstart.rs", "ui/src/lib.rs")
 if os.environ.get("FAKE_FAIL_ON_EDIT") and "build-bench edit" in "".join(read(p) for p in EDITED):
     sys.stderr.write("error: fake cargo failed on the edited tree\n")
     sys.exit(101)
@@ -134,7 +134,7 @@ DATA_LEAF = "rust-modules/data/src/stores/tape.rs"
 SESSION_LEAF = "rust-modules/session/src/auth/scripted.rs"
 MEDIA_LEAF = "rust-modules/media/src/abr/units.rs"
 APPKIT_LEAF = "rust-modules/appkit/src/skip_pill.rs"
-SCREENS_LEAF = "rust-modules/screens/src/clock_readout.rs"
+SCREENS_LEAF = "rust-modules/screens/src/registry/tile_facts.rs"
 APP_LEAF = "rust-modules/src/coldstart.rs"
 HUB = "rust-modules/ui/src/lib.rs"
 SRC_FILES = {LEAF: "pub fn leaf() {}\n", MACHINE_LEAF: "pub fn machine() {}\n", PLATFORM_LEAF: "pub fn platform() {}\n", GFX_LEAF: "pub fn gfx() {}\n", NET_LEAF: "pub fn net() {}\n", UI_LEAF: "pub fn ui() {}\n", PLEX_LEAF: "pub fn plex() {}\n", TELEMETRY_LEAF: "pub fn telemetry() {}\n", DATA_LEAF: "pub fn data() {}\n", SESSION_LEAF: "pub fn session() {}\n", MEDIA_LEAF: "pub fn media() {}\n", APPKIT_LEAF: "pub fn appkit() {}\n", SCREENS_LEAF: "pub fn screens() {}\n", APP_LEAF: "pub fn app() {}\n", HUB: "pub fn hub() {}",

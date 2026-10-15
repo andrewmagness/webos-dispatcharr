@@ -12,8 +12,8 @@ only what they do not: the rules that span screens.
 
 ## The layer rule is the thing that will bite you
 
-A screen may name `ui/`, `appkit/` (the widgets several screens share — `player_hud`,
-`track_menu`, `live_banner` and the rest of the player's panels), the data crates and this
+A screen may name `ui/`, `appkit/` (the player's widgets — `player_hud`'s read-out and subtitles,
+`live_banner`), the data crates and this
 directory's `registry` — **never `app/`, and never a sibling screen module**. `ci/check-deps.sh`'s
 `layer` and `sibling` gates hold this, so a violation fails CI rather than review. This directory is
 the crate `plx_screens`, which cannot name the application at all (cargo has no edge from it to the
@@ -69,11 +69,11 @@ programme name) is marked with the `server_*` builders so it is exempt; never ma
 fallback strings. See `rust-modules/ui/src/CLAUDE.md`, "Localization and shared reading layout",
 for what to do when a string does not fit.
 
-A page on a `ui::form::FormTable` (the player's track menu, more menu and source list) focuses by
-IDENTITY: the element the engine holds, the `Fx::Remember` seat and the page's canon are the row's
-`RowKey`, never its table index, so reordering the form moves no focus key. A menu activates with
-`FormTable::activate` and rebuilds with `set_or_open`, so a vanished focused row reopens on the safe
-opening row instead of sliding onto a destructive neighbour.
+A page on a `ui::form::FormTable` focuses by IDENTITY: the element the engine holds, the
+`Fx::Remember` seat and the page's canon are the row's `RowKey`, never its table index, so
+reordering the form moves no focus key. A menu activates with `FormTable::activate` and rebuilds
+with `set_or_open`, so a vanished focused row reopens on the safe opening row instead of sliding
+onto a destructive neighbour.
 
 ## Verifying a screen change
 

@@ -467,10 +467,6 @@ fn enter_application(pms_host: *const c_char, pms_port: c_int) -> Result<App,c_i
     // below) through a hook that is a no-op while unset. On every boot, before anything can play:
     // a failed preview seals a trace without ever passing `player::report::requested`.
     plx_media::player::report::install_trace_eraser();
-    // The player's `…` menu draws the Stats for nerds switch from the read-out's own flag, which
-    // this layer owns and `appkit` cannot name, so it is handed the reader before any screen
-    // exists.
-    plx_appkit::more_menu::install_stats_reader(crate::app::diagnostics::enabled);
     let telemetry_guard = pre_boot_diagnostics();
     // Resolve the diagnostic latches' filesystem state outside `FrameScope`, so their first `stat`
     // cannot happen from a render frame.

@@ -199,15 +199,8 @@ pub(crate) fn enabled() -> bool {
     ON.load(Ordering::Relaxed)
 }
 
-/// Flip the readout. Deliberately NOT persisted across launches: the reviewer flow is "open the
-/// menu, turn it on, reproduce, photograph" inside one session, and a diagnostic overlay that
-/// survives a restart is one a user can strand themselves with.
-pub(crate) fn toggle() {
-    ON.fetch_xor(true, Ordering::Relaxed);
-    kick();
-}
 
-/// Force it on for an automated playback run. Unlike [`toggle`], this is idempotent so an already
+/// Force it on (the `dispatcharrtv-stats` trigger). Idempotent, so an already
 /// visible read-out keeps its sample cadence and does not reset the panel's clock.
 pub(crate) fn open() {
     if !ON.swap(true, Ordering::Relaxed) {

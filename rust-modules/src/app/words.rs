@@ -28,11 +28,6 @@ pub(crate) fn route_word(route: &AppArg) -> &'static str {
         AppArg::Setup | AppArg::Server => "setup",
         AppArg::Guide => "guide",
         AppArg::Player => "player",
-        // Not a page: a surface's word is ` overlay=`, and it never reaches the page stack's top.
-        // The arm is written out rather than swept into a `_` so a new PAGE variant is a compile
-        // error here — the failure this table exists to prevent is a word the app cannot print,
-        // which reads on the television as "0 post-warmup samples".
-        AppArg::PlayerOverlay(_) => "",
     }
 }
 /// **Every PAGE argument, one per heartbeat word** — the domain [`route_word`] is applied over to DERIVE the
@@ -120,7 +115,6 @@ mod heartbeat_word_tests {
         overlay_words()
     }
 
-
     /// **The two tables are DERIVED from the two sources, and this is what says the derivation is
     /// the whole of them** (restructure phase 10 item 4).
     ///
@@ -166,64 +160,5 @@ mod heartbeat_word_tests {
         assert_eq!(super::overlay_suffix(&empty, &AppArg::Guide), "");
         assert!(overlays.contains(&NO_OVERLAY));
         assert!(!routes.contains(&NO_OVERLAY));
-
-        // The player's panels are `OverlayKind::word` through `Screen::name`, so they arrive
-        // in the derived alphabet with everything else — asserted here because it is the one place
-        // a reader can see that the panel words come from the mounter.
-        use plx_screens::player::overlay::OverlayKind;
-        for kind in OverlayKind::ALL {
-            assert!(
-                overlays.contains(&kind.word()),
-                "{kind:?} prints {:?}, which the mounter's own alphabet must carry",
-                kind.word()
-            );
-        }
-    }
-
-
-    /// **Pins the focusprobe's player-overlay word to THIS module's `overlay_word`, not a second
-    /// hand-written copy.** `app/run.rs`'s `probe_screen` closure (the focus fingerprint's
-    /// `Route::Player` arm) used to carry its OWN `match overlay { Overlay::None => "none", … }`
-    /// table, with a comment claiming it printed "the same words the heartbeat's `overlay=`
-    /// uses" — a claim nothing checked, and exactly the shape that goes stale silently: a word
-    /// edited on one side (a rename, a typo, a new `Overlay` variant) would make the focus
-    /// fingerprint and the heartbeat disagree about the SAME frame's overlay, and nothing here
-    /// would fail. `probe_screen` is a closure local to `run()`, not a free function this test can
-    /// call, so — the same idiom `search_owned_tests.rs`'s chrome-guard pin uses for the same
-    /// reason — this reads `run.rs`'s own source and asserts the arm DELEGATES to `overlay_word`
-    /// rather than re-deriving the mapping inline.
-    ///
-    /// Observed RED before the unification: the arm read
-    /// `overlay: match overlay { Overlay::None => "none", Overlay::Menu => "menu", … }`, which
-    /// contains no `overlay_word(` call at all — this test failed as designed. A second manual
-    /// check confirmed the pin actually discriminates rather than merely checking for a
-    /// substring: with the delegating call in place, temporarily reintroducing a stray
-    /// `Overlay::None =>` arm beside it (simulating a partial revert to a hand-rolled table) also
-    /// turned this test red; reverted after observing it.
-    #[test]
-    fn focusprobe_player_overlay_delegates_to_the_shared_overlay_word_function() {
-        let src = std::fs::read_to_string(
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/app/run.rs"),
-        )
-        .expect("read run.rs");
-        let start = src
-            .find("crate::focusprobe::Screen::Player {")
-            .expect("probe_screen must build a focusprobe::Screen::Player");
-        let end = src[start..]
-            .find("},")
-            .map(|i| start + i)
-            .expect("the Player arm must close with `},`");
-        let arm = &src[start..end];
-        assert!(
-            arm.contains("overlay_word("),
-            "the focusprobe's AppArg::Player arm must call the shared overlay_word(...) \
-             function (the same one the heartbeat uses) rather than re-deriving the mapping; \
-             found:\n{arm}"
-        );
-        assert!(
-            !arm.contains("Overlay::None =>") && !arm.contains("Overlay::Menu =>"),
-            "a hand-written Overlay match here means a SECOND overlay-word table exists \
-             alongside overlay_word; found:\n{arm}"
-        );
     }
 }

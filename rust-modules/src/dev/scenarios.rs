@@ -12,8 +12,8 @@
 use crate::app::App;
 use crate::app::run::Frame;
 use plx_screens::registry::AppArg;
-use plx_machine::machine::{Key, Tick};
-use std::os::raw::c_int;
+
+
 
 pub(crate) mod screenshot;
 #[cfg(feature = "devtriggers")]
@@ -47,19 +47,6 @@ pub(crate) struct Scenarios {
     pub(crate) quality_gap_ms: u32,
     pub(crate) quality_tried: bool,
     pub(crate) quality_playing_since: Option<u32>,
-    pub(crate) menu_tried: bool,
-    pub(crate) menupick_tried: bool,
-    /// dev: the row `/tmp/dispatcharrtv-menupick` still owes the track menu, as its RAW second field
-    /// (an absolute row number, or a named Audio-tab target such as `"boost"`/`"loudness"` — see
-    /// `menupick_arm`'s doc): the panel opens and is picked on separate frames, so the pick is
-    /// carried here until the surface it names exists.
-    pub(crate) menupick_target: Option<String>,
-    /// `/tmp/dispatcharrtv-subtiming` — see [`subtiming_arm`] and [`Subtiming`].
-    pub(crate) subtiming: Subtiming,
-    /// `/tmp/dispatcharrtv-submenuosc` — see [`submenuosc_arm`] and [`SubmenuOsc`].
-    pub(crate) submenu_osc: SubmenuOsc,
-    /// `/tmp/dispatcharrtv-moreosc` — see [`moreosc_arm`]; the same state as `submenu_osc`.
-    pub(crate) more_osc: SubmenuOsc,
     pub(crate) pause_tried: bool,
     /// An armed Pause edge: (due at, hold ms, the media position it also waits for).
     pub(crate) pause_script: Option<(u32, Option<u32>, Option<u32>)>,
@@ -289,16 +276,11 @@ mod script_schedule_tests {
     }
 }
 
-/// Pin the player HUD up for a headless capture — the shared tail of the menu/menupick/autopause
-/// arms. Stays defined in `app/run.rs` (it draws on that module's own HUD plumbing); called from
-/// here at the exact points the arms always called it.
-use crate::app::run::pin_headless_hud;
 
 /// `/tmp/dispatcharrtv-playurl` (or `-autoplay`/`-h265`) — start the synthetic playback named by the
 /// `dispatcharrtv-playurl` trigger once, two seconds into the run, with the transport pinned for a
 /// headless capture. The engine reads the trigger itself when `route::url()` is empty.
 fn autoplay_arm(app: &mut App, fr: &mut Frame) {
-    use plx_screens::player::input::HUD_HEADLESS_MS;
     if !app.scenarios.auto_tried
         && !matches!(app.route(), AppArg::Player)
         && fr.now.wrapping_sub(app.t0) > 2000
@@ -311,7 +293,6 @@ fn autoplay_arm(app: &mut App, fr: &mut Frame) {
                 &mut app.adapters.player,
                 0,
                 crate::app::playback::Origin::Here,
-                HUD_HEADLESS_MS,
                 None,
                 &mut app.pages,
                 &mut app.bridge,
@@ -428,7 +409,6 @@ fn autopause_arm(app: &mut App, fr: &mut Frame) {
                 app.scenarios.pause_resume_at = hold_ms.map(|hold| fr.now.wrapping_add(hold));
                 #[cfg(feature = "hostsim")]
                 plx_media::player::stop_sim_clock_at(None);
-                pin_headless_hud(app, fr.now, None);
             }
         }
     }
@@ -439,451 +419,6 @@ fn autopause_arm(app: &mut App, fr: &mut Frame) {
                 app.scenarios.pause_resume_at = None;
             }
         }
-    }
-}
-
-fn menu_arm(app: &mut App, fr: &mut Frame) {
-    if !app.scenarios.menu_tried && matches!(app.route(), AppArg::Player) && fr.now.wrapping_sub(app.t0) > 6000 {
-        app.scenarios.menu_tried = true;
-        if let Some(t) = plx_base::devtrig::read("menu") {
-            crate::app::bridge::open_player_overlay(&mut app.player.session,
-                app.bridge.metadata_view(),
-                &mut app.pages,
-                plx_screens::player::overlay::OverlayKind::Tracks { tab: t.parse::<c_int>().unwrap_or(0) },
-            );
-            pin_headless_hud(app, fr.now, None);
-        }
-        if plx_base::devtrig::flag("more") {
-            crate::app::bridge::open_player_overlay(&mut app.player.session, app.bridge.metadata_view(), &mut app.pages, plx_screens::player::overlay::OverlayKind::More { quality: false });
-            pin_headless_hud(app, fr.now, None);
-        }
-        if plx_base::devtrig::flag("info") {
-            crate::app::bridge::open_player_overlay(&mut app.player.session, app.bridge.metadata_view(), &mut app.pages, plx_screens::player::overlay::OverlayKind::Info);
-            pin_headless_hud(app, fr.now, Some(0));
-        }
-        if plx_base::devtrig::flag("chapters") {
-            crate::app::bridge::open_player_overlay(&mut app.player.session, app.bridge.metadata_view(), &mut app.pages, plx_screens::player::overlay::OverlayKind::Chapters);
-            pin_headless_hud(app, fr.now, Some(1));
-        }
-    }
-}
-
-/// `/tmp/dispatcharrtv-menupick=<tab>,<target>`: `target` is either an absolute `TableView` row
-/// number (the original contract), on the Audio tab a NAMED target — `"boost"`/`"loudness"` —
-/// resolved through the panel's own [`plx_appkit::track_menu::TrackRow`] identities
-/// (`TrackMenuState::row_for_audio_target`), or on the Subtitles tab `"track:N"`, the N-th track in
-/// page order (root tracks, then those behind Other languages), committed by its own index
-/// (`TrackMenuState::sub_track_for_target` / `commit_sub_track`). A name survives a track-count change a hand-written
-/// row number does not: `audio_enhancement_arm` below writes one instead of deriving the row
-/// itself, which is the issue #266 PR4 fix this trigger inherits (see
-/// `TrackMenuState::row_for_audio_target`'s doc for that history). An unrecognized name logs a
-/// clear line and commits nothing, same shape as the existing "row already active" no-commit log.
-fn menupick_arm(app: &mut App, fr: &mut Frame) {
-    if !app.scenarios.menupick_tried && matches!(app.route(), AppArg::Player) && fr.now.wrapping_sub(app.t0) > 7000 {
-        app.scenarios.menupick_tried = true;
-        if let Some(s) = plx_base::devtrig::read("menupick") {
-            let mut it = s.split(',');
-            let tab = it.next().and_then(|x| x.trim().parse::<c_int>().ok()).unwrap_or(0);
-            let target = it.next().map(|x| x.trim().to_string()).unwrap_or_else(|| "0".to_string());
-            crate::app::bridge::open_player_overlay(&mut app.player.session, app.bridge.metadata_view(), &mut app.pages, plx_screens::player::overlay::OverlayKind::Tracks { tab });
-            app.scenarios.menupick_target = Some(target);
-        }
-    }
-    if let Some(target) = app.scenarios.menupick_target.take() {
-        let meta = app.bridge.metadata_view();
-        match crate::app::bridge::player_overlay_mut(&mut app.pages) {
-            Some(surface) => match surface.resolve_menupick_track(&target) {
-                Some(i) => match surface.pick_sub_track(meta, i) {
-                    Some(commit) => crate::app::playback::commit_track(&mut app.player.session, commit),
-                    None => plx_base::eventlog::log(&format!("menupick: track {i} gave no commit")),
-                },
-                None => match surface.resolve_menupick_row(&target) {
-                    Some(row) => match surface.pick_track_row(meta, row) {
-                        Some(commit) => crate::app::playback::commit_track(&mut app.player.session, commit),
-                        // The menu's own on_ok treats picking the already-active row as a no-op: no
-                        // commit, no route transition line. Without this, a manifest case whose row
-                        // no longer differs from the start pick (e.g. #210's file-default rule) fails
-                        // downstream as "no route transition" with nothing pointing back at menupick.
-                        None => plx_base::eventlog::log(&format!("menupick: row {row} already active — no commit")),
-                    },
-                    None => plx_base::eventlog::log(&format!("menupick: unknown target {target:?} — no commit")),
-                },
-            },
-            None => app.scenarios.menupick_target = Some(target),
-        }
-    }
-}
-
-/// `/tmp/dispatcharrtv-submenuosc=<period_ms>`'s own state — see [`submenuosc_arm`].
-#[derive(Debug, Default)]
-pub(crate) struct SubmenuOsc {
-    /// The period, read once when the arm first runs (`None` = not read yet, `Some(0)` = not armed).
-    period: Option<u32>,
-    /// The frame clock of the last key.
-    last: u32,
-    /// Where in [`submenuosc_next`]'s cycle the next key is.
-    step: u8,
-    /// Whether the Subtitles ROOT offered Other languages when last seen there (a pushed page's
-    /// own form has no such row, so the root is the only place to ask).
-    has_other: bool,
-}
-
-/// What one tick of the drill-in oscillator does: seat the cursor on a row (if any), then press `key`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SubmenuStep {
-    seat: Option<plx_appkit::track_menu::TrackRow>,
-    key: Key,
-    next: u8,
-}
-
-/// The oscillator's script, as a pure function of (cycle step, tab, page depth, has Other
-/// languages): Subtitles root -> Style -> Size picker -> back -> back -> Other languages -> back ->
-/// (LEFT at the root) the Audio tab -> (RIGHT) the Subtitles tab, and round again. A step whose
-/// preconditions do not hold (the menu is somewhere the script did not expect, e.g. a key was
-/// dropped) pops a page or restarts the cycle rather than pressing blind, so it re-syncs instead
-/// of drifting. `Other languages` is skipped when the item has none.
-fn submenuosc_next(step: u8, tab: c_int, depth: usize, has_other: bool) -> SubmenuStep {
-    use plx_appkit::track_menu::{StyleField, TrackRow};
-    let press = |seat: Option<TrackRow>, key: Key, next: u8| SubmenuStep { seat, key, next };
-    let left = Key::Left;
-    let right = Key::Right;
-    match (step, tab, depth) {
-        (0, 1, 0) => press(Some(TrackRow::Style), right, 1),
-        (1, 1, 1) => press(Some(TrackRow::OpenField(StyleField::Size)), right, 2),
-        (2, 1, 2) => press(None, left, 3),
-        (3, 1, 1) => press(None, left, if has_other { 4 } else { 6 }),
-        (4, 1, 0) => press(Some(TrackRow::OpenOther), right, 5),
-        (5, 1, 1) => press(None, left, 6),
-        (6, 1, 0) => press(None, left, 7),
-        (7, 0, 0) => press(None, right, 0),
-        // Off script: climb out of any page, then rejoin the cycle at the Subtitles root.
-        (_, _, d) if d > 0 => press(None, left, step),
-        (_, 0, _) => press(None, right, 0),
-        _ => press(None, left, 0),
-    }
-}
-
-/// `/tmp/dispatcharrtv-submenuosc=<period_ms>` — the device frame-time scene for the Tracks panel's
-/// drill-in animation (panel resize + page slide). With the Subtitles menu open
-/// (`dispatcharrtv-menu=1`) it presses one REAL key per period through the dispatcher
-/// ([`submenuosc_next`]'s cycle), so every push, pop and tab switch runs the production handlers
-/// and the spring they start. Shaped like `navosc`/`modalosc`: it never opens or dismisses
-/// anything except that a menu dismissed under it (a stray key) is reopened on the Subtitles tab.
-/// The period must exceed the slide's settle time (~0.5 s) to measure transitions, or be shorter
-/// to measure interrupted ones; the manifest scene uses 900 ms.
-fn submenuosc_arm(app: &mut App, fr: &mut Frame) {
-    let period = *app.scenarios.submenu_osc.period.get_or_insert_with(|| {
-        plx_base::devtrig::read("submenuosc").and_then(|s| s.trim().parse::<u32>().ok()).unwrap_or(0)
-    });
-    if period == 0 || !matches!(app.route(), AppArg::Player) || fr.now.wrapping_sub(app.t0) < 7000 {
-        return;
-    }
-    plx_machine::idle::wake();
-    if fr.now.wrapping_sub(app.scenarios.submenu_osc.last) < period {
-        return;
-    }
-    app.scenarios.submenu_osc.last = fr.now;
-    let probe = crate::app::bridge::player_overlay_mut(&mut app.pages).and_then(|s| s.tracks_probe());
-    let Some((tab, depth, has_other)) = probe else {
-        if !crate::app::bridge::player_overlay_up(&app.pages) {
-            crate::app::bridge::open_player_overlay(&mut app.player.session, app.bridge.metadata_view(), &mut app.pages, plx_screens::player::overlay::OverlayKind::Tracks { tab: 1 });
-            pin_headless_hud(app, fr.now, None);
-            app.scenarios.submenu_osc.step = 0;
-        }
-        return;
-    };
-    if tab == 1 && depth == 0 {
-        app.scenarios.submenu_osc.has_other = has_other;
-    }
-    let step = submenuosc_next(app.scenarios.submenu_osc.step, tab, depth, app.scenarios.submenu_osc.has_other);
-    if let Some(row) = step.seat {
-        if let Some(surface) = crate::app::bridge::player_overlay_mut(&mut app.pages) {
-            if !surface.seat_track_row(row) {
-                plx_base::eventlog::log(&format!("submenuosc: no row {row:?} on tab {tab} depth {depth} — skipping the step"));
-            }
-        }
-    }
-    plx_base::eventlog::log(&format!("submenuosc: step {} -> {} tab={tab} depth={depth} key={:?}", app.scenarios.submenu_osc.step, step.next, step.key));
-    app.scenarios.submenu_osc.step = step.next;
-    app.inputs.extend(crate::app::bridge::script_key(step.key, Tick { ms: fr.now, dt_us: 0 }));
-}
-
-/// The More oscillator's script, a pure function of the page depth: on the root seat the Quality
-/// row and press RIGHT (a push); on the Quality page press LEFT (a pop). Anything deeper climbs out.
-fn moreosc_next(depth: usize) -> (bool, Key) {
-    if depth == 0 { (true, Key::Right) } else { (false, Key::Left) }
-}
-
-/// `/tmp/dispatcharrtv-moreosc=<period_ms>` — the device frame-time scene for More's Quality drill-in
-/// (panel resize + page slide), the same shape as [`submenuosc_arm`]: with More open
-/// (`dispatcharrtv-more=1`) one REAL key per period through the dispatcher, alternating push and pop.
-/// A More dismissed under it is reopened at the root.
-fn moreosc_arm(app: &mut App, fr: &mut Frame) {
-    let period = *app.scenarios.more_osc.period.get_or_insert_with(|| {
-        plx_base::devtrig::read("moreosc").and_then(|s| s.trim().parse::<u32>().ok()).unwrap_or(0)
-    });
-    if period == 0 || !matches!(app.route(), AppArg::Player) || fr.now.wrapping_sub(app.t0) < 7000 {
-        return;
-    }
-    plx_machine::idle::wake();
-    if fr.now.wrapping_sub(app.scenarios.more_osc.last) < period {
-        return;
-    }
-    app.scenarios.more_osc.last = fr.now;
-    let Some(depth) = crate::app::bridge::player_overlay_mut(&mut app.pages).and_then(|s| s.more_probe()) else {
-        if !crate::app::bridge::player_overlay_up(&app.pages) {
-            crate::app::bridge::open_player_overlay(&mut app.player.session, app.bridge.metadata_view(), &mut app.pages, plx_screens::player::overlay::OverlayKind::More { quality: false });
-            pin_headless_hud(app, fr.now, None);
-        }
-        return;
-    };
-    let (seat, key) = moreosc_next(depth);
-    if seat {
-        let seated = crate::app::bridge::player_overlay_mut(&mut app.pages).is_some_and(|s| s.seat_more_quality());
-        if !seated {
-            // Nothing to push: say so, rather than let the scene grade a panel that never moved.
-            plx_base::eventlog::log("moreosc: no Quality row");
-            return;
-        }
-    }
-    plx_base::eventlog::log(&format!("moreosc: depth={depth} key={key:?}"));
-    app.inputs.extend(crate::app::bridge::script_key(key, Tick { ms: fr.now, dt_us: 0 }));
-}
-
-#[cfg(test)]
-mod moreosc_script_tests {
-    use super::moreosc_next;
-    use plx_machine::machine::{Key};
-
-    #[test]
-    fn the_root_pushes_the_quality_row_and_the_page_pops() {
-        assert_eq!(moreosc_next(0), (true, Key::Right));
-        assert_eq!(moreosc_next(1), (false, Key::Left));
-        assert_eq!(moreosc_next(3), (false, Key::Left), "off script: climb out, never press blind");
-    }
-}
-
-/// `/tmp/dispatcharrtv-subtiming`'s own state across frames — see [`subtiming_arm`].
-#[derive(Debug, Default)]
-pub(crate) struct Subtiming {
-    /// `true` once stage 1 (the subtitle commit) has fired, so a later frame does not commit a
-    /// second time.
-    tried: bool,
-    /// Stage 1's commit, held until `route::cur_sub_sid` agrees — stage 2's own gate — then
-    /// cleared once the capsule has been asked to open.
-    pending: Option<SubtimingPending>,
-}
-
-/// A stage-1 commit stage 2 is waiting on.
-#[derive(Debug, Clone, Copy)]
-struct SubtimingPending {
-    /// The committed stream id.
-    sid: i64,
-    /// The frame clock at which it was armed — stage 2's deadline: if `route::cur_sub_sid` has not
-    /// agreed within ~3 s of this, the arm opens the capsule anyway rather than waiting on a commit
-    /// that may never land (see `subtiming_arm`'s own doc for why a commit can silently not
-    /// converge).
-    armed_at: u32,
-}
-
-/// [`subtiming_arm`]'s pure stage-2 decision: given the frame clock, when stage 1 armed (committed
-/// or, on the fused fast path, opened directly), the session's live `route::cur_sub_sid`, and the
-/// stream id stage 1 wants, what should this frame do?
-///
-/// [`SubtimingStep::Open`] once the commit has visibly landed; [`SubtimingStep::OpenMismatch`]
-/// once 3 s have passed without it landing — a bound, not a guess: a retry can reset track
-/// selection underneath this commit, or a transcode's PUT can simply never resolve, and a scene
-/// that waits forever for `cur_sub_sid` to agree fails as "the arm logged nothing", with no way to
-/// tell stage 1 even fired. Opening late (mismatched) is still useful evidence; never opening is
-/// not.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SubtimingStep {
-    Wait,
-    Open,
-    OpenMismatch,
-}
-
-const SUBTIMING_DEADLINE_MS: u32 = 3_000;
-
-fn subtiming_step(now: u32, armed_at: u32, cur_sid: i64, want_sid: i64) -> SubtimingStep {
-    if cur_sid == want_sid {
-        SubtimingStep::Open
-    } else if now.wrapping_sub(armed_at) > SUBTIMING_DEADLINE_MS {
-        SubtimingStep::OpenMismatch
-    } else {
-        SubtimingStep::Wait
-    }
-}
-
-/// `/tmp/dispatcharrtv-subtiming` — the Timing capsule's own headless trigger (plan
-/// `subtitle-menu-capsule` §5), self-contained rather than riding `dispatcharrtv-menupick`: that one
-/// fires at 7000 ms and would stack a Tracks panel on top of the capsule this trigger wants alone.
-///
-/// **Stage 1**, once the item's PLAN has landed and it is not transcoding: pick the first embedded
-/// TEXT subtitle, preferring English (on `movie_h264_ac3_1080p` that is index 2, the same track
-/// `subtitle_text_srt` already selects, so the fixture server sees no new selection). The gate is
-/// `route::cur_rk` being non-empty (the same "no plan yet" idiom `decision.rs` itself uses), NOT
-/// `player::is_playing`: on this item the pipeline does not present its first decoded frame until
-/// ~13 s into a 26 s scene, so gating on "playing" opened the capsule too late to clear warmup, or
-/// — depending how long that particular run took to reach it — not at all. `route::cur_sub_sid` is
-/// already meaningful the moment the plan lands (`decision.rs::apply_plan` sets it from the
-/// resolved `/decision` verdict), long before a frame is on screen.
-///
-/// If the server already selected exactly this track (the `server-selected subtitle:` line —
-/// `cur_sub_sid` already agrees), there is nothing to commit: skip straight to opening, with no
-/// server write at all. Otherwise commit it exactly as `menupick_arm` commits a picked row, and arm
-/// stage 2.
-///
-/// **Stage 2**, on a later frame: [`subtiming_step`] decides whether the commit has visibly landed
-/// (open) or a 3 s deadline has passed without it (open anyway, logged as a mismatch) — see its own
-/// doc for why an unbounded wait is not acceptable. No `pin_headless_hud` call in either path,
-/// because the production capsule frame hides the HUD rather than pinning it
-/// (`OverlayKind::hud_policy`, `PlayerScreen::set_hud_policy`).
-fn subtiming_arm(app: &mut App, fr: &mut Frame) {
-    use plx_data::metadata::sub_layout::is_image_sub_codec;
-    if let Some(SubtimingPending { sid: want_sid, armed_at }) = app.scenarios.subtiming.pending {
-        let cur_sid = plx_media::route::cur_sub_sid(&app.player.session);
-        match subtiming_step(fr.now, armed_at, cur_sid, want_sid) {
-            SubtimingStep::Wait => {}
-            step => {
-                app.scenarios.subtiming.pending = None;
-                if step == SubtimingStep::OpenMismatch {
-                    plx_base::eventlog::log(&format!(
-                        "subtiming: opened (sid mismatch cur={cur_sid} want={want_sid})"
-                    ));
-                } else {
-                    plx_base::eventlog::log("subtiming: opened");
-                }
-                open_timing(app);
-            }
-        }
-        return;
-    }
-    if app.scenarios.subtiming.tried || !plx_base::devtrig::flag("subtiming") {
-        return;
-    }
-    if !matches!(app.route(), AppArg::Player)
-        || plx_media::route::cur_rk(&app.player.session).is_empty()
-        || plx_media::route::is_transcoding(&app.player.session)
-    {
-        return;
-    }
-    let Some(item) = app.bridge.metadata_view().playing() else { return };
-    let idx = item
-        .subs
-        .iter()
-        .position(|s| !is_image_sub_codec(&s.codec) && s.lang_code == "eng")
-        .or_else(|| item.subs.iter().position(|s| !is_image_sub_codec(&s.codec)));
-    let Some(i) = idx else {
-        plx_base::eventlog::log("subtiming: no text sub");
-        app.scenarios.subtiming.tried = true;
-        return;
-    };
-    let stream_id = item.subs[i].id;
-    let render_ordinal = plx_data::metadata::sub_render_ordinal(&item.subs, i);
-    app.scenarios.subtiming.tried = true;
-    if plx_media::route::cur_sub_sid(&app.player.session) == stream_id {
-        plx_base::eventlog::log(&format!("subtiming: already sid={stream_id} — opened without a commit"));
-        open_timing(app);
-        return;
-    }
-    plx_base::eventlog::log(&format!("subtiming: committed sid={stream_id}"));
-    app.scenarios.subtiming.pending = Some(SubtimingPending { sid: stream_id, armed_at: fr.now });
-    crate::app::playback::commit_track(
-        &mut app.player.session,
-        plx_appkit::track_menu::TrackCommit::Subtitle {
-            render_ordinal,
-            stream_id,
-            sidecar_key: None,
-            sidecar_codec: String::new(),
-        },
-    );
-}
-
-/// Present the Timing capsule on the player page — both of [`subtiming_arm`]'s open paths.
-fn open_timing(app: &mut App) {
-    crate::app::bridge::open_player_overlay(
-        &app.player.session,
-        app.bridge.metadata_view(),
-        &mut app.pages,
-        plx_screens::player::overlay::OverlayKind::Timing,
-    );
-}
-
-#[cfg(test)]
-mod submenuosc_script_tests {
-    use super::submenuosc_next;
-    use plx_machine::machine::{Key};
-
-    /// Follow the script against a model of the menu (RIGHT on a seated Nav row pushes, LEFT pops
-    /// or, at the root, goes to Audio, RIGHT on Audio goes back): it must exercise a push, a pop
-    /// and both tab switches, and return to where it began.
-    fn walk(has_other: bool) -> (Vec<(i32, usize)>, u8) {
-        let (mut step, mut tab, mut depth) = (0u8, 1i32, 0usize);
-        let mut seen = Vec::new();
-        for _ in 0..16 {
-            let s = submenuosc_next(step, tab, depth, has_other);
-            match (s.key, s.seat.is_some()) {
-                (Key::Right, true) => depth += 1,
-                (Key::Right, false) => tab = 1,
-                (Key::Left, _) if depth > 0 => depth -= 1,
-                (Key::Left, _) => tab = 0,
-                _ => unreachable!(),
-            }
-            step = s.next;
-            seen.push((tab, depth));
-            if step == 0 && tab == 1 && depth == 0 {
-                return (seen, step);
-            }
-        }
-        (seen, step)
-    }
-
-    #[test]
-    fn the_cycle_pushes_pops_switches_tabs_and_comes_back_to_the_root() {
-        let (seen, step) = walk(true);
-        assert_eq!(step, 0);
-        assert!(seen.contains(&(1, 2)), "Style -> Size picker is reached: {seen:?}");
-        assert!(seen.contains(&(0, 0)), "the Audio tab is visited: {seen:?}");
-        assert_eq!(seen.last(), Some(&(1, 0)));
-        let (without, _) = walk(false);
-        assert!(without.len() < seen.len(), "no Other languages row, no Other languages leg");
-    }
-
-    #[test]
-    fn an_off_script_menu_climbs_out_instead_of_pressing_blind() {
-        // A page is open where the script wants the root: pop it, keep the step.
-        let s = submenuosc_next(0, 1, 2, true);
-        assert_eq!((s.key, s.seat, s.next), (Key::Left, None, 0));
-        // Lost on the Audio tab at step 3: go back to Subtitles and restart.
-        let s = submenuosc_next(3, 0, 0, true);
-        assert_eq!((s.key, s.next), (Key::Right, 0));
-    }
-}
-
-#[cfg(test)]
-mod subtiming_step_tests {
-    use super::{subtiming_step, SubtimingStep};
-
-    #[test]
-    fn opens_the_moment_cur_sub_sid_agrees() {
-        assert_eq!(subtiming_step(1_000, 900, 2698, 2698), SubtimingStep::Open);
-    }
-
-    #[test]
-    fn waits_before_the_deadline_while_it_disagrees() {
-        assert_eq!(subtiming_step(1_000, 900, 0, 2698), SubtimingStep::Wait);
-        assert_eq!(subtiming_step(3_899, 900, 0, 2698), SubtimingStep::Wait);
-    }
-
-    #[test]
-    fn opens_mismatched_once_the_deadline_passes_without_agreement() {
-        assert_eq!(subtiming_step(3_901, 900, 0, 2698), SubtimingStep::OpenMismatch);
-    }
-
-    #[test]
-    fn agreement_wins_even_past_the_deadline() {
-        assert_eq!(subtiming_step(9_000, 900, 2698, 2698), SubtimingStep::Open);
     }
 }
 
@@ -968,11 +503,6 @@ pub(crate) unsafe fn each_frame(app: &mut App, fr: &mut Frame) -> bool {
     autoseek_arm(app, fr);
     qualityswitch_arm(app, fr);
     autopause_arm(app, fr);
-    menu_arm(app, fr);
-    menupick_arm(app, fr);
-    subtiming_arm(app, fr);
-    submenuosc_arm(app, fr);
-    moreosc_arm(app, fr);
     marker_arm(app, fr);
     if crate::app::bridge::player(&app.pages).is_some() {
         plx_media::player::failure_fixture(&mut app.player.session);

@@ -141,13 +141,12 @@ pub(crate) unsafe fn begin_fresh_press(
     wcode: c_uint,
     now: u32,
     down_sym: &mut u32,
-    hud: Option<&mut HudState>,
     ptr: &mut Pointer,
     ok_armed: &mut bool,
     press: &mut plx_ui::press::Press,
 ) {
     *down_sym = sym;
-    note_global_press(ps, sym, wcode, now, hud, ok_armed, press);
+    note_global_press(ps, sym, wcode, now, ok_armed, press);
     if matches!(
         key,
         Key::Up | Key::Down | Key::Left { alt: false } | Key::Right { alt: false }
@@ -174,19 +173,12 @@ pub(crate) fn note_global_press(
     sym: c_uint,
     wcode: c_uint,
     now: u32,
-    hud: Option<&mut HudState>,
     ok_armed: &mut bool,
     press: &mut plx_ui::press::Press,
 ) {
+    let _ = (ps, now);
     if !is_bound(sym, wcode) {
         return; // an unsupported key is not input the app acted on — see `begin_fresh_press`
-    }
-    // What the user could SEE, and only then the un-dismiss — one operation, because the order is
-    // load-bearing (`HudState::note_fresh_press`). Taken for every BOUND key on every screen: it is
-    // one cheap predicate, and the alternative is each player arm remembering to ask first, which
-    // is exactly the ordering the pointer path had to be fixed for once already.
-    if let Some(hud) = hud {
-        hud.note_fresh_press(ps, now, paused());
     }
     // a fresh non-OK key (navigation / BACK) while a click is armed aborts the press — spring the
     // card back to rest WITHOUT activating (you "slid off" the control). A key the app does not
@@ -204,42 +196,33 @@ pub(crate) fn note_global_press(
 mod unsupported_key_tests {
     use super::*;
 
-    /// Drive one fresh press through [`note_global_press`] and report what it left behind:
-    /// `(a click is still armed, the HUD is still dismissed)`. `press::*`, `hud_until()` and
-    /// `hud_until()` and `paused()` are crate globals, so every caller holds `testlock::serial()`;
-    /// the press is the test's own `Press`.
-    fn press(ps: &plx_media::route::PlaybackSession, sym: c_uint, wcode: c_uint) -> (bool, bool) {
-        let mut hud = HudState::IDLE;
+    /// Drive one fresh press through [`note_global_press`] and report whether a click it found in
+    /// flight is still armed. `press::*` and `paused()` are crate globals, so every caller holds
+    /// `testlock::serial()`; the press is the test's own `Press`.
+    fn press(ps: &plx_media::route::PlaybackSession, sym: c_uint, wcode: c_uint) -> bool {
         let mut ok_armed = true; // a click is in flight, as if OK were still down on a card
-        hud.dismissed = true; // …and the transport was hidden by hand (UP from the control row)
         let mut p = plx_ui::press::Press::new();
         p.begin(1_000);
-        note_global_press(ps, sym, wcode, 1_000, Some(&mut hud), &mut ok_armed, &mut p);
-        let out = (p.is_active() && ok_armed, hud.dismissed);
+        note_global_press(ps, sym, wcode, 1_000, &mut ok_armed, &mut p);
+        let out = p.is_active() && ok_armed;
         p.cancel();
         out
     }
 
-    /// A key the app binds behaves exactly as it always has: it un-dismisses the HUD and aborts the
-    /// click it slid off. BACK is the case to use — it is not OK, so it takes the abort branch.
+    /// A key the app binds aborts the click it slid off. BACK is the case to use — it is not OK,
+    /// so it takes the abort branch.
     #[test]
-    fn a_bound_key_still_wakes_the_hud_and_aborts_the_click() {
+    fn a_bound_key_aborts_the_click() {
         let ps = plx_media::route::PlaybackSession::IDLE;
         let _g = plx_base::testlock::serial();
-        let (armed, dismissed) = press(&ps, SDLK_ESCAPE, 0);
-        assert!(
-            !armed,
-            "BACK slides off the control — the press is cancelled"
-        );
-        assert!(!dismissed, "…and any key un-dismisses the transport");
+        assert!(!press(&ps, SDLK_ESCAPE, 0), "BACK slides off the control — the press is cancelled");
     }
 
-    /// **The regression.** An unsupported key must do NEITHER — it is not input the app acted on,
-    /// so it may not raise the transport over playback and it may not abandon a press in flight.
-    /// 269 is HOME (`SDL_SCANCODE_AC_HOME`, evdev 172 `KEY_HOMEPAGE`); every other unbound
-    /// scancode takes the same branch.
+    /// **The regression.** An unsupported key must not abandon a press in flight: it is not input
+    /// the app acted on. 269 is HOME (`SDL_SCANCODE_AC_HOME`, evdev 172 `KEY_HOMEPAGE`); every
+    /// other unbound scancode takes the same branch.
     #[test]
-    fn an_unsupported_key_wakes_nothing_and_abandons_nothing() {
+    fn an_unsupported_key_abandons_nothing() {
         let ps = plx_media::route::PlaybackSession::IDLE;
         let _g = plx_base::testlock::serial();
         for (sym, wcode, what) in [
@@ -247,22 +230,17 @@ mod unsupported_key_tests {
             (0, 270, "AC_BACK"),
             (b'a' as c_uint, 4, "a letter"),
         ] {
-            let (armed, dismissed) = press(&ps, sym, wcode);
-            assert!(armed, "{what} must not cancel the armed click");
-            assert!(dismissed, "{what} must not un-dismiss the HUD");
+            assert!(press(&ps, sym, wcode), "{what} must not cancel the armed click");
         }
     }
 
     /// The digits are the one place [`is_bound`] deliberately over-approximates (its doc argues
-    /// it): the who's-watching PIN keypad types from them, so they count as bound everywhere.
-    /// Pinned so the trade-off stays a decision on record rather than something a reader finds.
+    /// it): the live player's typed channel number reads them, so they count as bound everywhere.
     #[test]
-    fn a_number_key_counts_as_bound_because_the_pin_keypad_types_from_it() {
+    fn a_number_key_counts_as_bound() {
         let ps = plx_media::route::PlaybackSession::IDLE;
         let _g = plx_base::testlock::serial();
-        let (armed, dismissed) = press(&ps, b'5' as c_uint, 34);
-        assert!(!armed);
-        assert!(!dismissed);
+        assert!(!press(&ps, b'5' as c_uint, 34));
     }
 }
 
@@ -277,48 +255,18 @@ pub(crate) unsafe fn key_ok(
     pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
     bridge: &mut super::bridge::Bridge,
 ) {
+    let _ = (ps, now, ok_armed, press, bridge);
+    // OK that the player page left to the loop (nothing live playing, e.g. a dev trigger's URL):
+    // the plain play/pause toggle.
     if super::bridge::player(pages).is_some() {
-        // The cursor and the pre-press visibility are the mounted screen's, read ONCE into copies
-        // so the arms below are free to present a panel on the same container (`open_player_overlay`
-        // takes it mutably). The pre-press sample is the one the other player arms take too:
-        // `begin_fresh_press` has already cleared `dismissed`, so re-asking calls a hand-hidden
-        // transport visible and this arm would open a panel from behind it
-        // (`HudState::visible_at_press`).
-        let Some((vis, focus, tab)) = super::bridge::player(pages)
-            .map(|player| (player.hud.visible_at_press, player.hud.nav.focus, player.hud.nav.tab))
-        else {
-            return;
-        };
-        // Row 1 is the transport's CONTROL ROW — the Subtitles / Audio / ⋯ discs, or whichever
-        // stand-in has taken their place (Skip, Up Next). Every occupant is a control FACE with a
-        // pop of its own (`player_hud::ROW_POP`), so OK takes the tvOS press: dip now, act on the
-        // spring-back, in `activate_player_row` from the per-frame loop. Both of its arms open
-        // something OVER this HUD rather than leaving the route, which makes this the one control
-        // row in the app where the whole dip → ring is on screen either side of the activation.
-        if vis && focus == 1 {
-            press.begin_ctl(now);
-            *ok_armed = true;
-        } else if vis && focus == 2 {
-            if tab == 0 {
-                super::bridge::open_player_overlay(ps, bridge.metadata_view(), pages, plx_screens::player::overlay::OverlayKind::Info);
-            } else if tab == 1 {
-                super::bridge::open_player_overlay(ps, bridge.metadata_view(), pages, plx_screens::player::overlay::OverlayKind::Chapters);
+        if !super::lifecycle::viewer_paused() {
+            if set_transport_paused(pa, true) {
+                plx_telemetry::diag::event(plx_telemetry::diag::schema::DiagEvent::FeatureUsed {
+                    feature: plx_telemetry::diag::schema::Feature::Pause,
+                });
             }
         } else {
-            let np = !super::lifecycle::viewer_paused();
-            if np {
-                if set_transport_paused(pa, true) {
-                    plx_telemetry::diag::event(plx_telemetry::diag::schema::DiagEvent::FeatureUsed {
-                        feature: plx_telemetry::diag::schema::Feature::Pause,
-                    });
-                }
-            } else {
-                set_transport_paused(pa, false);
-            }
-        }
-        if let Some(player) = super::bridge::player_mut(pages) {
-            player.hud.extend(now, HUD_LINGER_MS);
-            player.publish();
+            set_transport_paused(pa, false);
         }
     }
 }

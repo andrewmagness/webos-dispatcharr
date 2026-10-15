@@ -479,9 +479,6 @@ pub(crate) unsafe fn boot(
     pms_port: c_int,
     mt: plx_base::task::MainThread,
 ) -> Result<App, c_int> {
-    // The Up Next still prefetch `route::pump_play` asks for is `ui`'s, which `route` may not name,
-    // so it is handed over here, before any playback can land.
-    plx_media::route::install_up_next_still_warm(super::playback::warm_up_next_still);
     // The dev frame probe's clock is `platform`'s, which `gfx` does not depend on.
     plx_gfx::gfx::install_clear_probe(
         plx_platform::tv::window::frame_probe_waiting,

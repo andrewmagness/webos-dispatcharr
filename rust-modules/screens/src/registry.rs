@@ -41,9 +41,9 @@ pub enum AppFx {
     Loop(LoopReq),
     /// Content requests (a live channel to play), executed by the navigation bridge.
     Content(ContentReq),
-    /// Player-route requests — what an overlay panel on the player's own `ModalStack` asks of the
-    /// loop, because the thing being asked for needs the `MainThread` token, the route or the
-    /// trail (§14). Executed by `app/playback.rs`'s drain.
+    /// Player-route requests — what the player asks of the loop, because the thing being asked
+    /// for needs the `MainThread` token or the container (§14). Executed by `app/playback.rs`'s
+    /// drain.
     Player(PlayerReq),
     /// The Setup and Guide screens' account and server work — see [`DispatcharrCmd`].
     Dispatcharr(DispatcharrCmd),
@@ -118,13 +118,11 @@ pub enum SetupOutcome {
     SaveFailed,
 }
 
-/// **What a player overlay asks for**, once its own `step` has decided.
+/// **What the player asks for**, once its own `step` has decided.
 ///
-/// A panel on the player's page-owned `ModalStack` owns its own state and its own input, but not
-/// the playback: seeking, pausing, applying a quality rung and leaving for a detail page all need
-/// the `MainThread` token and the container ops `app::bridge` owns, neither of which a screen may
-/// name (§2.1).
-/// So the panel decides and the loop performs, exactly as `LibraryReq` does for the Library.
+/// Tuning, retrying, repairing and leaving all need the `MainThread` token and the container ops
+/// `app::bridge` owns, neither of which a screen may name (§2.1). So the screen decides and the
+/// loop performs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlayerReq {
     /// Change channel: stop this stream and play `0`'s channel (the live player's CH▲/▼, UP/DOWN
@@ -132,63 +130,16 @@ pub enum PlayerReq {
     Tune(plx_media::route::LiveTune),
     /// Accepted only after the owned player confirmation. Never emitted by boot or Play.
     RepairSandbox,
-    /// The failure read-out's *Try again*: resolve the failed item again, unchanged, at the
-    /// position the viewer was at (`app::playback::retry_failed_playback`).
+    /// The failure read-out's *Try again*: tune the failed channel again.
     RetryPlayback,
-    /// The failure read-out's fix for Force Direct Play: set the Direct Play preference to Auto —
-    /// the same persisted value Settings writes — and resolve the failed item again under it.
+    /// The failure read-out's fix for Force Direct Play: set the Direct Play preference to Auto
+    /// and play again under it.
     PlayAutomatically,
-    /// A transport key FELL THROUGH the panel (§ `overlay_transport_key_tests`): a viewer holding
-    /// the track menu, the Info card or the Chapters strip open still expects PAUSE/PLAY to work,
-    /// and the panel stays up. `true` = the key was PLAY, `false` = PAUSE; a PLAYPAUSE toggle is
-    /// neither and is carried as `None`.
+    /// A transport key: `true` = the key was PLAY, `false` = PAUSE; a PLAYPAUSE toggle is neither
+    /// and is carried as `None`.
     Transport(Option<bool>),
-    /// Seek to this position in ns and resume if paused — the Chapters strip's OK.
-    SeekTo(i64),
-    /// **Commit a SCRUB to this position, and leave a paused film paused** (restructure phase 12,
-    /// PX-PLAYER) — `app::playback::commit_seek`, the other half of the pair above.
-    ///
-    /// The difference is the reason there are two. [`SeekTo`](PlayerReq::SeekTo) RESUMES, because
-    /// a viewer who picked a chapter asked to watch it. A scrub does not: the transport's bar is
-    /// how a PAUSED film is moved, and starting it there is a behaviour nobody asked for. Holding
-    /// the pause across the seek needs three pieces of state that are the loop's and no screen's —
-    /// `App::repause_at`, `TX.resume_pend` and the bounded seek-preroll feed override that lets
-    /// the pipeline decode the landed frame without publishing a viewer Resume — which is why this
-    /// is a request rather than something `PlayerScreen` performs.
-    CommitSeek(i64),
-    /// Apply the `…` popover's chosen row.
-    More(plx_appkit::more_menu::Action),
-    /// Apply the Info card's focused action.
-    Info(plx_appkit::info_panel::InfoAction),
-    /// The panel took a DOWN past its own bottom: drop the HUD's ring onto the tabs row.
-    FocusTabs,
-    /// Keep the transport alive while a panel is being read (`HUD_MENU_MS`), or hand it the
-    /// ordinary linger as a panel closes (`HUD_LINGER_MS`).
-    ExtendHud(u32),
-    /// The Info card's OK landed on a control FACE, which has a press dip of its own: arm the
-    /// tvOS press and commit on the spring-back rather than acting now.
-    ArmInfoPress,
-    /// The track menu picked a row. `route::commit_audio_selection`/`commit_subtitle_selection`
-    /// take the playback session's `&mut`, which a screen never has (§2.2) — so the panel decides
-    /// and the loop performs, exactly as every other request in this enum.
-    CommitTrack(plx_appkit::track_menu::TrackCommit),
-    /// **Present one of the player's overlays directly** (restructure phase 12) — the tabs row's OK
-    /// (`OverlayKind::Info`/`::Chapters`, the old `key_ok`'s `focus == 2` arm) and the failure
-    /// read-out's own recovery escape (`OverlayKind::More { quality: true }`, the old
-    /// `key_player_failed`'s `ChooseQuality` arm). Both used to reach
-    /// `super::bridge::open_player_overlay` straight from the loop's key ladder; `PlayerScreen`
-    /// may not name that function itself (§2.2), so it asks instead.
-    OpenOverlay(crate::player::overlay::OverlayKind),
-    /// **OK landed on the transport's own control row** — whichever disc, the Skip pill or the Up
-    /// Next tile currently occupies it (restructure phase 12, the old `key_ok`'s `focus == 1`
-    /// arm). Arms the same tvOS press dip [`ArmInfoPress`](PlayerReq::ArmInfoPress) does; the
-    /// loop's existing commit-frame dispatch (`app/run.rs`'s `Route::Player =>
-    /// activate_player_row(...)`) is unchanged and performs whatever the row decides once the
-    /// spring-back has played.
-    ArmControlRow,
-    /// **Leave the player** — the one ritual the STOP key, a BACK with nothing else open, and the
-    /// failure read-out's own BACK escape all perform (`exit_player`; restructure phase 12,
-    /// replacing `app/run.rs`'s direct calls to it from the player's own key arms).
+    /// **Leave the player** — the one ritual the STOP key, a BACK, and the failure read-out's own
+    /// BACK escape all perform (`exit_player`).
     Exit,
 }
 
@@ -428,12 +379,7 @@ mod repeat_gate_tests {
 /// DISMISSES the surface rather than revealing the root.
 #[derive(Clone, PartialEq, Eq)]
 pub enum AppArg {
-    /// One of the player's panels, presented on the PLAYER PAGE's own `ModalStack` (§6.2).
-    /// It carries only which panel: the host is the page it is presented over, which the container
-    /// already knows, and the panel's own state is the instance's.
-    PlayerOverlay(crate::player::overlay::PlayerOverlayArg),
-    /// Playback. Its panels are NOT here — they are entries on the player page's own
-    /// `ModalStack` ([`Self::PlayerOverlay`]), and the container owns which one is up.
+    /// Live playback.
     Player,
     /// Dispatcharr sign-in (`screens::setup`) — the boot page. With an account stored it hands
     /// straight over to the Guide.
@@ -445,15 +391,13 @@ pub enum AppArg {
     Server,
 }
 
-pub const ARG_SHAPE: &str = "AppArg{Setup,Guide,Server,Player,\
-     PlayerOverlay{Tracks(tab:i32),Info,Chapters,More(quality:bool)}}";
+pub const ARG_SHAPE: &str = "AppArg{Setup,Guide,Server,Player}";
 
 impl LogicalState for AppArg {
     fn write(&self, c: &mut Canon) {
         // A canon tag is a surface's identity in a recorded state, so the tags of retired
         // arguments are never reused: they are allocated forward, exactly as `ScreenId` is.
         match self {
-            Self::PlayerOverlay(arg) => { c.u32(5); arg.write(c); }
             Self::Player => { c.u32(0).u32(10); }
             Self::Setup => { c.u32(13); }
             Self::Guide => { c.u32(14); }
@@ -471,19 +415,14 @@ impl plx_ui::screen::ScreenArg for AppArg {
             AppArg::Setup
             | AppArg::Guide
             | AppArg::Server
-            | AppArg::Player
-            | AppArg::PlayerOverlay(_) => Chrome::None,
+            | AppArg::Player => Chrome::None,
         }
     }
     fn id(&self) -> ScreenId {
         // Ids are allocated forward and never reused, so a retired identity is never handed to a
         // screen that replaced it (1–10 and 14–24 belonged to the pages and panels of the Plex
-        // client this app was derived from).
+        // client this app was derived from, 16 to the player's panels).
         ScreenId(match self {
-            // One id for every player panel, exactly as `Settings(_)` collapses its root payload:
-            // they are kinds of ONE screen, and `same_instance` must never let the container
-            // think it is holding two of them.
-            AppArg::PlayerOverlay(_) => 16,
             AppArg::Player => 11,
             AppArg::Setup => 25,
             AppArg::Guide => 26,
@@ -494,14 +433,6 @@ impl plx_ui::screen::ScreenArg for AppArg {
         None
     }
     fn same_instance(&self, other: &Self) -> bool {
-        // **A player overlay's identity is its KIND, never the playback under it** (§16.9): the
-        // panel is a surface on the player's own stack, so the page beneath it is not part of what
-        // "the same instance" means here.
-        if let (Self::PlayerOverlay(a), Self::PlayerOverlay(b)) = (self, other) {
-            return a.kind.slot() == b.kind.slot();
-        }
-        // …and the same reason `id` collapses the payload: `Settings(Root)` and
-        // `Settings(Legal)` are the same SCREEN.
         <Self as plx_ui::screen::ScreenArg>::id(self) == <Self as plx_ui::screen::ScreenArg>::id(other)
     }
 }
@@ -513,13 +444,8 @@ impl plx_ui::screen::ScreenArg for AppArg {
 #[derive(Default)]
 pub struct AppMounter {
     /// **Where the NEXT player instance returns to** — the entry that was on top when the push was
-    /// asked for, stamped at the press and consumed by the mount exactly as `player_hud_ms` is.
+    /// asked for, stamped at the press and consumed by the mount.
     pub player_origin: Option<crate::player::Origin>,
-    /// How long the NEXT player instance pins its transport for, in ms — `HUD_LINGER_MS` for an
-    /// ordinary start and `HUD_HEADLESS_MS` for a capture run. It is a seed rather than a constant
-    /// because `start_playback` is what knows which, and because the deadline must be stamped from
-    /// the instant the page MOUNTS, not from the keypress before a blocking start.
-    pub player_hud_ms: Option<u32>,
 }
 
 /// **The one `mount` match** (spec §2.1) — the whole of what "add a screen" costs, in the module
@@ -547,63 +473,34 @@ where
             _ => EntryId(0),
         };
         match arg {
-            AppArg::PlayerOverlay(arg) => Box::new(
-                crate::player::overlay::PlayerOverlayScreen::new_with(
-                    H::session(cx), H::metadata(cx), entry, arg.kind, H::subtitle_search(cx).is_some()),
-            ),
             AppArg::Setup => Box::new(crate::setup::SetupScreen::new(entry, id, crate::setup::Mode::Entry)),
             AppArg::Server => Box::new(crate::setup::SetupScreen::new(entry, id, crate::setup::Mode::Server)),
             AppArg::Guide => Box::new(crate::guide::GuideScreen::new(entry, id)),
-            // The player is an OWNED screen — the instance that holds the HUD, the held-key timer
-            // and the live controls, and that answers `RenderStrategy::VideoPlane`. Its transport
-            // is pinned from the instant it mounts (`AppMounter::player_hud_ms`), never from the
-            // keypress that asked for the playback.
+            // The player is an OWNED screen — the instance that holds the live controls and
+            // answers `RenderStrategy::VideoPlane`.
             AppArg::Player => {
                 let mut page = crate::player::PlayerScreen::new(entry);
                 // **Where BACK, Stop and EOS land** (§5.1). Captured at the MOUNT, from the page
-                // that was on top when the push was asked for — never read live, because an
-                // overlay opening on this page's own stack changes the input owner and must not
-                // be mistaken for a new origin.
+                // that was on top when the push was asked for — never read live.
                 page.origin = self.player_origin.take();
-                page.hud.extend(cx.tick.ms, self.player_hud_ms.take().unwrap_or(crate::player::input::HUD_LINGER_MS));
-                page.publish();
                 Box::new(page)
             }
         }
     }
 }
 
-/// **Every `AppArg` a SURFACE can be presented with, one per variant** — the domain the heartbeat's
-/// ` overlay=` alphabet is derived over (`app::overlay_words`, restructure phase 10 item 4).
-///
-/// Exhaustive by the COMPILER, which is the whole reason it is written this way: the `match` below
-/// names every variant of the enum, so adding one and forgetting it here does not compile. A word
-/// that silently never joins the table is the failure this guards — `tests/manifest.json` selects
-/// fps samples by these strings, and a scene keyed on a word the app cannot print fails on the
-/// television as "only 0 post-warmup samples", which is indistinguishable from a real regression.
-///
-/// The PAGE variants (the seven flat pages and `Content`) are excluded on purpose and by name
-/// rather than by a wildcard: a page's word is `route=`, and it is the top page's own
-/// `Screen::name`. `Settings` and `FirstRunConsent` appear once each because their payload is
-/// a boot ADDRESS rather than an identity (`ScreenArg::id` collapses it the same way), and the
-/// family's inner stack is what decides its word at any moment — `RouteSurface::top_word`.
+/// **Every `AppArg` a SURFACE can be presented with** — the domain the heartbeat's ` overlay=`
+/// alphabet is derived over (`app::overlay_words`). None: since the player's panels left, every
+/// argument is a PAGE, whose word is `route=`. The match is exhaustive so a new variant has to be
+/// classified here rather than land in a catch-all.
 #[cfg(any(test, feature = "test-support"))]
 pub fn every_surface_arg() -> Vec<AppArg> {
-    use crate::player::overlay::{OverlayKind, PlayerOverlayArg};
-    // The player's panels are ONE screen with several kinds, and each answers a different
-    // `Screen::name` — so every kind is listed, not one representative.
-    let args: Vec<AppArg> = OverlayKind::ALL.map(|kind| AppArg::PlayerOverlay(PlayerOverlayArg { kind })).into();
-    for a in &args {
+    for a in [AppArg::Setup, AppArg::Guide, AppArg::Server, AppArg::Player] {
         match a {
-            AppArg::PlayerOverlay(_) => {}
-            // The PAGE variants. Named rather than swept into a `_`, so the exhaustiveness above
-            // is real and a new SURFACE variant cannot land in a catch-all.
-            AppArg::Setup | AppArg::Guide | AppArg::Server | AppArg::Player => {
-                panic!("a page argument is not a surface: its word is `route=`")
-            }
+            AppArg::Setup | AppArg::Guide | AppArg::Server | AppArg::Player => {}
         }
     }
-    args
+    Vec::new()
 }
 // ---------------------------------------------------------------------------------------------
 // the shape inventory
@@ -626,7 +523,6 @@ pub const SCREEN_SHAPES: &[&str] = &[
     ARG_SHAPE,
     PAGE_MEMORY_SHAPE,
     crate::player::SHAPE,
-    crate::player::overlay::SHAPE,
     crate::setup::SHAPE,
     crate::guide::SHAPE,
 ];
@@ -644,9 +540,10 @@ pub const SCREEN_SHAPES: &[&str] = &[
 /// controls and the Guide's favourites, resume-on-launch, network discovery and the group switch
 /// each grew a shape (0x72fb_3258_bff6_7e57 was the last pin with the Plex client's pages). Then
 /// the Plex pages and panels and the Settings family left the alphabet, and `PageMemory` lost
-/// every page's arm.
+/// every page's arm (0xb076_c643_f4b1_5aac). Then the player became live-only: its transport,
+/// scrubber and panels left (`PlayerScreen`'s shape shrank and `PlayerOverlay` left the alphabet).
 #[cfg(test)]
-const SCREEN_SHAPES_PIN: u64 = 0xb076_c643_f4b1_5aac;
+const SCREEN_SHAPES_PIN: u64 = 0x3adc_19f1_a36a_aa4e;
 
 #[cfg(test)]
 mod arg_tests {

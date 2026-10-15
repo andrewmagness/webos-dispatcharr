@@ -12,7 +12,7 @@ use super::*;
 
 pub(crate) use plx_media::player::lifecycle::{
     clock_for_suspend_now, drive_foreground, park_pending_foreground_flight, paused,
-    poll_foreground_flight, poll_foreground_load, resume_if_paused, set_paused,
+    poll_foreground_flight, poll_foreground_load, set_paused,
     set_transport_paused, transport_target, viewer_paused, FlightLanding, ForegroundActivation,
     ForegroundActuator, ForegroundClock, ForegroundInput, ForegroundLifecycle, ForegroundLoadStart,
     ForegroundLoadStatus,

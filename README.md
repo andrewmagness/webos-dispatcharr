@@ -77,5 +77,7 @@ PlxNative name and brand artwork are not part of this project ([`TRADEMARKS.md`]
 Third-party components and their licences are in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
 and `licenses/`, including the bundled LGPL build of FFmpeg.
 
+Security problems: report them privately as [`SECURITY.md`](SECURITY.md) describes.
+
 "Dispatcharr", "LG" and "webOS" are the names of their respective owners and are used here only to
 say what this app works with.

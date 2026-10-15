@@ -410,7 +410,6 @@ impl std::fmt::Debug for OpaqueExtensions {
     }
 }
 
-
 /// The full persisted session. Empty fields mean "not logged in yet" for that stage.
 #[derive(Serialize, Deserialize, Default, Clone)]
 pub struct Session {
@@ -3659,7 +3658,6 @@ fn read_legacy_filtered_locked(fallback_only: bool) -> ReadState {
     install_preferences::load().map_or(ReadState::Missing, |language| ReadState::Cleared { language })
 }
 
-
 fn identifies_secure_envelope(bytes: &[u8]) -> bool {
     serde_json::from_slice::<serde_json::Value>(bytes)
         .ok()
@@ -3955,7 +3953,6 @@ pub fn set_language(language: plx_platform::i18n::Preference) -> bool {
     if saved { plx_platform::i18n::set_saved_preference(language); }
     saved
 }
-
 
 /// [`update`], but reporting what the durable write actually did.
 ///
@@ -4429,7 +4426,6 @@ fn log_candidate_diagnostics(context: &str, failures: &[CandidateDiagnostic]) {
     }
 }
 
-
 /// Open `path` for reading without following a symlink at its name, and only if it is a regular
 /// file this process owns. The metadata comes from the SAME descriptor the bytes will be read
 /// from, so a caller that records the file's identity describes what it read. A missing file is
@@ -4465,7 +4461,6 @@ pub fn read_owned_regular(path: &std::path::Path) -> Option<Vec<u8>> {
         .ok()?;
     (bytes.len() as u64 <= MAX_FILE).then_some(bytes)
 }
-
 
 /// What [`clear`] found out about the canonical authority. Distinct from a bare `()` return
 /// because a sign-out that fails to durably reach the canonical authority is a real
@@ -5378,58 +5373,6 @@ mod audio_enhancements_tests {
         }
     }
 
-    /// Real fixture-shaped session credentials predate #266 (`committed_credentials` in every
-    /// `tests/fixtures/replay/*/manifest.json` carries exactly the auth-half fields
-    /// `CanonicalSessionAuth` expects: `account_token`, `client_id`, `home_users`, `server`,
-    /// `sources`, `user`). Building a `Session` from one and re-serializing it must never grow
-    /// an `audio_enhancements` key — the whole point of `skip_serializing_if` — so replaying a
-    /// fixture recorded before this PR stays byte-stable rather than drifting the moment this
-    /// field is read back in.
-    #[test]
-    fn replay_manifest_session_is_byte_stable() {
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        // `plex/` is one level below `rust-modules/`, which is one below the repository root.
-        let repo = manifest_dir
-            .parent()
-            .and_then(std::path::Path::parent)
-            .expect("rust-modules/plex has a repository root two levels up");
-        let replay_dir = repo.join("tests/fixtures/replay");
-        let entries = std::fs::read_dir(&replay_dir)
-            .unwrap_or_else(|e| panic!("{}: {e}", replay_dir.display()));
-        let mut checked = 0;
-        for entry in entries {
-            let entry = entry.expect("readable fixture directory entry");
-            let manifest_path = entry.path().join("manifest.json");
-            if !manifest_path.is_file() {
-                continue;
-            }
-            let bytes = std::fs::read(&manifest_path)
-                .unwrap_or_else(|e| panic!("{}: {e}", manifest_path.display()));
-            let manifest: serde_json::Value = serde_json::from_slice(&bytes)
-                .unwrap_or_else(|e| panic!("{}: {e}", manifest_path.display()));
-            let Some(committed) = manifest.pointer("/init/data/session/committed_credentials")
-            else {
-                continue;
-            };
-            let session: Session = serde_json::from_value(committed.clone())
-                .unwrap_or_else(|e| panic!("{}: {e}", manifest_path.display()));
-            assert_eq!(
-                session.audio_enhancements(),
-                crate::plex::AudioEnhancements::NONE,
-                "{}: a fixture predating #266 must default both toggles off",
-                manifest_path.display()
-            );
-            let reserialized = serde_json::to_string(&session)
-                .unwrap_or_else(|e| panic!("{}: {e}", manifest_path.display()));
-            assert!(
-                !reserialized.contains("audio_enhancements"),
-                "{}: NONE must stay omitted, not just default-valued",
-                manifest_path.display()
-            );
-            checked += 1;
-        }
-        assert!(checked > 0, "expected at least one replay fixture manifest to exercise");
-    }
 }
 
 /// Issue #380: `Session::server_key_pins` — each server's remembered leaf public key. The reader

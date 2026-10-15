@@ -320,7 +320,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   a **no-op** host test build (`cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run`; it reports from cargo's JSON `fresh`
   flag whether the app crate was rebuilt and flags a recompile as UNEXPECTED, the
   `ci/test_build_not_always_dirty.py` hazard); an **edit-rebuild** after appending a comment to a
-  leaf file of each crate (`plx_base`'s `cbuf.rs`, `plx_machine`'s `landgate.rs`, `plx_platform`'s `devcaps.rs`, `plx_gfx`'s `overdraw.rs`, `plx_net`'s `stream_redirect.rs`, `plx_ui`'s `dwell.rs`, `plx_plex`'s `retry.rs`, `plx_telemetry`'s `window.rs`, `plx_data`'s `tape.rs`, `plx_media`'s `units.rs`, `plx_appkit`'s `skip_pill.rs`, `plx_screens`'s `registry/tile_facts.rs`, the application's `coldstart.rs`) and to a hub (`plx_ui`'s `lib.rs`), non-incremental (`CARGO_INCREMENTAL=0`, the
+  leaf file of each crate (`plx_base`'s `cbuf.rs`, `plx_machine`'s `landgate.rs`, `plx_platform`'s `devcaps.rs`, `plx_gfx`'s `overdraw.rs`, `plx_net`'s `stream_redirect.rs`, `plx_ui`'s `dwell.rs`, `plx_plex`'s `retry.rs`, `plx_telemetry`'s `window.rs`, `plx_data`'s `tape.rs`, `plx_media`'s `units.rs`, `plx_appkit`'s `live_banner.rs`, `plx_screens`'s `registry/tile_facts.rs`, the application's `coldstart.rs`) and to a hub (`plx_ui`'s `lib.rs`), non-incremental (`CARGO_INCREMENTAL=0`, the
   default `target`) and incremental (`CARGO_INCREMENTAL=1`, `target-fast`; skipped with a note when
   that tree is absent unless `--cold`); the **unit suite** run on a warm tree, through the same
   `tools/cargo-test-parallel.py` wrapper the Makefile's recipes use (`UNIT_RUN` in `print-bench-config`), with its `test
@@ -830,12 +830,9 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
 - `rust-modules/ui/src/` (workspace crate `plx_ui`) — **the UI, as a shared design system**: `theme.rs` tokens, the retui core
   (`lib.rs` `Painter`/`View`), reusable components (`widgets.rs`/`table.rs`/`label.rs`/`icons.rs`),
   and, since phase 9 (Player was the last), no legacy screens at all — every route mounts an owned
-  screen under `screens/` (`rust-modules/screens/src/`, workspace crate `plx_screens`). The player's drawing/state modules (`appkit/player_hud.rs`,
-  `track_menu.rs`, `info_panel.rs`, `chapters_panel.rs`, `up_next.rs`, `more_menu.rs`,
-  `timing_capsule.rs`, `skip_pill.rs`) and the Sources row model (`appkit/source_list.rs`) live in
-  `rust-modules/appkit/src/` (workspace crate `plx_appkit`), the layer between `ui/` and `screens/` for
-  widgets several screens share — they name application types, so not `ui/`, and the `sibling` gate keeps them out of
-  `screens/`. **`rust-modules/ui/src/CLAUDE.md` is the
+  screen under `screens/` (`rust-modules/screens/src/`, workspace crate `plx_screens`). The player's drawing modules (`appkit/player_hud.rs` — subtitles
+  and the read-out — and `appkit/live_banner.rs`) live in `rust-modules/appkit/src/` (workspace crate
+  `plx_appkit`), the layer between `ui/` and `screens/` — they name application types, so not `ui/`. **`rust-modules/ui/src/CLAUDE.md` is the
   contribution guide — read it before touching UI: use tokens + components, never inline colors,
   never raw font sizes (ALL text in the UI takes its size from the `theme::size` token scale — add
   a documented rung when a new role needs one), never hand-place text.** Full design/status:

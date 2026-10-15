@@ -15,10 +15,6 @@
 // "dead".
 #![allow(dead_code)]
 
-pub mod chapters_panel;
-pub mod held_key; // the key-hold half of hold-to-scrub, shared by the player HUD and the trailer transport
 pub mod live_banner; // the live-TV banner (channel, now/next, progress) and the typed-number read-out
 pub mod player_hud;
-pub mod skip_pill; // the Skip Intro / Skip Credits pill — a `ControlSlot` occupant of the player HUD's control row
-pub mod up_next; // end-of-episode Up Next card + auto-advance countdown
 

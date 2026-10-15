@@ -63,7 +63,7 @@ def defaults():
         "readelf:-l": "  LOAD 0x000000 0x00010000 0x00010000\n",
         "readelf:-n": "Build ID: " + "a" * 40 + "\n",
         "readelf:-d": "Shared library: [libalpha.so]\nShared library: [libbeta.so]\n",
-        "readelf:-d:plxnative-storage": "Shared library: [libgamma.so]\nShared library: [libalpha.so]\n",
+        "readelf:-d:dispatcharrtv-storage": "Shared library: [libgamma.so]\nShared library: [libalpha.so]\n",
         "objdump": "  00: dmb ish\n" * 101,
         "strings": "YOUR_PMS_HOST\n",
     }.items()}
@@ -85,7 +85,7 @@ class ElfGateTests(unittest.TestCase):
         self.script.write_text(source)
         (self.root / "ci/expected-dt-needed.txt").write_text("libalpha.so\nlibbeta.so\n")
         (self.root / "ci/expected-dt-needed-storage.txt").write_text("libalpha.so\nlibgamma.so\n")
-        (self.root / "plxnative-storage").write_text("synthetic helper")
+        (self.root / "dispatcharrtv-storage").write_text("synthetic helper")
         for name in ("readelf", "objdump", "strings"):
             path = self.root / "tools" / name
             path.write_text(FAKE_TOOL)
@@ -201,16 +201,16 @@ class ElfGateTests(unittest.TestCase):
                               ("the main binary's list", "Shared library: [libalpha.so]\nShared library: [libbeta.so]\n")]:
             with self.subTest(label=label):
                 spec = defaults()
-                spec["readelf:-d:plxnative-storage"]["output"] = output
+                spec["readelf:-d:dispatcharrtv-storage"]["output"] = output
                 result = self.run_gate(spec)
                 self.assertNotEqual(result.returncode, 0, "helper drift was allowed: " + result.stdout)
                 self.assertIn("storage helper DT_NEEDED drifted", result.stdout)
 
     def test_storage_helper_must_be_arm_soft_float_v7(self):
         for key, replacement, diagnostic in [
-                ("readelf:-h:plxnative-storage", "Class: ELF32\nMachine: x86-64\nFlags: soft-float\n", "not ARM"),
-                ("readelf:-h:plxnative-storage", "Class: ELF32\nMachine: ARM\nFlags: hard-float\n", "soft-float"),
-                ("readelf:-A:plxnative-storage", "Tag_CPU_arch: v6\n", "not ARMv7")]:
+                ("readelf:-h:dispatcharrtv-storage", "Class: ELF32\nMachine: x86-64\nFlags: soft-float\n", "not ARM"),
+                ("readelf:-h:dispatcharrtv-storage", "Class: ELF32\nMachine: ARM\nFlags: hard-float\n", "soft-float"),
+                ("readelf:-A:dispatcharrtv-storage", "Tag_CPU_arch: v6\n", "not ARMv7")]:
             with self.subTest(key=key, diagnostic=diagnostic):
                 spec = defaults()
                 spec[key] = {"output": replacement}
@@ -219,7 +219,7 @@ class ElfGateTests(unittest.TestCase):
                 self.assertIn(diagnostic, result.stdout)
 
     def test_absent_storage_helper_fails_in_ci_and_is_skipped_elsewhere(self):
-        (self.root / "plxnative-storage").unlink()
+        (self.root / "dispatcharrtv-storage").unlink()
         result = self.run_gate(defaults())
         self.assertNotEqual(result.returncode, 0, result.stdout)
         self.assertIn("storage helper ships in the package", result.stdout)
@@ -228,7 +228,7 @@ class ElfGateTests(unittest.TestCase):
         self.assertIn("SKIP", result.stdout)
 
     def test_storage_helper_path_can_be_named(self):
-        (self.root / "plxnative-storage").unlink()
+        (self.root / "dispatcharrtv-storage").unlink()
         (self.root / "elsewhere").write_text("synthetic helper")
         spec = defaults()
         spec["readelf:-d:elsewhere"] = {"output": "Shared library: [libdelta.so]\n"}

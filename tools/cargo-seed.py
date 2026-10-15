@@ -14,7 +14,7 @@ the path of the checkout. About 40% of a lane's target bytes (0.9 GB host, 0.44 
 
 What makes this safe, in order of importance:
 
-* **The app crate is never in the seed.** Every entry whose name contains `plxnative` (the
+* **The app crate is never in the seed.** Every entry whose name contains `dispatcharrtv` (the
   package, the storage helper, their fingerprints, build-script output, test binaries and their
   `*.rcgu.o` objects) is deleted from the harvested copy, and so is `.lib-artifacts.json`. Cargo
   decides whether a PATH package needs rebuilding by mtime, and its metadata hash is the same in
@@ -35,7 +35,7 @@ What makes this safe, in order of importance:
   applies. A seed with a different key is not restored, and the next lane to finish a build
   replaces it.
 
-The seed lives under `$PLX_BUILD_CACHE/cargo-seed/<kind>/` (default `~/.cache/plxnative`) beside
+The seed lives under `$PLX_BUILD_CACHE/cargo-seed/<kind>/` (default `~/.cache/dispatcharrtv`) beside
 the shared FFmpeg cache, and `tools/build-gc.sh --cache` (30 days) and `--seed` (7 days, also run by `--auto` under disk
 pressure) prune it by age. `du` counts a clone's
 bytes in full, so a lane that was seeded reads as big as one that was not: `df` is the truth.
@@ -64,7 +64,7 @@ import time
 # ConfigSettingsChanged"), so a seed made in one lane recompiles the whole helper tree, std
 # included, in the next. It is also the smallest tree (~0.25 GB, a 13 s compile).
 KINDS = ("target", "target-release")
-APP_MARK = "plxnative"
+APP_MARK = "dispatcharrtv"
 KEY_FILE = ".plx-seed-key"
 USED_FILE = ".last-used"
 CARGO_LOCKS = (".cargo-lock", ".cargo-build-lock", ".cargo-artifact-lock")
@@ -100,7 +100,7 @@ def clone_tree(src, dst):
 
 
 def seeds_root():
-    cache = os.environ.get("PLX_BUILD_CACHE") or os.path.expanduser("~/.cache/plxnative")
+    cache = os.environ.get("PLX_BUILD_CACHE") or os.path.expanduser("~/.cache/dispatcharrtv")
     return os.path.join(cache, "cargo-seed")
 
 
@@ -245,7 +245,7 @@ def local_matcher(names):
 
     Cargo names a package's output `<name>-<hash>` (fingerprint and build dirs), `<crate>-<hash>.*`
     and `lib<crate>-<hash>.*` (deps), with `-` written as `_` in the crate name. The app's own
-    binaries (`plxnative-sim`) carry no package name, hence the standing APP_MARK test. A third-party
+    binaries (`dispatcharrtv-sim`) carry no package name, hence the standing APP_MARK test. A third-party
     crate whose name merely starts with a local one is stripped too: that costs a rebuild, never
     a wrong byte.
     """

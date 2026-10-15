@@ -10,7 +10,7 @@ MAC alike, is
 
     this checkout's file  ->  the main checkout's file  ->  the per-USER file
 
-where the per-user file is `${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/plxnative}/tv-host`
+where the per-user file is `${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dispatcharrtv}/tv-host`
 (`tv-mac`). The environment sits in front of all of that, and each tool keeps the variables it always
 honoured (tv-ssh: PLX_TV_ADDR, TV, TV_HOST; wake-tv: TV_HOST, TV, TV_MAC). Whitespace is stripped and
 an empty file is "absent". `PLX_TV_NO_HOST_FILE=1` (tv-ssh's escape hatch) switches every file off.
@@ -202,21 +202,21 @@ class ResolverTests(Fixture):
         self.assertEqual(self.host(PLX_TV_NO_HOST_FILE="1"), "")
 
     # the location itself
-    def test_dir_default_is_dot_config_plxnative_under_home(self):
+    def test_dir_default_is_dot_config_dispatcharrtv_under_home(self):
         p = self.resolver(self.lane, "dir", PLX_TV_CONFIG_DIR=None)
-        self.assertEqual(p.stdout, str(self.home / ".config" / "plxnative"), p.stderr)
+        self.assertEqual(p.stdout, str(self.home / ".config" / "dispatcharrtv"), p.stderr)
 
     def test_dir_follows_xdg_config_home(self):
         p = self.resolver(self.lane, "dir", PLX_TV_CONFIG_DIR=None,
                           XDG_CONFIG_HOME=str(self.tmp / "xdg"))
-        self.assertEqual(p.stdout, str(self.tmp / "xdg" / "plxnative"), p.stderr)
+        self.assertEqual(p.stdout, str(self.tmp / "xdg" / "dispatcharrtv"), p.stderr)
 
     def test_dir_override_wins_over_xdg(self):
         p = self.resolver(self.lane, "dir", XDG_CONFIG_HOME=str(self.tmp / "xdg"))
         self.assertEqual(p.stdout, str(self.cfg), p.stderr)
 
     def test_files_are_read_from_the_default_location(self):
-        self.put(self.home / ".config" / "plxnative", "tv-host", HOST_USER)
+        self.put(self.home / ".config" / "dispatcharrtv", "tv-host", HOST_USER)
         self.assertEqual(self.host(PLX_TV_CONFIG_DIR=None), HOST_USER)
 
     # set-mac: the one writer
@@ -304,7 +304,7 @@ class TvSshTests(Fixture):
         host, p = self.probe_host()
         self.assertIsNone(host)
         self.assertIn("no TV configured", p.stderr)
-        self.assertIn("plxnative/tv-host", p.stderr)
+        self.assertIn("dispatcharrtv/tv-host", p.stderr)
 
 
 class WakeTvTests(Fixture):

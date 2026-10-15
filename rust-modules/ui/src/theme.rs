@@ -71,7 +71,7 @@ const SAND_100: [f32; 4] = rgb8(0xe9, 0xe6, 0xe0);
 
 // Atmosphere — deliberately dark, warm light for a pre-content route. These are not state colours
 // and never ink a control; together they stand in for an artwork UltraBlur envelope before the
-// catalog has supplied one. The range stays on PlxNative's graphite/amber axis so first-run does
+// catalog has supplied one. The range stays on Dispatcharr TV's graphite/amber axis so first-run does
 // not invent a rainbow identity before any actual artwork exists.
 //
 // **Corrected 2026-09-02.** The first cut of these four stops sat within ~15 8-bit codes of
@@ -91,7 +91,7 @@ const SAND_100: [f32; 4] = rgb8(0xe9, 0xe6, 0xe0);
 // `AmbientWash::keyed` holds a real hero to.
 //
 // The stops are Dispatcharr TV's own (its splash, `pkg/splash.png`: a #060606 ground under a
-// #26c6b2 teal mark), replacing the warm graphite-and-umber light inherited from PlxNative: a
+// #26c6b2 teal mark), replacing the warm graphite-and-umber light inherited from Dispatcharr TV: a
 // teal-lit key corner, a deep-teal fill, a cool slate and a near-black, at the luminances the
 // floors above were measured for.
 const ATMOS_CHARCOAL: [f32; 4] = rgb8(0x12, 0x17, 0x17);
@@ -477,7 +477,7 @@ impl Material {
         }
     }
 
-    /// `/tmp/plxnative-material=<ultrathin|thin|regular|thick|ultrathick>` — the panel's material,
+    /// `/tmp/dispatcharrtv-material=<ultrathin|thin|regular|thick|ultrathick>` — the panel's material,
     /// swept. Absent, [`PANEL_MATERIAL`] stands.
     pub fn parse(s: &str) -> Option<Self> {
         Some(match s.trim().to_ascii_lowercase().as_str() {
@@ -554,7 +554,7 @@ mod material_tests {
         );
     }
 
-    /// Every name the sweep accepts round-trips, so `plxnative-material` cannot silently fall back
+    /// Every name the sweep accepts round-trips, so `dispatcharrtv-material` cannot silently fall back
     /// to the default on a typo it half-recognises.
     #[test]
     fn every_material_parses_from_its_own_name() {
@@ -724,7 +724,7 @@ pub mod underlay {
     /// `1 - DIM_PANEL * (1 - TINT)` = 0.70 for the middle-of-the-frame role. One number for every
     /// role, because the frost on top (`PANEL_MATERIAL`, .85) is what makes the panel read as the
     /// panel material; this only decides how much of the page's hue shows through it, and where.
-    /// `/tmp/plxnative-paneltint=<w>` sweeps it on a devtriggers build.
+    /// `/tmp/dispatcharrtv-paneltint=<w>` sweeps it on a devtriggers build.
     pub const PANEL_TINT: f32 = 0.70;
     /// **The brightest the field may be under a panel**, Rec.709 over display codes — the same
     /// measure and the same number as the page ground's ceiling (`widgets::GROUND_LUMA`), and for
@@ -904,7 +904,7 @@ pub const DANGER_IDLE_TINT: f32 = 0.16;
 /// The colour is a property of the ACTION and is worn while nothing is focused, so the label is
 /// named before the remote reaches it; the FILL is still a property of FOCUS
 /// ([`DANGER`] whole, under [`TEXT_PRIMARY`]). That split is what keeps a destructive control a
-/// PlxNative control rather than a red button borrowed from somewhere else.
+/// Dispatcharr TV control rather than a red button borrowed from somewhere else.
 pub const CONTROL_DANGER_IDLE_FILL: [f32; 4] = mix(CONTROL_IDLE_FILL, DANGER, DANGER_IDLE_TINT);
 /// The label over [`CONTROL_DANGER_IDLE_FILL`] — the danger ink itself. The hue is stated twice on
 /// an idle destructive control (a tinted plate AND a tinted label) because at ten feet the plate
@@ -988,7 +988,7 @@ pub const GLASS_RIM_LIGHT: [f32; 4] = with_a(WHITE, 0.28);
 /// where the ramp flattens into [`GLASS_RIM_LIGHT`] and there is no travel at all — matches the
 /// look slightly better and the number slightly worse; the extra tenth is kept because this is a
 /// television seen from three metres, and it is the case where the ground is BRIGHT that the ramp
-/// was built for. `/tmp/plxnative-rimmax` sweeps it without a rebuild.
+/// was built for. `/tmp/dispatcharrtv-rimmax` sweeps it without a rebuild.
 ///
 /// (`line/face` stays far from the reference at every rung, and that is NOT this constant's to fix:
 /// our face is 50 where theirs is 89, which is the density policy, not the edge.)
@@ -1148,7 +1148,7 @@ pub const HINT_GLASS_BOT: [f32; 4] = TAB_TRACK_TOP;
 /// tab bar's −27% on its own page — i.e. ours is CLOSER to its backdrop than the reference is to
 /// its own, which is the opposite of the story these numbers were first told to support.
 ///
-/// So the constant stays where it was. `/tmp/plxnative-trackmax` sweeps it, and the honest way to
+/// So the constant stays where it was. `/tmp/dispatcharrtv-trackmax` sweeps it, and the honest way to
 /// make this bar lighter is [`super::widgets::TRACK_INK_CONTRAST`] — the 4:1 promise is what puts
 /// the density where it is, and `the_lift_never_spends_the_labels_contrast` marks the boundary: the
 /// guarantee survives a ceiling of .62 and dies at .60.

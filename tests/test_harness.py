@@ -104,7 +104,7 @@ class _Overlay:
 
 class TeardownProcessTable(unittest.TestCase):
     def test_non_utf8_argv_cannot_hide_or_crash_a_run_stream_pid(self):
-        marker = "/tmp/com.magness.dispatcharrtv.debug/plxnative-events.log"
+        marker = "/tmp/com.magness.dispatcharrtv.debug/dispatcharrtv-events.log"
         raw = b"431 ssh " + marker.encode("ascii") + b" \xdflegacy\n"
         fake = mock.Mock(return_value=subprocess.CompletedProcess([], 0, stdout=raw))
         with mock.patch.object(run, "RUN_STREAM_MARK", marker):
@@ -223,8 +223,8 @@ class FpsIdentity(unittest.TestCase):
         self.assertNotIn("needs_shared_server", sources)
         self.assertGreaterEqual(sources["loop_floor"], 50)
         self.assertGreaterEqual(sources["fps_floor"], 50)
-        self.assertTrue(sources["triggers"]["plxnative-firstrun"])
-        self.assertTrue(sources["triggers"]["plxnative-onboardosc"])
+        self.assertTrue(sources["triggers"]["dispatcharrtv-firstrun"])
+        self.assertTrue(sources["triggers"]["dispatcharrtv-onboardosc"])
 
         for name, stage in (("consent-crash", "crash"), ("consent-product", "product")):
             with self.subTest(scene=name):
@@ -233,8 +233,8 @@ class FpsIdentity(unittest.TestCase):
                 self.assertEqual(scene["overlay"], "consent")
                 self.assertGreaterEqual(scene["loop_floor"], 50)
                 self.assertGreaterEqual(scene["fps_floor"], 50)
-                self.assertEqual(scene["triggers"]["plxnative-consent"], stage)
-                self.assertTrue(scene["triggers"]["plxnative-consentosc"])
+                self.assertEqual(scene["triggers"]["dispatcharrtv-consent"], stage)
+                self.assertTrue(scene["triggers"]["dispatcharrtv-consentosc"])
 
     def test_settings_scenes_carry_the_50_fps_contract_and_idle_inverse(self):
         scenes = {s["name"]: s for s in _manifest()["fps_scenes"]}
@@ -249,13 +249,13 @@ class FpsIdentity(unittest.TestCase):
                 self.assertEqual(scene["overlay"], overlay)
                 self.assertGreaterEqual(scene["loop_floor"], 50)
                 self.assertGreaterEqual(scene["fps_floor"], 50)
-                self.assertTrue(scene["triggers"]["plxnative-settingsosc"])
+                self.assertTrue(scene["triggers"]["dispatcharrtv-settingsosc"])
 
         idle = scenes["settings-idle"]
         self.assertEqual(idle["overlay"], "settings")
         self.assertGreaterEqual(idle["loop_floor"], 50)
         self.assertLessEqual(idle["fps_ceiling"], 5)
-        self.assertNotIn("plxnative-settingsosc", idle["triggers"])
+        self.assertNotIn("dispatcharrtv-settingsosc", idle["triggers"])
 
     def test_fps_filter_can_isolate_the_new_screen_without_changing_tiers(self):
         scenes = [
@@ -412,7 +412,7 @@ class ColdOpenGate(unittest.TestCase):
 
     def test_the_gate_does_not_arm_the_frame_drop_detector(self):
         """`coldopen` is unarmed by construction; a scene declaring only this gate must not make
-        the harness arm `plxnative-framedrop`, which would perturb the pacing it did not ask for."""
+        the harness arm `dispatcharrtv-framedrop`, which would perturb the pacing it did not ask for."""
         self.assertIsNone(run.frame_ceiling_threshold({"coldopen_ceiling_ms": 160}))
 
     def test_cold_open_gate_is_measured_not_provisional(self):
@@ -671,7 +671,7 @@ class BenchManifest(unittest.TestCase):
         self.assertGreater(modal["run_secs"], 100 * 2 * 1.5 + modal.get("warmup_s", 5))
         for name in ("push-100", "modal-100"):
             self.assertEqual(scenes[name]["tier"], "ui")
-            self.assertIn("plxnative-framedrop", scenes[name]["triggers"],
+            self.assertIn("dispatcharrtv-framedrop", scenes[name]["triggers"],
                          f"{name}: bench worst_ms reads 0.0 unarmed — see bench_frame_tick's doc")
 
 
@@ -805,7 +805,7 @@ class DeepBenchManifest(unittest.TestCase):
         self.assertEqual(deep["tier"], "ui")
         # depth=100 -> 200 steps * 2 half-periods each; run_secs must clear that plus warmup.
         self.assertGreater(deep["run_secs"], 200 * 2 * 1.4 + deep.get("warmup_s", 5))
-        self.assertIn("plxnative-framedrop", deep["triggers"],
+        self.assertIn("dispatcharrtv-framedrop", deep["triggers"],
                      "deep-100: bench worst_ms reads 0.0 unarmed — see bench_frame_tick's doc")
         self.assertIn("bench_depth_rss_kb", deep)
         self.assertIn("bench_root_rss_kb", deep, "the unwound end state is graded absolutely")
@@ -866,19 +866,19 @@ class LoadManifest(unittest.TestCase):
 
     def test_collection_scenes_resolve_through_the_overlay(self):
         """manifest.json is installation-independent, so the collection scenes may not carry a
-        mock_pms ratingKey: on a real server `plxnative-collection=50001` opens a collection that
+        mock_pms ratingKey: on a real server `dispatcharrtv-collection=50001` opens a collection that
         does not exist and the page's fps_ceiling passes vacuously on its failure read-out."""
         tracked = {s["name"]: s for s in _manifest()["fps_scenes"]}
         for name in ("collection-page", "library-collections"):
             with self.subTest(scene=name):
                 self.assertEqual(tracked[name]["item"], "collection")
-        self.assertEqual(tracked["collection-page"]["triggers"]["plxnative-collection"], "$rk")
+        self.assertEqual(tracked["collection-page"]["triggers"]["dispatcharrtv-collection"], "$rk")
 
         items = self._all_keys()
         items["collection"] = 424242
         scenes = {s["name"]: s for s in self._load(_overlay(items))["fps_scenes"]}
         page = scenes["collection-page"]
-        self.assertIn(("plxnative-collection", "424242"), run.fps_trigger_files(page))
+        self.assertIn(("dispatcharrtv-collection", "424242"), run.fps_trigger_files(page))
         # library-collections declares the key as a requirement only: nothing reads its `$rk`.
         self.assertNotIn("424242", [v for _, v in run.fps_trigger_files(scenes["library-collections"])])
 
@@ -892,8 +892,8 @@ class LoadManifest(unittest.TestCase):
     def test_no_fps_trigger_holds_a_literal_ratingkey(self):
         """A scene that opens one item names it by `item` + `$rk`, never by a number that is true
         on one server only. These are the triggers whose value carries a ratingKey."""
-        takes_rk = ("plxnative-detail", "plxnative-collection", "plxnative-play", "plxnative-navosc",
-                    "plxnative-pushbench", "plxnative-modalbench", "plxnative-deepbench")
+        takes_rk = ("dispatcharrtv-detail", "dispatcharrtv-collection", "dispatcharrtv-play", "dispatcharrtv-navosc",
+                    "dispatcharrtv-pushbench", "dispatcharrtv-modalbench", "dispatcharrtv-deepbench")
         for scene in _manifest()["fps_scenes"]:
             for trigger, value in scene.get("triggers", {}).items():
                 if trigger in takes_rk and value is not True:
@@ -1014,7 +1014,7 @@ class PipelineTier(unittest.TestCase):
         """
         for c in self._pipeline_cases():
             files = run.triggers_for_case(c, url_base="http://192.0.2.10:8020")
-            self.assertEqual(files[0][0], "plxnative-playurl")
+            self.assertEqual(files[0][0], "dispatcharrtv-playurl")
             payload = files[0][1]
             self.assertNotIn("'", payload, f"{c['name']}: would break the single-quoted printf")
             spec = json.loads(payload)
@@ -1026,19 +1026,19 @@ class PipelineTier(unittest.TestCase):
         """The PMS matrix must not inherit an Auto preference from an earlier TV run."""
         files = run.triggers_for_case({"rk": "1234", "operations": [{"op": "play"}]})
         self.assertEqual(files, [
-            ("plxnative-play", "1234"),
-            ("plxnative-quality", "original"),
-            ("plxnative-stats", None),
+            ("dispatcharrtv-play", "1234"),
+            ("dispatcharrtv-quality", "original"),
+            ("dispatcharrtv-stats", None),
             # issue #266 PR4 review: EVERY case forces the persisted audio-enhancement preference
             # too, default "off" -- see test_audio_enhancement_boot_trigger_defaults_off_and_is_overridable.
-            ("plxnative-audioenh", "off"),
+            ("dispatcharrtv-audioenh", "off"),
         ])
 
     def test_an_integration_case_can_explicitly_grade_auto(self):
         files = run.triggers_for_case({
             "rk": "1234", "quality": "auto", "operations": [{"op": "play"}],
         })
-        self.assertEqual(dict(files)["plxnative-quality"], "auto")
+        self.assertEqual(dict(files)["dispatcharrtv-quality"], "auto")
 
     def test_a_declaration_that_was_never_read_fails_rather_than_passing(self):
         """THE false-PASS this tier is most exposed to: the engine's fallthrough arm produces
@@ -1071,7 +1071,7 @@ class PipelineTier(unittest.TestCase):
         self.assertFalse(run.a_server_wire((0, 0), 1, 0)[0])
 
     def test_the_stream_path_assertion_catches_playing_the_wrong_thing(self):
-        """A stale plxnative-play from a by-hand session plays a LIBRARY ITEM through a pipeline
+        """A stale dispatcharrtv-play from a by-hand session plays a LIBRARY ITEM through a pipeline
         case. Everything else would still pass; the opened path is what tells them apart."""
         good = ["stream: host=192.0.2.10 port=8020 path=/pipe_h264_ac3_1080p.mkv"]
         self.assertTrue(run.a_stream_path(good, "pipe_h264_ac3_1080p.mkv")[0])
@@ -1088,7 +1088,7 @@ class PipelineTier(unittest.TestCase):
         self.assertTrue(run.a_stream_path(hls, "pipe_h264_aac_mp4.mp4", hls_entry=True)[0])
         stale = ["stream: 10.0.0.2:53923 path=/library/parts/9/1/file.mkv?X-Plex-Token=x"]
         self.assertFalse(run.a_stream_path(stale, "pipe_h264_aac_mp4.mp4", hls_entry=True)[0],
-                         "a stale plxnative-play library item is what this assertion is FOR")
+                         "a stale dispatcharrtv-play library item is what this assertion is FOR")
 
     def test_the_audio_lane_assertion_reads_the_fed_index(self):
         ln = ["ff: v=#0 codec=h264 codec_id=27 1920x1080 trc=1 pri=1 spc=1 a=#2 dur_ns=60000000000"]
@@ -1166,18 +1166,18 @@ class ResolutionSpike(unittest.TestCase):
         self.assertEqual(c["expect"]["server_opens_exact"], 1)
         self.assertEqual(c["expect"]["server_range_opens_exact"], 0)
         files = dict(run.triggers_for_case(c, url_base="http://192.0.2.10:8020"))
-        self.assertEqual(files["plxnative-gstlog"], c["gst_trace"]["debug"])
-        self.assertEqual(files["plxnative-gstlog"], "lxvideosink:6")
+        self.assertEqual(files["dispatcharrtv-gstlog"], c["gst_trace"]["debug"])
+        self.assertEqual(files["dispatcharrtv-gstlog"], "lxvideosink:6")
 
     def test_apply_triggers_removes_a_stale_trace_before_arming(self):
         saved = run.RUNDIR
         run.RUNDIR = "/tmp/com.magness.dispatcharrtv.debug"
         try:
             with mock.patch.object(run, "ssh") as ssh:
-                run.apply_triggers("192.0.2.20", [("plxnative-gstlog", "GST_EVENT:6")])
+                run.apply_triggers("192.0.2.20", [("dispatcharrtv-gstlog", "GST_EVENT:6")])
             command = ssh.call_args.args[1]
-            self.assertIn("rm -f /tmp/com.magness.dispatcharrtv.debug/plxnative-gst.log", command)
-            self.assertIn("plxnative-gstlog", command)
+            self.assertIn("rm -f /tmp/com.magness.dispatcharrtv.debug/dispatcharrtv-gst.log", command)
+            self.assertIn("dispatcharrtv-gstlog", command)
         finally:
             run.RUNDIR = saved
 
@@ -1440,15 +1440,15 @@ class CompletionCase(unittest.TestCase):
 
     def test_the_replay_trigger_carries_the_number_the_case_grades(self):
         """One statement, not two: `expect.replays` is what the harness writes into
-        `plxnative-replay` AND what `a_replayed` counts, so they cannot drift."""
+        `dispatcharrtv-replay` AND what `a_replayed` counts, so they cannot drift."""
         c = next(c for c in _manifest()["pipeline_cases"] if c["expect"].get("replays"))
         files = dict(run.triggers_for_case(c, url_base="http://192.0.2.10:8020"))
-        self.assertEqual(files.get("plxnative-replay"), str(c["expect"]["replays"]))
+        self.assertEqual(files.get("dispatcharrtv-replay"), str(c["expect"]["replays"]))
         # ...and every other case must NOT arm it, or a one-shot boot silently becomes a loop.
         for other in _manifest()["pipeline_cases"]:
             if other["expect"].get("replays"):
                 continue
-            self.assertNotIn("plxnative-replay",
+            self.assertNotIn("dispatcharrtv-replay",
                              dict(run.triggers_for_case(other, url_base="http://192.0.2.10:8020")),
                              other["name"])
 
@@ -1573,8 +1573,8 @@ class AutoNetworkProfile(unittest.TestCase):
 
     def test_trigger_carries_auto_policy_source_rate_and_same_origin_hls_root(self):
         files = dict(run.triggers_for_case(self._case(), url_base="http://192.0.2.10:8020"))
-        self.assertEqual(files["plxnative-quality"], "auto")
-        spec = json.loads(files["plxnative-playurl"])
+        self.assertEqual(files["dispatcharrtv-quality"], "auto")
+        spec = json.loads(files["dispatcharrtv-playurl"])
         self.assertEqual(spec["auto_source_kbps"], 8000)
         self.assertEqual(spec["auto_hls_base"], "http://192.0.2.10:8020/__abr")
         self.assertEqual(spec["url"], "http://192.0.2.10:8020/pipe_h264_aac_mp4.mp4")
@@ -2152,7 +2152,7 @@ class NetcondRate(unittest.TestCase):
         with open(self.ctl, "w") as f:
             f.write(raw)
 
-    def _pull(self, path="/library/parts/1/file.mkv"):
+    def _pull(self, path="/library/parts/1/file.mkv", on_first_bytes=None):
         netcond.BUCKET.reset()
         c = socket.create_connection(("127.0.0.1", self.port), timeout=30)
         try:
@@ -2163,6 +2163,8 @@ class NetcondRate(unittest.TestCase):
                 b = c.recv(65536)
                 if not b:
                     break
+                if not got and on_first_bytes:
+                    on_first_bytes()
                 got += b
             return time.monotonic() - t0, got
         finally:
@@ -2264,10 +2266,9 @@ class NetcondRate(unittest.TestCase):
         """One scripted run has to cover four CASE1 legs; four launches is not the same experiment,
         because the app's own state differs between them."""
         self._set(f"rate:{self.KBPS / 4:g}")
-        t = threading.Timer(0.1, self._set, args=("pass",))
-        t.start()
-        self.addCleanup(t.cancel)
-        live_s, body = self._pull()
+        # Released when the first throttled bytes arrive, not on a timer: a timer thread that a
+        # loaded host runs late released nothing in time, and the test failed on the scheduler.
+        live_s, body = self._pull(on_first_bytes=lambda: self._set("pass"))
         self.assertEqual(len(body), self.N)
         # A quarter of the rate is four times the floor; releasing it has to land well inside that.
         self.assertLess(live_s, self.FLOOR_S * 4,
@@ -2541,7 +2542,7 @@ class AbrTraceMetrics(unittest.TestCase):
                          "a transcode reload with no switch line is not an audio switch")
 
     def test_audio_enhancement_op_writes_a_named_target_not_a_row(self):
-        """issue #266 PR4 review: `audio_enhancement` reuses `plxnative-menupick` at tab 0, but
+        """issue #266 PR4 review: `audio_enhancement` reuses `dispatcharrtv-menupick` at tab 0, but
         writes a NAMED target (`TrackRow`/`TrackMenuState::row_for_audio_target` resolve it
         against the panel's own row map) rather than a row number derived from the item's track
         count -- the bug this review caught was exactly a hand-derived row going stale against the
@@ -2552,19 +2553,19 @@ class AbrTraceMetrics(unittest.TestCase):
             "operations": [{"op": "play"}, {"op": "audio_enhancement", "which": "normalize_loudness"}],
         }
         files = run.triggers_for_case(case)
-        self.assertIn(("plxnative-menupick", "0,loudness"), files)
+        self.assertIn(("dispatcharrtv-menupick", "0,loudness"), files)
         case["operations"][1] = {"op": "audio_enhancement", "which": "boost_dialog"}
         files = run.triggers_for_case(case)
-        self.assertIn(("plxnative-menupick", "0,boost"), files)
+        self.assertIn(("dispatcharrtv-menupick", "0,boost"), files)
 
     def test_subtitle_op_names_a_track_not_a_row(self):
         """`subtitle_text_srt` once hard-coded row 3, which became the Color row (`menupick: row 3
         already active -- no commit`). A `track` op derives the row in the app from the panel's own
         row map; `row` still passes through verbatim."""
         case = {"rk": "1", "operations": [{"op": "play"}, {"op": "subtitle", "tab": 1, "track": 0}]}
-        self.assertIn(("plxnative-menupick", "1,track:0"), run.triggers_for_case(case))
+        self.assertIn(("dispatcharrtv-menupick", "1,track:0"), run.triggers_for_case(case))
         case["operations"][1] = {"op": "subtitle", "tab": 1, "row": 3}
-        self.assertIn(("plxnative-menupick", "1,3"), run.triggers_for_case(case))
+        self.assertIn(("dispatcharrtv-menupick", "1,3"), run.triggers_for_case(case))
         with open(os.path.join(os.path.dirname(__file__), "manifest.json")) as fh:
             manifest = json.load(fh)
         rows = [op for c in manifest["cases"] for op in c.get("operations", [])
@@ -2576,11 +2577,11 @@ class AbrTraceMetrics(unittest.TestCase):
         `off`), so a case's starting preference never depends on what an earlier case's pick left
         behind; a case opts into a non-off start with `audio_enhancements_boot`."""
         files = run.triggers_for_case({"rk": "1", "operations": [{"op": "play"}]})
-        self.assertIn(("plxnative-audioenh", "off"), files)
+        self.assertIn(("dispatcharrtv-audioenh", "off"), files)
         files = run.triggers_for_case({
             "rk": "1", "audio_enhancements_boot": "loudness", "operations": [{"op": "play"}],
         })
-        self.assertIn(("plxnative-audioenh", "loudness"), files)
+        self.assertIn(("dispatcharrtv-audioenh", "loudness"), files)
 
     def test_audio_enhancement_op_grades_applied_remux_and_ac3(self):
         """A live Normalize Loudness pick that took effect: the server ran the DSP params
@@ -3089,10 +3090,10 @@ class TheQualitySwitchAssertion(unittest.TestCase):
         nothing justified — the app asks for none either."""
         one = dict(run.triggers_for_case(
             {"rk": "1", "operations": [{"op": "quality_switch", "to": "auto"}]}))
-        self.assertEqual(one["plxnative-qualityswitch"], "auto")
+        self.assertEqual(one["dispatcharrtv-qualityswitch"], "auto")
         many = dict(run.triggers_for_case({"rk": "1", "operations": [
             {"op": "quality_switch", "to": ["720p_4_mbps", "auto"], "gap_ms": 40000}]}))
-        self.assertEqual(many["plxnative-qualityswitch"], "gap=40000,720p_4_mbps,auto")
+        self.assertEqual(many["dispatcharrtv-qualityswitch"], "gap=40000,720p_4_mbps,auto")
 
     def test_the_wire_vocabulary_matches_the_app(self):
         """Both sides of a contract that never meets at runtime: the manifest names a rung and the
@@ -3310,15 +3311,15 @@ class AbrTriggers(unittest.TestCase):
         return dict(run.triggers_for_case(case, url_base="http://h:8020"))
 
     def test_a_pin_becomes_a_trigger_and_is_absent_by_default(self):
-        self.assertNotIn("plxnative-abrpin", self._names(dict(self.BASE)))
-        self.assertEqual(self._names({**self.BASE, "abr_pin": 14000})["plxnative-abrpin"], "14000")
+        self.assertNotIn("dispatcharrtv-abrpin", self._names(dict(self.BASE)))
+        self.assertEqual(self._names({**self.BASE, "abr_pin": 14000})["dispatcharrtv-abrpin"], "14000")
 
     def test_the_policy_selector_becomes_a_trigger_and_is_absent_by_default(self):
-        """It must ride the manifest: `apply_triggers` wipes every plxnative-* before each case,
+        """It must ride the manifest: `apply_triggers` wipes every dispatcharrtv-* before each case,
         so a hand-armed A/B selector cannot survive into the case it is meant to switch."""
-        self.assertNotIn("plxnative-abrpolicy", self._names(dict(self.BASE)))
+        self.assertNotIn("dispatcharrtv-abrpolicy", self._names(dict(self.BASE)))
         self.assertEqual(
-            self._names({**self.BASE, "abr_policy": "legacy"})["plxnative-abrpolicy"], "legacy")
+            self._names({**self.BASE, "abr_policy": "legacy"})["dispatcharrtv-abrpolicy"], "legacy")
 
     def test_pause_resume_is_one_authored_trigger_not_two_wall_clock_writes(self):
         case = {
@@ -3326,7 +3327,7 @@ class AbrTriggers(unittest.TestCase):
             "operations": [{"op": "pause_resume", "delay_ms": 25_000, "hold_ms": 6_000}],
         }
         self.assertEqual(
-            self._names(case)["plxnative-autopause"],
+            self._names(case)["dispatcharrtv-autopause"],
             "delay=25000,hold=6000",
         )
 
@@ -4279,7 +4280,7 @@ class AbrSeekSupport(unittest.TestCase):
     def _seek_trigger(self, op):
         case = {"rk": "1", "operations": [{"op": "play"}, op], "expect": {}}
         files = dict((n, v) for n, v in run.triggers_for_case(case))
-        return files["plxnative-autoseek"]
+        return files["dispatcharrtv-autoseek"]
 
     def test_a_plain_seek_still_writes_the_bare_target(self):
         """`delay_ms` is opt-in: every existing case must keep the byte-identical trigger."""
@@ -5200,7 +5201,7 @@ impl PersonOwnerGateFixture {
         in a file dev.rs does not own must fail `tmppath`."""
         r = self._plant(
             "_check_deps_selftest_tmppath_open.rs",
-            'pub fn open_it() {\n    let p = "/tmp/plxnative-selftest";\n'
+            'pub fn open_it() {\n    let p = "/tmp/dispatcharrtv-selftest";\n'
             "    let _ = std::fs::File::open(p);\n}\n",
         )
         out = r.stdout + r.stderr
@@ -5209,14 +5210,14 @@ impl PersonOwnerGateFixture {
         self.assertIn("_check_deps_selftest_tmppath_open.rs", out)
 
     def test_tmppath_gate_exempts_a_log_message_mention(self):
-        """D4's own exemption: a `/tmp/plxnative-` literal that is only message text passed to
+        """D4's own exemption: a `/tmp/dispatcharrtv-` literal that is only message text passed to
         `log`/`crate::eventlog::log`/`log!` must not fail the gate. GREEN: planting one, including a nested
         `format!` the way most real call sites spell it, must leave `tmppath` (and the whole
         script) green."""
         r = self._plant(
             "_check_deps_selftest_tmppath_log.rs",
             'pub fn mention_it(n: u32) {\n    crate::eventlog::log(&format!(\n'
-            '        "selftest: see /tmp/plxnative-selftest ({n})"\n    ));\n}\n',
+            '        "selftest: see /tmp/dispatcharrtv-selftest ({n})"\n    ));\n}\n',
         )
         out = r.stdout + r.stderr
         self.assertEqual(r.returncode, 0, out)
@@ -5442,12 +5443,12 @@ class PosterGateCoverage(unittest.TestCase):
         self.assertEqual(set(scenes), {'settle', 'eviction', 'dive'})
         for scene in scenes.values():
             self.assertGreaterEqual(scene['poster_gate']['moving_fps_floor'], 55)
-            self.assertIn('plxnative-postergate', scene['triggers'])
+            self.assertIn('dispatcharrtv-postergate', scene['triggers'])
             # The app no longer declines a moving card by default; these scenes grade that decline.
-            self.assertEqual(scene['triggers'].get('plxnative-cardspeed'), '120')
+            self.assertEqual(scene['triggers'].get('dispatcharrtv-cardspeed'), '120')
             # Nor is the settled window left unwarmed by default: the at-rest lookahead (3 rows)
             # would answer the settle from art no draw has asked for, which proves nothing.
-            self.assertEqual(scene['triggers'].get('plxnative-lookahead'), '0')
+            self.assertEqual(scene['triggers'].get('dispatcharrtv-lookahead'), '0')
 
     def test_poster_grade_requires_real_work_and_complete_settle(self):
         import poster_gate
@@ -5765,7 +5766,7 @@ class FpsMock(unittest.TestCase):
                 self.assertEqual(s.get("tier", "ui"), "ui", s["name"])
 
     def test_the_press_scenes_drive_a_real_press_and_never_a_plain_ok(self):
-        # home-hold/collection-hold/home-tap/collection-tap (`plxnative-holdbench`): counted bench
+        # home-hold/collection-hold/home-tap/collection-tap (`dispatcharrtv-holdbench`): counted bench
         # scenes graded off `bench: kind=hold` lines, mock-runnable, with the same trigger on
         # a Home card and on the Collection page (a cards::Stack page, mock rk 50002).
         for name, tap in (("home-hold", False), ("collection-hold", False),
@@ -5788,21 +5789,21 @@ class FpsMock(unittest.TestCase):
             self.assertIn("2026-10-08", s["comment"], name)
             if not tap:
                 self.assertIn("#561", s["comment"], name)
-            value = s["triggers"]["plxnative-holdbench"]
+            value = s["triggers"]["dispatcharrtv-holdbench"]
             self.assertEqual(value.endswith(",tap"), tap, name)
             # the press itself is the bench's: no separate press/itemmenu trigger may ride along
-            self.assertNotIn("plxnative-press", s["triggers"], name)
-            self.assertNotIn("plxnative-itemmenu", s["triggers"], name)
+            self.assertNotIn("dispatcharrtv-press", s["triggers"], name)
+            self.assertNotIn("dispatcharrtv-itemmenu", s["triggers"], name)
             # the bench ends on its own `done` line, with room to finish its cycles
             n, period = int(value.split(",")[0]), (350 if tap else 1500)
             self.assertGreater(s["run_secs"] - s["warmup_s"], n * 2 * period / 1000, name)
         collection = self.mf.mock_scene(self.scenes["collection-hold"])
         self.assertEqual(collection["rk"], 50002)
-        self.assertEqual(collection["triggers"]["plxnative-collection"], "$rk")
+        self.assertEqual(collection["triggers"]["dispatcharrtv-collection"], "$rk")
         self.assertEqual(self.mf.mock_server_args(self.scenes["collection-hold"]), ["--movies", "240"])
-        self.assertIn("plxnative-grid", self.scenes["home-hold"]["triggers"])
+        self.assertIn("dispatcharrtv-grid", self.scenes["home-hold"]["triggers"])
         with open(os.path.join(TESTS_DIR, "run.py")) as fh:
-            self.assertIn('"plxnative-holdbench"', fh.read(), "run.py clears the trigger between cases")
+            self.assertIn('"dispatcharrtv-holdbench"', fh.read(), "run.py clears the trigger between cases")
 
     def test_a_hold_bench_cycle_that_pressed_nothing_or_opened_no_menu_fails_the_grade(self):
         scene = {"bench": "hold", "bench_missed_max": 0}
@@ -5842,12 +5843,12 @@ class FpsMock(unittest.TestCase):
         ran = self.mf.mock_scene(page)
         self.assertEqual(ran["rk"], 50002)
         self.assertNotIn("rk", page)
-        self.assertEqual(run.fps_trigger_files(ran), [("plxnative-collection", "50002")])
+        self.assertEqual(run.fps_trigger_files(ran), [("dispatcharrtv-collection", "50002")])
         self.assertEqual(self.mf.mock_server_args(page), ["--movies", "240"])
         search = self.mf.mock_scene(self.scenes["search-type"])
-        self.assertEqual(search["triggers"]["plxnative-search"], "sb")
-        self.assertTrue(search["triggers"]["plxnative-searchosc"])  # the rest is kept
-        self.assertEqual(self.scenes["search-type"]["triggers"]["plxnative-search"], "th")
+        self.assertEqual(search["triggers"]["dispatcharrtv-search"], "sb")
+        self.assertTrue(search["triggers"]["dispatcharrtv-searchosc"])  # the rest is kept
+        self.assertEqual(self.scenes["search-type"]["triggers"]["dispatcharrtv-search"], "th")
         with self.assertRaises(ValueError):
             self.mf.mock_server_args({"name": "x", "mock": {"movies": 1001}})
 
@@ -5872,7 +5873,7 @@ class FpsMock(unittest.TestCase):
                     fn(port, scene, dict(run.fps_trigger_files(scene)))
 
         def collection(port, scene, trig):
-            rk = trig["plxnative-collection"]
+            rk = trig["dispatcharrtv-collection"]
             head = get(port, f"/library/metadata/{rk}")["Metadata"]
             self.assertEqual(head[0]["type"], "collection")
             kids = get(port, f"/library/collections/{rk}/children")["Metadata"]
@@ -5880,7 +5881,7 @@ class FpsMock(unittest.TestCase):
             self.assertTrue(all(k.get("thumb") for k in kids))
 
         def person(port, scene, trig):
-            movie = get(port, f"/library/metadata/{trig['plxnative-detail']}")["Metadata"][0]
+            movie = get(port, f"/library/metadata/{trig['dispatcharrtv-detail']}")["Metadata"][0]
             self.assertEqual(movie["type"], "movie")
             pid = movie["Role"][0]["id"]  # detailsec=1 + detailok opens cast[0]
             titles = get(port, f"/library/people/{pid}/media")["Metadata"]
@@ -5888,13 +5889,13 @@ class FpsMock(unittest.TestCase):
             self.assertGreaterEqual(len(titles), 6)
 
         def search(port, scene, trig):
-            hubs = get(port, f"/hubs/search?query={trig['plxnative-search']}&limit=8")["Hub"]
+            hubs = get(port, f"/hubs/search?query={trig['dispatcharrtv-search']}&limit=8")["Hub"]
             filled = [h for h in hubs if h["size"] > 0]
             self.assertGreaterEqual(len(filled), 4)
             self.assertGreaterEqual(sum(h["size"] for h in filled), 12)
 
         def show(port, scene, trig):
-            rk = trig["plxnative-detail"]
+            rk = trig["dispatcharrtv-detail"]
             self.assertEqual(get(port, f"/library/metadata/{rk}")["Metadata"][0]["type"], "show")
             seasons = get(port, f"/library/metadata/{rk}/children")["Metadata"]
             self.assertGreaterEqual(len(seasons), 2)
@@ -5922,9 +5923,9 @@ class FpsMock(unittest.TestCase):
         self.assertEqual(deep["fps_floor"], grid["fps_floor"])
         self.assertTrue(deep["mock"]["only"])
         self.assertEqual(deep["mock"]["home_hubs"], 170)
-        self.assertNotIn("plxnative-homeosc", deep["triggers"])  # the walk is the stimulus
+        self.assertNotIn("dispatcharrtv-homeosc", deep["triggers"])  # the walk is the stimulus
         # the heartbeat carries frame_n/frame_gt33/... only while the frame-drop detector is armed
-        self.assertIn("plxnative-framedrop", deep["triggers"])
+        self.assertIn("dispatcharrtv-framedrop", deep["triggers"])
         self.assertLessEqual(deep["walk"]["max_rows"], deep["mock"]["home_hubs"])
 
     def test_every_walk_scene_has_run_secs_for_its_whole_walk(self):
@@ -5981,7 +5982,7 @@ class FpsMock(unittest.TestCase):
             sc = self.scenes[name]
             w = sc["walk"]
             self.assertTrue(sc["mock"]["only"] and sc["mock"]["link"], name)
-            self.assertIn("plxnative-focusx", sc["triggers"], name)
+            self.assertIn("dispatcharrtv-focusx", sc["triggers"], name)
             self.assertTrue(self.mf.is_row_walk(w), name)
             plan = self.mf.row_walk_plan(w)
             self.assertEqual(plan, ["down"] * w["row_down"] + [w["key"]] * w["cards"] + [w["back"]] * w["cards"])
@@ -6112,9 +6113,9 @@ class FpsMock(unittest.TestCase):
         self.assertEqual((deep["mock"]["section_hubs"], deep["mock"]["section_hubs_linked"]), (170, 40))
         self.assertEqual(deep["walk"]["landed"], "library")
         self.assertEqual(deep["walk"]["extra_rows"], 6)
-        for t in ("plxnative-library", "plxnative-framedrop", "plxnative-focus"):
+        for t in ("dispatcharrtv-library", "dispatcharrtv-framedrop", "dispatcharrtv-focus"):
             self.assertIn(t, deep["triggers"])
-        self.assertNotIn("plxnative-libosc", deep["triggers"])  # the walk is the stimulus
+        self.assertNotIn("dispatcharrtv-libosc", deep["triggers"])  # the walk is the stimulus
         self.assertEqual(deep["walk"]["min_landed"], 150)  # the cap is gone: 12 is a failure now
         # room for every shelf at its worst: all of them, a second stop per linked one, the extras
         self.assertGreaterEqual(deep["walk"]["max_rows"], 170 + 40 + deep["walk"]["extra_rows"])
@@ -6145,9 +6146,9 @@ class FpsMock(unittest.TestCase):
         self.assertTrue(b["mock"]["only"])
         self.assertEqual(b["mock"]["movies"], 1000)
         self.assertEqual(self.mf.mock_server_args(b), ["--movies", "1000"])
-        for t in ("plxnative-library", "plxnative-framedrop", "plxnative-focus", "plxnative-phcount"):
+        for t in ("dispatcharrtv-library", "dispatcharrtv-framedrop", "dispatcharrtv-focus", "dispatcharrtv-phcount"):
             self.assertIn(t, b["triggers"])
-        self.assertNotIn("plxnative-libosc", b["triggers"])  # the walk is the stimulus
+        self.assertNotIn("dispatcharrtv-libosc", b["triggers"])  # the walk is the stimulus
         # nothing is graded on rates or frame times: it prints, it does not gate
         for k in ("loop_floor", "fps_floor", "fps_ceiling", "worst_ceiling_ms", "stall_ceiling_ms",
                   "upload_per_frame_min", "upload_late_share_max", "upload_frames_min"):
@@ -6449,11 +6450,11 @@ class FpsMock(unittest.TestCase):
     def test_library_landed_reads_the_section_the_scene_seats(self):
         lines = ["libhubs: section 1 landed 3 shelves", "libhubs: section 0 landed 12 shelves",
                  "libhubs: section 1 landed 4 shelves"]
-        movies = {"triggers": {"plxnative-library": True}, "walk": {"landed": "library"}}
-        shows = {"triggers": {"plxnative-library": "1"}, "walk": {"landed": "library"}}
+        movies = {"triggers": {"dispatcharrtv-library": True}, "walk": {"landed": "library"}}
+        shows = {"triggers": {"dispatcharrtv-library": "1"}, "walk": {"landed": "library"}}
         self.assertEqual(self.mf.library_section_index(movies), 0)
         self.assertEqual(self.mf.library_section_index(shows), 1)
-        self.assertEqual(self.mf.library_section_index({"triggers": {"plxnative-library": "0"}}), 0)
+        self.assertEqual(self.mf.library_section_index({"triggers": {"dispatcharrtv-library": "0"}}), 0)
         # not the last matching line (that is the Shows section's 4)
         self.assertEqual(self.mf.landed_library(lines, 0), 12)
         self.assertEqual(self.mf.landed_library(lines, 1), 4)
@@ -6492,7 +6493,7 @@ class FpsMock(unittest.TestCase):
         port = self._free_port()
         with self.mf.MockPms("127.0.0.1", port, ["--home-hubs", "7", "--section-hubs", "9"]):
             token = self.mf.resolve_mock_token(self._config("127.0.0.1", port))
-            self.assertEqual(token, "plxnative-mock-guest")
+            self.assertEqual(token, "dispatcharrtv-mock-guest")
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/hubs", timeout=10) as r:
                 self.assertEqual(len(json.load(r)["MediaContainer"]["Hub"]), 7)
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/hubs/sections/1", timeout=10) as r:

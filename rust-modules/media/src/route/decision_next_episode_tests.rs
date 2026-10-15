@@ -42,7 +42,7 @@ fn a_failed_write_changes_and_reports_nothing() {
     let _restore = Restore(next_episode_mode());
     restore_next_episode_mode(NextEpisodeMode::Countdown);
     // the session file's parent is a regular file, so no write can land
-    let dir = std::env::temp_dir().join(format!("plxnative-next-episode-blocked-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("dispatcharrtv-next-episode-blocked-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("blocker"), b"x").unwrap();

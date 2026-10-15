@@ -1,8 +1,8 @@
-# Help translate PlxNative
+# Help translate Dispatcharr TV
 
-PlxNative's interface is available in English, Spanish, French and Belarusian (official Cyrillic
+Dispatcharr TV's interface is available in English, Spanish, French and Belarusian (official Cyrillic
 orthography). Help improve a translation or contribute another language through a pull request
-at https://github.com/GLinnik21/plx-native.
+at https://github.com/andrewmagness/webos-dispatcharr.
 
 ## Translate a message
 
@@ -61,9 +61,9 @@ the Library's TYPE menu, and the
 collection page's meta line and season marks. When one of these tests fails, shorten
 the wording; do not abbreviate it past readability.
 
-Review the affected screens with the desktop simulator. `PLXNATIVE_LOCALE=es`, `be` or `en`
-selects a language for a simulator launch; `PLXNATIVE_FORMAT_LOCALE=de-DE` exercises separate
-regional formatting. `PLXNATIVE_LOCALE=qps-ploc` expands and accents text to reveal cramped
+Review the affected screens with the desktop simulator. `DISPATCHARRTV_LOCALE=es`, `be` or `en`
+selects a language for a simulator launch; `DISPATCHARRTV_FORMAT_LOCALE=de-DE` exercises separate
+regional formatting. `DISPATCHARRTV_LOCALE=qps-ploc` expands and accents text to reveal cramped
 layouts. These environment overrides do not operate in the shipping TV build.
 
 Open a pull request describing which language and screens changed, and how you checked the
@@ -78,7 +78,7 @@ the wording (the author, or someone they asked). A pull request from a non-nativ
 for a native reviewer before it is merged.
 
 The reviewer does not need to build anything. Send them the catalog files in `locales/<tag>/` and
-screenshots of the affected screens (desktop simulator with `PLXNATIVE_LOCALE=<tag>`, or the TV),
+screenshots of the affected screens (desktop simulator with `DISPATCHARRTV_LOCALE=<tag>`, or the TV),
 so they can see each string in its place: the same words read differently in a button, a menu and
 a sentence. Note any wording they changed and why.
 

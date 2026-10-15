@@ -22,7 +22,7 @@
 # The address comes from, in order: $PLX_TV_ADDR, $TV, $TV_HOST, then tools/tv-config.sh (the one
 # resolver the Makefile and every other tool share): the gitignored `.tv-host` of this checkout, of
 # the main checkout (a linked worktree has none), and finally the per-user `tv-host` under
-# ${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/plxnative}, which is the one to set up once
+# ${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dispatcharrtv}, which is the one to set up once
 # per machine. PLX_TV_NO_HOST_FILE=1 skips all the files. Callers that already hold an address
 # (tests/run.py --tv) may instead pass an explicit `<user>@<address>`; it is honoured and used for
 # the probe.
@@ -81,7 +81,7 @@ for a in "$@"; do
   fi
 done
 [ -n "$host" ] || host="$(configured_host)"
-[ -n "$host" ] || die "no TV configured — put its IP in ~/.config/plxnative/tv-host (or .tv-host), or pass TV=<ip>" 2
+[ -n "$host" ] || die "no TV configured — put its IP in ~/.config/dispatcharrtv/tv-host (or .tv-host), or pass TV=<ip>" 2
 
 # ------------------------------------------------------- expand the placeholders ---
 args=()

@@ -191,7 +191,7 @@ jobs:
       nightly-date: ${{ needs.plan.outputs.date }}
       # The DEVELOPMENT telemetry pair — a nightly is unreleased and untested on a television, so
       # its crash reports and usage events belong in the project's development project
-      # (`plx-native-dev`), not mixed into what a real release reports. build-package.yml's own
+      # (`dispatcharr-tv-dev`), not mixed into what a real release reports. build-package.yml's own
       # build step asserts this pair specifically for `telemetry: development`.
       telemetry: development
       artifact: nightly-assets
@@ -265,7 +265,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          ipk="plxnative-v${LABEL}.ipk"
+          ipk="dispatcharrtv-v${LABEL}.ipk"
           cp raw/com.magness.dispatcharrtv.nightly_*_arm.ipk "dist/$ipk"
           ( cd dist && sha256sum "$ipk" > nightly.sha256 )
           # The package's manifest, with its bare `ipkUrl` pointed at the name the .ipk has on the
@@ -287,7 +287,7 @@ jobs:
           # regardless of which install it is.
           cp raw/ffmpeg-*.tar.xz dist/
           cp raw/build-ffmpeg.sh dist/
-          cp raw/plxnative-source-*.tar.gz* dist/
+          cp raw/dispatcharrtv-source-*.tar.gz* dist/
           echo "ipk=$ipk" >> "$GITHUB_OUTPUT"
         id: stage
       - name: Render release notes
@@ -320,9 +320,9 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$TAG" \
-            "dist/$IPK" dist/nightly.sha256 dist/com.magness.dispatcharrtv.nightly.manifest.json dist/ffmpeg-*.tar.xz dist/build-ffmpeg.sh dist/plxnative-source-*.tar.gz* \
+            "dist/$IPK" dist/nightly.sha256 dist/com.magness.dispatcharrtv.nightly.manifest.json dist/ffmpeg-*.tar.xz dist/build-ffmpeg.sh dist/dispatcharrtv-source-*.tar.gz* \
             --target "$SHA" \
-            --title "PlxNative $LABEL" \
+            --title "Dispatcharr TV $LABEL" \
             --prerelease \
             --latest=false \
             --notes-file "$RUNNER_TEMP/notes.md"

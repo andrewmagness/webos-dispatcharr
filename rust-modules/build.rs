@@ -52,7 +52,7 @@ fn main() {
 /// package, so the published number has to stay exactly `X.Y.Z`. But a release commit leaves the
 /// tree AT the version it just published, so every developer build after it reported that number
 /// as its own — to `X-Plex-Version` on the account's authorized-devices list, to Sentry as the
-/// release `plxnative@X.Y.Z`, to PostHog as `app_version`, and on the diagnostics panel that is
+/// release `dispatcharrtv@X.Y.Z`, to PostHog as `app_version`, and on the diagnostics panel that is
 /// meant to be photographed into a bug report. A crash from somebody's working tree landed on the
 /// shipped release's tally and nothing downstream could separate the two.
 ///

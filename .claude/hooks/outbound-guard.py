@@ -13,7 +13,7 @@ friend's, not the maintainer's, and they were not a party to any of it.
 
 That is the shape this guards: not malice and not carelessness, but an agent being helpful with a
 value it can read. A memory file is not in the loop at the moment a PR body is composed; a
-PreToolUse hook is. github.com/GLinnik21/plx-native is PUBLIC.
+PreToolUse hook is. github.com/andrewmagness/webos-dispatcharr is PUBLIC.
 
 WHAT IT COSTS. Classification is pure string work over the command line, and nothing is opened —
 not the gitignored files, not even the repo root — unless a segment is first graded outbound, so
@@ -83,7 +83,7 @@ WHAT IT MATCHES. Two halves, and they fail in opposite directions on purpose.
 
 (a) LITERAL VALUES, read at the moment the hook runs out of the gitignored files that hold them —
     `.tv-host` (the dev television's address), `.tv-mac` (its Wake-on-LAN MAC) — and their per-user
-    twins `tv-host`/`tv-mac` under `${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/plxnative}`,
+    twins `tv-host`/`tv-mac` under `${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dispatcharrtv}`,
     which tools/tv-config.sh reads so that every worktree shares one copy — `src/config.local.h`
     (`PMS_HOST`/`PMS_TOKEN`, the real Plex owner token), `tests/manifest.local.json` (PMS host, the
     test user's plex.tv id, this library's ratingKeys, and the shared_server block when there is
@@ -214,7 +214,7 @@ PRIVATE_FILES = (
     "pkg/auth.json",
     # The Lab Diagnostics session (`docs/lab-diagnostics.md`): a bearer secret, a certificate pin
     # and an endpoint that is the developer's own static address. Written by
-    # `tools/plxnative-lab start`, staged into a `make LAB=1` package, and gitignored — the exact
+    # `tools/dispatcharrtv-lab start`, staged into a `make LAB=1` package, and gitignored — the exact
     # shape of thing this hook exists to keep out of a PR body.
     "pkg/lab.json",
     # The telemetry endpoints and credentials (`docs/telemetry.md` when it exists). The DSN's public
@@ -229,10 +229,10 @@ PRIVATE_FILES = (
 )
 
 # The per-USER copies of `.tv-host` / `.tv-mac` (tools/tv-config.sh): one set of files per machine
-# instead of one per checkout, under ${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/plxnative}.
+# instead of one per checkout, under ${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dispatcharrtv}.
 # They sit OUTSIDE every checkout, so they cannot be named relative to `root` like PRIVATE_FILES;
 # `private_paths` adds them. Same values, same rule: the address and MAC are the maintainer's home
-# network, and `cat ~/.config/plxnative/tv-host` must be as refused in a payload as `cat .tv-host`.
+# network, and `cat ~/.config/dispatcharrtv/tv-host` must be as refused in a payload as `cat .tv-host`.
 USER_TV_FILES = ("tv-host", "tv-mac")
 
 # The Dispatcharr test server (`~/.config/dispatcharr-tv/test-server`): three lines — the server's
@@ -245,7 +245,7 @@ DISPATCHARR_TEST_FILE = "test-server"
 # recording taken against a real server carries the household's every keypress and every server
 # answer. Matched by path COMPONENT wherever the directory sits (the runtime root on the set, a
 # fetched copy under /tmp, a checkout).
-PRIVATE_DIRS = ("plxnative-recordings",)
+PRIVATE_DIRS = ("dispatcharrtv-recordings",)
 
 # The recording envelope's grammar (`ui/rec.rs`): a payload that carries it is a recording
 # leaving the machine, whatever it is called. The ONE exception the hook computes itself: a file
@@ -317,9 +317,9 @@ def user_config_dir():
         return d
     x = os.environ.get("XDG_CONFIG_HOME")
     if x:
-        return os.path.join(x, "plxnative")
+        return os.path.join(x, "dispatcharrtv")
     h = os.environ.get("HOME")
-    return os.path.join(h, ".config", "plxnative") if h else ""
+    return os.path.join(h, ".config", "dispatcharrtv") if h else ""
 
 
 def dispatcharr_config_dir():
@@ -337,12 +337,12 @@ def dispatcharr_config_dir():
 
 def private_paths(root):
     """[(label, absolute path)] of every file that holds a private value: the gitignored ones under
-    `root`, then the per-user TV files (labelled `plxnative/<name>`, which is how they read in a
+    `root`, then the per-user TV files (labelled `dispatcharrtv/<name>`, which is how they read in a
     refusal)."""
     out = [(rel, os.path.join(root, rel)) for rel in PRIVATE_FILES]
     d = user_config_dir()
     if d:
-        out += [("plxnative/" + n + " (the per-user TV config)", os.path.join(d, n))
+        out += [("dispatcharrtv/" + n + " (the per-user TV config)", os.path.join(d, n))
                 for n in USER_TV_FILES]
     d = dispatcharr_config_dir()
     if d:
@@ -1030,7 +1030,7 @@ def named_private_paths(seg, root, cwd):
                 seen.add(rel)
                 hits.append((rel, how))
             if under_private_dir(t) and ("<recording>", how) not in hits:
-                hits.append(("<recording> (a plxnative-recordings/ directory: a recording never leaves "
+                hits.append(("<recording> (a dispatcharrtv-recordings/ directory: a recording never leaves "
                              "this machine)", how))
             elif os.path.isfile(rp) and under_fixture_dir(rp, root):
                 try:
@@ -1188,7 +1188,7 @@ def main():
     lines.append("  (the value itself is not printed — putting it in this transcript is the same "
                  "leak by a shorter route)")
     sys.stderr.write("\n".join(lines) + "\n\n" + (
-        "github.com/GLinnik21/plx-native is PUBLIC. On 2026-08-14 four PR bodies (#28-31) carried a\n"
+        "github.com/andrewmagness/webos-dispatcharr is PUBLIC. On 2026-08-14 four PR bodies (#28-31) carried a\n"
         "third party's Plex server address, port, machineIdentifier and handle. All four were\n"
         "redacted, but GitHub keeps PR-body edit history, so those values are permanently public —\n"
         "and they were the FRIEND's, not this project's to publish.\n"
@@ -1200,7 +1200,7 @@ def main():
         "and tests/manifest.local.json.example uses `<pms-host>`, `<tv-host>`, `<ratingKey>`.\n"
         "\n"
         "If the reader genuinely needs the real value, name the gitignored FILE it comes from\n"
-        "(.tv-host, ~/.config/plxnative/tv-host, src/config.local.h, tests/manifest.local.json) and let\n"
+        "(.tv-host, ~/.config/dispatcharrtv/tv-host, src/config.local.h, tests/manifest.local.json) and let\n"
         "them read their own copy.\n"))
     return 2
 

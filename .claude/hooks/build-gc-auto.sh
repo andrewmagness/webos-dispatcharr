@@ -51,11 +51,11 @@ script="$main/tools/build-gc.sh"
 if [ -n "${PLX_GC_LOG-}" ]; then
   log=$PLX_GC_LOG
 elif [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
-  log="$HOME/Library/Logs/plxnative-build-gc.log"
+  log="$HOME/Library/Logs/dispatcharrtv-build-gc.log"
 elif [ -n "${XDG_STATE_HOME-}" ]; then
-  log="$XDG_STATE_HOME/plxnative/build-gc.log"
+  log="$XDG_STATE_HOME/dispatcharrtv/build-gc.log"
 else
-  log="$HOME/.cache/plxnative/build-gc.log"
+  log="$HOME/.cache/dispatcharrtv/build-gc.log"
 fi
 mkdir -p "$(dirname "$log")" 2>/dev/null || true
 

@@ -42,7 +42,7 @@ fn a_failed_write_changes_and_reports_nothing() {
     let _restore = Restore(skip_interval());
     restore_skip_interval(SkipInterval::Seconds10);
     // the session file's parent is a regular file, so no write can land
-    let dir = std::env::temp_dir().join(format!("plxnative-skip-interval-blocked-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("dispatcharrtv-skip-interval-blocked-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("blocker"), b"x").unwrap();

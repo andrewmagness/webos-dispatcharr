@@ -935,7 +935,7 @@ impl TrackMenuState {
         }
     }
 
-    /// Focus an ABSOLUTE table row — the /tmp/plxnative-menupick trigger's contract ("row N"), the
+    /// Focus an ABSOLUTE table row — the /tmp/dispatcharrtv-menupick trigger's contract ("row N"), the
     /// one dev-only entry that speaks positions (the named targets below do not). The interactive
     /// path always moves relatively; this exists because the initial focus is the ACTIVE row
     /// (derived from playback state), so a relative walk from it would land elsewhere.
@@ -953,7 +953,7 @@ impl TrackMenuState {
     }
 
     /// Resolve a NAMED Audio-tab target (`"boost"`/`"loudness"`) to its absolute table row, for
-    /// the `/tmp/plxnative-menupick` trigger's named form — an alternative to a row number hand-
+    /// the `/tmp/dispatcharrtv-menupick` trigger's named form — an alternative to a row number hand-
     /// derived from the item's track count, which is exactly the issue #266 PR4 bug: this harness
     /// once hardcoded the Normalize Loudness row from a WRONG assumed track count. Reading it back
     /// through the form, the same identities [`Self::on_ok`] dispatches on, means the name
@@ -968,7 +968,7 @@ impl TrackMenuState {
         self.form.index_of(&target).map(|i| i as c_int)
     }
 
-    /// Resolve a NAMED Subtitles-tab target to a TRACK, for the `/tmp/plxnative-menupick` trigger:
+    /// Resolve a NAMED Subtitles-tab target to a TRACK, for the `/tmp/dispatcharrtv-menupick` trigger:
     /// `"track:N"` is the N-th (0-based) track in PAGE ORDER — the root's track rows first, then the
     /// Other languages page A-Z with a multi-track language expanded into its own ranked page —
     /// never Off, Timing or Style. It answers the track's index in the item's list, not a table
@@ -3254,7 +3254,7 @@ mod enhancement_menu_tests {
         teardown(&ps);
     }
 
-    /// `TrackMenuState::row_for_audio_target` is the `/tmp/plxnative-menupick` named-target
+    /// `TrackMenuState::row_for_audio_target` is the `/tmp/dispatcharrtv-menupick` named-target
     /// resolver: `"boost"`/`"loudness"` map to the two toggle rows AFTER the one track, and any
     /// other name is `None` rather than a guess — the same "unknown name, no commit" contract
     /// `menupick_arm` logs on.

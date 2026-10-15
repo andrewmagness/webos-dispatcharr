@@ -14,7 +14,7 @@ Preview the generated half against a previous release at any time:
 
 # Release audit — vX.Y.Z
 
-The evidence behind [the vX.Y.Z release note](https://github.com/GLinnik21/plx-native/blob/main/docs/release-notes/vX.Y.Z.md). Written for a webosbrew reviewer, a contributor auditing an old release, and us in a year. The section at the bottom is generated from the artifact that was published; everything above it was written by a person before the release ran.
+The evidence behind [the vX.Y.Z release note](https://github.com/andrewmagness/webos-dispatcharr/blob/main/docs/release-notes/vX.Y.Z.md). Written for a webosbrew reviewer, a contributor auditing an old release, and us in a year. The section at the bottom is generated from the artifact that was published; everything above it was written by a person before the release ran.
 
 ## Device test evidence
 
@@ -51,7 +51,7 @@ The evidence behind [the vX.Y.Z release note](https://github.com/GLinnik21/plx-n
 
 | | |
 |---|---|
-| flavour | `com.beb.plxnative` (stable) — the id users install; `FLAVOR: stable` is pinned in the release workflow's build job |
+| flavour | `com.beb.dispatcharrtv` (stable) — the id users install; `FLAVOR: stable` is pinned in the release workflow's build job |
 | cargo features | `RELEASE=1`, which drops `devtools` and `devtriggers` |
 | built by | GitHub Actions, from the tag, at a path identical on every runner |
 | toolchain | webOS NDK <version if it moved>, Rust nightly pinned by date in the `RUST_NIGHTLY` repository variable |

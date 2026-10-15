@@ -29,7 +29,7 @@ import urllib.parse
 import urllib.request
 
 
-MACHINE_ID = "plxnative-image-cache-stress-v1"
+MACHINE_ID = "dispatcharrtv-image-cache-stress-v1"
 THUMB = re.compile(r"^/library/metadata/([1-9][0-9]*)/thumb/1$")
 CACHE = re.compile(r"\bimgcache: ((?:[a-z_]+=[0-9]+ ?)+)")
 FPS = re.compile(r"\bloop=(\d+) route=library\b.*?\bfps=(\d+)")
@@ -483,7 +483,7 @@ JPEG = base64.b64decode(
 
 
 def image_jpeg(number):
-    comment = f"PlxNative cache stress tile {number:05d}".encode()
+    comment = f"Dispatcharr TV cache stress tile {number:05d}".encode()
     return JPEG[:2] + b"\xff\xfe" + struct.pack(">H", len(comment) + 2) + comment + JPEG[2:]
 
 

@@ -73,7 +73,7 @@ pub struct CurlVersionInfo {
 // one-symbol-per-wrapper assumption.
 //
 // **The third name is macOS's, and it is what makes the desktop build able to SIGN IN.** The host
-// simulator and the `PlxNative.app` bundle run this same module, and on a Mac the two ELF SONAMEs
+// simulator and the `DispatcharrTV.app` bundle run this same module, and on a Mac the two ELF SONAMEs
 // simply do not open — which is why signing in "did not work off-device" and was written up as an
 // unfixable property of the simulator. It was one missing candidate: macOS ships libcurl in the
 // dyld shared cache and `dlopen("libcurl.4.dylib")` resolves it with no install, no Homebrew and
@@ -944,7 +944,7 @@ mod loopback_pms {
         let mut ca_params = CertificateParams::new(Vec::<String>::new()).expect("ca params");
         // Distinct subjects: rcgen defaults both to the same CN, which makes OpenSSL read the leaf
         // as self-signed ("error 18") and refuse to chain it to the CA.
-        ca_params.distinguished_name.push(rcgen::DnType::CommonName, "PlxNative test CA");
+        ca_params.distinguished_name.push(rcgen::DnType::CommonName, "Dispatcharr TV test CA");
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
         let ca = ca_params.self_signed(&ca_key).expect("ca cert");
@@ -990,7 +990,7 @@ mod loopback_pms {
     impl TestCaGuard {
         pub fn install(pem: &str, tag: &str) -> TestCaGuard {
             let path = std::env::temp_dir().join(format!(
-                "plxnative-test-ca-{tag}-{}-{:?}.pem",
+                "dispatcharrtv-test-ca-{tag}-{}-{:?}.pem",
                 std::process::id(),
                 std::thread::current().id()
             ));
@@ -1524,7 +1524,7 @@ fn request_tls_evidence(
         .map(CString::new)
         .transpose()
         .map_err(|_| RequestError::Transport)?;
-    // The offline reproduction: with `/tmp/plxnative-nowan` armed, a name reaches the wire only
+    // The offline reproduction: with `/tmp/dispatcharrtv-nowan` armed, a name reaches the wire only
     // with a pin. This is the ONE place every easy request passes (`request_result` enters here
     // directly), which is why the gate is here and not on `request_tls`.
     if resolve.is_none() && refuse_name(origin::url_host(url), t.connect_s) {
@@ -2228,7 +2228,7 @@ pub fn https_get_public(url: &str) -> Option<Resp> {
 }
 
 /// The `nowan` gate shared by the three resolver doors ([`request_tls_result`],
-/// [`crate::curlio`] and [`crate::stream`]): `true` when `/tmp/plxnative-nowan` is armed and
+/// [`crate::curlio`] and [`crate::stream`]): `true` when `/tmp/dispatcharrtv-nowan` is armed and
 /// `host` is a NAME rather than a literal, i.e. when a dead resolver would have refused it. The
 /// `slow` variant first spends `connect_s`, the budget a worker would have lost waiting on that
 /// resolver. `false` without the trigger, and at compile time without `devtriggers`.
@@ -3285,7 +3285,7 @@ pub mod keypin {
         impl Guard {
             pub fn install(pem: &str, tag: &str) -> Guard {
                 let path = std::env::temp_dir().join(format!(
-                    "plxnative-test-roots-{tag}-{}-{:?}.pem",
+                    "dispatcharrtv-test-roots-{tag}-{}-{:?}.pem",
                     std::process::id(),
                     std::thread::current().id()
                 ));

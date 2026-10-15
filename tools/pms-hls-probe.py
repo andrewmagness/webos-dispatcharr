@@ -30,7 +30,7 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[1]
 OVERLAY = ROOT / "tests" / "manifest.local.json"
 CONFIG = ROOT / "src" / "config.local.h"
-CID = "plxnative-hls-probe"
+CID = "dispatcharrtv-hls-probe"
 PROFILE = (
     "add-transcode-target(type=videoProfile&context=streaming&protocol=hls"
     "&container=mpegts&videoCodec=h264&audioCodec=aac)"
@@ -114,7 +114,7 @@ def _validate_session(value: str) -> str:
 
 
 def _fresh_session(label: str) -> str:
-    return f"plxnative-probe-{label}-{uuid.uuid4().hex}"
+    return f"dispatcharrtv-probe-{label}-{uuid.uuid4().hex}"
 
 
 def _session_plan(mode: str, legacy=None, canonical=None, header=None, factory=_fresh_session):
@@ -339,7 +339,7 @@ def _write_artifact(
 
 def _prepare_output(path: Optional[Path]) -> Path:
     if path is None:
-        resolved = Path(tempfile.mkdtemp(prefix="plxnative-hls-probe-"))
+        resolved = Path(tempfile.mkdtemp(prefix="dispatcharrtv-hls-probe-"))
     else:
         resolved = path.expanduser().resolve()
         if resolved == ROOT or ROOT in resolved.parents:
@@ -370,11 +370,11 @@ def _request_headers(
         "Accept": accept,
         "X-Plex-Token": token,
         "X-Plex-Client-Identifier": client_id,
-        "X-Plex-Product": "PlxNative ABR Probe",
+        "X-Plex-Product": "Dispatcharr TV ABR Probe",
         "X-Plex-Version": "1",
         "X-Plex-Platform": "webOS",
         "X-Plex-Device": "TV",
-        "X-Plex-Model": "PlxNative",
+        "X-Plex-Model": "Dispatcharr TV",
         "X-Plex-Client-Profile-Name": "Generic",
         "X-Plex-Client-Profile-Extra": PROFILE,
     }
@@ -1121,7 +1121,7 @@ def main():
             legacy=args.legacy_session_id,
             canonical=args.canonical_session_id,
             header=args.header_session_id,
-            factory=lambda label: f"plxnative-probe-{label}-validation",
+            factory=lambda label: f"dispatcharrtv-probe-{label}-validation",
         )
     except ValueError as error:
         parser.error(str(error))

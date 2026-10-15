@@ -1,4 +1,4 @@
-//! Every dev-trigger ARM — the code that reads `/tmp/plxnative-*` through [`plx_base::devtrig::flag`] /
+//! Every dev-trigger ARM — the code that reads `/tmp/dispatcharrtv-*` through [`plx_base::devtrig::flag`] /
 //! [`plx_base::devtrig::read`] / [`plx_base::devtrig::latched_flag!`] and reacts to it — gathered on one file
 //! (UI restructure spec v4 §3.3 step 2 / §11). [`Scenarios`] is the ONE struct, owned by `App` as
 //! `app.scenarios`, that gathers every arm's own retry counter, oscillator phase and boot-time
@@ -24,7 +24,7 @@ pub(crate) mod toast_probe;
 /// The dev triggers read ONCE at boot and consulted by the loop after (each is documented where
 /// it is READ, below).
 pub(crate) struct DevFlags {
-    /// `plxnative-nobudget`: read at boot, applied to the one `Budget` at boot, and kept here so
+    /// `dispatcharrtv-nobudget`: read at boot, applied to the one `Budget` at boot, and kept here so
     /// a log reader can tell an A leg from a B leg by the flags the boot recorded.
     pub(crate) nobudget: bool,
 }
@@ -49,16 +49,16 @@ pub(crate) struct Scenarios {
     pub(crate) quality_playing_since: Option<u32>,
     pub(crate) menu_tried: bool,
     pub(crate) menupick_tried: bool,
-    /// dev: the row `/tmp/plxnative-menupick` still owes the track menu, as its RAW second field
+    /// dev: the row `/tmp/dispatcharrtv-menupick` still owes the track menu, as its RAW second field
     /// (an absolute row number, or a named Audio-tab target such as `"boost"`/`"loudness"` — see
     /// `menupick_arm`'s doc): the panel opens and is picked on separate frames, so the pick is
     /// carried here until the surface it names exists.
     pub(crate) menupick_target: Option<String>,
-    /// `/tmp/plxnative-subtiming` — see [`subtiming_arm`] and [`Subtiming`].
+    /// `/tmp/dispatcharrtv-subtiming` — see [`subtiming_arm`] and [`Subtiming`].
     pub(crate) subtiming: Subtiming,
-    /// `/tmp/plxnative-submenuosc` — see [`submenuosc_arm`] and [`SubmenuOsc`].
+    /// `/tmp/dispatcharrtv-submenuosc` — see [`submenuosc_arm`] and [`SubmenuOsc`].
     pub(crate) submenu_osc: SubmenuOsc,
-    /// `/tmp/plxnative-moreosc` — see [`moreosc_arm`]; the same state as `submenu_osc`.
+    /// `/tmp/dispatcharrtv-moreosc` — see [`moreosc_arm`]; the same state as `submenu_osc`.
     pub(crate) more_osc: SubmenuOsc,
     pub(crate) pause_tried: bool,
     /// An armed Pause edge: (due at, hold ms, the media position it also waits for).
@@ -66,7 +66,7 @@ pub(crate) struct Scenarios {
     pub(crate) pause_resume_at: Option<u32>,
     /// The boot-time trigger flags the loop consults every frame after.
     pub(crate) dev: DevFlags,
-    /// The screenshot pipeline's arms (`plxnative-clockstop`) — see [`screenshot`].
+    /// The screenshot pipeline's arms (`dispatcharrtv-clockstop`) — see [`screenshot`].
     pub(crate) shots: screenshot::ScreenshotArms,
 }
 
@@ -78,7 +78,7 @@ impl Default for DevFlags {
 // pre-SDL
 // =================================================================================================
 
-/// `/tmp/plxnative-stats` — force the Stats-for-nerds overlay on, before SDL or a screen exists,
+/// `/tmp/dispatcharrtv-stats` — force the Stats-for-nerds overlay on, before SDL or a screen exists,
 /// so a playback test photographs the same ABR/pipeline evidence on every automated run rather
 /// than depending on a previous manual toggle surviving into this session.
 pub(crate) fn pre_boot() {
@@ -92,14 +92,14 @@ pub(crate) fn pre_boot() {
 // order the reads always ran in.
 // =================================================================================================
 
-/// `/tmp/plxnative-novsync` — uncap the swap interval so `fps=` reports the true GPU render rate.
+/// `/tmp/dispatcharrtv-novsync` — uncap the swap interval so `fps=` reports the true GPU render rate.
 pub(crate) fn novsync_armed() -> bool {
     plx_base::devtrig::flag("novsync")
 }
 
 plx_base::devtrig::latched_flag! { pub(crate) fn imagecache_stats_armed = "imagecache-stats"; }
 plx_base::devtrig::latched_flag! {
-    /// `/tmp/plxnative-imgtrace` — per-image poster timeline and every picture-lost event
+    /// `/tmp/dispatcharrtv-imgtrace` — per-image poster timeline and every picture-lost event
     /// (`app/adapters/poster/trace.rs`). Absent in shipping builds.
     pub(crate) fn imgtrace_armed = "imgtrace";
 }
@@ -108,60 +108,60 @@ plx_base::devtrig::latched_flag! {
     pub(crate) fn imagecache_bypass_armed = "imagecache-bypass";
 }
 
-/// `/tmp/plxnative-stillclock=<ms>` — see [`screenshot::arm_stillclock`].
+/// `/tmp/dispatcharrtv-stillclock=<ms>` — see [`screenshot::arm_stillclock`].
 pub(crate) fn arm_stillclock() {
     screenshot::arm_stillclock();
 }
 
-/// `/tmp/plxnative-anim` — the animation-diagnostic overlay (off by default).
+/// `/tmp/dispatcharrtv-anim` — the animation-diagnostic overlay (off by default).
 pub(crate) fn arm_anim() {
     if plx_base::devtrig::flag("anim") {
         plx_ui::anim::set_enabled(true);
     }
 }
 
-/// `/tmp/plxnative-glassload` — the backdrop-glass LOAD DIAL.
+/// `/tmp/dispatcharrtv-glassload` — the backdrop-glass LOAD DIAL.
 pub(crate) fn arm_glassload(glass: &mut plx_ui::frame::glass::GlassPlan) {
     if let Some(v) = plx_base::devtrig::read("glassload") {
         glass.configure_dial(&v);
     }
 }
 
-/// `/tmp/plxnative-navblur` — the blurred-route-transition prototype.
+/// `/tmp/dispatcharrtv-navblur` — the blurred-route-transition prototype.
 pub(crate) fn arm_navblur(glass: &mut plx_ui::frame::glass::GlassPlan) {
     if let Some(v) = plx_base::devtrig::read("navblur") {
         glass.configure_navblur(&v);
     }
 }
 
-/// `/tmp/plxnative-overdraw` — the CPU-side per-draw-class overdraw ledger.
+/// `/tmp/dispatcharrtv-overdraw` — the CPU-side per-draw-class overdraw ledger.
 pub(crate) fn arm_overdraw() {
     if plx_base::devtrig::flag("overdraw") {
         plx_gfx::overdraw::set_ledger(true);
     }
 }
 
-/// `/tmp/plxnative-drawmask=<classes>` — refuse every draw of the named classes.
+/// `/tmp/dispatcharrtv-drawmask=<classes>` — refuse every draw of the named classes.
 pub(crate) fn arm_drawmask() {
     if let Some(spec) = plx_base::devtrig::read("drawmask") {
         plx_gfx::overdraw::set_mask(&spec);
     }
 }
 
-/// `/tmp/plxnative-profile` / `/tmp/plxnative-hwcnt` — the two GPU-time profilers. Both present
+/// `/tmp/dispatcharrtv-profile` / `/tmp/dispatcharrtv-hwcnt` — the two GPU-time profilers. Both present
 /// is refused; either alone arms its mode.
 ///
 /// Gated on `devtriggers` at the item level rather than left to `devtrig::read` folding to `None`:
 /// `devtrig::read` already makes this whole function inert in a release build, but the disabled-both
 /// diagnostic line below spells out both trigger names in full, and a compiled-but-unreachable
 /// function still carries its own string literals into `--no-default-features` bytes. Compiling
-/// the function out entirely is what actually keeps `plxnative-profile`/`plxnative-hwcnt` out of
+/// the function out entirely is what actually keeps `dispatcharrtv-profile`/`dispatcharrtv-hwcnt` out of
 /// the binary `ci/check-package.py`'s dev-trigger-catalog check inspects.
 #[cfg(feature = "devtriggers")]
 pub(crate) fn arm_profile_hwcnt() {
     match (plx_base::devtrig::read("profile"), plx_base::devtrig::read("hwcnt")) {
         (Some(_), Some(_)) => {
-            plx_base::eventlog::log("PROFILE disabled: remove either /tmp/plxnative-profile or /tmp/plxnative-hwcnt");
+            plx_base::eventlog::log("PROFILE disabled: remove either /tmp/dispatcharrtv-profile or /tmp/dispatcharrtv-hwcnt");
         }
         (Some(filter), None) => plx_ui::profile::set_enabled(&filter),
         (None, Some(filter)) => plx_ui::profile::set_hwcnt_enabled(&filter),
@@ -171,23 +171,23 @@ pub(crate) fn arm_profile_hwcnt() {
 #[cfg(not(feature = "devtriggers"))]
 pub(crate) fn arm_profile_hwcnt() {}
 
-/// `/tmp/plxnative-cpuprof` — the render thread's own per-phase CPU clock.
+/// `/tmp/dispatcharrtv-cpuprof` — the render thread's own per-phase CPU clock.
 pub(crate) fn arm_cpuprof() {
     if plx_base::devtrig::flag("cpuprof") {
         plx_ui::profile::set_cpu_enabled();
     }
 }
 
-/// `/tmp/plxnative-noidle` — turn the whole-frame present gate off.
+/// `/tmp/dispatcharrtv-noidle` — turn the whole-frame present gate off.
 pub(crate) fn arm_noidle() {
     if plx_base::devtrig::flag("noidle") {
         plx_machine::idle::set_enabled(false);
         #[cfg(feature = "devtriggers")]
-        plx_base::eventlog::log("idle: present gate DISABLED by /tmp/plxnative-noidle");
+        plx_base::eventlog::log("idle: present gate DISABLED by /tmp/dispatcharrtv-noidle");
     }
 }
 
-/// `/tmp/plxnative-audioenh=off|boost|loudness` — force the PERSISTED Boost Dialog / Normalize
+/// `/tmp/dispatcharrtv-audioenh=off|boost|loudness` — force the PERSISTED Boost Dialog / Normalize
 /// Loudness preference (issue #266) at boot, harness-only.
 ///
 /// Every other boot override here (`dev::playback_quality_override`, `arm_glassload`, …) is
@@ -223,34 +223,34 @@ pub(crate) fn arm_audio_enhancements() {
     plx_media::player::set_audio_enhancements(a);
     #[cfg(feature = "devtriggers")]
     plx_base::eventlog::log(&format!(
-        "audioenh: forced boost_dialog={} normalize_loudness={} by /tmp/plxnative-audioenh",
+        "audioenh: forced boost_dialog={} normalize_loudness={} by /tmp/dispatcharrtv-audioenh",
         a.boost_dialog, a.normalize_loudness,
     ));
 }
 
-/// `/tmp/plxnative-nobudget` — the frame budget's A/B CONTROL LEG (spec §8.1, phase 11).
+/// `/tmp/dispatcharrtv-nobudget` — the frame budget's A/B CONTROL LEG (spec §8.1, phase 11).
 ///
 /// Present, admission is what it was before phase 11: the `Poster` quota of three per frame and
 /// nothing else — no time ceiling, no solo rule, and a `Residency` upload (a backdrop, a hero
 /// logo) spending one of those three exactly as it used to. It exists so a device A/B measures
 /// this CHANGE and not the difference between two builds, and it is DIAG for the reason
-/// `plxnative-drawmask` is: an A/B whose two legs boot to different screens has measured the
+/// `dispatcharrtv-drawmask` is: an A/B whose two legs boot to different screens has measured the
 /// screen.
 pub(crate) fn nobudget_armed() -> bool {
     plx_base::devtrig::flag("nobudget")
 }
 
-/// `/tmp/plxnative-framedrop[=<ms>]`.
+/// `/tmp/dispatcharrtv-framedrop[=<ms>]`.
 pub(crate) fn framedrop_value() -> Option<String> {
     plx_base::devtrig::read("framedrop")
 }
-/// `/tmp/plxnative-framering[=<ms>]` — the frame-drop detector's context ring
+/// `/tmp/dispatcharrtv-framering[=<ms>]` — the frame-drop detector's context ring
 /// (`diag::heartbeat::FrameRing`): write only frames of `<ms>` or more (default 17) and their
 /// neighbours, instead of every frame. `None` when unarmed.
 pub(crate) fn framering_ms() -> Option<f64> {
     plx_base::devtrig::read("framering").map(|s| s.parse().ok().filter(|v: &f64| *v > 0.0).unwrap_or(17.0))
 }
-/// `/tmp/plxnative-replay[=N]`'s raw content, for [`crate::app::boot::replay_budget`].
+/// `/tmp/dispatcharrtv-replay[=N]`'s raw content, for [`crate::app::boot::replay_budget`].
 pub(crate) fn replay_trigger_value() -> Option<String> {
     plx_base::devtrig::read("replay")
 }
@@ -294,8 +294,8 @@ mod script_schedule_tests {
 /// here at the exact points the arms always called it.
 use crate::app::run::pin_headless_hud;
 
-/// `/tmp/plxnative-playurl` (or `-autoplay`/`-h265`) — start the synthetic playback named by the
-/// `plxnative-playurl` trigger once, two seconds into the run, with the transport pinned for a
+/// `/tmp/dispatcharrtv-playurl` (or `-autoplay`/`-h265`) — start the synthetic playback named by the
+/// `dispatcharrtv-playurl` trigger once, two seconds into the run, with the transport pinned for a
 /// headless capture. The engine reads the trigger itself when `route::url()` is empty.
 fn autoplay_arm(app: &mut App, fr: &mut Frame) {
     use plx_screens::player::input::HUD_HEADLESS_MS;
@@ -468,7 +468,7 @@ fn menu_arm(app: &mut App, fr: &mut Frame) {
     }
 }
 
-/// `/tmp/plxnative-menupick=<tab>,<target>`: `target` is either an absolute `TableView` row
+/// `/tmp/dispatcharrtv-menupick=<tab>,<target>`: `target` is either an absolute `TableView` row
 /// number (the original contract), on the Audio tab a NAMED target — `"boost"`/`"loudness"` —
 /// resolved through the panel's own [`plx_appkit::track_menu::TrackRow`] identities
 /// (`TrackMenuState::row_for_audio_target`), or on the Subtitles tab `"track:N"`, the N-th track in
@@ -514,7 +514,7 @@ fn menupick_arm(app: &mut App, fr: &mut Frame) {
     }
 }
 
-/// `/tmp/plxnative-submenuosc=<period_ms>`'s own state — see [`submenuosc_arm`].
+/// `/tmp/dispatcharrtv-submenuosc=<period_ms>`'s own state — see [`submenuosc_arm`].
 #[derive(Debug, Default)]
 pub(crate) struct SubmenuOsc {
     /// The period, read once when the arm first runs (`None` = not read yet, `Some(0)` = not armed).
@@ -563,9 +563,9 @@ fn submenuosc_next(step: u8, tab: c_int, depth: usize, has_other: bool) -> Subme
     }
 }
 
-/// `/tmp/plxnative-submenuosc=<period_ms>` — the device frame-time scene for the Tracks panel's
+/// `/tmp/dispatcharrtv-submenuosc=<period_ms>` — the device frame-time scene for the Tracks panel's
 /// drill-in animation (panel resize + page slide). With the Subtitles menu open
-/// (`plxnative-menu=1`) it presses one REAL key per period through the dispatcher
+/// (`dispatcharrtv-menu=1`) it presses one REAL key per period through the dispatcher
 /// ([`submenuosc_next`]'s cycle), so every push, pop and tab switch runs the production handlers
 /// and the spring they start. Shaped like `navosc`/`modalosc`: it never opens or dismisses
 /// anything except that a menu dismissed under it (a stray key) is reopened on the Subtitles tab.
@@ -614,9 +614,9 @@ fn moreosc_next(depth: usize) -> (bool, Key) {
     if depth == 0 { (true, Key::Right) } else { (false, Key::Left) }
 }
 
-/// `/tmp/plxnative-moreosc=<period_ms>` — the device frame-time scene for More's Quality drill-in
+/// `/tmp/dispatcharrtv-moreosc=<period_ms>` — the device frame-time scene for More's Quality drill-in
 /// (panel resize + page slide), the same shape as [`submenuosc_arm`]: with More open
-/// (`plxnative-more=1`) one REAL key per period through the dispatcher, alternating push and pop.
+/// (`dispatcharrtv-more=1`) one REAL key per period through the dispatcher, alternating push and pop.
 /// A More dismissed under it is reopened at the root.
 fn moreosc_arm(app: &mut App, fr: &mut Frame) {
     let period = *app.scenarios.more_osc.period.get_or_insert_with(|| {
@@ -663,7 +663,7 @@ mod moreosc_script_tests {
     }
 }
 
-/// `/tmp/plxnative-subtiming`'s own state across frames — see [`subtiming_arm`].
+/// `/tmp/dispatcharrtv-subtiming`'s own state across frames — see [`subtiming_arm`].
 #[derive(Debug, Default)]
 pub(crate) struct Subtiming {
     /// `true` once stage 1 (the subtitle commit) has fired, so a later frame does not commit a
@@ -715,8 +715,8 @@ fn subtiming_step(now: u32, armed_at: u32, cur_sid: i64, want_sid: i64) -> Subti
     }
 }
 
-/// `/tmp/plxnative-subtiming` — the Timing capsule's own headless trigger (plan
-/// `subtitle-menu-capsule` §5), self-contained rather than riding `plxnative-menupick`: that one
+/// `/tmp/dispatcharrtv-subtiming` — the Timing capsule's own headless trigger (plan
+/// `subtitle-menu-capsule` §5), self-contained rather than riding `dispatcharrtv-menupick`: that one
 /// fires at 7000 ms and would stack a Tracks panel on top of the capsule this trigger wants alone.
 ///
 /// **Stage 1**, once the item's PLAN has landed and it is not transcoding: pick the first embedded
@@ -922,7 +922,7 @@ fn should_replay_after_eos(handed_off_to_up_next: bool, replay_left: u32, playur
     !handed_off_to_up_next && replay_left > 0 && playurl_flag
 }
 
-/// `/tmp/plxnative-replay[=N]` — REPLAY AFTER COMPLETION (LG App Self Checklist #46). Called from
+/// `/tmp/dispatcharrtv-replay[=N]` — REPLAY AFTER COMPLETION (LG App Self Checklist #46). Called from
 /// `app::run::playback_tick` right after `finish_playback` has left the player on a real EOS;
 /// `handed_off_to_up_next` is that call's own return value, telling an Up Next handoff apart from
 /// a real exit (see [`should_replay_after_eos`]). Re-arming `auto_tried` sends the next frame back

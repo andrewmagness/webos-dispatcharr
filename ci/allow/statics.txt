@@ -1,7 +1,7 @@
 # count: 10
 rust-modules/ui/src/icons.rs	CACHE: rasterised icon masks keyed by (name, size) — a GL texture cache, never read as state
 rust-modules/ui/src/text_view.rs	WRAP_CACHE: wrapped-line layout memo keyed by (text, width, size) — recomputed from the same inputs
-rust-modules/ui/src/testpat.rs	CURRENT: the dev synthetic ground pattern (plxnative-testpat / pat: token), draw-only
+rust-modules/ui/src/testpat.rs	CURRENT: the dev synthetic ground pattern (dispatcharrtv-testpat / pat: token), draw-only
 rust-modules/ui/src/anim.rs	ENTRIES: per-key animation clocks for draw-time ramps, render half only
 rust-modules/ui/src/popover.rs	CACHE: THE single full-viewport FrameCache (8.29 MB) a covered host is drawn from as a quad
 rust-modules/ui/src/popover.rs	HELD: whether that FrameCache is held or being recaptured — the cache's own bookkeeping

@@ -737,7 +737,7 @@ fn transcode_request(c: &plx_plex::plex::Client, path: &str, w: c_int, h: c_int,
 /// A refused key logs ONCE per process, with both ceilings and the length that missed them.
 ///
 /// The latch is the whole design. This is a per-tile, per-frame path and the memo means a refusal
-/// REPEATS every frame, so an unlatched log would bury `/tmp/plxnative-events.log` — but silence
+/// REPEATS every frame, so an unlatched log would bury `/tmp/dispatcharrtv-events.log` — but silence
 /// is the failure `paths.rs` was fixed for (a font fell through to DroidSans while `init_text`
 /// still logged `ok=1`), and a silent refusal here is a tile that is a skeleton forever with
 /// nothing in the one file an issue report is asked for. Once is enough to name the cause.
@@ -800,7 +800,7 @@ fn interval_due(last: Option<std::time::Instant>, now: std::time::Instant) -> bo
 ///
 /// Throttled for the reason [`warn_key_refused`] gives for its own latch: `unresident` and the
 /// re-arm branch are both per-tile, per-frame paths, and a fast scroll evicts dozens of keys a
-/// second, so a line per transition would bury `/tmp/plxnative-events.log`. Unlike that latch this
+/// second, so a line per transition would bury `/tmp/dispatcharrtv-events.log`. Unlike that latch this
 /// does not go silent after one line — a long session should keep producing fresh readings — so it
 /// is a minimum-interval throttle (about one second, monotonic so a skewed wall clock never lies
 /// about it) rather than a one-shot. The first call in a process is let through unthrottled, so a
@@ -1136,7 +1136,7 @@ type Hit = Option<PosterKey>;
 /// every hit, and whether a P_EVICTED slot is eligible to recover at all), the speculation bound
 /// [`warm_admissible`] for a Warm, and the drawn card's placement scope
 /// ([`plx_ui::card_motion::declines_request`]) for a Draw. An unknown card placement declines new
-/// work (a moving one too, but only under the dev trigger `plxnative-cardspeed`); featured images
+/// work (a moving one too, but only under the dev trigger `dispatcharrtv-cardspeed`); featured images
 /// outside that scope remain eligible.
 /// A refusal claims no source slot; a follow-up present samples placement again.
 fn lookup(srv: ServerId, key_s: &str, touch: Touch) -> (Hit, Warm) {
@@ -1147,7 +1147,7 @@ fn lookup(srv: ServerId, key_s: &str, touch: Touch) -> (Hit, Warm) {
         return (None, Warm::Known);
     }
     // A scoped card DRAW may not START work with unknown placement (or, under the dev trigger
-    // `plxnative-cardspeed`, fast placement), at EVERY point work begins — the fresh miss far
+    // `dispatcharrtv-cardspeed`, fast placement), at EVERY point work begins — the fresh miss far
     // below, but equally the two re-arm transitions inside the matching-slot loop. Those matter
     // more than the miss rather than less: a scroll is what evicts textures, so scrolling back
     // across the same rows finds P_EVICTED slots, and re-arming each one is a full fetch, decode
@@ -1298,7 +1298,7 @@ fn lookup(srv: ServerId, key_s: &str, touch: Touch) -> (Hit, Warm) {
     if touch != Touch::Draw && !warm_admissible(&g.slots) {
         return (None, Warm::Full);
     }
-    // A card MISS with unknown placement (or, under the dev trigger `plxnative-cardspeed`, fast
+    // A card MISS with unknown placement (or, under the dev trigger `dispatcharrtv-cardspeed`, fast
     // on-screen motion) claims no slot and starts no acquisition. That tile draws its placeholder
     // and asks again next frame. Other cards, featured images, and previously admitted work remain
     // eligible; this gate defers only the drawn card's new demand until its placement is known
@@ -1328,8 +1328,8 @@ fn lookup(srv: ServerId, key_s: &str, touch: Touch) -> (Hit, Warm) {
     // can still be declined for free.
     //
     // **Why the default no longer declines.** Remeasured on the television with the lookahead in
-    // place (1000-movie mock, panel off, two runs each; the old default is `plxnative-lookahead=0
-    // plxnative-cardspeed=120`): placeholder tile-frames seen — `library-burst` 28,969 / 28,080
+    // place (1000-movie mock, panel off, two runs each; the old default is `dispatcharrtv-lookahead=0
+    // dispatcharrtv-cardspeed=120`): placeholder tile-frames seen — `library-burst` 28,969 / 28,080
     // old default, 1,759 / 1,761 new; `library-hold` 35,850 / 35,592 old, 4,280 / 3,902 new —
     // against frames over 33 ms of 7 / 16 old and 30 / 10 new in `library-burst`, and of 3 / 8 old
     // and 18 / 19 new in `library-hold`. `library-scroll` holds a 60 fps median on both, with a
@@ -1731,7 +1731,7 @@ enum ArtFail {
 
 impl ArtFail {
     /// The half of the log line that names the cause. Prose rather than a code, because the reader
-    /// is whoever opened `/tmp/plxnative-events.log` after being told artwork does not load.
+    /// is whoever opened `/tmp/dispatcharrtv-events.log` after being told artwork does not load.
     fn why(self) -> &'static str {
         match self {
             ArtFail::NoServer => {
@@ -2935,7 +2935,7 @@ mod tests {
         store().slots = [Pslot::ZERO; PT_CAP];
     }
 
-    /// Under `plxnative-cardspeed` (the guard), a DRAW in a fast-moving card scope claims no slot
+    /// Under `dispatcharrtv-cardspeed` (the guard), a DRAW in a fast-moving card scope claims no slot
     /// for a miss. The same draw claims one when that scope permits admission. Demand is
     /// deferred, never dropped: the next frame asks again without leaving a queued request behind.
     #[test]
@@ -2991,7 +2991,7 @@ mod tests {
 
     /// The wiring `declines_in` is a pure function of: in a frame dump the SAME fast-moving draw
     /// claims a slot, because a dump never declines for motion (`card_motion::declines_request`),
-    /// even with `plxnative-cardspeed` armed.
+    /// even with `dispatcharrtv-cardspeed` armed.
     #[test]
     fn an_armed_dump_claims_a_slot_for_the_miss_a_fast_scroll_would_decline() {
         let (_fresh, sid, _) = one_server();
@@ -3020,7 +3020,7 @@ mod tests {
         card_renderer_frames(false);
     }
 
-    /// The same three frames under `plxnative-cardspeed`: the card that jumped 80 px between two
+    /// The same three frames under `dispatcharrtv-cardspeed`: the card that jumped 80 px between two
     /// frames is `Moving` and still claims nothing until it settles.
     #[test]
     fn under_cardspeed_a_moving_card_claims_no_slot_until_it_settles() {

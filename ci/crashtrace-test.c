@@ -1,4 +1,4 @@
-/* PlxNative — an unofficial native Plex client for LG webOS.
+/* Dispatcharr TV — an unofficial native Plex client for LG webOS.
  * Copyright © 2026 Gleb Linnik. Licensed under GPL-3.0-or-later; see LICENSE at the repository root.
  *
  * crashtrace-test.c — **actually crash a process, on purpose, and read what the tracer wrote.**
@@ -251,7 +251,7 @@ static void map_line(char *out, size_t cap, const char *lo, const char *hi, cons
     snprintf(out, cap, "%s-%s r-xp 00000000 b3:35 12345 /media/developer/apps/%s%s\n", lo, hi, pads, path);
 }
 
-static const char *OURS = "com.magness.dispatcharrtv/plxnative";
+static const char *OURS = "com.magness.dispatcharrtv/dispatcharrtv";
 
 static void maps_cases(void) {
     /* The ordinary case, first: one of our own mappings containing the PC. It must produce BOTH

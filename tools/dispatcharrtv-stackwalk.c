@@ -1,10 +1,10 @@
 /*
- * plxnative-stackwalk — remote ARM stack samples for a live process.
+ * dispatcharrtv-stackwalk — remote ARM stack samples for a live process.
  *
  * This is a developer helper, never part of the application package.  Run it as root on the TV.
  * It attaches to one Linux LWP at a time, unwinds through the same libunwind ptrace accessors as
  * the shipped Sentry crash daemon, prints JSONL, and detaches before moving to the next LWP.
- * The host-side tools/plxnative-sample wrapper owns deployment, PID/build identity, aggregation,
+ * The host-side tools/dispatcharrtv-sample wrapper owns deployment, PID/build identity, aggregation,
  * symbolization, TV locking, and cleanup.
  */
 

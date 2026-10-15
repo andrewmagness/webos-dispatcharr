@@ -67,7 +67,7 @@ impl Dsn {
     /// one.
     pub fn auth_header(&self) -> String {
         format!(
-            "X-Sentry-Auth: Sentry sentry_version=7, sentry_client=plxnative/{}, sentry_key={}",
+            "X-Sentry-Auth: Sentry sentry_version=7, sentry_client=dispatcharrtv/{}, sentry_key={}",
             super::app_version(),
             self.public_key
         )
@@ -207,7 +207,7 @@ pub(super) fn read_head(path: &str) -> Option<Vec<u8>> {
 }
 
 /// **The GNU build id of the running binary, as lowercase hex** — the only thing that can pair a
-/// crash report with the `plxnative.debug` a release cut and uploaded.
+/// crash report with the `dispatcharrtv.debug` a release cut and uploaded.
 ///
 /// `-Wl,--build-id=sha1` is unconditional on every link (`docs/agent-reference.md`: it costs 20 bytes and `strip`
 /// preserves it), and a debuginfo build and a plain one produce DIFFERENT ids from identical

@@ -1,4 +1,4 @@
-//! `/tmp/plxnative-toast=<text>` — ask the television's notification service, in-process and jailed
+//! `/tmp/dispatcharrtv-toast=<text>` — ask the television's notification service, in-process and jailed
 //! as the app, whether it will show `<text>` as a system toast. A measurement, not the feature: the
 //! product toast is `app::clock_notice`, and this trigger asks the same service with arbitrary
 //! text, plain and as the app, logging each outcome.

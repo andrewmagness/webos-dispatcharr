@@ -112,7 +112,7 @@ pub const DEFAULT_PORT: i32 = 32400;
 /// anything outside `1..=65535`.
 ///
 /// **The narrowing is the point.** `port` arrives from plex.tv (and from the session file, and from
-/// the `plxnative-servers` trigger) as an `i64`, because PMS and plex.tv both string-encode numbers
+/// the `dispatcharrtv-servers` trigger) as an `i64`, because PMS and plex.tv both string-encode numbers
 /// and every numeric field here goes through the lenient `de_i64` — so what lands in a `Candidate`
 /// is whatever the JSON said, not whatever a port can be. `port as i32` on that WRAPS: an answer of
 /// `4_294_999_696` becomes `32400` and the app dials a port nobody advertised, quietly and with a
@@ -178,7 +178,7 @@ impl Origin {
     /// prefix, and [`split`] is the entry point for a caller that wants the rest of the URL too.
     ///
     /// A MISSING scheme is read as `http`. That is not laxity for its own sake — it is what
-    /// `StreamUrl::parse` has always done with the `/tmp/plxnative-url` override, and this
+    /// `StreamUrl::parse` has always done with the `/tmp/dispatcharrtv-url` override, and this
     /// function replaced that parser.
     pub fn parse(url: &str) -> Option<Origin> {
         let p = Parts::of(url);
@@ -268,7 +268,7 @@ impl Origin {
 /// Split a URL into its origin and the rest of it (path + query, `""` when there is none).
 ///
 /// **Total**, unlike [`Origin::parse`], because its caller is `StreamUrl::parse` — which turns the
-/// `/tmp/plxnative-url` override into something to dial and has no failure path to take. Every
+/// `/tmp/dispatcharrtv-url` override into something to dial and has no failure path to take. Every
 /// degenerate input therefore yields *something*: a missing scheme reads as `http`, an unknown one
 /// is discarded rather than mistaken for a host, and a port that is absent or undialable becomes
 /// [`DEFAULT_PORT`] rather than wrapping into a port nobody wrote down (which is

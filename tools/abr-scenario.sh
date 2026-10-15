@@ -24,7 +24,7 @@
 #
 # So the legs here are written as MULTIPLES of the measured source bitrate, resolved per item.
 #
-# HOST ONLY, and deliberately. This runs `plxnative-sim` with the clock sink armed, so the whole
+# HOST ONLY, and deliberately. This runs `dispatcharrtv-sim` with the clock sink armed, so the whole
 # path between the socket and the decoder is real — both AVIO transports, `ff.rs`'s demux, the AU
 # queues and their byte-cap backpressure, the feed-ahead throttle, the ABR controller and its
 # transactions. Nothing decodes, and nothing measured here is a device measurement: every
@@ -45,13 +45,13 @@ RUN_SECS="${RUN_SECS:-180}"
 
 PROXY_PORT="${PROXY_PORT:-32499}"
 DIR="/tmp/abr-sim-$NAME"
-LOG="$DIR/plxnative-events.log"
+LOG="$DIR/dispatcharrtv-events.log"
 MODEFILE="/tmp/netcond-$NAME.mode"
 # Ask the Makefile where it put the binary rather than restating the path: `SIM_TDIR` is
 # overridable (agents running several simulators keep separate target dirs) and a literal copy
 # here would silently test a stale build from another lane.
 SIM_BIN="$(make -s print-simbin 2>/dev/null)"
-[ -n "$SIM_BIN" ] && [ -x "$SIM_BIN" ] || SIM_BIN="rust-modules/target-sim/debug/plxnative-sim"
+[ -n "$SIM_BIN" ] && [ -x "$SIM_BIN" ] || SIM_BIN="rust-modules/target-sim/debug/dispatcharrtv-sim"
 [ -x "$SIM_BIN" ] || { echo "no simulator binary — run \`make sim\`"; exit 1; }
 
 # The rating key and the token are read from gitignored files and NEVER echoed. This repo is
@@ -98,11 +98,11 @@ kill -0 "$NETCOND_PID" 2>/dev/null || { echo "netcond died:"; tail -5 "/tmp/netc
 
 # ---- the instance root --------------------------------------------------------
 rm -rf "$DIR"; mkdir -p "$DIR"
-printf '%s' "$TOKEN" > "$DIR/plxnative-token"
-: > "$DIR/plxnative-clocksink"   # accept AUs, discard them, advance a real-time clock
-: > "$DIR/plxnative-noidle"      # the present gate would otherwise stall a settled screen
-: > "$DIR/plxnative-detailplay"  # press Play once the detail page has landed
-printf '%s' "$RK" > "$DIR/plxnative-detail"
+printf '%s' "$TOKEN" > "$DIR/dispatcharrtv-token"
+: > "$DIR/dispatcharrtv-clocksink"   # accept AUs, discard them, advance a real-time clock
+: > "$DIR/dispatcharrtv-noidle"      # the present gate would otherwise stall a settled screen
+: > "$DIR/dispatcharrtv-detailplay"  # press Play once the detail page has landed
+printf '%s' "$RK" > "$DIR/dispatcharrtv-detail"
 # A seek is not a link condition, but it is the other half of the state space this tool exists to
 # reach: a seek on a transcode is a Rebase flight (`dispatch_transcode_seek`) that registers a FRESH
 # encoder session (`<session>-abr-<N>`, a process-wide counter, so a name never repeats) and makes
@@ -111,7 +111,7 @@ printf '%s' "$RK" > "$DIR/plxnative-detail"
 # trigger's own grammar verbatim (`gap=<ms>` then comma-separated absolute/relative steps) and the
 # first step fires ~12 s after the player route is entered, so `gap=` is how you put a seek AFTER a
 # commit rather than before.
-[ -n "${AUTOSEEK:-}" ] && printf '%s' "$AUTOSEEK" > "$DIR/plxnative-autoseek"
+[ -n "${AUTOSEEK:-}" ] && printf '%s' "$AUTOSEEK" > "$DIR/dispatcharrtv-autoseek"
 
 # **A bare `wait` here HANGS the whole matrix**, and it did: the simulator is an SDL application
 # and under `nohup` there is no controlling terminal, so a plain TERM does not always end it — the
@@ -128,7 +128,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-PLXNATIVE_RUNTIME_DIR="$DIR" PLXNATIVE_APP_DIR="$REPO/pkg" PLXNATIVE_WIN=640x360 \
+DISPATCHARRTV_RUNTIME_DIR="$DIR" DISPATCHARRTV_APP_DIR="$REPO/pkg" DISPATCHARRTV_WIN=640x360 \
   "$SIM_BIN" 127.0.0.1 "$PROXY_PORT" > "$DIR/sim.stdout" 2>&1 &
 SIM_PID=$!
 

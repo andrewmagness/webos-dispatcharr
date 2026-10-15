@@ -184,7 +184,7 @@ pub(crate) fn sys_grab_wayland(winp: *mut c_void) {
 use plx_base::eventlog::log;
 
 // ------------------------------------------------------------------------------------------
-// EXPERIMENT (`/tmp/plxnative-opaque`): declare the UI surface OPAQUE where nothing is behind it
+// EXPERIMENT (`/tmp/dispatcharrtv-opaque`): declare the UI surface OPAQUE where nothing is behind it
 // ------------------------------------------------------------------------------------------
 //
 // `docs/perf-damage-tracking-verdict.md` §5 is the design. The whole app has run with
@@ -310,7 +310,7 @@ unsafe extern "C" fn on_global(
     ));
 }
 
-/// Build the full-surface opaque region, once, at boot. No-op unless `/tmp/plxnative-opaque` is
+/// Build the full-surface opaque region, once, at boot. No-op unless `/tmp/dispatcharrtv-opaque` is
 /// armed; returns without touching the surface's current (NULL) region either way.
 #[cfg(not(feature = "hostsim"))]
 pub(crate) fn opaque_region_init() {
@@ -413,7 +413,7 @@ pub(crate) fn opaque_region_init() {}
 
 /// Assert the opaque region appropriate to this route, if the experiment is armed.
 ///
-/// A no-op — one read of a `static` and a return — whenever `/tmp/plxnative-opaque` is absent,
+/// A no-op — one read of a `static` and a return — whenever `/tmp/dispatcharrtv-opaque` is absent,
 /// which is what keeps the default path byte-identical. Only sends a request when the answer
 /// CHANGES, because the opaque region is sticky server-side.
 #[cfg(not(feature = "hostsim"))]
@@ -457,7 +457,7 @@ pub(crate) fn opaque_route(player: bool) {
 #[cfg(feature = "hostsim")]
 pub(crate) fn opaque_route(_player: bool) {}
 
-// ---- The COMPOSITOR FRAME-CALLBACK PROBE (`/tmp/plxnative-framecb`) -----------------------------
+// ---- The COMPOSITOR FRAME-CALLBACK PROBE (`/tmp/dispatcharrtv-framecb`) -----------------------------
 //
 // A present's wait for a free back buffer is paid inside the frame's first framebuffer-0 command
 // (the `clear` span), and from inside the app that wait reads the same whether the compositor
@@ -488,7 +488,7 @@ pub(crate) fn opaque_route(_player: bool) {}
 // stubs at the end of this section.
 #[cfg(all(not(feature = "hostsim"), feature = "devtriggers"))]
 plx_base::devtrig::latched_flag!(
-    /// `/tmp/plxnative-framecb` — see the section comment above.
+    /// `/tmp/dispatcharrtv-framecb` — see the section comment above.
     pub(crate) fn frame_probe_armed = "framecb";
 );
 

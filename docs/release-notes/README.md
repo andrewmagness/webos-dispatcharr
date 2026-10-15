@@ -8,7 +8,7 @@ Rewritten 2026-08-29. The version before it was written after auditing v0.2.0 an
 
 ## Who reads this, and what they need
 
-One reader: **someone who already uses PlxNative, or is deciding whether to install it.** They have a remote and possibly a phone. They cannot run a command.
+One reader: **someone who already uses Dispatcharr TV, or is deciding whether to install it.** They have a remote and possibly a phone. They cannot run a command.
 
 A note answers their six questions, quickly:
 
@@ -121,15 +121,15 @@ The invariant half lives in [`docs/install-and-verify.md`](../install-and-verify
 ````markdown
 ## Installing
 
-Download **com.beb.plxnative_X.Y.Z_arm.ipk** and install it with the [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) or [dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop). You do **not** need a rooted TV.
+Download **com.beb.dispatcharrtv_X.Y.Z_arm.ipk** and install it with the [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) or [dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop). You do **not** need a rooted TV.
 
 Nothing in this distribution chain is signed, so this sha256 is what tells you the file you have is the file published here:
 
 ```
-__IPK_SHA256__  com.beb.plxnative_X.Y.Z_arm.ipk
+__IPK_SHA256__  com.beb.dispatcharrtv_X.Y.Z_arm.ipk
 ```
 
-[Installing and checking a download](https://github.com/GLinnik21/plx-native/blob/main/docs/install-and-verify.md) covers the other assets, how to check the hash on each platform, and the Developer Mode expiry that uninstalls your apps. This package bundles FFmpeg under LGPL-2.1-or-later and its complete corresponding source is attached to this release. Exactly what was built, verified and shipped is in the [technical audit for vX.Y.Z](https://github.com/GLinnik21/plx-native/blob/main/docs/release-audits/vX.Y.Z.md).
+[Installing and checking a download](https://github.com/andrewmagness/webos-dispatcharr/blob/main/docs/install-and-verify.md) covers the other assets, how to check the hash on each platform, and the Developer Mode expiry that uninstalls your apps. This package bundles FFmpeg under LGPL-2.1-or-later and its complete corresponding source is attached to this release. Exactly what was built, verified and shipped is in the [technical audit for vX.Y.Z](https://github.com/andrewmagness/webos-dispatcharr/blob/main/docs/release-audits/vX.Y.Z.md).
 ````
 
 `__IPK_SHA256__` is the one value in the file CI substitutes. It cannot be committed — it does not exist until the release run builds the artifact — and a hash nobody types cannot be the wrong hash. `ci/check-package.py` refuses a note that lost the sentinel and refuses one carrying a literal 64-hex string beside it, which would be either a stale hash from a previous release or a typed one.
@@ -143,7 +143,7 @@ Optimise for GitHub's renderer and for someone reading on a television or a phon
 - **Do not hard-wrap prose.** No 80-column, no 100-column. **One source line per paragraph or list item**, and let GitHub wrap it. This is enforced: `ci/check-package.py` fails a note whose paragraphs are split across source lines. The rest of this repository hard-wraps; release notes and this directory's documents deliberately do not, because they are read rendered, in a browser, at a width nobody controls.
 - **Effects before mechanisms.** What the reader would have seen comes first; the mechanism gets one clause, or goes in the commit message.
 - **Semantic limits, not line counts.** "One short paragraph, usually 1-3 sentences" — never "four lines", which means nothing once the text is not hard-wrapped.
-- **Links must be absolute.** A release body is not rendered relative to the repository, so `[audit](docs/release-audits/v0.5.0.md)` is a dead link for every reader. Use `https://github.com/GLinnik21/plx-native/blob/main/…`. Enforced.
+- **Links must be absolute.** A release body is not rendered relative to the repository, so `[audit](docs/release-audits/v0.5.0.md)` is a dead link for every reader. Use `https://github.com/andrewmagness/webos-dispatcharr/blob/main/…`. Enforced.
 - **No GitHub @mentions — link the profile instead.** `[name](https://github.com/name)`, not `@name`. Enforced. A mention in a release body makes GitHub list that person as a **contributor to the release**, which is wrong for the people these notes actually name: a tester who reported a firmware result and a reviewer who filed a bug contributed neither code nor the release. It also attributes our claims to them on their own profile. Five published releases had done this before it was noticed.
 - **No emoji.** Enforced. The most important sentences here are a compatibility claim and sometimes a credential-rotation instruction, being read by someone deciding whether to trust an unsigned binary. Nothing is signed and one television is tested, so the prose is the warranty.
 - **No marketing verbs** — "blazing", "massively improved", "now fully supports".
@@ -183,7 +183,7 @@ A release that changes only documentation or CI does not need a version.
 
 - **Do not add newly discovered compatibility information to an old note.** A set that turned out to work in October does not belong in an August release body.
 - **Do not add later fixes to an old note.** The release that fixed it has its own note.
-- **For a security problem discovered later in an old version**, the mechanism is a [GitHub security advisory](https://github.com/GLinnik21/plx-native/security/advisories) plus a fixing release whose note carries the action-required section — not an edit to every old body. An advisory reaches people the old page never will.
+- **For a security problem discovered later in an old version**, the mechanism is a [GitHub security advisory](https://github.com/andrewmagness/webos-dispatcharr/security/advisories) plus a fixing release whose note carries the action-required section — not an edit to every old body. An advisory reaches people the old page never will.
 - **When a note is factually wrong about itself** — it claims a hash that is not the artifact's, or a build path that is not what happened — append a dated `## Updates to this note`. Errata correct the record; they do not extend it.
 
 Rewriting a pre-standard note to the current template is a deliberate, separate exercise, and when it happens two things survive: a safety disclosure is never dropped, and anything a reader could have acted on stays true or stays stated. The archive of what a note used to say is `git log` on these files.

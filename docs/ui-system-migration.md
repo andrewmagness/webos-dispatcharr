@@ -47,7 +47,7 @@ behind its own checkpoints. Three carve-outs stay immediate-mode on purpose (§D
 > **This table is the ORIGINAL migration inventory (what each token replaced, at that day's line
 > numbers) — not the current palette.** `theme.rs` is. Several values below were superseded on the
 > device long ago (`SURFACE_APP` `[0.10,0.10,0.115]` → the Apple-TV shelf gray `#2c2c2e`, and with it
-> `CLEAR_RGB`), and the **2026-08-13 palette sync** with the `PlxNative Design System` project
+> `CLEAR_RGB`), and the **2026-08-13 palette sync** with the `upstream design system` project
 > changed five more: `ACCENT` went from the mockup's warm "Snow" `#e9e6e0` to Cool 0 `#f7fafc` and
 > the second control white went away with it (`FILL_PRIMARY`/`INK_ON_PRIMARY` and
 > `ControlStyle::Primary` are **gone** — nothing is filled by rank, only by focus; the cool plate
@@ -202,7 +202,7 @@ Row::new(label).checked(b).detail(s).badge(Badge).chevron(b).dim(b)   // ROW_H=6
 Badge::{ Ad, Forced, Sdh, Cc, Text(String) }
 ```
 The cleanest realized pattern — owns `hl_top`/`hl_bot`/`scroll` springs and a sliding ACCENT
-pill; `track_menu` delegates 100%. **Do not** force it onto the `View` trait for the PlxNative
+pill; `track_menu` delegates 100%. **Do not** force it onto the `View` trait for the Dispatcharr TV
 (reconciling its `update(dt,visible_h)`/`draw(p,frame)` ABI with `View::update(&Env)`/
 `draw(&Env,p)` is churn with zero payoff). Only sweep its literals onto tokens
 (`:220`→`TEXT_PRIMARY`, `:221`→`TEXT_TERTIARY`, `:81`→`SURFACE_PANEL`, `:243`→`HAIRLINE`;
@@ -360,7 +360,7 @@ Option<Home>` (`home.rs:398`). Finish the contract:
   `update/draw/move_focus` onto methods. Make the existing pub fns `open/open_rk/
   open_rk_season/close/update/draw/move_focus/on_ok/last_resume_ns/selected_ptr` **thin
   wrappers** forwarding to methods — so `app.rs` routing, `route.rs`, and the dev-triggers
-  (`plxnative-detail*`, `app.rs:886-1053`) compile **unchanged**. *Checkpoint:* `make`.
+  (`dispatcharrtv-detail*`, `app.rs:886-1053`) compile **unchanged**. *Checkpoint:* `make`.
 - **6b** section rows (episodes/related/cast) become child sub-views composed by
   `DetailView::draw` under the translated `ps = p.translate(0,-scroll)` painter. Unify the two
   horizontal-scroll models: adopt the sprung `ep_hscroll` glide for Related/Cast too (kill the
@@ -368,7 +368,7 @@ Option<Home>` (`home.rs:398`). Finish the contract:
   (`scroll: Spring`, pins focus to 2nd slot; callers still cull off-frame cells by index —
   `Painter` has no clip). **Keep** the absolute `section_top()` Y table
   (`TAB_Y..ABOUT_Y`, `detail.rs:37-52/:108-125`) — do **not** build a flow/`VStack`; About's
-  dynamic height doesn't justify a layout engine in a PlxNative, and a naive reflow risks section
+  dynamic height doesn't justify a layout engine in a Dispatcharr TV, and a naive reflow risks section
   collisions. *Checkpoint:* `make` + capture.
 
 **Step 7 — align app.rs routing/input (the convergence — touches shared state, do last).**
@@ -535,7 +535,7 @@ tests/manifest.json
 |---|---|
 | `screens/<name>.rs` | the screen: its `Screen`/`Machine`/`Focusable`/`LogicalState` impls, its `SHAPE`, its own tests (§15.1 `a_new_screen_is_unit_tested_with_no_sdl` — a host of its own, three lines of it, never a sibling's) |
 | `screens/registry.rs` | the `AppArg` variant, its `ScreenId`, its canon tag, `ARG_SHAPE`, the one `mount` arm, `every_surface_arg`, `SCREEN_SHAPES` + the pin, and — for a page-owned panel — the `ContentPanel` variant and its `surface()` arm |
-| `dev/scenarios.rs` | the headless trigger that reaches it (`/tmp/plxnative-<name>`), which is what makes a capture and an fps scene possible at all |
+| `dev/scenarios.rs` | the headless trigger that reaches it (`/tmp/dispatcharrtv-<name>`), which is what makes a capture and an fps scene possible at all |
 | `tests/manifest.json` | the fps scene, keyed on the `overlay=` word the screen's own `Screen::name` prints |
 
 ### The four the criterion does not, and why each is honest
@@ -596,7 +596,7 @@ The criterion is only worth as much as the boundary underneath it.
    interactive press uses, and gate it on the host page's own predicate so the trigger cannot open
    what a press would refuse.
 5. Add the fps scene to `tests/manifest.json`.
-6. Re-record the replay fixtures (`tools/plxnative-rec rerecord`), because the pin moved.
+6. Re-record the replay fixtures (`tools/dispatcharrtv-rec rerecord`), because the pin moved.
 
 ---
 

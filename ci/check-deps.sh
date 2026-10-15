@@ -1064,9 +1064,9 @@ else
   fail "blocking: the frame-thread exception ledger is not exact (new: $(printf '%s\n' "$blocking_new" | sed '/^$/d' | wc -l | tr -d ' '), stale: $(printf '%s\n' "$blocking_stale" | sed '/^$/d' | wc -l | tr -d ' '), aliased: $(printf '%s\n' "$blocking_refs" | sed '/^$/d' | wc -l | tr -d ' '), declared count ${blocking_count_declared:-0} vs $blocking_count entries) — a new allow_blocking site moves its work to a worker instead; the list only shrinks"
 fi
 
-# tmppath: a literal `/tmp/plxnative-` string outside dev.rs and the log sinks, = 0 (D4). The
+# tmppath: a literal `/tmp/dispatcharrtv-` string outside dev.rs and the log sinks, = 0 (D4). The
 # earlier version matched only a literal and a filesystem-open VERB co-occurring on the SAME
-# LINE, which passed a two-line split (`let p = format!("/tmp/plxnative-x"); File::open(p)`)
+# LINE, which passed a two-line split (`let p = format!("/tmp/dispatcharrtv-x"); File::open(p)`)
 # straight through. Rewritten as the D4 wording actually reads: strip comments, then find the
 # literal, then walk the CALL that encloses it — the same paren-depth-outside-literals shape
 # `tmppath`'s own header used to point at `ci/check-scrub` for; that script does not exist
@@ -1078,15 +1078,15 @@ fi
 # maintains a stack of the CALL NAME behind every currently-open, not-yet-closed `(` (the token
 # immediately before it) — which is what lets a match inside `crate::eventlog::log(&format!("…"))`
 # see BOTH enclosing calls, `format!` innermost and the log call beneath it, across as many lines as the
-# call spans. A hit is a `/tmp/plxnative-` match that is NOT inside a string, or is inside one but
+# call spans. A hit is a `/tmp/dispatcharrtv-` match that is NOT inside a string, or is inside one but
 # no enclosing call on that stack is `log`/`crate::eventlog::log`/`log!` — i.e. exactly the two exemptions
-# D4 names, comment and log-message text, and nothing else (a bare `let s = "/tmp/plxnative-x";`
+# D4 names, comment and log-message text, and nothing else (a bare `let s = "/tmp/dispatcharrtv-x";`
 # with no log() around it is a hit, deliberately, even though it opens nothing — the spec's own
 # wording is "any literal…unless", not "any literal that is also an open"). `dev.rs` is the one
 # structural exemption; a second category ("the log sinks") is named in the spec but resolves to
 # NOTHING in this tree today — `eventlog::events_log`/`app/boot.rs`'s crash-log open both build the
-# path through `paths::in_runtime_dir("plxnative-…")`, a bare filename with no `/tmp/` prefix, so
-# neither one is a `/tmp/plxnative-` literal in the first place and there is no second file to
+# path through `paths::in_runtime_dir("dispatcharrtv-…")`, a bare filename with no `/tmp/` prefix, so
+# neither one is a `/tmp/dispatcharrtv-` literal in the first place and there is no second file to
 # name here (re-verify this if a log sink is ever given a hardcoded `/tmp/` path).
 tmp_hits=$(python3 - "$SRC" "$SRC_BASE" "$SRC_MACHINE" "$SRC_PLATFORM" "$SRC_GFX" "$SRC_NET" "$SRC_UI" "$SRC_PLEX" "$SRC_TELEMETRY" "$SRC_DATA" "$SRC_MEDIA" "$SRC_APPKIT" "$SRC_SCREENS" <<'PY'
 import os, sys
@@ -1094,7 +1094,7 @@ import os, sys
 src = sys.argv[1]
 roots = sys.argv[1:]
 exempt_files = {os.path.join(src, "dev.rs")}
-needle = "/tmp/plxnative-"
+needle = "/tmp/dispatcharrtv-"
 log_names = {"log", "crate::eventlog::log", "plx_base::eventlog::log", "log!"}
 
 def scan(path, text):
@@ -1177,7 +1177,7 @@ tmp_status=$?
 if [ "$tmp_status" -eq 0 ] && [ -z "$tmp_hits" ]; then ok "tmppath"
 else
   echo "$tmp_hits" | sed 's/^/    /'
-  fail "tmppath: $(echo "$tmp_hits" | grep -c . ) line(s) of a literal /tmp/plxnative- path outside dev.rs, not comment or log-message text"
+  fail "tmppath: $(echo "$tmp_hits" | grep -c . ) line(s) of a literal /tmp/dispatcharrtv- path outside dev.rs, not comment or log-message text"
 fi
 
 

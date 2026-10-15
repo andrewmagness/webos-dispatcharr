@@ -15,7 +15,7 @@ same flow the Continue Watching cards used.
 
 ## Product context (read first)
 
-**PlxNative** — a native, unofficial Plex client for LG webOS televisions. 10-foot UI in the
+**Dispatcharr TV** — a native, unofficial Plex client for LG webOS televisions. 10-foot UI in the
 Apple TV design language: near-black grounds, rounded-rect cards, focus shown by scale + soft
 glow (spring-animated), generous spacing. Authored on a fixed **1920x1080** canvas. Input is a
 D-pad plus LG's Magic Remote pointer — every interactive element needs a focus state, but two of

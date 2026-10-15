@@ -51,7 +51,7 @@ log = os.environ["FAKE_LOG"]
 with open(log, "a") as f:
     f.write(json.dumps({"args": args, "cwd": os.getcwd(), "incr": os.environ.get("CARGO_INCREMENTAL"),
                         "tdir": os.environ.get("CARGO_TARGET_DIR"), "rustflags": os.environ.get("RUSTFLAGS"),
-                        "runtime": bool(os.environ.get("PLXNATIVE_RUNTIME_DIR"))}) + "\n")
+                        "runtime": bool(os.environ.get("DISPATCHARRTV_RUNTIME_DIR"))}) + "\n")
 def read(p):
     try:
         return open(p).read()
@@ -73,7 +73,7 @@ if "--no-run" in args:
     print("   Compiling noise on stdout that is not JSON")
     # The unit suite goes through tools/cargo-test-parallel.py, which runs the test executables this
     # build reports: one per package, each printing its own `test result:` line.
-    exes = {"plx_base": 5300, "plxnative-modules": 125}
+    exes = {"plx_base": 5300, "dispatcharrtv": 125}
     def art(pkg_path, name, version):
         exe = os.path.join(os.environ["FAKE_STATE"] + ".bins", name)
         os.makedirs(os.path.dirname(exe), exist_ok=True)
@@ -102,13 +102,13 @@ if "--no-run" in args:
     art('/media', 'plx_media', '0.0.0')
     art('/appkit', 'plx_appkit', '0.0.0')
     art('/screens', 'plx_screens', '0.0.0')
-    art('', 'plxnative-modules', '0.7.0')
+    art('', 'dispatcharrtv', '0.7.0')
 elif args[0] == "rustc":
     tgt = args[args.index("--target") + 1]
     tdir = args[args.index("--target-dir") + 1]
     out = os.path.join(tdir, tgt, "release")
     os.makedirs(out, exist_ok=True)
-    open(os.path.join(out, "libplxnative_modules.a"), "wb").write(b"!<arch>\nfake archive")
+    open(os.path.join(out, "libdispatcharrtv.a"), "wb").write(b"!<arch>\nfake archive")
     print(json.dumps({"reason": "compiler-artifact", "fresh": False}))
 '''
 FAKE_RUSTC = "#!/bin/sh\necho 'rustc 1.99.0-nightly (fake 2026-01-01)'\n"
@@ -118,7 +118,7 @@ FAKE_SYSCTL = ('#!/bin/sh\ncase "$2" in\n'
                '  *) echo "Fake CPU";;\nesac\n')
 SCRATCH_MAKEFILE = r'''print-bench-config:
 	@printf '%s\n' 'RUST_NIGHTLY=nightly' 'RUST_TDIR=target' 'RUST_TARGET=arm-unknown-linux-gnueabi' \
-	  'RUST_FEATFLAGS=' 'RUST_LIB=rust-modules/target/arm-unknown-linux-gnueabi/release/libplxnative_modules.a' \
+	  'RUST_FEATFLAGS=' 'RUST_LIB=rust-modules/target/arm-unknown-linux-gnueabi/release/libdispatcharrtv.a' \
 	  'RUST_ENV=RUSTFLAGS="-C target-cpu=fake -C x"' 'TEST_FAST_TDIR=target-fast' 'UNIT_RUN=python3 ../tools/cargo-test-parallel.py' 'RELEASE=$(RELEASE)'
 '''
 LEAF = "rust-modules/base/src/cbuf.rs"
@@ -279,7 +279,7 @@ class ShapeTests(unittest.TestCase):
     def test_cargo_is_called_the_way_the_makefile_does(self):
         with Sandbox() as sb:
             (sb.repo / "rust-modules" / "target-fast").mkdir(parents=True)
-            lib = sb.repo / "rust-modules/target/arm-unknown-linux-gnueabi/release/libplxnative_modules.a"
+            lib = sb.repo / "rust-modules/target/arm-unknown-linux-gnueabi/release/libdispatcharrtv.a"
             lib.parent.mkdir(parents=True)
             lib.write_bytes(b"old")
             proc = sb.run("--runs", "1", "--only", "noop,leaf-inc,tests,arm")
@@ -488,7 +488,7 @@ DASH = "—"
 # `==== step: cargo`, the runner prints `==== check: cargo`).
 FAKE_CHECK_MAKEFILE = SCRATCH_MAKEFILE + (
     "check-unlocked:\n"
-    "\t@echo \"$$PLX_CHECK_LOCK|$$MAKEFLAGS|$$PLXNATIVE_RUNTIME_DIR\" > $(CURDIR)/../check-env.txt\n"
+    "\t@echo \"$$PLX_CHECK_LOCK|$$MAKEFLAGS|$$DISPATCHARRTV_RUNTIME_DIR\" > $(CURDIR)/../check-env.txt\n"
     "\t@python3 tools/check-parallel.py \\\n"
     "\t  cargo='python3 -c \"print(\\\"cargo ran\\\")\"' \\\n"
     "\t  python='python3 tools/check-parallel.py --steps steps-$(if $(FAKE_CHECK_FAIL),red,ok).txt'\n")
@@ -519,7 +519,7 @@ class CheckScenarioTests(unittest.TestCase):
             install_gate(sb)
             out = sb.repo.parent / "check.json"
             proc = sb.run("--runs", "2", "--only", "check", "--json", str(out),
-                          env={"MAKEFLAGS": "-j9", "PLXNATIVE_RUNTIME_DIR": "/should/not/leak"})
+                          env={"MAKEFLAGS": "-j9", "DISPATCHARRTV_RUNTIME_DIR": "/should/not/leak"})
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertRegex(proc.stdout, re.escape(f"| {bb.TITLES['check']} | 2 | ") + r"[\d.]+ s \| [\d.]+ s \| [\d.]+ s \|")
             self.assertRegex(proc.stdout, r"cargo branch \d+ s, python branch \d+ s")

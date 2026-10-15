@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Observe the first two graphics-profile layers on an already-running PlxNative app."""
+"""Observe the first two graphics-profile layers on an already-running Dispatcharr TV app."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def main() -> int:
         raise SystemExit("--seconds must be positive")
     lock_reexec(sys.argv[1:])
     tv, appid, appdir, rundir = make_query(args.flavor)
-    executable = f"{appdir}/plxnative"
+    executable = f"{appdir}/dispatcharrtv"
     pid_out = ssh(tv, f"fuser {shlex.quote(executable)} 2>/dev/null", check=False).stdout
     pids = [word for word in pid_out.split() if word.isdigit()]
     if not pids:
@@ -80,7 +80,7 @@ def main() -> int:
     trigger_probe = ssh(
         tv,
         "for n in profile hwcnt cpuprof; do "
-        f"[ -e {rundir}/plxnative-$n ] && echo $n; done",
+        f"[ -e {rundir}/dispatcharrtv-$n ] && echo $n; done",
         check=False,
     ).stdout.split()
     pacing_valid = not trigger_probe
@@ -92,19 +92,19 @@ def main() -> int:
         raise SystemExit(refusal)
 
     subprocess.run(["make", "mali-irq-sample"], cwd=ROOT, check=True)
-    remote = f"/tmp/plxnative-mali-irq-{os.getpid()}"
+    remote = f"/tmp/dispatcharrtv-mali-irq-{os.getpid()}"
     try:
         scp = [TV_SSH, "scp", str(LOCAL_HELPER), f"root@{tv}:{remote}.new"]
         subprocess.run(scp, cwd=ROOT, check=True)
         ssh(tv, f"chmod 700 {remote}.new && mv {remote}.new {remote}")
-        start_lines_text = ssh(tv, f"wc -l < {rundir}/plxnative-events.log 2>/dev/null || echo 0",
+        start_lines_text = ssh(tv, f"wc -l < {rundir}/dispatcharrtv-events.log 2>/dev/null || echo 0",
                                check=False).stdout.strip()
         start_lines = int(start_lines_text or "0")
         samples = max(2, math.ceil(args.seconds * 10.0) + 1)
         raw = ssh(tv, f"{remote} {samples} 100", check=False)
         if not raw.stdout:
             raise SystemExit(raw.stderr.strip() or "Mali IRQ sampler produced no data")
-        log = ssh(tv, f"tail -n +{start_lines + 1} {rundir}/plxnative-events.log 2>/dev/null",
+        log = ssh(tv, f"tail -n +{start_lines + 1} {rundir}/dispatcharrtv-events.log 2>/dev/null",
                   check=False).stdout
     finally:
         ssh(tv, f"rm -f {remote} {remote}.new", check=False)
@@ -122,7 +122,7 @@ def main() -> int:
                 "active_profilers": trigger_probe, "pacing": pacing, "irq": irq}
     (bundle / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     lines = [
-        "PlxNative graphics observation (attach; active signals only, no baseline)",
+        "Dispatcharr TV graphics observation (attach; active signals only, no baseline)",
         f"install: {appid} [{args.flavor}] pid={pids[0]} binary profile={arm_profile_guard.describe(arm_profile)}",
         f"pacing ({'valid: render profilers absent' if pacing_valid else 'INVALID: active ' + ','.join(trigger_probe)}): "
         f"fps p50={pacing['fps_p50']:.1f} p10={pacing['fps_p10']:.1f} "

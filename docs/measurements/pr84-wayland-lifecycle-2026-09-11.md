@@ -2,10 +2,10 @@
 
 ## Scope and evidence
 
-[PR #84](https://github.com/GLinnik21/plx-native/pull/84) proposes clearing borrowed Wayland
+[PR #84](https://github.com/andrewmagness/webos-dispatcharr/pull/84) proposes clearing borrowed Wayland
 handles on background and reacquiring them on DID foreground.
 
-The Sentry issue PLX-NATIVE-K contains one event from `plxnative@0.6.3` on webOS 4.10.0,
+The upstream Sentry issue K contains one event from `dispatcharrtv@0.6.3` on webOS 4.10.0,
 K5LP. Its exception has one frame, `wl_proxy_marshal`; the saved return address maps into
 `libmali.so.1.0` at offset `0xee83d`, not the app. There are no lifecycle breadcrumbs or
 caller frames establishing that `clear_opaque_region` caused it. The dev TV's Wayland
@@ -52,7 +52,7 @@ replaced. Screenshots and raw logs remain local because they contain household c
 Host regressions cover failed refresh, foreign/incomplete window info, repeated revocation,
 replacement handles, opaque-cache reset, and presentation requests across repeated lifecycle
 pairs including a standalone DID background. `make check`, the shipping-feature cargo check,
-`make`, `make sim`, and `tools/fwcompat.py --min-release 4.4.2 pkg/plxnative` passed. The firmware
+`make`, `make sim`, and `tools/fwcompat.py --min-release 4.4.2 pkg/dispatcharrtv` passed. The firmware
 matrix establishes loader compatibility from 4.4.2 through 11.2.0, not runtime behavior on those
 other sets. The host suite's native Linux comparison is skipped on macOS.
 

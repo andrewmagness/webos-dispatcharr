@@ -58,7 +58,7 @@ pub struct Header<'a> {
     pub copy: &'a str,
     pub copy_size: std::os::raw::c_int,
     /// One key-cap line stacked under the copy's measured height (the Language page's "Hold
-    /// [BACK] to close PlxNative"). Never elided: a screen that sets one owns a fit test for it
+    /// [BACK] to close Dispatcharr TV"). Never elided: a screen that sets one owns a fit test for it
     /// against [`RouteLayout`]'s narrative width.
     pub hint: Option<KeyHint<'a>>,
 }

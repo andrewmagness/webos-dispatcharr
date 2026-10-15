@@ -59,7 +59,7 @@ A subsequent simultaneous-encoder TV spike established the stronger lifecycle ru
 with a new legacy `session=` but the old playback's `X-Plex-Session-Identifier` could return its
 master and media playlists, but its segment zero remained 404; after the candidate was abandoned,
 the old encoder's next segment also remained 404. Sharing the X-Plex identity therefore replaces
-or invalidates the old session before prime completes on this PMS. PlxNative keeps a stable
+or invalidates the old session before prime completes on this PMS. Dispatcharr TV keeps a stable
 playback generation internally, but couples `session=` and `X-Plex-Session-Identifier` to one new
 value for each physical encoder. Timeline, seek, and teardown follow the currently published
 encoder wire identity. A transcode seek is itself a new encoder registration: it first gets a
@@ -197,7 +197,7 @@ send timeline bandwidth reports as the managed test profile; that is why it is o
 Offline verification (no PMS or device access):
 
 ```sh
-PYTHONPYCACHEPREFIX=/private/tmp/plxnative-pycache \
+PYTHONPYCACHEPREFIX=/private/tmp/dispatcharrtv-pycache \
   python3 -m py_compile tools/pms-hls-probe.py tools/test_pms_hls_probe.py
 python3 tools/test_pms_hls_probe.py
 python3 tools/pms-hls-probe.py --help

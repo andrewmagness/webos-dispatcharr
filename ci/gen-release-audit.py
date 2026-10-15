@@ -26,7 +26,7 @@ Everything below is derived from bytes:
 WHAT IT CANNOT DO, said here rather than discovered later. A string table is evidence of presence,
 never of absence: a host the binary assembles at runtime from pieces does not appear, and a string
 that appears may be a log message rather than a destination (the `strings` output of a release
-build has always contained `/tmp/plxnative-url` for exactly that reason). The scan is reported as
+build has always contained `/tmp/dispatcharrtv-url` for exactly that reason). The scan is reported as
 what it is — a floor — and the audit's authored half is where a claim about the whole surface is
 made and attributed. Anything needing a human, a television or a third party is authored: this
 script never writes a sentence about device testing or compatibility, and refuses to guess one.
@@ -55,27 +55,27 @@ END = "<!-- END GENERATED -->"
 # Literals only a `devtriggers` build emits: `dev.rs`'s DIAG array is the one place the full
 # trigger names are written out, and it is `#[cfg(feature = "devtriggers")]`. Several rather than
 # one, because a single witness that gets renamed goes vacuous silently — which is exactly what
-# happened to `check-package.py`'s first witness (`plxnative-autoplay`, which matched nothing in
+# happened to `check-package.py`'s first witness (`dispatcharrtv-autoplay`, which matched nothing in
 # either configuration from the day it was written).
 # MEASURED FROM BOTH SIDES, against the published v0.5.0 .ipk and a local dev build, because a
 # witness that cannot fail is not evidence:
 #
-#     plxnative-noidle       release 0   dev 2
-#     plxnative-remote       release 0   dev 2      the world-writable FIFO
-#     plxnative-capture      release 0   dev 1      the TCP capture listener
-#     plxnative-drawmask     release 0   dev 1
-#     plxnative-heroground   release 0   dev 2
+#     dispatcharrtv-noidle       release 0   dev 2
+#     dispatcharrtv-remote       release 0   dev 2      the world-writable FIFO
+#     dispatcharrtv-capture      release 0   dev 1      the TCP capture listener
+#     dispatcharrtv-drawmask     release 0   dev 1
+#     dispatcharrtv-heroground   release 0   dev 2
 #
-# `plxnative-overdraw` is NOT in this list and must not be added: it counted **1 in the release
+# `dispatcharrtv-overdraw` is NOT in this list and must not be added: it counted **1 in the release
 # binary**, because `shaders/fs_hero.frag` names it in a COMMENT and the shader source is
 # `include_str!`'d, so the literal ships in every configuration. That is the whole hazard of
 # string-table evidence in one example — the string is there and the code is not.
 DEV_WITNESSES = (
-    b"plxnative-noidle",
-    b"plxnative-remote",
-    b"plxnative-capture",
-    b"plxnative-drawmask",
-    b"plxnative-heroground",
+    b"dispatcharrtv-noidle",
+    b"dispatcharrtv-remote",
+    b"dispatcharrtv-capture",
+    b"dispatcharrtv-drawmask",
+    b"dispatcharrtv-heroground",
 )
 
 # A build machine's directory layout inside a shipped file. Same shape, and the same two
@@ -293,7 +293,7 @@ def generate(args) -> str:
                     and "/resources/" not in p), None)
     appinfo = json.loads(files[f"{app_dir}/appinfo.json"][1])
     app_id = appinfo["id"]
-    binary = files.get(f"{app_dir}/plxnative", (None, b""))[1]
+    binary = files.get(f"{app_dir}/dispatcharrtv", (None, b""))[1]
 
     manifest = None
     mf = dist / f"{app_id}.manifest.json"
@@ -398,7 +398,7 @@ def generate(args) -> str:
     out.append("The witnesses are literals from `dev.rs`'s `DIAG` array, which is "
                "`#[cfg(feature = \"devtriggers\")]`; two of them name the surfaces a reviewer "
                "reading this repository's source would rightly ask about — the world-writable "
-               "`plxnative-remote` FIFO that can drive the UI, and the unauthenticated TCP capture "
+               "`dispatcharrtv-remote` FIFO that can drive the UI, and the unauthenticated TCP capture "
                "listener. Zero of all five is what `RELEASE=1` looks like in the bytes, and it is a "
                "property of this package rather than of the command line that produced it. Each "
                "witness has been measured from both sides (0 here, 1-2 in a dev build), because a "
@@ -474,7 +474,7 @@ def generate(args) -> str:
     out.append("### Linkage")
     out.append("")
     if elf:
-        out.append(f"`plxnative` is {elf['class']} / {elf['machine']}, with "
+        out.append(f"`dispatcharrtv` is {elf['class']} / {elf['machine']}, with "
                    f"**{len(elf['needed'])} `DT_NEEDED` entries**:")
         out.append("")
         out.append("```")

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "vendor": "magness",
   "type": "native",
-  "main": "plxnative",
+  "main": "dispatcharrtv",
   "title": "Dispatcharr TV",
   "appDescription": "Unofficial native Dispatcharr client - not affiliated with Dispatcharr",
   "icon": "icon.png",

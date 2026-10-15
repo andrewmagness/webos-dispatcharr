@@ -1,6 +1,6 @@
 # UI restructure Phase 8: implementation checkpoint
 
-The controlling specification remains `docs/ui-restructure-spec-v4.md` (moved into the repository 2026-09-20; it was `~/.claude/plans/ui-plxnative-structured-phoenix.md`).
+The controlling specification remains `docs/ui-restructure-spec-v4.md` (moved into the repository 2026-09-20; it was `~/.claude/plans/ui-dispatcharrtv-structured-phoenix.md`).
 This is a progress record, not a replacement or reduced definition of done.
 
 ## Correction to "Review follow-up" below — 2026-09-09
@@ -69,7 +69,7 @@ passed) both green, `make lint` clean, `CARGO_INCREMENTAL=0 cargo +nightly check
 'ui::search' rust-modules/src | wc -l` is **0** whole-repo, superseding the per-package caveat
 above. `tests/focusfp.sh --only 4` (the live-sim-plus-mock-PMS mode, not the committed-fixture
 replay — the script's own mock PMS started and answered) **passed**: `[PASS] 4
-search-shelf-detail-back: 8 fingerprint lines -> /tmp/plxnative-focusfp/4-search-shelf-detail-back.fp`.
+search-shelf-detail-back: 8 fingerprint lines -> /tmp/dispatcharrtv-focusfp/4-search-shelf-detail-back.fp`.
 No TV-touching command (`ssh`, `make deploy/run/test`, `tools/tv-*`) was invoked during this
 re-check. Device/simulator pixel-level and text-rasterization verification of the owned Search
 screen remains a separate, un-retired obligation, unchanged from the paragraph above.
@@ -96,7 +96,7 @@ only steps the shared-bar springs `SearchScreen::tick` does not touch). (3) `inp
 and `input::top_focus` were retired no-op stubs still wired into the live key ladder (`key_ok`'s
 chip arm read `top_focus` and could never reach the chip); both functions and their call sites are
 deleted outright, along with the now-unused `_nav: &mut Option<NavReq>` parameter on `key_ok`.
-(4) The `/tmp/plxnative-search` boot-trigger host test re-typed the store command by hand instead
+(4) The `/tmp/dispatcharrtv-search` boot-trigger host test re-typed the store command by hand instead
 of driving the trigger's own code path; the seed-and-stand logic was extracted into
 `app::run::apply_search_boot_trigger` (called by both `dev_scripts` and the renamed test
 `a_seeded_boot_query_survives_the_freshly_mounted_screens_first_sync`), leaving only the trigger
@@ -476,7 +476,7 @@ results, alongside replay initialization. Keep the full remaining migration/proo
 ## Previous checkpoint: fresh replay exposes live-adapter dependence
 
 Built the current simulator and recorded flow 1 into a fresh synthetic runtime at
-`/tmp/plx-phase8-replay.7b9tUT/record/root-1/plxnative-recordings/latest`. The live smoke passes,
+`/tmp/plx-phase8-replay.7b9tUT/record/root-1/dispatcharrtv-recordings/latest`. The live smoke passes,
 and the recording passes the synthetic-alphabet check. It contains 581 frames, 10 input records,
 5 state records and 581 presentation records, but ZERO effects, results or lifecycle records.
 
@@ -486,7 +486,7 @@ listening reports `graded=5 diverged=5 present_diffs=0 verdict=DIVERGED`. Neithe
 an initial-probe or trigger mismatch; this is not proof that full store initialization was equal,
 because that probe does not capture it. First divergence: frame 125, expected
 `0xd418c52053b9c67a`, offline `0xa3a0ac5d0cf36eba`, two input records.
-Logs are under `play/plxnative-events.log` and `play-offline/plxnative-events.log` in the same root.
+Logs are under `play/dispatcharrtv-events.log` and `play-offline/dispatcharrtv-events.log` in the same root.
 Both simulator processes exited and the mock server was stopped. No TV access occurred.
 
 Concrete missing wiring: `ui::rec::Writer` exposes `effect` and `result`, but the application
@@ -496,7 +496,7 @@ outside this recording. The online SAME result is therefore live-assisted eviden
 closed adapter replay/adoption proof required by the plan. Do not import it as an accepted
 anchor or retire legacy Home on its strength. No existing fixture was changed.
 
-`plxnative-rec info` now exposes input/effect/result/lifecycle counts, with a RED/GREEN Python
+`dispatcharrtv-rec info` now exposes input/effect/result/lifecycle counts, with a RED/GREEN Python
 regression proving counts and non-disclosure of payload strings. The full Python harness suite
 passes (`/tmp/plx-phase8-replay-harness-check.log`). No Rust behavior changed in this checkpoint.
 Next: implement complete replay initialization and captured/injected adapter results, then repeat

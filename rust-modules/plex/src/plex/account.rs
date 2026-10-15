@@ -35,7 +35,7 @@ pub use preferences::{PreferenceError, PreferenceRequest, PreferenceSnapshot, Pr
 const PLEX_TV: &str = "https://plex.tv";
 
 /// plex.tv's base URL: [`PLEX_TV`], or — in a dev build only — a LOOPBACK stand-in named by
-/// `/tmp/plxnative-plextv=http://127.0.0.1:<port>`. The screenshot pipeline's mock
+/// `/tmp/dispatcharrtv-plextv=http://127.0.0.1:<port>`. The screenshot pipeline's mock
 /// (`tests/mock_pms.py --catalog`) answers the sign-in pin and serves its QR there, so no
 /// documentation figure ever shows a live code minted by the real service. Anything that is not
 /// plain `http://` to `127.0.0.1`/`localhost` is refused and logged: this trigger must never be
@@ -45,7 +45,7 @@ pub fn plex_tv() -> &'static str {
     BASE.get_or_init(|| match plx_base::devtrig::read("plextv") {
         Some(v) if loopback_http(&v) => {
             #[cfg(feature = "devtriggers")]
-            plx_base::eventlog::log("account: plex.tv replaced by a loopback stand-in (/tmp/plxnative-plextv)");
+            plx_base::eventlog::log("account: plex.tv replaced by a loopback stand-in (/tmp/dispatcharrtv-plextv)");
             v.trim_end_matches('/').to_string()
         }
         Some(_) => {

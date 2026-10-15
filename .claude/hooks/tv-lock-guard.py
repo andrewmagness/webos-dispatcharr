@@ -45,7 +45,7 @@ import subprocess
 import sys
 import time
 
-STATE_DIR = os.environ.get("PLX_TV_LOCK_STATE") or os.path.expanduser("~/.plxnative/tv-lock")
+STATE_DIR = os.environ.get("PLX_TV_LOCK_STATE") or os.path.expanduser("~/.dispatcharrtv/tv-lock")
 
 # Anything that reaches the television. Matched against the COMMAND WORD of each segment (so a
 # `git commit -m "make deploy now locks the TV"` is a git command, not a deploy).

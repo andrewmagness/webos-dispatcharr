@@ -29,7 +29,7 @@ environment" means getting three things in place so `make` works:
 3. **Host CLI tools** — `curl`, `tar`, CMake (the pinned Sentry Native build), and `sshpass`
    (deploy/run over ssh, only when the TV refuses your key).
 
-The end state you're verifying: `make` produces `pkg/plxnative`, and it runs on the
+The end state you're verifying: `make` produces `pkg/dispatcharrtv`, and it runs on the
 TV with no missing-symbol or illegal-instruction errors.
 
 ## Fast path
@@ -53,7 +53,7 @@ brew install sshpass      # deploy/run fallback when the TV refuses your ssh key
 Now build:
 
 ```bash
-make                  # -> pkg/plxnative
+make                  # -> pkg/dispatcharrtv
 ```
 
 ### With a TV but no Plex account or token
@@ -62,16 +62,16 @@ The build needs no private data, and neither does driving the TV: the app can ru
 synthetic `tests/mock_pms.py`, which accepts any non-empty token.
 
 ```bash
-mkdir -p ~/.config/plxnative     # ONCE per machine: every checkout and worktree reads these (tools/tv-config.sh)
-echo '<tv-host>' > ~/.config/plxnative/tv-host   # the TV's address, one line
-echo '<tv-mac>'  > ~/.config/plxnative/tv-mac    # optional: only Wake-on-LAN needs it (cached from ARP once the TV is up)
+mkdir -p ~/.config/dispatcharrtv     # ONCE per machine: every checkout and worktree reads these (tools/tv-config.sh)
+echo '<tv-host>' > ~/.config/dispatcharrtv/tv-host   # the TV's address, one line
+echo '<tv-mac>'  > ~/.config/dispatcharrtv/tv-mac    # optional: only Wake-on-LAN needs it (cached from ARP once the TV is up)
 printf '#define PMS_HOST  "<this-mac-lan-ip>"\n#define PMS_PORT  32499\n' > src/config.local.h   # gitignored; no PMS_TOKEN
 make                             # PMS_HOST/PMS_PORT are compiled in; nothing else is read from config.local.h
 python3 tests/mock_pms.py --host <this-mac-lan-ip> --port 32499   # same address as PMS_HOST; the default binds loopback only
 tools/tv-session.sh up --guest --mock --screen home       # debug flavor only; deploys and md5-verifies the binary, boots the synthetic identity
 ```
 
-The TV address and MAC are per-USER, not per-checkout: `${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/plxnative}`,
+The TV address and MAC are per-USER, not per-checkout: `${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dispatcharrtv}`,
 so a fresh worktree needs nothing seeded for them and no setup hook (a copied file would go stale). A
 `.tv-host` / `.tv-mac` in a checkout (or in the main checkout) still works and takes precedence, as a
 per-checkout override. `src/config.local.h` is the one gitignored file that is still per-checkout, so a
@@ -174,13 +174,13 @@ them.
 #   -> arm-webos-linux-gnueabi
 
 # 2. Full build
-make            # -> pkg/plxnative, no errors
+make            # -> pkg/dispatcharrtv, no errors
 
 # 3. Inspect the binary (readelf is in the NDK bin/ dir)
 RE="$HOME/webos-ndk/arm-webos-linux-gnueabi_sdk-buildroot/bin/arm-webos-linux-gnueabi-readelf"
-"$RE" -A pkg/plxnative | grep Tag_CPU_arch       # -> v7  (NOT v6 — v6 SIGILLs)
-"$RE" --version-info pkg/plxnative | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1   # -> GLIBC_2.12
-"$RE" -d pkg/plxnative | grep NEEDED             # SONAMEs should match the TV's libs
+"$RE" -A pkg/dispatcharrtv | grep Tag_CPU_arch       # -> v7  (NOT v6 — v6 SIGILLs)
+"$RE" --version-info pkg/dispatcharrtv | grep -oE 'GLIBC_[0-9.]+' | sort -uV | tail -1   # -> GLIBC_2.12
+"$RE" -d pkg/dispatcharrtv | grep NEEDED             # SONAMEs should match the TV's libs
 ```
 
 The decisive check is on the TV itself: `make test` (deploy + run) and read the
@@ -215,7 +215,7 @@ the path with `make -s print-eventlog FLAVOR=debug` rather than typing one. The
 | `error: "-Z build-std" ... rust-src` or `cargo +nightly` fails | Missing nightly or rust-src: `rustup toolchain install nightly && rustup component add rust-src --toolchain nightly`. |
 | `make check` dies at `make lint` with `no such command: clippy` | The nightly was installed with `--profile minimal`, which omits clippy (the default profile ships it): `rustup component add clippy --toolchain nightly`. `make check` runs `lint` first; the cross-build itself never needs clippy. |
 | `build-sentry-native: cmake is required` | Install the host build generator with `brew install cmake`. It runs the webOS cross-compiler; it does not compile target code with the Mac toolchain. |
-| Binary is `Tag_CPU_arch: v6`, or SIGILLs on the TV at first atomic | `RUSTFLAGS_TV` got dropped, or std wasn't rebuilt. Ensure `-C target-cpu=cortex-a9` and `-Z build-std` are intact; `rm` the stale `libplxnative_modules.a` and rebuild. |
+| Binary is `Tag_CPU_arch: v6`, or SIGILLs on the TV at first atomic | `RUSTFLAGS_TV` got dropped, or std wasn't rebuilt. Ensure `-C target-cpu=cortex-a9` and `-Z build-std` are intact; `rm` the stale `libdispatcharrtv.a` and rebuild. |
 | `relocation R_ARM_MOVW_ABS_NC ... recompile with -fPIC` when building a stub | A stub needs PIC. Stubs already use `-fPIC` in `STUBFLAGS`; if you added a bespoke stub rule, add `-fPIC`. |
 | Deploy/run steps fail with `the TV refused this machine's ssh key and sshpass is not installed` | Authorize your key on the TV, or `brew install sshpass`. `the TV is unreachable` means it is off or asleep (wake-tv skill; `make TV=<ip> ...`). |
 

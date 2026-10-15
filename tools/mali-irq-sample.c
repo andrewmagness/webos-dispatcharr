@@ -1,7 +1,7 @@
 /* Passive Mali activity sampler for the rooted development TV.
  *
  * Prints timestamped snapshots of the Mali/GPU rows from /proc/interrupts.  It changes no driver
- * state and is never packaged with PlxNative.  The harness normalizes deltas per second and keeps
+ * state and is never packaged with Dispatcharr TV.  The harness normalizes deltas per second and keeps
  * each IRQ separate; this helper deliberately does not pretend a global interrupt is process- or
  * phase-attributable.
  */

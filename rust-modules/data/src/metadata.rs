@@ -295,7 +295,7 @@ impl Spot {
 }
 
 /// Plex's resume rule, in ONE place (home Continue-Watching, the detail Play button, and the
-/// plxnative-play harness all apply it): resume only past 10s and before 95% watched, else start
+/// dispatcharrtv-play harness all apply it): resume only past 10s and before 95% watched, else start
 /// from the beginning. Both args are MILLISECONDS; the returned position is NANOSECONDS
 /// (what `player::begin_resume` takes).
 pub fn resume_ns(resume_ms: i64, dur_ms: i64) -> i64 {
@@ -718,7 +718,7 @@ impl DvPresentation {
 }
 
 plx_base::devtrig::latched_flag!(
-    /// `/tmp/plxnative-dvnonode` — after a supported route has frozen `Declare`, keep its Dolby
+    /// `/tmp/dispatcharrtv-dvnonode` — after a supported route has frozen `Declare`, keep its Dolby
     /// Vision **direct play** but send **no** `DolbyHdrInfo` node. Diagnostic only: it is the
     /// explicitly logged exception to gate/payload agreement.
     ///
@@ -738,10 +738,10 @@ plx_base::devtrig::latched_flag!(
 );
 
 plx_base::devtrig::latched_flag!(
-    /// `/tmp/plxnative-nodv` — **withhold the Dolby Vision declaration**, for a bisect. The
+    /// `/tmp/dispatcharrtv-nodv` — **withhold the Dolby Vision declaration**, for a bisect. The
     /// polarity is inverted from what it was, and the inversion is the point.
     ///
-    /// This was `/tmp/plxnative-dv`, an opt-IN, default off, with a note in this doc saying to
+    /// This was `/tmp/dispatcharrtv-dv`, an opt-IN, default off, with a note in this doc saying to
     /// flip the default "once the node has been seen to put a correct picture on a real panel".
     /// The reason for the caution was real — the payload is the `sourceInfo` envelope, which the
     /// pipeline parses before anything decodes, and a malformed one does not fail loudly, it
@@ -759,7 +759,7 @@ plx_base::devtrig::latched_flag!(
     /// default, and this knob only takes it away. Note what it does NOT do: withholding re-imposes
     /// the old refusal on Profile 5 (`base_layer_unusable`), so this bisects "declared vs
     /// transcoded", not "declared vs direct-played-undeclared". [`dv_node_suppressed`]
-    /// (`/tmp/plxnative-dvnonode`) is the finer instrument for that, and is why both exist.
+    /// (`/tmp/dispatcharrtv-dvnonode`) is the finer instrument for that, and is why both exist.
     ///
     /// Latched once per process so route decisions never observe a changing trigger. The stronger
     /// gate/payload guarantee now comes from storing [`DvDecision`] on the route: neither a later
@@ -1735,8 +1735,8 @@ impl Detail {
     /// invalidates one), and a detail fetch begun before that correction lands after it, carrying
     /// the old answer past every epoch that would otherwise have caught it.
     ///
-    /// dev: **`/tmp/plxnative-shared` WINS WHEN ARMED** — the precedence every trigger in this app
-    /// has (`crate::dev`'s module doc: `plxnative-token` beats the signed-in session), and the
+    /// dev: **`/tmp/dispatcharrtv-shared` WINS WHEN ARMED** — the precedence every trigger in this app
+    /// has (`crate::dev`'s module doc: `dispatcharrtv-token` beats the signed-in session), and the
     /// phrase to grep for, because the same stand-in is read by the owned Home's hero run and
     /// the two must agree. (The owned `screens::search::render`'s owner annotation reads the real
     /// registry unconditionally and does not consult this trigger — a gap the cutover left open,
@@ -2117,7 +2117,7 @@ fn dev_source() -> Option<&'static str> {
     SEEN.get_or_init(|| plx_base::devtrig::read("shared")).as_deref()
 }
 /// The host suite must not depend on what this dev Mac happens to have under `/tmp`: an armed
-/// `plxnative-shared` would outrank the registry and make every credit assertion here read the
+/// `dispatcharrtv-shared` would outrank the registry and make every credit assertion here read the
 /// trigger's handle instead. [`alt_dev_stand_in`] states the same rule the same way.
 #[cfg(any(test, feature = "test-support"))]
 fn dev_source() -> Option<&'static str> {
@@ -3605,8 +3605,8 @@ fn fetch_full(sid: plx_plex::plex::ServerId, rk: &str, prefer: Option<i64>) -> O
 
 // `load_detail_now` — `request_detail` but BLOCKING, `pub fn load_detail_now(sid, rk)` —
 // was deleted here (phase 12/D7). Its doc named three callers that read `current()` on the NEXT
-// statement (`open_rk_season`, `home_activate`'s play-a-show arm, the headless `plxnative-play`/
-// `plxnative-detail` triggers), and by df3520e1 every one of those had already migrated away from
+// statement (`open_rk_season`, `home_activate`'s play-a-show arm, the headless `dispatcharrtv-play`/
+// `dispatcharrtv-detail` triggers), and by df3520e1 every one of those had already migrated away from
 // it without this doc noticing: `home_activate` itself was retired with the legacy `ui::home`
 // module (`app/input.rs`'s own note on the extraction that produced `activate_card`), and neither
 // `open_rk_season` nor the headless triggers named it either — `grep -rn load_detail_now` found
@@ -4403,7 +4403,7 @@ fn pump_alt_sources_with_library(
 //
 // Reached through `devtrig::read`, so the whole of it is absent from a `RELEASE=1` build at compile
 // time along with the rest of the `/tmp` surface. The trigger literal is
-// `/tmp/plxnative-shared`, spelled here for the catalog grep in `docs/agent-reference.md`.
+// `/tmp/dispatcharrtv-shared`, spelled here for the catalog grep in `docs/agent-reference.md`.
 
 /// Build the headless stand-in once the item has LANDED — called every frame by
 /// [`pump_alt_sources`], and doing nothing at all in the ordinary case (two string compares, no
@@ -4432,7 +4432,7 @@ fn alt_pump_stand_in(state: &mut MetadataState, library: Option<&str>) -> bool {
     true
 }
 
-/// A DRAW-ONLY copy list for `/tmp/plxnative-shared=<handle>`, so the *Also available* panel and
+/// A DRAW-ONLY copy list for `/tmp/dispatcharrtv-shared=<handle>`, so the *Also available* panel and
 /// the control that opens it can be judged on a television before the multi-server data layer
 /// exists.
 ///
@@ -4500,7 +4500,7 @@ fn alt_dev_stand_in(_d: &Detail, _library: Option<&str>) -> Option<Vec<AltCopy>>
 /// machine the ratingKey it carries is honestly the same film. What it cannot stand in for is a
 /// server going offline, or a library and a resolution that differ for real.
 ///
-/// The token comes from the harness's own `/tmp/plxnative-token`, which is the only place a session
+/// The token comes from the harness's own `/tmp/dispatcharrtv-token`, which is the only place a session
 /// token is available to a dev path; with no token there is nothing to build a working client from,
 /// so there is no stand-in at all rather than one that 401s.
 #[cfg(not(any(test, feature = "test-support")))]

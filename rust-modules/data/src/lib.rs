@@ -1,4 +1,4 @@
-//! plx_data: the data layer of the PlxNative application core.
+//! plx_data: the data layer of the Dispatcharr TV application core.
 //!
 //! The content stores and the data modules they own: `stores` (one command vocabulary and one
 //! machine per data store), `pms` (the Home catalog), `browse` (the per-section library catalog),

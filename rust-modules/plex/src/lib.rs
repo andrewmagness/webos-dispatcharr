@@ -1,4 +1,4 @@
-//! plx_plex: the Plex layer of the PlxNative application core.
+//! plx_plex: the Plex layer of the Dispatcharr TV application core.
 //!
 //! `plex` is the typed Plex API (PMS and plex.tv), the session store and the grant/probe logic that
 //! decide which origin may be asked for what; `http` is the one door out of the control plane,

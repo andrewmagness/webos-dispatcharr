@@ -1,6 +1,6 @@
 /* tv-capture-bench — measure the firmware planes before building a screen recorder.
  *
- * This standalone ARM diagnostic is never linked into PlxNative or included in an install.
+ * This standalone ARM diagnostic is never linked into Dispatcharr TV or included in an install.
  *
  *   vtm [frames] [display|scaler]
  *       Keep LG's video-frame-output device open, wait its real vsync, and read rotating DMA

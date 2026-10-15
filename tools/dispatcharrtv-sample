@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in stack sampling for a live PlxNative process on the rooted TV.
+"""Opt-in stack sampling for a live Dispatcharr TV process on the rooted TV.
 
 The application is unchanged while this command is absent.  The wrapper takes the TV lock,
 temporarily stages the ARM ptrace helper under /tmp, verifies the selected install/PID and binary
@@ -27,7 +27,7 @@ from typing import Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / "tools" / "tv-lock.sh"
-HELPER = ROOT / "pkg" / "plxnative-stackwalk"
+HELPER = ROOT / "pkg" / "dispatcharrtv-stackwalk"
 TV_SSH = ROOT / "tools" / "tv-ssh"
 MAP_RE = re.compile(
     r"^([0-9a-f]+)-([0-9a-f]+)\s+(\S+)\s+([0-9a-f]+)\s+\S+\s+\d+\s*(.*)$"
@@ -149,7 +149,7 @@ def build_id(path: Path) -> str:
 def select_local_image(remote: str, app_suffix: str, binary_match: bool,
                        chosen_app: Path, pkg_dir: Path) -> Path | None:
     if remote.endswith(app_suffix):
-        # Do not fall through to pkg/<basename>: that is also pkg/plxnative and would confidently
+        # Do not fall through to pkg/<basename>: that is also pkg/dispatcharrtv and would confidently
         # symbolize a deployed mismatch against the wrong local executable.
         return chosen_app if binary_match else None
     candidate = pkg_dir / Path(remote).name
@@ -158,13 +158,13 @@ def select_local_image(remote: str, app_suffix: str, binary_match: bool,
 
 def symbolizer(appdir: str, binary_match: bool):
     addr2line = toolprefix() + "addr2line"
-    local_app = ROOT / "pkg" / "plxnative"
-    debug_app = ROOT / "pkg" / "plxnative.debug"
+    local_app = ROOT / "pkg" / "dispatcharrtv"
+    debug_app = ROOT / "pkg" / "dispatcharrtv.debug"
     chosen_app = local_app
     if debug_app.exists() and build_id(debug_app) == build_id(local_app):
         chosen_app = debug_app
     app_type = elf_type(local_app) if local_app.exists() else ""
-    app_suffix = f"{appdir}/plxnative"
+    app_suffix = f"{appdir}/dispatcharrtv"
 
     def local_image(remote: str) -> Path | None:
         return select_local_image(remote, app_suffix, binary_match, chosen_app, ROOT / "pkg")
@@ -233,7 +233,7 @@ def write_report(bundle: Path, metadata: dict, rows: list[dict], mappings: list[
             out.write(f"{stack} {count}\n")
 
     lines = [
-        "PlxNative live stack sample",
+        "Dispatcharr TV live stack sample",
         f"mode: {metadata['mode']}",
         f"install: {metadata['appid']} [{metadata['flavor']}]",
         f"pid: {metadata['pid']}",
@@ -272,13 +272,13 @@ class Session:
             raise SystemExit("cannot resolve TV/install paths from Makefile")
         self.tv, self.appid, self.appdir, self.rundir = values
         self.flavor = flavor
-        self.executable = f"{self.appdir}/plxnative"
+        self.executable = f"{self.appdir}/dispatcharrtv"
         self.ssh, self.scp = transport(self.tv)
-        self.remote_helper = f"/tmp/plxnative-stackwalk-{os.getpid()}"
+        self.remote_helper = f"/tmp/dispatcharrtv-stackwalk-{os.getpid()}"
         self.staged = False
 
     def build_and_stage(self) -> None:
-        run(["make", "plxnative-stackwalk"])
+        run(["make", "dispatcharrtv-stackwalk"])
         proc = subprocess.run(
             self.scp + [str(HELPER), f"root@{self.tv}:{self.remote_helper}.new"],
             cwd=ROOT,
@@ -321,7 +321,7 @@ class Session:
                 rows.append(json.loads(line))
             except json.JSONDecodeError as error:
                 raise RuntimeError(f"invalid helper JSON on line {line_no}: {error}") from error
-        local_binary = ROOT / "pkg" / "plxnative"
+        local_binary = ROOT / "pkg" / "dispatcharrtv"
         local_hash = local_md5(local_binary) if local_binary.exists() else ""
         remote_hash = remote_md5(self.ssh, self.executable)
         metadata = {
@@ -351,7 +351,7 @@ def lock_reexec(argv: list[str]) -> None:
         return
     os.execv(
         str(LOCK),
-        [str(LOCK), "with", "--why", "opt-in PlxNative live diagnostics", "--",
+        [str(LOCK), "with", "--why", "opt-in Dispatcharr TV live diagnostics", "--",
          sys.executable, str(Path(__file__).resolve()), *argv],
     )
 
@@ -385,7 +385,7 @@ def watch(args, session: Session) -> None:
     print(f"watching {session.appid}; no capture until loop= is silent for {args.stall_ms} ms")
     while True:
         pid = wait_for_pid(session)
-        eventlog = f"{session.rundir}/plxnative-events.log"
+        eventlog = f"{session.rundir}/dispatcharrtv-events.log"
         tail = subprocess.Popen(
             session.ssh + [f"tail -n 0 -f {shlex.quote(eventlog)}"],
             text=True,
@@ -441,20 +441,20 @@ def watch(args, session: Session) -> None:
 
 def selftest() -> int:
     maps = parse_maps(
-        "00010000-00110000 r-xp 00000000 00:00 1 /app/plxnative\n"
+        "00010000-00110000 r-xp 00000000 00:00 1 /app/dispatcharrtv\n"
         "70000000-70010000 r-xp 00002000 00:00 2 /lib/libfoo.so\n"
     )
-    assert module_for(0x10020, maps) == ("/app/plxnative", 0x20)
+    assert module_for(0x10020, maps) == ("/app/dispatcharrtv", 0x20)
     assert module_for(0x70000010, maps) == ("/lib/libfoo.so", 0x2010)
     assert module_for(0x90000000, maps) == ("[unknown]", 0x90000000)
     with tempfile.TemporaryDirectory() as tmp:
         bundle = Path(tmp)
         pkg_dir = bundle / "pkg"
         pkg_dir.mkdir()
-        local_app = pkg_dir / "plxnative"
+        local_app = pkg_dir / "dispatcharrtv"
         local_app.write_bytes(b"not an ELF; selection is the contract under test")
-        jail_path = "/var/palm/jail/test/media/apps/com.test/plxnative"
-        suffix = "/media/apps/com.test/plxnative"
+        jail_path = "/var/palm/jail/test/media/apps/com.test/dispatcharrtv"
+        suffix = "/media/apps/com.test/dispatcharrtv"
         assert select_local_image(jail_path, suffix, False, local_app, pkg_dir) is None
         assert select_local_image(jail_path, suffix, True, local_app, pkg_dir) == local_app
         metadata = {"mode": "selftest", "appid": "test", "flavor": "debug", "pid": 7,
@@ -473,7 +473,7 @@ def selftest() -> int:
         folded = (bundle / "stacks.folded").read_text()
         assert "2  hot" in report
         assert "main;root;hot 1" in folded
-    print("plxnative-sample selftest: ok")
+    print("dispatcharrtv-sample selftest: ok")
     return 0
 
 

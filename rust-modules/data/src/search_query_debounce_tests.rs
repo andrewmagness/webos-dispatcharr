@@ -277,7 +277,7 @@ fn a_landing_from_the_previous_query_is_discarded_and_leaves_the_new_claim_held(
 
 /// A screen that can never be answered must not spin forever. With no server registered nothing
 /// can land, so a `State` recomputed only on a landing would sit on `Searching` for good — and
-/// this is reachable: `/tmp/plxnative-search=<q>` forces the route whether or not a server was
+/// this is reachable: `/tmp/dispatcharrtv-search=<q>` forces the route whether or not a server was
 /// ever installed.
 #[test]
 fn an_empty_roster_settles_instead_of_spinning_forever() {

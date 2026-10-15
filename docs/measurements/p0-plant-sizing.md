@@ -113,7 +113,7 @@ validated at the only operating point evidence exists for; it is no longer valid
 that ships. Re-censusing is a device job and the prediction to check is `1600 + 83886080/R_v`,
 about 25% above every video-bound row of the current table.
 
-**Host evidence, such as it is.** A 200 s shaped simulator run (`make sim` + `plxnative-clocksink`
+**Host evidence, such as it is.** A 200 s shaped simulator run (`make sim` + `dispatcharrtv-clocksink`
 through `tools/netcond.py`, unshaped then `rate:8300`) climbed 720 -> 2000 -> 20000, walked down to
 4000 and back to 6000, and peaked at **`qbytes=8481329`** — past the old 8 388 608 cap, so the
 enlargement is live in the real pipeline and not merely in the model. That run produced **six
@@ -160,7 +160,7 @@ a 4K source, and 1918x802 for every rung from `P1080M6` up against a 1080p one. 
 against a real PMS. Until then the change is correct-by-construction and unexercised, which is a
 different and weaker claim than "verified".
 
-**What the simulator can and cannot say about the feed.** `make sim` + `plxnative-clocksink` now
+**What the simulator can and cannot say about the feed.** `make sim` + `dispatcharrtv-clocksink` now
 runs the whole path — queues, backpressure, the PTS timeline, the cursor step, the reserve the
 controller reads next — so "does our own pipeline handle a fed reject" is host-answerable and was
 answered here. What is NOT answerable off-device is LG's decoder: this is a one-segment raster

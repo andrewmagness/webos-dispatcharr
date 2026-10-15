@@ -1,19 +1,22 @@
 # Nightly builds
 
-A nightly is the newest PlxNative build from `main`, published on most days the code changes. It
-installs **beside** the regular app as **PlxNative Nightly** - its own launcher tile and its own
+> **Not published yet.** No nightly is being built for Dispatcharr TV (the nightly build needs
+> telemetry keys this project has not set), and nothing serves the repository below.
+
+A nightly is the newest Dispatcharr TV build from `main`, published on most days the code changes. It
+installs **beside** the regular app as **Dispatcharr TV Nightly** - its own launcher tile and its own
 sign-in - so trying it never touches the release you already trust.
 
 **A nightly is not tested on a television.** It passes the same automated build and packaging
-checks a release does, but nobody has watched it play. Keep the regular PlxNative installed, and
+checks a release does, but nobody has watched it play. Keep the regular Dispatcharr TV installed, and
 expect rough edges. New work reaches a nightly before it reaches a release, which is the point.
 
 The simplest way to follow nightlies is the project's own Homebrew Channel repository: add it once,
-install PlxNative Nightly, and every new build appears as an update on the TV.
+install Dispatcharr TV Nightly, and every new build appears as an update on the TV.
 
 ## What you need
 
-- A TV that already runs the regular PlxNative. The [installation guide](install-and-verify.md)
+- A TV that already runs the regular Dispatcharr TV. The [installation guide](install-and-verify.md)
   covers LG Developer Mode and Homebrew Channel; nothing extra is needed for nightlies.
 - **Homebrew Channel** on the TV. Without it, [install by hand](#install-by-hand-without-homebrew-channel).
 - The TV's Developer Mode session kept alive, as for any app installed through it. It
@@ -28,13 +31,13 @@ Do this once, on the TV:
 2. Choose **Add repository** and enter:
 
    ```
-   https://plxnative.com/nightly/repo.json
+   https://andrewmagness.github.io/webos-dispatcharr/nightly/repo.json
    ```
 
-3. Go back to the app list. **PlxNative Nightly** now appears beside the other entries.
+3. Go back to the app list. **Dispatcharr TV Nightly** now appears beside the other entries.
 4. Open it and select **Install**. Homebrew Channel checks the download's checksum before it
    installs anything.
-5. Open **PlxNative Nightly** from the launcher and sign in. It does not share your sign-in or
+5. Open **Dispatcharr TV Nightly** from the launcher and sign in. It does not share your sign-in or
    settings with the regular app.
 
 ## Updating
@@ -55,7 +58,7 @@ outside the website and docs changed.
 
 If you do not use Homebrew Channel, or want a specific build:
 
-1. Open [plxnative.com/nightly/latest.json](https://plxnative.com/nightly/latest.json). It names
+1. Open [latest.json](https://andrewmagness.github.io/webos-dispatcharr/nightly/latest.json). It names
    the newest nightly, its `.ipk` download and its SHA-256 checksum.
 2. Download the `.ipk` and [verify the checksum](install-and-verify.md#verifying-the-package).
 3. Install it with webOS Dev Manager, as in the [installation guide](install-and-verify.md).
@@ -64,9 +67,9 @@ A package installed this way does not update itself. Install the next one the sa
 
 ## Going back
 
-- To stop following nightlies, uninstall **PlxNative Nightly** from Homebrew Channel, then remove
+- To stop following nightlies, uninstall **Dispatcharr TV Nightly** from Homebrew Channel, then remove
   the repository under **Settings** if you no longer want it listed.
-- The regular PlxNative is separate and is not affected either way.
+- The regular Dispatcharr TV is separate and is not affected either way.
 - Nightly builds are deleted from the download page 30 days after they are published. The newest
   one is always kept. A copy already installed on your TV keeps working.
 
@@ -121,13 +124,13 @@ Some consequences:
 - **Homebrew Channel will not take the URL.** Check it character by character, including `https://`
   and the `.json` ending. Typing with the TV remote makes this the most common slip.
 - **Install or update fails.** Note the exact message, the version Homebrew Channel lists and your
-  TV model and webOS version, and [open an issue](https://github.com/GLinnik21/plx-native/issues/new/choose).
+  TV model and webOS version, and [open an issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose).
   Installing nightlies through Homebrew Channel is new, so a failure here is worth reporting.
 - **The app is gone after a while.** That is the Developer Mode session expiring, not the nightly.
   See the [installation guide](install-and-verify.md#important-developer-mode-expires).
 
 ## Reporting problems
 
-[Open an issue](https://github.com/GLinnik21/plx-native/issues/new/choose) and include the **reported
+[Open an issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose) and include the **reported
 version** from the About screen, for example `0.8.0-nightly-20261006`, with your TV model and webOS
 version. Do not post passwords, Plex tokens or screenshots that show them.

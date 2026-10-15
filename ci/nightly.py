@@ -14,8 +14,8 @@ Five subcommands, each independently testable as a pure function plus a thin CLI
 
   plan        — today's version/label/tag, the previous nightly tag, and whether to skip.
   notes       — render the release body (markdown, no hard wrapping, absolute links only).
-  latest-json — what `plxnative.com/nightly/latest.json` serves; `{"available": false}` if none.
-  repo-json   — the Homebrew Channel repository at `plxnative.com/nightly/repo.json`: the index,
+  latest-json — what `<site>/nightly/latest.json` would serve; `{"available": false}` if none.
+  repo-json   — the Homebrew Channel repository at `<site>/nightly/repo.json`: the index,
                 the newest nightly's manifest and a description page; an empty index if none.
   prune       — delete nightly releases (and their tags) older than N days, keeping the newest.
 
@@ -49,7 +49,9 @@ TAG_PREFIX = "nightly/v"
 #: under Settings > Add repository instead — `docs/nightly-builds.md` is the guide. The files live
 #: on the project's own site because a release asset's URL carries the nightly's tag, which
 #: changes every day, while the URL a user typed on a television must not.
-SITE_ORIGIN = "https://plxnative.com"
+# Where the nightly repository WOULD be served: this repository's GitHub Pages. Nothing publishes
+# it yet (the upstream's site workflow was removed with its site); see docs/nightly-builds.md.
+SITE_ORIGIN = "https://andrewmagness.github.io/webos-dispatcharr"
 REPO_JSON_URL = f"{SITE_ORIGIN}/nightly/repo.json"
 GUIDE_URL = f"{SITE_ORIGIN}/nightly/"
 PACKAGE_ID = "com.magness.dispatcharrtv.nightly"
@@ -58,7 +60,7 @@ PACKAGE_ID = "com.magness.dispatcharrtv.nightly"
 MANIFEST_NAME = f"{PACKAGE_ID}.manifest.json"
 #: Homebrew Channel shows this where there is no room for the long description (and falls back to
 #: it when a package has no `fullDescriptionUrl`); the listing's limit is 80 characters.
-SHORT_DESCRIPTION = "Daily build of PlxNative from main. Untested on a TV; installs beside stable."
+SHORT_DESCRIPTION = "Daily Dispatcharr TV build from main. Untested on a TV; installs beside stable."
 
 
 def _release_line_content() -> "str | None":
@@ -218,8 +220,8 @@ def render_notes(*, label: str, sha: str, prev_tag: "str | None", ipk: str, sha2
 
     return "\n\n".join([
         f"Automatic build of `main` at [`{short_sha}`]({commit_link}). It installs beside "
-        "PlxNative as a separate app, \"PlxNative Nightly\", with its own launcher tile and its "
-        "own sign-in — your regular PlxNative install is untouched.",
+        "Dispatcharr TV as a separate app, \"Dispatcharr TV Nightly\", with its own launcher tile and its "
+        "own sign-in — your regular Dispatcharr TV install is untouched.",
 
         "**This build has not been tested on a television.** It passed the same automated checks "
         "a release does — the ARM cross-build, the packaging gates, and the firmware loader "
@@ -234,13 +236,13 @@ def render_notes(*, label: str, sha: str, prev_tag: "str | None", ipk: str, sha2
 
         "## Installing\n\n"
         "**With Homebrew Channel:** under Settings, choose Add repository and enter "
-        f"`{REPO_JSON_URL}`, then install \"PlxNative Nightly\" from the list. Later nightlies "
+        f"`{REPO_JSON_URL}`, then install \"Dispatcharr TV Nightly\" from the list. Later nightlies "
         f"appear there as updates. The [guide]({GUIDE_URL}) has the details.\n\n"
         f"**By hand:** download `{ipk}` below and install it with "
         "[dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop) — no rooted "
         "television is needed. A package installed this way does not update itself; the newest "
         "nightly is always linked from "
-        "[plxnative.com/nightly/latest.json](https://plxnative.com/nightly/latest.json).\n\n"
+        f"[latest.json]({SITE_ORIGIN}/nightly/latest.json).\n\n"
         f"```\n{sha256}  {ipk}\n```\n\n"
         "This package bundles FFmpeg under LGPL-2.1-or-later; the complete corresponding source is "
         "attached below. Nightly builds are deleted after 30 days.",
@@ -330,7 +332,7 @@ def _fail(msg: str) -> "SystemExit":
 def repo_manifest(manifest: dict, *, ipk_url: str, ipk_name: str, sha256: str, label: str) -> dict:
     """The manifest Homebrew Channel is pointed at: the one `build-package.yml` generated for the
     package, with `ipkUrl` made absolute. Its bare filename resolves against the manifest's own
-    URL, and that is now `plxnative.com`, while the package is a release asset on GitHub.
+    URL, and that is the site's (`SITE_ORIGIN`), while the package is a release asset on GitHub.
 
     Everything Homebrew Channel enforces on the television is re-checked here against facts that
     do not come from the manifest, because a mismatch is invisible until it breaks a user's
@@ -373,7 +375,7 @@ def repo_index(repo: str) -> dict:
     package, pointing at the manifest and the description page staged beside it."""
     return {"packages": [{
         "id": PACKAGE_ID,
-        "title": "PlxNative Nightly",
+        "title": "Dispatcharr TV Nightly",
         "shortDescription": SHORT_DESCRIPTION,
         "fullDescriptionUrl": f"{SITE_ORIGIN}/nightly/description.html",
         # The nightly tile's own badged artwork, the one the manifest names too.
@@ -393,7 +395,7 @@ def description_html(*, label: str, sha: str, release_url: str, repo: str) -> st
     return "\n".join([
         "<p><strong>This build has not been tested on a television.</strong> It passed the same "
         "automated build and packaging checks a release does, but nobody has watched it play. "
-        "Keep the regular PlxNative installed — this one installs beside it with its own tile "
+        "Keep the regular Dispatcharr TV installed — this one installs beside it with its own tile "
         "and its own sign-in.</p>",
         f"<p>Build {esc(date)} &middot; version {esc(label)} &middot; commit "
         f'<a href="https://github.com/{esc(repo)}/commit/{esc(sha)}">{esc(short)}</a></p>',
@@ -427,7 +429,7 @@ def pick_servable_release(releases: "list[dict]") -> "tuple[dict, dict, dict] | 
 
 def build_repo_files(release: "dict | None", sha256_text: str, manifest_text: "str | None",
                      repo: str) -> "dict[str, str]":
-    """Every file `plxnative.com/nightly/` serves for the Homebrew Channel repository, as
+    """Every file `<site>/nightly/` serves for the Homebrew Channel repository, as
     `{filename: text}`. Pure — takes what `gh api` and the asset downloads already returned, so
     `--selftest` covers it without a network.
 
@@ -559,11 +561,11 @@ def _selftest() -> int:
     # notes rendering
     body = render_notes(
         label="0.7.0-nightly-20260919", sha="abc1234def5678900000000000000000000000",
-        prev_tag="nightly/v0.7.0-nightly-20260918", ipk="plxnative-v0.7.0-nightly-20260919.ipk",
-        sha256="deadbeef" * 8, repo="GLinnik21/plx-native",
+        prev_tag="nightly/v0.7.0-nightly-20260918", ipk="dispatcharrtv-v0.7.0-nightly-20260919.ipk",
+        sha256="deadbeef" * 8, repo="andrewmagness/webos-dispatcharr",
         changes=["- session: one in-memory cache owned by the session module (#136)"],
     )
-    check("PlxNative Nightly" in body, "notes name the nightly tile")
+    check("Dispatcharr TV Nightly" in body, "notes name the nightly tile")
     check("**This build has not been tested on a television.**" in body,
           "notes carry the untested-on-TV warning in bold")
     check("## Changes since 0.7.0-nightly-20260918" in body,
@@ -571,7 +573,7 @@ def _selftest() -> int:
     check("session: one in-memory cache" in body, "notes carry the passed-in change lines")
     check("compare/nightly/v0.7.0-nightly-20260918...nightly/v0.7.0-nightly-20260919" in body,
           "notes link the compare view between the two tags")
-    check(f"deadbeef{'deadbeef' * 7}  plxnative-v0.7.0-nightly-20260919.ipk" in body,
+    check(f"deadbeef{'deadbeef' * 7}  dispatcharrtv-v0.7.0-nightly-20260919.ipk" in body,
           "notes carry the sha256 code block with the exact ipk name")
     check("LGPL-2.1-or-later" in body and "deleted after 30 days" in body,
           "notes carry the LGPL notice and the retention promise")
@@ -579,7 +581,7 @@ def _selftest() -> int:
           "the first paragraph is not internally hard-wrapped")
     first_notes = render_notes(
         label="0.7.0-nightly-20260919", sha="0" * 40, prev_tag=None,
-        ipk="plxnative-v0.7.0-nightly-20260919.ipk", sha256="0" * 64, repo="GLinnik21/plx-native",
+        ipk="dispatcharrtv-v0.7.0-nightly-20260919.ipk", sha256="0" * 64, repo="andrewmagness/webos-dispatcharr",
         changes=[],
     )
     check("First nightly." in first_notes, "no prev_tag -> 'First nightly.'")
@@ -591,14 +593,14 @@ def _selftest() -> int:
     fake_release = {
         "tag_name": "nightly/v0.7.0-nightly-20260919",
         "target_commitish": "abc1234def5678900000000000000000000000",
-        "html_url": "https://github.com/GLinnik21/plx-native/releases/tag/nightly%2Fv0.7.0-nightly-20260919",
+        "html_url": "https://github.com/andrewmagness/webos-dispatcharr/releases/tag/nightly%2Fv0.7.0-nightly-20260919",
         "assets": [
-            {"name": "plxnative-v0.7.0-nightly-20260919.ipk",
+            {"name": "dispatcharrtv-v0.7.0-nightly-20260919.ipk",
              "browser_download_url": "https://example.invalid/ipk"},
             {"name": "nightly.sha256", "browser_download_url": "https://example.invalid/sha256"},
         ],
     }
-    payload = latest_json_payload(fake_release, "deadbeef  plxnative-v0.7.0-nightly-20260919.ipk\n")
+    payload = latest_json_payload(fake_release, "deadbeef  dispatcharrtv-v0.7.0-nightly-20260919.ipk\n")
     check(payload["version"] == "0.7.0-nightly-20260919", "latest.json version is the bare label")
     check(payload["tag"] == "nightly/v0.7.0-nightly-20260919", "latest.json tag is the full ref")
     check(payload["date"] == "20260919", "latest.json date is pulled from the label")
@@ -628,12 +630,12 @@ def _selftest() -> int:
     # Homebrew Channel repository
     label = "0.8.0-nightly-20261006"
     good_manifest = {
-        "id": PACKAGE_ID, "version": "0.8.20261006", "type": "native", "title": "PlxNative Nightly",
-        "ipkUrl": "plxnative-v0.8.0-nightly-20261006.ipk",
+        "id": PACKAGE_ID, "version": "0.8.20261006", "type": "native", "title": "Dispatcharr TV Nightly",
+        "ipkUrl": "dispatcharrtv-v0.8.0-nightly-20261006.ipk",
         "ipkHash": {"sha256": "ab" * 32}, "iconUri": "https://example.invalid/i.png",
     }
-    ipk_name = "plxnative-v0.8.0-nightly-20261006.ipk"
-    ipk_url = "https://github.com/GLinnik21/plx-native/releases/download/x/plxnative-v0.8.0.ipk"
+    ipk_name = "dispatcharrtv-v0.8.0-nightly-20261006.ipk"
+    ipk_url = "https://github.com/andrewmagness/webos-dispatcharr/releases/download/x/dispatcharrtv-v0.8.0.ipk"
     out = repo_manifest(good_manifest, ipk_url=ipk_url, ipk_name=ipk_name,
                         sha256=("ab" * 32) + "  file.ipk\n", label=label)
     check(out["ipkUrl"] == ipk_url and out["version"] == "0.8.20261006",
@@ -668,7 +670,7 @@ def _selftest() -> int:
     check(refuses(good_manifest, lbl="0.6.2-nightly-20261006"),
           "a trunk manifest (0.8.<date>) does not match a 0.6.2 maintenance-line label")
 
-    index = repo_index("GLinnik21/plx-native")
+    index = repo_index("andrewmagness/webos-dispatcharr")
     pkg = index["packages"][0]
     check(pkg["id"] == PACKAGE_ID and pkg["manifestUrl"] == f"{SITE_ORIGIN}/nightly/{MANIFEST_NAME}",
           "repo.json names the nightly id and the manifest staged beside it")
@@ -676,12 +678,12 @@ def _selftest() -> int:
     check(pkg["fullDescriptionUrl"].startswith("https://") and pkg["iconUri"].startswith("https://"),
           "repo.json's description and icon URLs are absolute https")
 
-    rel = {**fake_release, "html_url": "https://github.com/GLinnik21/plx-native/releases/tag/x",
+    rel = {**fake_release, "html_url": "https://github.com/andrewmagness/webos-dispatcharr/releases/tag/x",
            "assets": fake_release["assets"] + [{"name": MANIFEST_NAME,
                                                 "browser_download_url": "https://example.invalid/m"}]}
-    rel["assets"][0] = {"name": "plxnative-v0.8.0-nightly-20261006.ipk", "browser_download_url": ipk_url}
+    rel["assets"][0] = {"name": "dispatcharrtv-v0.8.0-nightly-20261006.ipk", "browser_download_url": ipk_url}
     rel["tag_name"] = "nightly/v" + label
-    files = build_repo_files(rel, ("ab" * 32) + "  x\n", json.dumps(good_manifest), "GLinnik21/plx-native")
+    files = build_repo_files(rel, ("ab" * 32) + "  x\n", json.dumps(good_manifest), "andrewmagness/webos-dispatcharr")
     check(set(files) == {"repo.json", MANIFEST_NAME, "description.html"},
           "a nightly with a manifest yields the index, the manifest and the description page")
     check(json.loads(files[MANIFEST_NAME])["ipkUrl"] == ipk_url, "the served manifest points at the release's .ipk")
@@ -704,7 +706,7 @@ def _selftest() -> int:
 
     # the newest SERVABLE nightly: an incomplete newest release must not blank the repository
     def mk(day: str, with_manifest: bool, with_sha: bool = True) -> dict:
-        assets = [{"name": f"plxnative-v0.8.0-nightly-{day}.ipk", "browser_download_url": "https://x/ipk"}]
+        assets = [{"name": f"dispatcharrtv-v0.8.0-nightly-{day}.ipk", "browser_download_url": "https://x/ipk"}]
         if with_sha:
             assets.append({"name": "nightly.sha256", "browser_download_url": "https://x/sha"})
         if with_manifest:

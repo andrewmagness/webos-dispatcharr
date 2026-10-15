@@ -10,7 +10,7 @@ The file is organised by **relationship**. Both the applicable license and the a
 relationship affect obligations; dynamic linking is not a blanket exemption:
 
 1. **Redistributed in this package** — third-party code or assets that are physically inside the
-   files you received (compiled into the `plxnative` binary, embedded in it, or shipped beside
+   files you received (compiled into the `dispatcharrtv` binary, embedded in it, or shipped beside
    it). These carry real attribution obligations, discharged here and in `licenses/`.
 2. **Dynamically linked, not redistributed** — libraries that already exist on your television
    and are loaded at run time by SONAME. No copy of them is contained in this package.
@@ -54,7 +54,7 @@ external library enabled is **zlib**, the television's own `libz.so.1` (not redi
 section 3), which the Matroska demuxer needs to inflate compressed subtitle tracks.
 
 **You may modify and replace them.** They are ordinary shared libraries, loaded at run time by
-`dlopen` from the application's own directory; no FFmpeg code is linked into the `plxnative`
+`dlopen` from the application's own directory; no FFmpeg code is linked into the `dispatcharrtv`
 executable. Build your own from the source above and put it in the app directory under the same
 file name, and Dispatcharr TV will load yours instead, with no change to the application. The `-plx`
 suffix in the file names exists so these cannot be confused with — or accidentally replace — the
@@ -121,7 +121,7 @@ the same SONAME. The GPL-3.0-or-later terms under which Dispatcharr TV is distri
 application for your own use and reverse engineering for debugging such modifications.
 
 One further disclosure: small fragments of glibc's own startup and compatibility code **are**
-statically linked into `plxnative` by the toolchain (`crt1.o` and objects from `libc_nonshared.a`
+statically linked into `dispatcharrtv` by the toolchain (`crt1.o` and objects from `libc_nonshared.a`
 — this is why the binary defines `_start`, `__libc_csu_init`, `__libc_csu_fini`, `fstat64`,
 `lstat64`, `fstatat64`). They are covered by the same LGPL-2.1 notice and licence copy above.
 Whether those particular files additionally carry glibc's linking exception was **not verified**
@@ -131,7 +131,7 @@ for the NDK build used here.
 
 ## 2. Redistributed in this package
 
-### 2.1 Vendored C source, compiled into `plxnative`
+### 2.1 Vendored C source, compiled into `dispatcharrtv`
 
 **nanosvg** and **nanosvgrast** — Copyright (c) 2013-14 Mikko Mononen <memon@inside.org>
 Licence: **Zlib** (`licenses/Zlib.txt`). The vendored headers are byte-identical to upstream
@@ -145,7 +145,7 @@ The upstream headers credit, and we reproduce, the following derivations:
 - The polygon rasterizer is heavily based on the **stb_truetype** rasterizer by Sean Barrett
   (http://nothings.org/).
 
-### 2.2 Icon artwork embedded in `plxnative`
+### 2.2 Icon artwork embedded in `dispatcharrtv`
 
 The following SVG icons are compiled into the binary. All are visually modified from upstream
 (stroke width and/or colour); modifications are stated where the licence requires it.
@@ -208,7 +208,7 @@ Hangul, Kana or Han, so without this face every Korean, Japanese and Chinese cha
 name renders as empty boxes. See `rust-modules/gfx/src/text.rs` for the chain and
 `rust-modules/src/fontcov.rs` for the coverage each face is required to have.
 
-### 2.4 Rust code statically linked into `plxnative`
+### 2.4 Rust code statically linked into `dispatcharrtv`
 
 The application core is Rust. The Rust standard library is compiled from source
 (`-Z build-std`) and linked in, together with the crates below. All of this code is
@@ -361,7 +361,7 @@ here (the standard library takes `hashbrown` with default features disabled, whi
 enable it) — verified absent from the binary. `rustc-literal-escaper`, `proc_macro`,
 `panic_abort` are build-std source components; final object inclusion is recorded in the linker evidence. `std_detect` supplies CPU capability detection in the Rust runtime and is covered by the Rust notices above.
 
-### 2.5 Compiler runtime fragments statically linked into `plxnative`
+### 2.5 Compiler runtime fragments statically linked into `dispatcharrtv`
 
 - **GCC runtime startup objects** (`crtbegin.o`, `crtend.o`) from the webOS NDK's GCC 12.2.0.
   Licence: GPL-3.0-or-later **WITH GCC-exception-3.1**. The GCC Runtime Library Exception
@@ -374,7 +374,7 @@ enable it) — verified absent from the binary. `rustc-literal-escaper`, `proc_m
 ### 2.6 Native crash capture
 
 **Sentry Native 0.16.6** — Copyright (c) 2019 Sentry and individual contributors. Licence:
-**MIT** (`licenses/MIT.txt`). Its client library is statically linked into `plxnative`; the
+**MIT** (`licenses/MIT.txt`). Its client library is statically linked into `dispatcharrtv`; the
 out-of-process `sentry-crash` handler is shipped beside it. The handler is built with its HTTP
 transport disabled: it writes a crash envelope for the application's consent-aware sender to deliver on
 the next launch. The source is patched for webOS's glibc 2.12 syscall surface and the 32-bit ARM
@@ -418,7 +418,7 @@ of a bundled copy alone does not establish that no obligation applies.
 | GLib | 2.48.2 | LGPL-2.1-or-later | See section 1 |
 | GNU C Library | 2.24 | LGPL-2.1-or-later | See section 1 |
 | SDL2 (LG fork) | 2.0.4 | Zlib | Copyright (C) 1997-2016 Sam Lantinga |
-| zlib | 1.2.11 on this build (1.2.7 to 1.3.1 across the firmware inventories) | Zlib | Copyright (C) 1995-2017 Jean-loup Gailly and Mark Adler. Loaded by the bundled FFmpeg, not by `plxnative` |
+| zlib | 1.2.11 on this build (1.2.7 to 1.3.1 across the firmware inventories) | Zlib | Copyright (C) 1995-2017 Jean-loup Gailly and Mark Adler. Loaded by the bundled FFmpeg, not by `dispatcharrtv` |
 | SDL2_ttf | 2.0.14 | Zlib | Zlib-licensed since 2.0.11 |
 | libcurl | 7.53.1 (LG SONAME `libcurl.so.5`) | curl (MIT/X derivate) | Copyright (c) 1996 - 2017, Daniel Stenberg, <daniel@haxx.se>, and many contributors |
 | libwayland-client | 0.3.0 | MIT | Copyright © 2008-2012 Kristian Høgsberg; © 2010-2012 Intel Corporation; © 2011 Benjamin Franzke; © 2012 Collabora, Ltd. The licence of *this LG build specifically* was not read off the device |

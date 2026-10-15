@@ -1,6 +1,6 @@
 # I1 — ABR baseline on unmodified policy
 
-**Device session 2026-08-26.** LG 49SM9000PLA, webOS 4.10.0, `com.beb.plxnative.debug`.
+**Device session 2026-08-26.** LG 49SM9000PLA, webOS 4.10.0, `com.beb.dispatcharrtv.debug`.
 Binary: `5a8ef2ef` + I0 (`88b5d738`) + I0 amendments (`3f9ce72b`) — instrumentation only, no ABR
 policy change. Host suite at that SHA: 1272 Rust + 98 harness green.
 
@@ -88,7 +88,7 @@ and never varied.
 
 # Addendum — M2 re-run with `--verbose --no-early`
 
-**Second device session, same day, same binary** (`pkg/plxnative` md5 verified identical on the
+**Second device session, same day, same binary** (`pkg/dispatcharrtv` md5 verified identical on the
 television before the run). This fills the gap the M2 table above records as `—`.
 
 **It is a SECOND RUN, not a recovery of the first one's numbers.** The trajectories below are not

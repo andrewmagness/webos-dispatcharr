@@ -22,7 +22,7 @@ class BundleTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.path = self.root / 'candidate.tar.gz'
         self.contents = {
-            'LICENSE': (Path(os.environ.get('PLXNATIVE_TEST_GPL_TEXT', Path(__file__).resolve().parents[1] / 'LICENSE')).read_bytes(), 0o644),
+            'LICENSE': (Path(os.environ.get('DISPATCHARRTV_TEST_GPL_TEXT', Path(__file__).resolve().parents[1] / 'LICENSE')).read_bytes(), 0o644),
             'LICENSING.md': (b'GPL-3.0-or-later', 0o644),
             'THIRD-PARTY-NOTICES.md': (b'third party', 0o644),
             'ipkroot/ctl/control': (b'License: GPL-3.0-or-later\n', 0o644),
@@ -176,7 +176,7 @@ class BundleTests(unittest.TestCase):
         self.check()
 
     def test_compressed_single_file_secret(self):
-        data = b'PLXNATIVE_' + b'PRIVATE_SENTINEL_compressed'
+        data = b'DISPATCHARRTV_' + b'PRIVATE_SENTINEL_compressed'
         self.contents['dependencies/ffmpeg/example.txt.gz'] = gzip.compress(data), 0o644
         self.refresh()
         with self.assertRaisesRegex(ValueError, 'credential pattern'):
@@ -196,7 +196,7 @@ class BundleTests(unittest.TestCase):
         self.check()
 
     def test_private_sentinel(self):
-        self.contents['src/private.c'] = b'PLXNATIVE_' + b'PRIVATE_SENTINEL_secret', 0o644
+        self.contents['src/private.c'] = b'DISPATCHARRTV_' + b'PRIVATE_SENTINEL_secret', 0o644
         self.refresh()
         with self.assertRaisesRegex(ValueError, 'credential pattern'):
             self.check()
@@ -214,9 +214,9 @@ class BundleTests(unittest.TestCase):
             self.check()
 
     def test_per_user_tv_config_files_are_private_paths(self):
-        # `.tv-host`/`.tv-mac` and their per-user twins (`~/.config/plxnative/tv-host`, `tv-mac`,
+        # `.tv-host`/`.tv-mac` and their per-user twins (`~/.config/dispatcharrtv/tv-host`, `tv-mac`,
         # read by tools/tv-config.sh) hold the maintainer's home network: neither spelling may ship.
-        for name in ('.tv-host', '.tv-mac', 'tools/plxnative/tv-host', 'tools/plxnative/tv-mac'):
+        for name in ('.tv-host', '.tv-mac', 'tools/dispatcharrtv/tv-host', 'tools/dispatcharrtv/tv-mac'):
             with self.subTest(name=name):
                 self.contents[name] = b'192.0.2.1\n', 0o644
                 self.refresh()
@@ -232,7 +232,7 @@ class BundleTests(unittest.TestCase):
                 info.type, info.linkname = tarfile.SYMTYPE, link
                 archive.addfile(info)
             else:
-                data = b'PLXNATIVE_' + b'PRIVATE_SENTINEL_nested' if secret else b'normal'
+                data = b'DISPATCHARRTV_' + b'PRIVATE_SENTINEL_nested' if secret else b'normal'
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
         self.contents['dependencies/ffmpeg/nested.tar.gz'] = out.getvalue(), 0o644
@@ -430,7 +430,7 @@ class BundleTests(unittest.TestCase):
         repo, command = self.producer_fixture()
         (repo / '.gitignore').write_text('.tv-host\n')
         subprocess.run(['git', '-C', str(repo), 'add', '.gitignore'], check=True)
-        (repo / '.tv-host').write_bytes(b'PLXNATIVE_' + b'PRIVATE_SENTINEL_hidden')
+        (repo / '.tv-host').write_bytes(b'DISPATCHARRTV_' + b'PRIVATE_SENTINEL_hidden')
         result = subprocess.run(command, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('.tv-host', validate(self.path)['files'])

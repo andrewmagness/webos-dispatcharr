@@ -20,7 +20,7 @@ resolves on 4.4.2 through 11.2.0, and both were answering "would the dynamic loa
 binary". Something after the loader is what fails. §4 was explicit that starting is not playing —
 what it did not anticipate is that the app would not reach a UI at all.
 
-WHAT IS NEEDED NEXT is `/tmp/plxnative-events.log` and `/tmp/plxnative-crash.log` from one of those
+WHAT IS NEEDED NEXT is `/tmp/dispatcharrtv-events.log` and `/tmp/dispatcharrtv-crash.log` from one of those
 sets. The first says how far boot got and which video-plane path was chosen; the second is
 append-only and survives the relaunch, so it holds the faulting PC if the tracer ran. An empty or
 absent events log means the loader killed the process before `main`, which would contradict the
@@ -89,7 +89,7 @@ and will the binary load?"* — which turns out to be most of the port. `tools/f
 directly and runs on macOS:
 
 ```sh
-tools/fwcompat.py                                   # grade pkg/plxnative on all 14 releases
+tools/fwcompat.py                                   # grade pkg/dispatcharrtv on all 14 releases
 tools/fwcompat.py --release 5.3.1                   # one release, with the full missing list
 tools/fwcompat.py --inventory libAcbAPI libavformat  # which releases carry these
 tools/fwcompat.py --lib libSDL2-2.0.so.0 --grep webOS
@@ -235,7 +235,7 @@ could have revealed it except asking.
 
 > **2026-08-11 — item 1 is SETTLED, in the affirmative.** The webosbrew reviewer ran v0.2.1 on a
 > real LG 65UP7560AUD (webOS **6.5.2**, `Rockhopper 6.5.2-43`):
-> [issue #22](https://github.com/GLinnik21/plx-native/issues/22). The whole `VP_EXPORTED`
+> [issue #22](https://github.com/andrewmagness/webos-dispatcharr/issues/22). The whole `VP_EXPORTED`
 > sequence ran — created, `windowId` spliced into the Load payload, placed `rv=1`, VDEC/ADEC
 > allocated, fed to EOS with clean teardown. Six of eight playbacks worked: H.264 1080p, H.264
 > 4K, HEVC, AAC and AC3, episodes, end-of-file. The two failures were server-side and
@@ -250,13 +250,13 @@ Ranked by how much damage a wrong assumption does. *(Item 1 settled — see abov
 1. **Does a picture appear on webOS 5?** The entire `VP_EXPORTED` path. Symbols proven present,
    call shapes taken from the two implementations that ship. Nothing else is known.
    *Settled by:* one person, one webOS 5+ TV, one play attempt, and
-   `/tmp/plxnative-events.log`. Look for `vplane: SDL exported window`, then
+   `/tmp/dispatcharrtv-events.log`. Look for `vplane: SDL exported window`, then
    `vplane: exported windowId=_Window_Id_…`, then `vplane: exported window placed rv=1`.
 2. **Was LG's libavformat 58 built from pristine sources?** The ABI table rests on FFmpeg's
    public-header invariant — layout is a function of the version macros alone, there is not one
    `#if CONFIG_*` in the public headers — plus an exact six-library version-triple match against
    upstream n4.0. Very strong, but a vendor *can* patch a public struct and bump nothing.
-   *Settled by:* `/tmp/plxnative-ffprobe` with a known file on a webOS 5 set; if codec_id, width,
+   *Settled by:* `/tmp/dispatcharrtv-ffprobe` with a known file on a webOS 5 set; if codec_id, width,
    height and time_base come back sane, the table is right.
 3. **The current slot's `object+0x4c` / `MEDIA_CUSTOM_CONTENT_INFO+0x28` pokes.**
    Decompile-derived offsets into LG-private C++ objects, used by the in-place seek. No symbol table
@@ -375,7 +375,7 @@ This is the single most useful contribution available to this project.
 1. Install the `.ipk` (Homebrew Channel, or dev-manager-desktop). It will start — that much is
    proven statically.
 2. Sign in, browse, press play on anything.
-3. Send `/tmp/plxnative-events.log`. The first 30 lines settle most of §4 on their own:
+3. Send `/tmp/dispatcharrtv-events.log`. The first 30 lines settle most of §4 on their own:
    `vplane:` says which binding was chosen, `ff: bound …` says which FFmpeg SONAMEs resolved,
    `ff: ABI table …` says which offset table is in force, and `wm sdl=…` says whether the
    transparency handshake worked.

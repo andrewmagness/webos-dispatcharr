@@ -23,13 +23,13 @@
 # the only thing in the repo that does that arithmetic.
 #
 # TWO LOGS, and the difference matters after a relaunch:
-#   <runtime root>/plxnative-crash.log   append-only, SURVIVES the relaunch  <- read this one
-#   <runtime root>/plxnative-events.log  truncated at every launch           <- already gone
+#   <runtime root>/dispatcharrtv-crash.log   append-only, SURVIVES the relaunch  <- read this one
+#   <runtime root>/dispatcharrtv-events.log  truncated at every launch           <- already gone
 # The NAMES are the same for both installs; only the root differs — `/tmp` for the stable
 # install, `/tmp/<app id>` for a flavoured one. Ask for the one you mean with
 # `make -s print-rundir FLAVOR=<f>`; this script derives CRASHLOG/STDERRLOG from it below.
 # Do not carry an absolute path out of here into a by-hand `cat`: at the default flavour
-# `/tmp/plxnative-crash.log` is the OTHER install's log, it exists, it is append-only, and it
+# `/tmp/dispatcharrtv-crash.log` is the OTHER install's log, it exists, it is append-only, and it
 # will hand you a perfectly plausible crash that has nothing to do with the build you are
 # triaging.
 #
@@ -74,14 +74,14 @@ set -- ${_argv[@]+"${_argv[@]}"}
 [ -n "${RUNDIR:-}" ] || { echo "cannot resolve the flavour above from $REPO/Makefile" >&2; exit 2; }
 # These two have no `print-` target of their own, and want none: the log NAMES are unchanged
 # across flavours — only the directory they sit in moved — so the runtime root is the whole story.
-CRASHLOG="$RUNDIR/plxnative-crash.log"
-STDERRLOG="$RUNDIR/plxnative-stderr.log"
+CRASHLOG="$RUNDIR/dispatcharrtv-crash.log"
+STDERRLOG="$RUNDIR/dispatcharrtv-stderr.log"
 
 : "${WEBOS_SDK:=$HOME/webos-ndk/arm-webos-linux-gnueabi_sdk-buildroot}"
 ADDR2LINE="$WEBOS_SDK/bin/arm-webos-linux-gnueabi-addr2line"
 READELF="$WEBOS_SDK/bin/arm-webos-linux-gnueabi-readelf"
 OBJDUMP="$WEBOS_SDK/bin/arm-webos-linux-gnueabi-objdump"
-BIN="$REPO/pkg/plxnative"
+BIN="$REPO/pkg/dispatcharrtv"
 
 tv_host() {
   [ -n "${TV:-}" ] && { echo "$TV"; return; }
@@ -114,9 +114,9 @@ fi
 echo "== binary identity"
 if [ -f "$BIN" ]; then
   local_md5=$(md5 -q "$BIN" 2>/dev/null || md5sum "$BIN" | cut -d' ' -f1)
-  tv_md5=$(tv "md5sum $APPDIR/plxnative" | cut -d' ' -f1)
+  tv_md5=$(tv "md5sum $APPDIR/dispatcharrtv" | cut -d' ' -f1)
   echo "  local $local_md5"
-  echo "  on-TV $tv_md5   ($APPDIR/plxnative)"
+  echo "  on-TV $tv_md5   ($APPDIR/dispatcharrtv)"
   if [ "$local_md5" != "$tv_md5" ]; then
     echo "  *** MISMATCH — addresses below CANNOT be symbolized against this local build."
     echo "      Redeploy (make FLAVOR=$FLAVOR deploy) and reproduce, or fetch the deployed binary."
@@ -124,7 +124,7 @@ if [ -f "$BIN" ]; then
     echo "  match — symbolization is valid"
   fi
 else
-  echo "  no local pkg/plxnative — run make first"
+  echo "  no local pkg/dispatcharrtv — run make first"
 fi
 
 # ---- 2. codegen sanity (the SIGILL branch) ----------------------------------
@@ -145,7 +145,7 @@ fi
 CP15_RE='mcr[[:space:]].*[[:space:]]cr?7, (cr?10|cr?5, [{]4[}])'
 echo "== codegen sanity (the SIGILL branch)"
 if [ ! -f "$BIN" ]; then
-  echo "  *** CANNOT CHECK — no local pkg/plxnative. Run make, then re-run this. ***"
+  echo "  *** CANNOT CHECK — no local pkg/dispatcharrtv. Run make, then re-run this. ***"
 elif [ ! -x "$OBJDUMP" ]; then
   echo "  *** CANNOT CHECK — no NDK objdump at $OBJDUMP (see the setup-environment skill). ***"
 else
@@ -199,8 +199,8 @@ else
   # stable install would happily accept the debug install's load base and hand addr2line an offset
   # into the wrong binary — which does not fail, it answers with a confident wrong function.
   # A RELATED but different guard sits on the tracer's side, in src/crashfmt.h: it emits a `bin:`
-  # line only for a path whose `/plxnative` is followed by a separator, so `plxnative.new` (what
-  # `make deploy` scp's before the rename) and `plxnative-sim` cannot be mistaken for the binary.
+  # line only for a path whose `/dispatcharrtv` is followed by a separator, so `dispatcharrtv.new` (what
+  # `make deploy` scp's before the rename) and `dispatcharrtv-sim` cannot be mistaken for the binary.
   # That file's header records which of the two comments' historical justifications was measured
   # FALSE — worth reading before writing a third one.
   #
@@ -258,7 +258,7 @@ else
         echo "  $reg 0x$val -> outside our binary (see the 'faulted in' line above)"
         continue
       fi
-      # **DO NOT SUBTRACT THE BASE FOR AN ET_EXEC BINARY.** `pkg/plxnative` is `Type: EXEC`
+      # **DO NOT SUBTRACT THE BASE FOR AN ET_EXEC BINARY.** `pkg/dispatcharrtv` is `Type: EXEC`
       # (`readelf -h`), so it is mapped at its LINK-TIME addresses and the PC already IS the
       # address addr2line wants; the mapping base is 0x10000 and subtracting it shifts every
       # lookup by 64 KiB into an unrelated function. Measured: the real faulting PC 0x18df2c
@@ -278,7 +278,7 @@ else
       echo "  $reg 0x$val  (base 0x$base, offset $off) -> $line"
     done
   else
-    echo "  (cannot symbolize: need a bin: maps line for $APPID, pkg/plxnative and the NDK addr2line)"
+    echo "  (cannot symbolize: need a bin: maps line for $APPID, pkg/dispatcharrtv and the NDK addr2line)"
   fi
 
   case "${sig%% *}" in

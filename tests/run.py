@@ -24,7 +24,7 @@ For each case in manifest.json this driver:
      resumes anything past 10s. One item is shared by five cases and another by three, so
      leaving it implicit turned "play from the start" into "resume from somewhere", varying with
      suite order and run history. Do not make the reset conditional again;
-  3. clears every plxnative-* trigger in THIS install's runtime root, then writes only the
+  3. clears every dispatcharrtv-* trigger in THIS install's runtime root, then writes only the
      ones this case needs;
   4. runs `make run-stream TV=<tv> FLAVOR=<f>`, which relaunches the app and tails its event
      log live;
@@ -126,38 +126,38 @@ FIXTURES_ROOT = serve_fixtures_default_root()
 FLAVOUR = None          # "stable" | "debug"
 APPID = None            # com.magness.dispatcharrtv[.<flavour>]
 RUNDIR = None           # the runtime root: /tmp for stable, /tmp/<app id> for a flavoured install
-EVENTLOG = None         # <RUNDIR>/plxnative-events.log
+EVENTLOG = None         # <RUNDIR>/dispatcharrtv-events.log
 RUN_STREAM_MARK = None  # the remote command text — see _run_stream_pids()
 
 # reference list of the dev triggers the app reads (apply_triggers now GLOB-clears the runtime
-# root's plxnative-*, so this no longer has to be exhaustive — it's kept for humans / grep)
+# root's dispatcharrtv-*, so this no longer has to be exhaustive — it's kept for humans / grep)
 ALL_TRIGGERS = [
-    "plxnative-detail", "plxnative-detailplay", "plxnative-detailsec", "plxnative-detailcol",
-    "plxnative-collection",
+    "dispatcharrtv-detail", "dispatcharrtv-detailplay", "dispatcharrtv-detailsec", "dispatcharrtv-detailcol",
+    "dispatcharrtv-collection",
     # the Library's listing type (TYPE menu value), for scenes such as library-collections
-    "plxnative-libtype",
-    "plxnative-autoseek", "plxnative-menupick", "plxnative-menu", "plxnative-submenuosc", "plxnative-more", "plxnative-moreosc", "plxnative-subtiming", "plxnative-noaudio",
-    "plxnative-grid", "plxnative-autoplay", "plxnative-h265", "plxnative-playidx", "plxnative-url",
-    "plxnative-play", "plxnative-server", "plxnative-ffprobe", "plxnative-token", "plxnative-servers",
+    "dispatcharrtv-libtype",
+    "dispatcharrtv-autoseek", "dispatcharrtv-menupick", "dispatcharrtv-menu", "dispatcharrtv-submenuosc", "dispatcharrtv-more", "dispatcharrtv-moreosc", "dispatcharrtv-subtiming", "dispatcharrtv-noaudio",
+    "dispatcharrtv-grid", "dispatcharrtv-autoplay", "dispatcharrtv-h265", "dispatcharrtv-playidx", "dispatcharrtv-url",
+    "dispatcharrtv-play", "dispatcharrtv-server", "dispatcharrtv-ffprobe", "dispatcharrtv-token", "dispatcharrtv-servers",
     # UI/FPS scenes (both profiler triggers MUST be cleared; either invalidates production pacing)
-    "plxnative-detailosc", "plxnative-homeosc", "plxnative-heroosc", "plxnative-herobench", "plxnative-holdbench", "plxnative-homefoldosc",
-    "plxnative-info", "plxnative-chapters", "plxnative-profile",
-    "plxnative-hwcnt",
+    "dispatcharrtv-detailosc", "dispatcharrtv-homeosc", "dispatcharrtv-heroosc", "dispatcharrtv-herobench", "dispatcharrtv-holdbench", "dispatcharrtv-homefoldosc",
+    "dispatcharrtv-info", "dispatcharrtv-chapters", "dispatcharrtv-profile",
+    "dispatcharrtv-hwcnt",
     # the track's material and the instruments that override or narrate it. `flattabs` is the one
     # that MUST be cleared: it swaps the shipped material for the flat capsule, so a leftover turns
     # every glass assertion into a measurement of something else.
-    "plxnative-tabglassdim", "plxnative-flattabs", "plxnative-groundlog",
+    "dispatcharrtv-tabglassdim", "dispatcharrtv-flattabs", "dispatcharrtv-groundlog",
     # boot-flow and full-screen route triggers.  The list is documentary (cleanup is glob-based),
     # but keeping the real names here makes a new performance scene grep-discoverable.
-    "plxnative-heroidx", "plxnative-pickuser", "plxnative-firstrun",
-    "plxnative-onboardosc", "plxnative-consent", "plxnative-consentosc",
-    "plxnative-settings", "plxnative-settingsosc", "plxnative-acct", "plxnative-acctosc",
+    "dispatcharrtv-heroidx", "dispatcharrtv-pickuser", "dispatcharrtv-firstrun",
+    "dispatcharrtv-onboardosc", "dispatcharrtv-consent", "dispatcharrtv-consentosc",
+    "dispatcharrtv-settings", "dispatcharrtv-settingsosc", "dispatcharrtv-acct", "dispatcharrtv-acctosc",
     # itemmenu snaps into the grid and opens the press-and-hold card context menu
     # (route=home overlay=itemmenu: the menu is a ModalStack surface since UI-restructure phase 10)
-    "plxnative-itemmenu",
+    "dispatcharrtv-itemmenu",
     # playurl is the synthetic tier's entry; replay is how many times a FINISHED one restarts (#46)
-    "plxnative-playurl", "plxnative-replay", "plxnative-gstlog", "plxnative-quality",
-    "plxnative-qualityswitch",
+    "dispatcharrtv-playurl", "dispatcharrtv-replay", "dispatcharrtv-gstlog", "dispatcharrtv-quality",
+    "dispatcharrtv-qualityswitch",
 ]
 
 # the type=43 spam filter (mirrors: grep -vaE "smp_cb type=43 num=0 str=$")
@@ -232,7 +232,7 @@ def load_manifest(pipeline_only=False, tv_override=None, for_listing=False):
     with nothing configured. That tier talks to no PMS, holds no token and names no ratingKey, so
     every Plex-shaped key here stops being required: the overlay may be absent ENTIRELY, in which
     case the TV address is read from the gitignored `.tv-host` files or the per-user
-    `~/.config/plxnative/tv-host` (`tools/tv-config.sh`, the same lookup the Makefile and `tools/`
+    `~/.config/dispatcharrtv/tv-host` (`tools/tv-config.sh`, the same lookup the Makefile and `tools/`
     use). A TV address is the one thing that still cannot be guessed, and is the only thing this
     path can die for.
 
@@ -265,7 +265,7 @@ def load_manifest(pipeline_only=False, tv_override=None, for_listing=False):
         # `tv` from the overlay if it is there, else the TV-address files, else nothing to drive.
         tv = tv_override or local.get("tv") or tv_config.host() or None
         if not tv and not for_listing:
-            sys.exit("--pipeline needs a TV address: put one in ~/.config/plxnative/tv-host (one "
+            sys.exit("--pipeline needs a TV address: put one in ~/.config/dispatcharrtv/tv-host (one "
                      "line, an IP or hostname; or $PLX_TV_CONFIG_DIR/tv-host, or a per-checkout "
                      f".tv-host), or a `tv` key in {MANIFEST_LOCAL}, or pass --tv")
         if tv:
@@ -373,7 +373,7 @@ def read_token():
     return m.group(1)
 
 
-CID = "plxnative-test-harness"  # stable X-Plex-Client-Identifier for the plex.tv calls below
+CID = "dispatcharrtv-test-harness"  # stable X-Plex-Client-Identifier for the plex.tv calls below
 
 
 def _pms_machine_id(host, port, admin_token):
@@ -411,8 +411,8 @@ def fetch_managed_user_token(admin_token, host, port, user_id):
 # ---------------------------------------------------------------------------
 # A shared server is a separate authority: its own machineIdentifier and its own per-(user,server)
 # accessToken, and the account token gets a 401 from it. So a run that has to reach two servers
-# needs two credentials, which one plxnative-token file cannot carry -- that is what
-# plxnative-servers (app: dev::servers) exists for.
+# needs two credentials, which one dispatcharrtv-token file cannot carry -- that is what
+# dispatcharrtv-servers (app: dev::servers) exists for.
 #
 # The overlay NAMES the server; it never holds its token. plex.tv's resource list is keyed by the
 # owner's account token, which the harness already reads from src/config.local.h for everything
@@ -482,7 +482,7 @@ def stored_primary_machine_id(tv):
 
 
 def primary_ipv6_server(admin_token, machine_id=""):
-    """The owned server's LOCAL IPv6 connection as a plxnative-servers entry — same machine id as
+    """The owned server's LOCAL IPv6 connection as a dispatcharrtv-servers entry — same machine id as
     the stored primary (so the registry re-points slot 0 rather than adding a source), the
     `plex.direct` uri as the https host, and the advertised address as the `pin` the app dials it
     at with no resolver. Refuses with the reason when plex.tv advertises no such connection: an
@@ -573,7 +573,7 @@ def resolve_shared_server(admin_token, spec):
 
 
 def shared_servers_json(cfg, entry):
-    """The plxnative-servers payload for this case/scene, or None if it wants one server.
+    """The dispatcharrtv-servers payload for this case/scene, or None if it wants one server.
 
     Opt-in, never blanket: a case declares `needs_shared_server` in manifest.json (or the whole run
     passes --shared-server). Injecting a second server into every case would change what Home shows
@@ -688,7 +688,7 @@ class MaliIrqSampler:
 
     def __init__(self, tv):
         self.tv = tv
-        self.remote = f"/tmp/plxnative-mali-irq-{os.getpid()}"
+        self.remote = f"/tmp/dispatcharrtv-mali-irq-{os.getpid()}"
         self.proc = None
 
     def stage(self):
@@ -1048,13 +1048,13 @@ def pms_reset_streams(host, port, rk, token, parts=None):
 # ---------------------------------------------------------------------------
 def triggers_for_case(case, url_base=None):
     """
-    Map a case's operations -> the plxnative-* files to write in the TV's runtime root.
+    Map a case's operations -> the dispatcharrtv-* files to write in the TV's runtime root.
     Returns a list of (filename, content-or-None) pairs; None => `touch` (empty marker).
 
     `url_base` selects the TIER, and it selects only the entry trigger: a pipeline case names a
     generated file served over HTTP from this machine and declares its own Load payload
-    (`plxnative-playurl`), an integration case names a ratingKey on the PMS
-    (`plxnative-play`). Everything after that — the seek scripts especially — is the same
+    (`dispatcharrtv-playurl`), an integration case names a ratingKey on the PMS
+    (`dispatcharrtv-play`). Everything after that — the seek scripts especially — is the same
     machinery driving the same engine, which is why this is one function with two heads rather
     than two functions that would drift apart at the first new operation.
     """
@@ -1067,8 +1067,8 @@ def triggers_for_case(case, url_base=None):
         # that incidental property the remote command's security boundary.
         spec = dict(case.get("declare", {}))
         spec["url"] = f"{url_base}/{case['fixture']}"
-        files = [("plxnative-playurl", json.dumps(spec, separators=(",", ":")))]
-        files.append(("plxnative-stats", None))
+        files = [("dispatcharrtv-playurl", json.dumps(spec, separators=(",", ":")))]
+        files.append(("dispatcharrtv-stats", None))
         auto = case.get("auto_network")
         if auto:
             spec["auto_source_kbps"] = int(auto["source_kbps"])
@@ -1086,41 +1086,41 @@ def triggers_for_case(case, url_base=None):
             # all. `[w, h]`.
             if auto.get("source_raster"):
                 spec["source_raster"] = [int(v) for v in auto["source_raster"]]
-            files[0] = ("plxnative-playurl", json.dumps(spec, separators=(",", ":")))
-            files.append(("plxnative-quality", "auto"))
+            files[0] = ("dispatcharrtv-playurl", json.dumps(spec, separators=(",", ":")))
+            files.append(("dispatcharrtv-quality", "auto"))
             # Pin Auto's ladder to one actuator for the whole case, by REQUEST rate. Measurement
             # step M4 needs a rung held long enough to read a settled reserve at it, and the
             # playback-quality selector cannot do it: a non-Auto quality returns `None` from
             # `route::hls_abr_control` before a controller exists, and the quality ladder has no
             # mid-1080p points. Absent => ordinary Auto.
             if case.get("abr_pin"):
-                files.append(("plxnative-abrpin", str(int(case["abr_pin"]))))
+                files.append(("dispatcharrtv-abrpin", str(int(case["abr_pin"]))))
             # The A/B selector increments I5 and I6 need. It must come through the manifest and
-            # not be armed by hand: `apply_triggers` wipes every plxnative-* in the runtime root
+            # not be armed by hand: `apply_triggers` wipes every dispatcharrtv-* in the runtime root
             # before each case, so a hand-armed trigger cannot survive into the case it is meant
             # to switch. Inert today — nothing reads it until a second policy path exists.
             if case.get("abr_policy"):
-                files.append(("plxnative-abrpolicy", str(case["abr_policy"])))
-        # `plxnative-replay=<n>` — how many times a FINISHED playback restarts itself (LG #46).
+                files.append(("dispatcharrtv-abrpolicy", str(case["abr_policy"])))
+        # `dispatcharrtv-replay=<n>` — how many times a FINISHED playback restarts itself (LG #46).
         # Keyed off `expect.replays`, so the number the app is TOLD and the number the harness
         # GRADES are one statement rather than two that nothing keeps in step. Absent => the
         # trigger is not written at all, which is the one-shot behaviour every other case wants.
         n = case.get("expect", {}).get("replays", 0)
         if n:
-            files.append(("plxnative-replay", str(n)))
+            files.append(("dispatcharrtv-replay", str(n)))
     else:
         # Pin the routing contract instead of inheriting whatever the person last selected on the
         # television. The established PMS matrix grades direct-play/remux/progressive transcode,
         # so its default is Original; a future adaptive case opts in with `"quality": "auto"`.
         # This trigger is an in-memory override and never changes the persisted user preference.
         files = [
-            ("plxnative-play", case["rk"]),  # the robust play trigger (fetches any rk)
-            ("plxnative-quality", case.get("quality", "original")),
-            ("plxnative-stats", None),
+            ("dispatcharrtv-play", case["rk"]),  # the robust play trigger (fetches any rk)
+            ("dispatcharrtv-quality", case.get("quality", "original")),
+            ("dispatcharrtv-stats", None),
         ]
     gst_debug = case.get("gst_trace", {}).get("debug")
     if gst_debug:
-        files.append(("plxnative-gstlog", gst_debug))
+        files.append(("dispatcharrtv-gstlog", gst_debug))
     # issue #266 PR4 review: force the PERSISTED Boost Dialog / Normalize Loudness preference at
     # boot on EVERY case, not just the two that exercise it — `dev::scenarios::arm_audio_enhancements`
     # calls the real persisting setter, so a case's starting preference is a property of the
@@ -1128,19 +1128,19 @@ def triggers_for_case(case, url_base=None):
     # case opts into a non-off start with `"audio_enhancements_boot": "loudness"` (used by the
     # reset case below to prove the cold-start "a saved preference forces a remux" path);
     # everything else gets `"off"`.
-    files.append(("plxnative-audioenh", case.get("audio_enhancements_boot", "off")))
-    # Arbitrary extra dev triggers, `{"name": content}` → `plxnative-<name>` in the runtime root
+    files.append(("dispatcharrtv-audioenh", case.get("audio_enhancements_boot", "off")))
+    # Arbitrary extra dev triggers, `{"name": content}` → `dispatcharrtv-<name>` in the runtime root
     # (`null` for a bare flag). For the one-run experiments a trigger exists for — `sinkmax`,
     # `nofps` — without teaching the harness a key per knob; the case's own triggers above win on
     # a name clash because they are written first and the app reads each name once.
     for name, content in (case.get("triggers") or {}).items():
-        files.append((f"plxnative-{name}", content))
+        files.append((f"dispatcharrtv-{name}", content))
     for op in case["operations"]:
         kind = op["op"]
         if kind == "seek" and op.get("mode") == "rapid":
             # seek SCRIPT: comma-separated steps fired one per ~300ms — absolute seconds or
             # tap-relative +N/-N (vs the last requested target). Exercises seek coalescing.
-            files.append(("plxnative-autoseek", op["script"]))
+            files.append(("dispatcharrtv-autoseek", op["script"]))
         elif kind == "seek":
             # The TARGET, always, on both tiers — because the manifest already declares it and
             # `evaluate` already grades against it (`op.get("target_s", 140)`), so writing an empty
@@ -1166,27 +1166,27 @@ def triggers_for_case(case, url_base=None):
             target = str(op.get("target_s", 140))
             delay_ms = op.get("delay_ms")
             files.append((
-                "plxnative-autoseek",
+                "dispatcharrtv-autoseek",
                 f"delay={int(delay_ms)},{target}" if delay_ms else target,
             ))
         elif kind == "skip":
-            files.append(("plxnative-marker", op["marker"]))
+            files.append(("dispatcharrtv-marker", op["marker"]))
         elif kind == "marker":
             # jump to 5s before the named server marker, so the skip/Up Next control row is
             # reachable in seconds instead of 50 minutes into an episode
-            files.append(("plxnative-marker", op["marker"]))
+            files.append(("dispatcharrtv-marker", op["marker"]))
         elif kind == "quality_switch":
             # The rungs to switch to WHILE IT PLAYS, in the app's own wire vocabulary — the same
-            # strings `plxnative-quality` accepts and `quality: switch → …` prints, so the case
+            # strings `dispatcharrtv-quality` accepts and `quality: switch → …` prints, so the case
             # states each rung once. `gap_ms` only appears when there is more than one step,
             # because with one there is no cadence to state.
             steps = op["to"] if isinstance(op["to"], list) else [op["to"]]
             gap = f'gap={op["gap_ms"]},' if len(steps) > 1 else ""
-            files.append(("plxnative-qualityswitch", gap + ",".join(steps)))
+            files.append(("dispatcharrtv-qualityswitch", gap + ",".join(steps)))
         elif kind == "audio_switch":
-            files.append(("plxnative-menupick", f'{op["tab"]},{op["row"]}'))
+            files.append(("dispatcharrtv-menupick", f'{op["tab"]},{op["row"]}'))
         elif kind == "subtitle":
-            files.append(("plxnative-menupick", f'{op["tab"]},{subtitle_menupick_target(op)}'))
+            files.append(("dispatcharrtv-menupick", f'{op["tab"]},{subtitle_menupick_target(op)}'))
         elif kind == "audio_enhancement":
             # issue #266: the Boost Dialog / Normalize Loudness rows live on the Audio tab (0),
             # appended after the audio tracks (`track_menu.rs`'s `audio_form`). `menupick` names
@@ -1197,15 +1197,15 @@ def triggers_for_case(case, url_base=None):
             # gone; there is no track count to get wrong any more.
             which = op.get("which", "normalize_loudness")
             name = "boost" if which == "boost_dialog" else "loudness"
-            files.append(("plxnative-menupick", f'0,{name}'))
+            files.append(("dispatcharrtv-menupick", f'0,{name}'))
         elif kind == "pause_resume":
             files.append((
-                "plxnative-autopause",
+                "dispatcharrtv-autopause",
                 f'delay={int(op.get("delay_ms", 0))},hold={int(op["hold_ms"])}',
             ))
         # "play", startup "resume" and "audio_enhancement_burn" (when it names no "row" — a
         # cold-start proof against an item whose subtitle is already server-selected) need no extra
-        # trigger: the last of those grades the boot-forced preference the `plxnative-audioenh`
+        # trigger: the last of those grades the boot-forced preference the `dispatcharrtv-audioenh`
         # trigger above already wrote, and there is no menu row to pick — the candidate becomes an
         # enhanced Burn before the first frame (resume rides the seeded viewOffset).
     return files
@@ -1214,7 +1214,7 @@ def triggers_for_case(case, url_base=None):
 def key_inject_for_case(case):
     """(log-pattern, remote-token) for a case that presses a key MID-RUN, or None.
 
-    The app mkfifos plxnative-remote in its runtime root and drains it every frame, so a token
+    The app mkfifos dispatcharrtv-remote in its runtime root and drains it every frame, so a token
     written while it runs replays through the real key handler. Keying the write to a LOG LINE
     rather than to a wall-clock delay is what makes it deterministic: the press lands the moment
     the control is actually on screen, however long the resolve took.
@@ -1226,21 +1226,21 @@ def key_inject_for_case(case):
 
 
 def apply_triggers(tv, files, extra=None):
-    """Clear every plxnative-* trigger in THIS install's runtime root (sparing the *.log files),
+    """Clear every dispatcharrtv-* trigger in THIS install's runtime root (sparing the *.log files),
     then create the ones this case needs, in one ssh round-trip. GLOB-based, not an enumerated list,
-    so a newly-added app trigger can never bleed between scenes — a stale plxnative-novsync would
-    uncap vsync and false-PASS an FPS scene, a stale plxnative-press/-login would derail a home
+    so a newly-added app trigger can never bleed between scenes — a stale dispatcharrtv-novsync would
+    uncap vsync and false-PASS an FPS scene, a stale dispatcharrtv-press/-login would derail a home
     scene. ALL_TRIGGERS above is now just a human reference of the known triggers.
 
     The glob is scoped to RUNDIR, which is what keeps the two installs out of each other's way: the
-    stable root is /tmp itself, and `/tmp/plxnative-*` cannot match the flavoured root beside it
+    stable root is /tmp itself, and `/tmp/dispatcharrtv-*` cannot match the flavoured root beside it
     (`/tmp/com.magness.dispatcharrtv.debug` — the separator is a DOT for exactly this reason, since a
-    directory called `plxnative-debug` would read as an armed trigger to `dev::any_trigger_present`
+    directory called `dispatcharrtv-debug` would read as an armed trigger to `dev::any_trigger_present`
     and silently suppress the other install's who's-watching picker).
 
     `extra` is a raw shell command — or a list of them — appended to the same round-trip, for a
     trigger whose VALUE must not reach stdout (a PMS token) and so cannot go through the printed
-    `files` list. Both credential triggers ride it: plxnative-token and plxnative-servers.
+    `files` list. Both credential triggers ride it: dispatcharrtv-token and dispatcharrtv-servers.
     """
     # The root has to EXIST and be world-writable before anything is written into it. Two uids
     # write here and neither can be made to go second: this ssh is ROOT and arms triggers before the
@@ -1251,12 +1251,12 @@ def apply_triggers(tv, files, extra=None):
     # exactly like a total regression. A no-op for the stable flavour, whose root is /tmp (1777).
     parts = [f"mkdir -p {RUNDIR} && chmod 1777 {RUNDIR}"]
     # wipe every trigger, keeping only the append-only logs (events/stderr/crash)
-    parts.append(f'for f in {RUNDIR}/plxnative-*; do case "$f" in *.log) ;; *) rm -f "$f";; esac; done')
+    parts.append(f'for f in {RUNDIR}/dispatcharrtv-*; do case "$f" in *.log) ;; *) rm -f "$f";; esac; done')
     # GST_DEBUG_FILE_OVERWRITE is honoured only once libpf installs its logger. Remove the old
     # trace here as well, before launch, so an app that fails before that point cannot be graded
     # against the previous case's perfectly plausible per-frame log.
-    if any(name == "plxnative-gstlog" for name, _ in files):
-        parts.append(f"rm -f {RUNDIR}/plxnative-gst.log")
+    if any(name == "dispatcharrtv-gstlog" for name, _ in files):
+        parts.append(f"rm -f {RUNDIR}/dispatcharrtv-gst.log")
     for name, content in files:
         if content is None:
             parts.append(f"touch {RUNDIR}/{name}")
@@ -1511,7 +1511,7 @@ def a_resolve_pin(lines, want="any"):
     `want` narrows the family: `"v6"` demands a v6 pin (the `primary_ipv6` case would otherwise
     be satisfied by the v4 pin the stored session registers first, before the re-point), `"v4"`
     the reverse, anything else either. For `v6` the pin must also be on the CURRENT server
-    before the play starts — the re-point line must precede `plxnative-play: … start` — which
+    before the play starts — the re-point line must precede `dispatcharrtv-play: … start` — which
     is the ordering that proves the stream was dispatched on the re-pointed slot (the `stream:`
     line itself cannot say, its host being scrubbed)."""
     marker = " name resolved locally)"
@@ -1528,7 +1528,7 @@ def a_resolve_pin(lines, want="any"):
         return False, f"no `(pinned: … name resolved locally)` line{' for ' + want if want in ('v4', 'v6') else ''}: nothing was pinned"
     i, ln = hits[-1]
     if want == "v6":
-        start = next((j for j, l in enumerate(lines) if "plxnative-play: " in l and " start" in l), None)
+        start = next((j for j, l in enumerate(lines) if "dispatcharrtv-play: " in l and " start" in l), None)
         if start is None or start < i:
             return False, f"the v6 pin landed AFTER the play started (or no start line): {ln.strip()}"
         if "re-pointed" not in ln:
@@ -1541,7 +1541,7 @@ def primary_slot(lines):
     own start line, which names the slot the play was dispatched on. Slots are never reused after a
     sign-out, so a hardcoded 0 would be wrong on the second sign-in of a process."""
     for ln in lines:
-        m = re.search(r"plxnative-play: rk=\d+ server=(\d+) start", ln)
+        m = re.search(r"dispatcharrtv-play: rk=\d+ server=(\d+) start", ln)
         if m:
             return int(m.group(1))
     return None
@@ -1567,7 +1567,7 @@ def a_offline_roster(lines):
         return False, "no `plex.tv unreachable` / `roster refresh failed` / offline-seat line, and the tool did not verify the cut: plex.tv was reachable"
     slot = primary_slot(lines)
     if slot is None:
-        return False, "no `plxnative-play: … server=N start` line: which slot was the primary?"
+        return False, "no `dispatcharrtv-play: … server=N start` line: which slot was the primary?"
     landed = find(lines, f"hubs: source {slot} ok")
     if landed is None:
         return False, f"the primary (slot {slot}) never landed its hubs offline"
@@ -1675,7 +1675,7 @@ def a_stream_path(lines, fixture, hls_entry=False):
     the fixture server's own ABR playlist, never the clip the case names, so the fixture filename
     is the wrong thing to compare. What still has to hold is the property this assertion exists
     for — that the stream came from THIS case's fixture root and not from a stale
-    `plxnative-play=<rk>` pointing at a library item — and `/__abr/<rung>/master.m3u8` says so.
+    `dispatcharrtv-play=<rk>` pointing at a library item — and `/__abr/<rung>/master.m3u8` says so.
 
     `a_decision` cannot be reused and must not be relaxed to cover this: it classifies the opened
     path as DIRECT PLAY or TRANSCODE by matching `/library/parts/` or `/transcode/`, and
@@ -1684,7 +1684,7 @@ def a_stream_path(lines, fixture, hls_entry=False):
     decision and are exactly right for the tier that grades one.
 
     What this catches instead is a case grading a stream it was never pointed at: a stale
-    `plxnative-play=<rk>` from a by-hand session fires from its own branch in `app.rs` and would
+    `dispatcharrtv-play=<rk>` from a by-hand session fires from its own branch in `app.rs` and would
     play a LIBRARY ITEM through a pipeline case. `apply_triggers` glob-wipes before every case, so
     that needs a hand-armed trigger to reach — but the failure is silent and the assertion is one
     line.
@@ -2003,7 +2003,7 @@ def _parsed(pattern, fields, lines, numeric=True):
 #
 # **The binary decides whether any of this is reachable, and the harness can only read that.**
 # The app's primary server is `plex_run(PMS_HOST, PMS_PORT)` (`src/main.c`) plus the injected
-# `plxnative-token`; `plxnative-servers` is strictly ADDITIVE and cannot move the primary. So the
+# `dispatcharrtv-token`; `dispatcharrtv-servers` is strictly ADDITIVE and cannot move the primary. So the
 # link is conditioned only if the DEPLOYED BINARY was built with `PMS_PORT` pointing at the proxy
 # rather than at the server. When it was not, a case that declares `link_profile` SKIPS with that
 # reason spelled out — it must never run unconditioned and report a pass, because "Auto held a
@@ -2380,7 +2380,7 @@ def abr_dip_max_kbps(samples, dip_windows):
 # fixtures' segments are 2 s and the longest legitimate lump is therefore bounded by the largest
 # segment duration any fixture uses, not by a taste about judder — `hls: segment` carries the real
 # figure and nothing in either pack exceeds 4 s. Ten leaves room for a pack with longer segments
-# while staying far below the smallest seek any case performs (`plxnative-autoseek`'s default is
+# while staying far below the smallest seek any case performs (`dispatcharrtv-autoseek`'s default is
 # 140 s, and the shortest scripted step is 10 s ABSOLUTE from a position well past it).
 LUMP_SEEK_S = 10
 
@@ -3241,7 +3241,7 @@ def a_replayed(lines, want):
     """
     fired = [ln for ln in lines if "replay: starting the finished stream again" in ln]
     if len(fired) != want:
-        why = ("the app never re-entered the player — is `plxnative-replay` armed, and does this "
+        why = ("the app never re-entered the player — is `dispatcharrtv-replay` armed, and does this "
                "binary carry the replay arm at all?" if not fired
                else "a replay that fires more often than it was asked to is a loop")
         return False, f"{len(fired)} `replay:` line(s), want {want} — {why}"
@@ -3368,7 +3368,7 @@ def op_quality_switch(lines, steps):
     """A mid-playback quality change must LAND, and playback must survive it.
 
     This is the thing a person does at the television that no boot override can reach:
-    `plxnative-quality` decides what a playback STARTS as and is read once, while switching a
+    `dispatcharrtv-quality` decides what a playback STARTS as and is read once, while switching a
     running stream re-asks the routing question against a picture already on screen, reloads if the
     answer moved, and — on the way out of Auto — tears down a live ABR controller.
 
@@ -3497,7 +3497,7 @@ def op_seek_refused(lines, target_s):
 
     Reaching this path is structural rather than incidental, and only this tier can. A transcode
     seek restarts the encode at a new `&offset`, which `route::dispatch_transcode_seek` plans from a PMS
-    ratingKey and client — and a `plxnative-playurl` playback has neither, so every seek during
+    ratingKey and client — and a `dispatcharrtv-playurl` playback has neither, so every seek during
     Auto on the pipeline tier is refused. That makes it the one place the REFUSAL path is
     observable at all; on the server tier the seek succeeds and this branch never runs.
 
@@ -3761,7 +3761,7 @@ def _enhancement_miss(lines, hit_label, fallback_msg, refused_marker=None, refus
 
 def op_audio_enhancement(lines):
     """A live Boost Dialog / Normalize Loudness toggle (issue #266), asked for mid-play through
-    the SAME single-shot `plxnative-menupick` mechanism `op_audio_switch`/`op_subtitle` use.
+    the SAME single-shot `dispatcharrtv-menupick` mechanism `op_audio_switch`/`op_subtitle` use.
 
     Graded in order:
     1. The ask reached the server and TOOK EFFECT: the app's own `enhancement: applied boost=..
@@ -3832,7 +3832,7 @@ def op_audio_enhancement(lines):
 
 def op_audio_enhancement_release(lines):
     """The `audio_enhancement_normalize_reset` case's own settle grade: this case boots with
-    `plxnative-audioenh=loudness` forcing the PERSISTED preference ON before the first frame (via
+    `dispatcharrtv-audioenh=loudness` forcing the PERSISTED preference ON before the first frame (via
     `dev::scenarios::arm_audio_enhancements` -> `player::set_audio_enhancements`, the SAME real
     setter a person's pick calls) — proving the cold-start `route/plan.rs` path (a saved
     preference turns an otherwise direct-playable candidate into an enhanced remux before route
@@ -3961,7 +3961,7 @@ def op_audio_enhancement_burn(lines):
 
 
 def subtitle_menupick_target(op):
-    """The `plxnative-menupick` second field for a `subtitle` op. `"track": N` names the N-th
+    """The `dispatcharrtv-menupick` second field for a `subtitle` op. `"track": N` names the N-th
     (0-based) TRACK of the Subtitles panel in PAGE order (`TrackMenuState::sub_track_for_target`):
     the root's track rows first, then every track behind Other languages (A-Z by language, a
     multi-track language expanded into its ranked page). The pick commits by the track's own index,
@@ -4164,11 +4164,11 @@ def teardown(tv):
       inherits a resume point on that rk — the exact contamination ee07506 removed between
       cases, reintroduced at the seam between runs. It is also what "I see FPS tests running"
       looks like from the outside, long after the suite printed its summary.
-    * THE INJECTED TOKENS STAY in the runtime root's plxnative-token and plxnative-servers: real
+    * THE INJECTED TOKENS STAY in the runtime root's dispatcharrtv-token and dispatcharrtv-servers: real
       per-(user,server) PMS access tokens -- and the second file carries someone ELSE'S server's
       too -- world-readable, on a device with a rooted sshd and a committed password. The normal
       path did clear them; every abnormal one left them. Both are covered because the wipe is a
-      GLOB over <runtime root>/plxnative-*, which is exactly why a new credential trigger needs
+      GLOB over <runtime root>/dispatcharrtv-*, which is exactly why a new credential trigger needs
       no change here; a credential file named anything else would need one.
     * ssh CLIENTS. Per-case reaping covers a case that ends normally, but not the harness dying
       between cases.
@@ -4299,8 +4299,8 @@ def check_install(lines, cfg):
     Returns True once the boot line has been seen and matched, False while it has not arrived yet;
     aborts the WHOLE run otherwise — not the case, for the reason below.
 
-    Nothing else can answer this question. Both binaries are named `plxnative`, so `pidof` matches
-    both on this busybox set, and `pkg/plxnative` is a path every flavour and every configuration
+    Nothing else can answer this question. Both binaries are named `dispatcharrtv`, so `pidof` matches
+    both on this busybox set, and `pkg/dispatcharrtv` is a path every flavour and every configuration
     writes, so an md5 against the local build proves only that SOME build matches. This one line is
     the only witness, which is why its absence is also a refusal (see require_install).
 
@@ -4416,7 +4416,7 @@ def stream_case(case, cfg, cap_s, early=True, inject=None, evaluator=None, on_st
             if not injected and any(inject[0] in l for l in lines):
                 injected = True
                 # the FIFO has a live reader (the app drains it per frame), so this returns at once
-                ssh(cfg["tv"], f"printf '{inject[1]}\\n' > {RUNDIR}/plxnative-remote", timeout=15)
+                ssh(cfg["tv"], f"printf '{inject[1]}\\n' > {RUNDIR}/dispatcharrtv-remote", timeout=15)
                 print(f"    injected key '{inject[1]}' on '{inject[0]}'")
             if early:
                 snap = list(lines)
@@ -4657,8 +4657,8 @@ def prime_online(case, cfg, files):
         return ok, [("primed", ok, "seated online")]
     for tile in tiles:
         print(f"    prime: seating roster tile {tile} online once, so the cache holds it ...")
-        primed = [(n, c) for n, c in files if n != "plxnative-pickuser"]
-        primed.append(("plxnative-pickuser", str(tile)))
+        primed = [(n, c) for n, c in files if n != "dispatcharrtv-pickuser"]
+        primed.append(("dispatcharrtv-pickuser", str(tile)))
         apply_triggers(tv, primed)
         lines, _, _, _ = stream_case(case, cfg, 60, early=True, inject=None, evaluator=seated)
         make(["kill", f"TV={tv}"], timeout=40)
@@ -4730,8 +4730,8 @@ def run_case(case, cfg, token, verbose, cond=None):
     # 3. clear + set triggers, and inject the effective PMS token in the SAME round-trip.
     # The token rides `extra=` rather than `files` so its value never reaches stdout — the only
     # reason it used to need a round-trip of its own. Ordering is what matters and is preserved:
-    # plxnative-token is cleared by the glob wipe that opens the command, and rewritten after it.
-    # Always required — the binary carries no baked token, so plxnative-token in the runtime root
+    # dispatcharrtv-token is cleared by the glob wipe that opens the command, and rewritten after it.
+    # Always required — the binary carries no baked token, so dispatcharrtv-token in the runtime root
     # is the only way an automated run gets PMS access.
     files = triggers_for_case(case)
     # `session: stored` — boot from the install's own signed-in session instead of the injected
@@ -4746,7 +4746,7 @@ def run_case(case, cfg, token, verbose, cond=None):
     inject = bool(cfg.get("inject_token")) and not stored
     extras = []
     if inject:
-        extras.append(f"printf '%s' '{token}' > {RUNDIR}/plxnative-token")
+        extras.append(f"printf '%s' '{token}' > {RUNDIR}/dispatcharrtv-token")
     # …and, for a case that declares it needs one, the SECOND server's credentials — same rules:
     # value never on stdout, cleared by the glob wipe above and again by teardown().
     srv_json = shared_servers_json(cfg, case)
@@ -4759,20 +4759,20 @@ def run_case(case, cfg, token, verbose, cond=None):
         srv_json = json.dumps([primary_ipv6_server(read_token(), stored_primary_machine_id(tv))],
                               separators=(",", ":"))
     if srv_json:
-        extras.append(f"printf '%s' {sh_squote(srv_json)} > {RUNDIR}/plxnative-servers")
+        extras.append(f"printf '%s' {sh_squote(srv_json)} > {RUNDIR}/dispatcharrtv-servers")
     apply_triggers(tv, files, extra=extras)
     shown = ", ".join(n + ("=" + c if c is not None else "") for n, c in files)
     print(f"    triggers: {shown}")
     if inject:
-        print(f"    plxnative-token: <{cfg['user_label']}, redacted>")
+        print(f"    dispatcharrtv-token: <{cfg['user_label']}, redacted>")
     elif stored:
         print(f"    session: the install's own stored sign-in (no token injected)")
     if case.get("primary_ipv6"):
-        print("    plxnative-servers: <the primary's IPv6 plex.direct origin + pin, token redacted>")
+        print("    dispatcharrtv-servers: <the primary's IPv6 plex.direct origin + pin, token redacted>")
     if srv_json and not case.get("primary_ipv6"):
         # said the way the APP says it (`describe_server`): a share is a `ref=` tag and nothing
         # else. The token was never printed here and still is not.
-        print(f"    plxnative-servers: <{describe_server(cfg['shared_server'])}, token redacted>")
+        print(f"    dispatcharrtv-servers: <{describe_server(cfg['shared_server'])}, token redacted>")
 
     # 4. run + grade the log as it streams (run_secs is the cap, not the runtime)
     early, why = early_exit_allowed(case, cfg)
@@ -4816,12 +4816,12 @@ def run_case(case, cfg, token, verbose, cond=None):
 # ---------------------------------------------------------------------------
 # The PIPELINE tier — the player, with no Plex behind it at all.
 #
-# The 21 cases above drive `plxnative-play=<ratingKey>`, i.e. the whole chain: plex.tv auth, the
+# The 21 cases above drive `dispatcharrtv-play=<ratingKey>`, i.e. the whole chain: plex.tv auth, the
 # PMS `/decision`, library metadata, the PlayQueue, markers, resume, the timeline reporter. That
 # is the right shape for what they grade — SELECTION — and it is also why they need somebody's
 # library and cannot run for anyone else.
 #
-# These cases drive `plxnative-playurl`: a generated file served off this machine by
+# These cases drive `dispatcharrtv-playurl`: a generated file served off this machine by
 # `tests/serve_fixtures.py`, plus the Load-payload declaration to play it with. What runs is the
 # same engine, byte for byte, from `stream.rs`'s raw-socket GET through `ff.rs`'s demux over the
 # custom AVIO, the two-lane AU queues, the Starfish `Feed()` pump and the ACB bind — only the
@@ -5056,7 +5056,7 @@ def pull_runtime_log(tv, name):
 def save_case_log(cfg, name, lines):
     """Persist one case's event log, if --save-logs asked for it.
 
-    The app truncates `plxnative-events.log` at every launch and every case relaunches, so the
+    The app truncates `dispatcharrtv-events.log` at every launch and every case relaunches, so the
     only copy of a trace is the one the harness holds in memory. Increment I2 needs those traces
     (transaction records, per-segment acquisition) and re-running a device case to recover a log
     costs a television lease.
@@ -5128,7 +5128,7 @@ def run_pipeline_case(case, cfg, srv, url_base, verbose):
     after = srv.stats()
     delta = tuple(a - b for a, b in zip(after, before))
 
-    gst_lines = pull_runtime_log(tv, "plxnative-gst.log") if case.get("gst_trace") else None
+    gst_lines = pull_runtime_log(tv, "dispatcharrtv-gst.log") if case.get("gst_trace") else None
     if gst_lines is not None:
         print(f"    GST trace: {len(gst_lines)} line(s)")
     # The shaper's schedule, for the FINAL grade. `grade()` above also sets it, but only the
@@ -5234,7 +5234,7 @@ def require_release_binary(tv, runner=None):
 # Both regexes below therefore fail to match an old log outright, which is the intended loud
 # failure — a scene must never grade a loop rate as if it were a frame rate.
 #
-# Each scene sets its plxnative-* triggers, runs the app profiler-OFF, then asserts its gates. This
+# Each scene sets its dispatcharrtv-* triggers, runs the app profiler-OFF, then asserts its gates. This
 # is the automated form of the by-hand FPS hunting that found the hero / cast+about / info-panel
 # regressions.
 # ---------------------------------------------------------------------------
@@ -5257,7 +5257,7 @@ def reject_simulator(lines):
         )
 
 
-# The RECORDER (`plxnative-rec`) writes ` rec=<n>us` onto every heartbeat while armed. A recorder
+# The RECORDER (`dispatcharrtv-rec`) writes ` rec=<n>us` onto every heartbeat while armed. A recorder
 # perturbs the pacing it feeds (restructure spec §5.3), so — exactly like the two profiler triggers —
 # it disqualifies a run's `fps=`/`worstframe=`; `loop=` is still readable (liveness is not pacing).
 REC_RE = re.compile(r"\brec=\d+us\b")
@@ -5267,7 +5267,7 @@ def reject_recorder(lines):
     """Abort rather than grade a frame rate measured with the recorder armed."""
     if any(REC_RE.search(ln) for ln in lines):
         raise SystemExit(
-            "refusing to grade: this log carries `rec=`, so the recorder (plxnative-rec) was armed "
+            "refusing to grade: this log carries `rec=`, so the recorder (dispatcharrtv-rec) was armed "
             "for the run. A recorder perturbs the pacing it feeds; take pacing in a separate, "
             "unarmed run."
         )
@@ -5310,7 +5310,7 @@ def parse_fps(lines, route, overlay):
 
 
 # `worstframe=<ms>ms` — the worst WHOLE-ITERATION time in that heartbeat second, present only when
-# `plxnative-framedrop` is armed (run_fps_scene arms it for any scene declaring a ceiling below).
+# `dispatcharrtv-framedrop` is armed (run_fps_scene arms it for any scene declaring a ceiling below).
 # Deliberately its own regex, for FPS_RE's reason: a log from a build or a run without the field
 # must fail as "no samples", never match nothing and pass.
 WORST_RE = re.compile(r"\bloop=\d+ route=(\w+)(?: overlay=(\w+))?.*?\bworstframe=(\d+(?:\.\d+)?)ms")
@@ -5407,7 +5407,7 @@ UPLOAD_GATE_THRESHOLD_MS = 1000
 
 
 def frame_ceiling_threshold(scene):
-    """The `plxnative-framedrop` content to arm for this scene, or None when it declares no frame
+    """The `dispatcharrtv-framedrop` content to arm for this scene, or None when it declares no frame
     gate. The detector logs a FRAMEDROP line only ABOVE its threshold, so the threshold is the
     lower of the two ceilings: everything a gate could fail on is then in the log. A scene that
     declares only an upload-pacing key arms it at [`UPLOAD_GATE_THRESHOLD_MS`]."""
@@ -5495,7 +5495,7 @@ def grade_frame_ceilings(scene, lines, route, overlay, warmup):
         return ok, detail
     worst_all = parse_worst(lines, route, overlay)
     if not worst_all:
-        return False, (" | no worstframe= samples for this route — plxnative-framedrop was not "
+        return False, (" | no worstframe= samples for this route — dispatcharrtv-framedrop was not "
                        "armed, or the scene never reached this screen")
     if w_ceiling is not None:
         worst = worst_all[warmup:]
@@ -5919,9 +5919,9 @@ def fps_trigger_files(scene):
         if tval is True:
             files.append((tname, None))
         elif isinstance(tval, str) and "$rk" in tval:
-            # Exact `"$rk"` is the common case (home-detail-nav's `plxnative-navosc`,
-            # collection-page's `plxnative-collection`); the substring form is what a bench
-            # scene's `plxnative-pushbench=<n>,$rk` needs, since its ratingKey rides inside a
+            # Exact `"$rk"` is the common case (home-detail-nav's `dispatcharrtv-navosc`,
+            # collection-page's `dispatcharrtv-collection`); the substring form is what a bench
+            # scene's `dispatcharrtv-pushbench=<n>,$rk` needs, since its ratingKey rides inside a
             # larger, comma-joined value.
             files.append((tname, tval.replace("$rk", str(scene["rk"]))))
         else:
@@ -5951,14 +5951,14 @@ def run_fps_scene(scene, cfg, token, *, extra_triggers=(), capture=None,
     # benchmark and makes the number describe a different workload. Future adaptive FPS scenes
     # opt in explicitly with `"quality": "auto"`.
     if scene.get("tier") == "player":
-        files.append(("plxnative-quality", scene.get("quality", "original")))
+        files.append(("dispatcharrtv-quality", scene.get("quality", "original")))
     files.extend(extra_triggers)
     # A frame-ceiling gate needs the frame-drop detector armed, at the lower of its two ceilings
     # (see frame_ceiling_threshold). It is a DIAG trigger, so arming it moves no boot screen.
     thr = frame_ceiling_threshold(scene)
-    if thr is not None and not any(n == "plxnative-framedrop" for n, _ in files):
-        files.append(("plxnative-framedrop", thr))
-    # clears every plxnative-* (incl. plxnative-profile) then writes this scene's. Player-tier
+    if thr is not None and not any(n == "dispatcharrtv-framedrop" for n, _ in files):
+        files.append(("dispatcharrtv-framedrop", thr))
+    # clears every dispatcharrtv-* (incl. dispatcharrtv-profile) then writes this scene's. Player-tier
     # scenes actually decode video, so they need the test-user token too — appended to the same
     # round-trip via extra= so its value stays off stdout, exactly like the playback cases.
     extras = []
@@ -5967,22 +5967,22 @@ def run_fps_scene(scene, cfg, token, *, extra_triggers=(), capture=None,
     # The login spinner is the one deliberate exception: its contract is the signed-out route.
     # A scene about the SECOND server needs the primary credential for the same reason.
     if fps_scene_needs_token(scene, bool(srv_json)) and cfg.get("inject_token"):
-        extras.append(f"printf '%s' '{token}' > {RUNDIR}/plxnative-token")
+        extras.append(f"printf '%s' '{token}' > {RUNDIR}/dispatcharrtv-token")
     if srv_json:
-        extras.append(f"printf '%s' {sh_squote(srv_json)} > {RUNDIR}/plxnative-servers")
+        extras.append(f"printf '%s' {sh_squote(srv_json)} > {RUNDIR}/dispatcharrtv-servers")
     apply_triggers(tv, files, extra=extras)
     shown = ", ".join(n + ("=" + c if c is not None else "") for n, c in files)
     print(f"    triggers: {shown or '(none)'}   run {run_secs}s, skip first {warmup} sample(s)")
     if srv_json:
         # same redaction as the playback cases — see `describe_server`.
-        print(f"    plxnative-servers: <{describe_server(cfg['shared_server'])}, token redacted>")
+        print(f"    dispatcharrtv-servers: <{describe_server(cfg['shared_server'])}, token redacted>")
 
     if before_run:
         before_run()
     # A `walk` scene presses its own keys while `make run` is blocked in its fixed sleep.
     walker = None
     if scene.get("walk"):
-        walker = mock_fps.KeyWalk(ssh_argv, tv, EVENTLOG, f"{RUNDIR}/plxnative-remote", scene)
+        walker = mock_fps.KeyWalk(ssh_argv, tv, EVENTLOG, f"{RUNDIR}/dispatcharrtv-remote", scene)
         walker.start()
     try:
         proc = make(["run", f"TV={tv}", f"RUN_SECS={run_secs}"], timeout=run_secs + 90)
@@ -6179,13 +6179,13 @@ def grade_walk_prelude(scene, lines, walker):
     if window is None:
         return ("no `key type=0x300` line in the event log: the app received none of the "
                 f"{walker.sent} key(s) the walk sent"), lines, ""
-    # `walk.fingerprint_region`: the focus fingerprint (`plxnative-focus`) must show the walk
+    # `walk.fingerprint_region`: the focus fingerprint (`dispatcharrtv-focus`) must show the walk
     # crossed into that region, e.g. the Library's grid at the turn-around.
     region = walk.get("fingerprint_region")
     if region and not mock_fps.grid_fingerprint_seen(window, scene["route"], region):
         return (f"no `focus route={scene['route']} ... region={region}` fingerprint in the walk's "
                 f"window: the {walker.sent} key(s) never carried focus into the {region} "
-                f"(is `plxnative-focus` armed, and are `extra_rows` enough?)"), lines, ""
+                f"(is `dispatcharrtv-focus` armed, and are `extra_rows` enough?)"), lines, ""
     # A library walk with `min_landed` must also reach a deep shelf ON SCREEN: the landed count is
     # the store's, and a screen that capped its rows again would still walk into the grid.
     if library and min_landed:
@@ -6340,7 +6340,7 @@ def run_graphics_profile(scene, cfg, token, phase, output=None):
         sampler.stage()
         # The baseline deliberately closes the SELECTED install. Another installed app and the
         # compositor may still exist, so this is a system floor, not a claim that every active IRQ
-        # in the next leg belongs to PlxNative. Layer two remains global by construction.
+        # in the next leg belongs to Dispatcharr TV. Layer two remains global by construction.
         make(["kill", f"TV={cfg['tv']}"], timeout=40)
         baseline_raw = sampler.capture(3.0)
 
@@ -6353,14 +6353,14 @@ def run_graphics_profile(scene, cfg, token, phase, output=None):
 
         hw_ok, hw_detail = run_fps_scene(
             scene, cfg, token,
-            extra_triggers=(("plxnative-hwcnt", phase),),
+            extra_triggers=(("dispatcharrtv-hwcnt", phase),),
             capture=instrumented,
             instrumented=True,
             log_suffix="-hwcnt",
             before_run=lambda: sampler.start(run_secs + 4.0),
         )
         hw_irq_raw = sampler.finish()
-        hwcnt_result = ssh(cfg["tv"], f"cat {RUNDIR}/plxnative-hwcnt.jsonl 2>/dev/null", timeout=30)
+        hwcnt_result = ssh(cfg["tv"], f"cat {RUNDIR}/dispatcharrtv-hwcnt.jsonl 2>/dev/null", timeout=30)
         if not hwcnt_result.stdout:
             raise RuntimeError(
                 "HWCNT produced no JSONL — phase unknown, trigger unread, or /dev/mali0 refused"
@@ -6379,7 +6379,7 @@ def run_graphics_profile(scene, cfg, token, phase, output=None):
         out.write("\n".join(production["lines"]) + "\n")
     with open(os.path.join(bundle, "events-hwcnt.log"), "w", encoding="utf-8") as out:
         out.write("\n".join(instrumented["lines"]) + "\n")
-    hwcnt_path = os.path.join(bundle, "plxnative-hwcnt.jsonl")
+    hwcnt_path = os.path.join(bundle, "dispatcharrtv-hwcnt.jsonl")
     with open(hwcnt_path, "w", encoding="utf-8") as out:
         out.write(hwcnt_result.stdout)
 
@@ -6416,7 +6416,7 @@ def run_graphics_profile(scene, cfg, token, phase, output=None):
         out.write("\n")
 
     summary = [
-        f"PlxNative three-layer graphics profile: fps:{scene['name']}",
+        f"Dispatcharr TV three-layer graphics profile: fps:{scene['name']}",
         f"install: {APPID} [{FLAVOUR}]  HWCNT phase={phase}  binary profile={cfg.get('arm_profile', 'unknown')}",
         "",
         "Layer 1 — production present pacing (profilers OFF):",
@@ -6518,8 +6518,8 @@ def main():
                          "NB distinct from fps_scenes' ui|player 'tier'.")
     ap.add_argument("--list", action="store_true", help="list cases and exit")
     ap.add_argument("--extra-trigger", action="append", default=[], metavar="NAME[=CONTENT]",
-                    help="arm one more plxnative-* trigger for every fps scene of this run (e.g. "
-                         "plxnative-cpuprof, plxnative-framedrop=20). A profiler trigger disqualifies "
+                    help="arm one more dispatcharrtv-* trigger for every fps scene of this run (e.g. "
+                         "dispatcharrtv-cpuprof, dispatcharrtv-framedrop=20). A profiler trigger disqualifies "
                          "the run's fps= as a pacing number, exactly as --graphics-profile does; use "
                          "it to attribute a frame, never to grade one.")
     ap.add_argument("--save-logs", metavar="DIR", default=None,
@@ -6681,7 +6681,7 @@ def main():
     if args.mock and not args.list:
         mock_host, mock_port = mock_fps.configured_endpoint(CONFIG_LOCAL_H)
         cfg["mock"] = {"host": mock_host, "port": mock_port}
-        cfg["inject_token"] = True  # the synthetic guest token rides plxnative-token, as for tv-session
+        cfg["inject_token"] = True  # the synthetic guest token rides dispatcharrtv-token, as for tv-session
     cases = manifest["cases"]
     if args.suite:
         cases = [c for c in cases if case_suite(c) == args.suite]

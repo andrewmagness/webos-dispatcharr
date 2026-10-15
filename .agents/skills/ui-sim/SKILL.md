@@ -13,12 +13,12 @@ description: >
 > **This is also what you do while the television is locked.** One set, one lane at a time
 > (`tools/tv-lock.sh`, the **`tv-lock`** skill): when a device command is refused because another
 > lane holds it, the simulator is usually the answer rather than the queue — N instances run at
-> once, each with its own `PLXNATIVE_RUNTIME_DIR`. Come back to the TV only for what the simulator
+> once, each with its own `DISPATCHARRTV_RUNTIME_DIR`. Come back to the TV only for what the simulator
 > provably cannot answer (frame rate, text rasterization, LG's decoder, the video plane) — a
 > shorter list on macOS since the streaming pipeline moved onto that simulator on 2026-08-28.
 > Windows/WSLg's UI-only path stops at the existing host no-video seam.
 
-`plxnative-sim` is the same application core the television runs, linked against desktop SDL2 and
+`dispatcharrtv-sim` is the same application core the television runs, linked against desktop SDL2 and
 desktop GL. It draws the real interface against your real Plex Media Server on macOS or through
 WSLg on Windows.
 
@@ -56,7 +56,7 @@ powershell -ExecutionPolicy Bypass -File tools/sim.ps1 send right ok shot
 `setup` installs stable Rust, SDL2/SDL2_ttf, Mesa OpenGL and diagnostics in WSL and refuses a
 software renderer. `run` and `shot` default to a 1920×1080 drawable, request vsync, and apply a
 60 Hz host frame cap because WSLg's X11/GLX swap does not block on that request. They use
-`~/.cache/plxnative-sim/target`, `~/.local/state/plxnative-sim`, and an isolated asset directory;
+`~/.cache/dispatcharrtv-sim/target`, `~/.local/state/dispatcharrtv-sim`, and an isolated asset directory;
 override those with `-TargetDir`, `-RuntimeDir`, and `-AssetDir`; quoted paths containing spaces are
 supported. These three overrides are absolute Linux paths inside WSL, keeping Cargo and runtime
 files off the Windows-mounted checkout. `-StageToken` copies the token from gitignored
@@ -101,7 +101,7 @@ make sim-macos-shot SIM_DIR=/tmp/sim-b SIM_SHOT=/tmp/sim-b/home.png # safe, simu
 
 Inside a root live that instance's dev triggers, its remote FIFO and its event log — the same
 names and the same contents as on the TV, so **every `tv-session` recipe transfers verbatim**.
-With no `SIM_DIR` the root is `/tmp/plxnative-sim` (the Makefile's default); `/tmp` is the *device's* root, not this one's.
+With no `SIM_DIR` the root is `/tmp/dispatcharrtv-sim` (the Makefile's default); `/tmp` is the *device's* root, not this one's.
 
 **The flavour axis does not reach here.** The TV now carries three installs with three runtime
 roots, so `tv-session` recipes name theirs via `make -s print-rundir FLAVOR=…`; an explicit
@@ -120,7 +120,7 @@ compilation, but the cause is the filesystem. Point the build somewhere local an
 checkout where it is:
 
 ```sh
-export SIM_TDIR=$HOME/plxnative-sim-target      # print-simbin follows it
+export SIM_TDIR=$HOME/dispatcharrtv-sim-target      # print-simbin follows it
 ```
 
 Only the simulator is rescuable this way. `make` and `make check` build under
@@ -144,7 +144,7 @@ Three things, and notably no webOS NDK and no nightly:
    build-std`, which looks like it forces nightly, but that table is gated and stable cargo ignores
    it — it only applies to the ARM cross-build, which passes `cargo +nightly` explicitly.
 3. `src/config.local.h` for the PMS host and token. Gitignored, so a fresh clone has none: pass
-   `SIM_PMS=<ip>` and write the token into `$SIM_DIR/plxnative-token` by hand.
+   `SIM_PMS=<ip>` and write the token into `$SIM_DIR/dispatcharrtv-token` by hand.
 
 ## Boot into a specific screen
 
@@ -155,8 +155,8 @@ under-reports the four triggers named nowhere but their `devtrig::flag`/`devtrig
 owns the screen-to-trigger recipes.
 
 ```sh
-touch $SIM_DIR/plxnative-library            # boot into the browse grid
-echo 3 > $SIM_DIR/plxnative-library         # ...on section 3
+touch $SIM_DIR/dispatcharrtv-library            # boot into the browse grid
+echo 3 > $SIM_DIR/dispatcharrtv-library         # ...on section 3
 make sim-macos-shot SIM_DIR=$SIM_DIR
 ```
 
@@ -168,11 +168,11 @@ sim-clean SIM_DIR=…` resets a root.
 Run it in the background, write tokens to the FIFO, ask for a shot:
 
 ```sh
-PLXNATIVE_RUNTIME_DIR=$D PLXNATIVE_APP_DIR=$PWD/pkg \
-  rust-modules/target-sim/debug/plxnative-sim "$PMS_IP" 32400 >/dev/null 2>&1 &   # numeric IP
+DISPATCHARRTV_RUNTIME_DIR=$D DISPATCHARRTV_APP_DIR=$PWD/pkg \
+  rust-modules/target-sim/debug/dispatcharrtv-sim "$PMS_IP" 32400 >/dev/null 2>&1 &   # numeric IP
 sleep 7                                     # let Home land and posters arrive
 
-exec 3<> $D/plxnative-remote                # SEE THE WARNING BELOW — `<>`, never `>`
+exec 3<> $D/dispatcharrtv-remote                # SEE THE WARNING BELOW — `<>`, never `>`
 printf 'shot ' >&3;  sleep 2                # -> shot-1.png
 for t in down down right ok; do printf '%s ' "$t" >&3; sleep 0.9; done
 sleep 3; printf 'shot ' >&3; sleep 2        # -> shot-2.png
@@ -180,7 +180,7 @@ exec 3>&-
 ```
 
 Shots land in the instance root as **numbered** files (`shot-1.png`, `shot-2.png`, …) so a
-sequence never overwrites one file or races whoever is reading it. `PLXNATIVE_SHOT` only overrides
+sequence never overwrites one file or races whoever is reading it. `DISPATCHARRTV_SHOT` only overrides
 the location — the `shot` token works in any session without it, including `make sim-macos-run`.
 Then look at them — that is the whole point; a shot
 nobody opens has verified nothing.
@@ -203,7 +203,7 @@ sign-in may legitimately have advanced by the time the app is foregrounded again
 
 ### Three traps, each of which has already cost an hour
 
-1. **Open the FIFO read-write.** `printf x > $D/plxnative-remote` blocks forever in `open(2)` if
+1. **Open the FIFO read-write.** `printf x > $D/dispatcharrtv-remote` blocks forever in `open(2)` if
    the app is not running — there is no reader, and the shell hangs with no output. Always
    `exec 3<> fifo` and write to `&3`.
 2. **A settled screen stops presenting.** `plx_machine::idle` skips the whole swap once nothing moves, so
@@ -244,7 +244,7 @@ Report these ONLY from the device, via the **`tv-session`** skill (and `wake-tv`
   seam's own "no video path" failure and pressing Play lands on the app's real failure read-out —
   correct behaviour, not a bug, and a convenient way to look at that screen.
 - ~~**Anything about video.**~~ **Narrowed twice, and the second time is recent.** Arm
-  **`plxnative-clocksink`** in the instance root and the seam becomes a plant: access units are
+  **`dispatcharrtv-clocksink`** in the instance root and the seam becomes a plant: access units are
   accepted and discarded and a presentation clock advances at real time, clamped to the last fed
   PTS, reporting position at the television's own measured 5 Hz. And since **2026-08-28** the
   source of those AUs can be a real network stream: `make sim-macos` builds a HOST copy of the
@@ -291,10 +291,10 @@ device-verified" is a useful, honest status. "Verified" without a TV is not.
   corrupt it. The in-app shot needs no permission, works occluded, and is deterministic.
 - The window is not 1:1. `surface::probe` letterboxes 1920×1080 into whatever the drawable is, so
   shots come out at the viewport size (e.g. 1650×928). Fine for layout, wrong for pixel work.
-- Without `plxnative-clocksink` there is no `player` route to screenshot beyond the failure
+- Without `dispatcharrtv-clocksink` there is no `player` route to screenshot beyond the failure
   read-out and the HUD's busy states. With it there is a real one, driven by a real stream — but
   the video PLANE is empty, because the app decodes nothing and the wayland overlay is webOS-only:
-  the HUD sits over black. Arm `plxnative-simvideo` as well and a system `ffmpeg` child decodes
+  the HUD sits over black. Arm `dispatcharrtv-simvideo` as well and a system `ffmpeg` child decodes
   the stream the clock sink accepts and composites it UNDER the UI (`player/sim_video.rs`). That
   is a screenshot facility for the documentation's player figure; it says nothing about LG's
   decoder, the video plane or picture timing on the television.

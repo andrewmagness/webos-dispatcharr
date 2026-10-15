@@ -249,7 +249,7 @@ fn an_absent_trailer_autoplay_field_stays_on() {
     assert!(!off.trailer_autoplay());
 }
 
-const MINIMAL_PROTECTED_AUTH: &str = r#"{"format":"plxnative-session-auth","version":1,"account_token":"tok","server":{},"user":{},"home_users":[],"sources":[],"extensions":{}}"#;
+const MINIMAL_PROTECTED_AUTH: &str = r#"{"format":"dispatcharrtv-session-auth","version":1,"account_token":"tok","server":{},"user":{},"home_users":[],"sources":[],"extensions":{}}"#;
 
 /// #92's contract is "absence is on". `join_canonical` reconstructs a `Session` from a
 /// canonical `PublicPayload` + a decrypted protected auth string — a null/absent

@@ -153,7 +153,7 @@ pub type CURLM = c_void;
 //
 // Same candidate list as `net.rs`, in the same order, so a set carrying both SONAMEs binds both
 // tables against the same library. The macOS name is last for the same reason it is there: the
-// host simulator and `PlxNative.app` run this code, and the host suite below drives real libcurl
+// host simulator and `DispatcharrTV.app` run this code, and the host suite below drives real libcurl
 // over plain loopback HTTP.
 plx_base::dynlib! {
     /// The seven multi-interface symbols, frozen to webOS's oldest libcurl (7.53.1). See this
@@ -1990,7 +1990,7 @@ fn sample_throughput_with_reservation(
 }
 
 /// The `CURLOPT_RESOLVE` entry for a request to `origin`: its pin in `net::resolve`, when that holds
-/// one. `Local` when the offline reproduction (`/tmp/plxnative-nowan`) refuses a name no pin covers.
+/// one. `Local` when the offline reproduction (`/tmp/dispatcharrtv-nowan`) refuses a name no pin covers.
 fn resolve_entry_for(origin: &Origin) -> Result<Option<CString>, OpenErr> {
     let entry = plx_net::net::resolve::entry_for(origin.host(), origin.port());
     if entry.is_none() && plx_net::net::refuse_name(origin.host(), plx_net::net::API.connect_s) {
@@ -3801,7 +3801,7 @@ mod tests {
         // disturb a table that is already live — which is precisely the claim being made.
         let v = plx_base::dynlib::load_into(
             None,
-            &["libplxnative-no-such-curl.so.99"],
+            &["libdispatcharrtv-no-such-curl.so.99"],
             &[("curl_multi_init", &curlmulti::curl_multi_init)],
         );
         assert!(matches!(v, plx_base::dynlib::Loaded::NoLibrary));

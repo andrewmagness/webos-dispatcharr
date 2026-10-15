@@ -273,7 +273,7 @@ fn tier(c: &Connection) -> Location {
 }
 
 /// The tier of an origin that arrived WITHOUT a plex.tv connection list to read a flag off — the
-/// `plxnative-token` boot, whose host and port are compiled into the C shim. Before this existed
+/// `dispatcharrtv-token` boot, whose host and port are compiled into the C shim. Before this existed
 /// that path passed `None`, which is "nothing has said" and is the one answer that is certainly
 /// wrong: it left [`Client::link`](super::client::Client::link) unknown, so `abr::bootstrap` never
 /// ran and **Auto could not choose Original on a gigabit LAN** — on the exact boot path the device
@@ -1658,7 +1658,7 @@ mod tests {
         );
     }
 
-    /// PLX-NATIVE-10's shape: an owned server on this LAN whose every HTTPS route failed from the
+    /// upstream Sentry issue 10's shape: an owned server on this LAN whose every HTTPS route failed from the
     /// television (the relay included) and whose RFC 1918 plaintext answer verified the machine.
     fn eligible_evidence() -> InsecureEvidence {
         InsecureEvidence {

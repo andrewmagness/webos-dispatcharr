@@ -1,15 +1,15 @@
 //! The `/tmp` developer-trigger surface, behind one door.
 //!
-//! This app is driven headlessly by ~44 files under `/tmp/plxnative-*`: which screen to boot to,
+//! This app is driven headlessly by ~44 files under `/tmp/dispatcharrtv-*`: which screen to boot to,
 //! which item to play, which URL to stream, whether to auto-press OK, which PMS token to use.
 //! That is how `tests/run.py` and every capture scene work, and it is not going away.
 //!
 //! It must not exist in a public build. `/tmp` is the SHARED system `/tmp` in the production jail
 //! too (mode 1777, both jail profiles), so on an ordinary user's TV every one of those files is a
 //! behaviour switch any co-resident process can throw. Three are outright takeovers:
-//! `plxnative-token` beats the signed-in session (`app.rs`'s boot gate), `plxnative-servers` hands
+//! `dispatcharrtv-token` beats the signed-in session (`app.rs`'s boot gate), `dispatcharrtv-servers` hands
 //! the app a whole additional server — an address AND the token to trust it with (see [`servers`])
-//! — and `plxnative-url` replaces the stream the player feeds.
+//! — and `dispatcharrtv-url` replaces the stream the player feeds.
 //!
 //! So every read goes through [`plx_base::devtrig`] — the primitives (`flag`, `read`, `latched_flag!`,
 //! `read_sample`, `no_wan`, …), a base-layer module no application type can leak into — and that
@@ -24,13 +24,13 @@
 //! `nobudget` flag on `DevFlags`), the optimizer may keep the branch and its string literals
 //! in a release build, and `ci/check-package.py` fails the package because it greps the shipped
 //! bytes for every trigger name this module's [`DIAG`] and `devtrig`'s `CONTROLLED` list. So every
-//! statement whose literal names a trigger (a log line saying `/tmp/plxnative-…`) carries its own
+//! statement whose literal names a trigger (a log line saying `/tmp/dispatcharrtv-…`) carries its own
 //! `#[cfg(feature = "devtriggers")]`. Never rely on constant folding for this.
 //!
 //! Two rules for anything added later:
 //!
 //! 1. **Never open a `/tmp` path directly.** Read through `plx_base::devtrig`. The grep that audits
-//!    this (`/tmp/plxnative-` outside this module and the unconditional log sinks) is the only
+//!    this (`/tmp/dispatcharrtv-` outside this module and the unconditional log sinks) is the only
 //!    thing keeping the property true. The two profiler logs are dev-only and listed in [`DIAG`]
 //!    below.
 //! 2. **A gate is not always a path.** `any_trigger_present` scans the whole directory and names
@@ -53,7 +53,7 @@
 pub(crate) mod scenarios;
 
 
-/// **Turn on the TELEVISION'S OWN GStreamer logging** — `/tmp/plxnative-gstlog`.
+/// **Turn on the TELEVISION'S OWN GStreamer logging** — `/tmp/dispatcharrtv-gstlog`.
 ///
 /// This is the only instrument that can see inside LG's Dolby Vision chain. That chain is
 /// `dvbin` → `h265parse` → `dvsplitter` → {`lxvideodec`, `dvmdparse`} → `dualsequencer`, all of it
@@ -94,13 +94,13 @@ pub(crate) fn arm_gst_logging() {
 pub(crate) fn arm_gst_logging() {}
 
 /// **Sign in to a Dispatcharr server headlessly and log what it serves** —
-/// `/tmp/plxnative-dispatcharr`, three lines: server address, username, password.
+/// `/tmp/dispatcharrtv-dispatcharr`, three lines: server address, username, password.
 ///
 /// The headless twin of the Setup screen (`screens::setup`), which stores what it signs in with;
 /// this probe stores nothing. It runs [`plx_dispatcharr`]'s whole
 /// sign-in (version probe, JWT, existing-or-new API key), the channel and group reads and the guide
 /// on a worker, and writes the outcome to the event log as `dispatcharr:` lines. It never logs the
-/// password or the key. Like `plxnative-servers` it carries a credential, which is why it is not
+/// password or the key. Like `dispatcharrtv-servers` it carries a credential, which is why it is not
 /// in [`DIAG`].
 #[cfg(feature = "devtriggers")]
 pub(crate) fn dispatcharr_probe() {
@@ -108,7 +108,7 @@ pub(crate) fn dispatcharr_probe() {
     let Some(spec) = plx_base::devtrig::read("dispatcharr") else { return };
     let mut lines = spec.lines().map(str::trim);
     let (Some(address), Some(username), Some(password)) = (lines.next(), lines.next(), lines.next()) else {
-        log("dispatcharr: /tmp/plxnative-dispatcharr needs three lines: address, username, password");
+        log("dispatcharr: /tmp/dispatcharrtv-dispatcharr needs three lines: address, username, password");
         return;
     };
     let server = match plx_dispatcharr::dispatcharr::Server::parse(address) {
@@ -196,10 +196,10 @@ fn dispatcharr_report(server: &plx_dispatcharr::dispatcharr::Server, username: &
     out
 }
 
-/// **Turn on libwayland-client's protocol log** — `/tmp/plxnative-wldebug`.
+/// **Turn on libwayland-client's protocol log** — `/tmp/dispatcharrtv-wldebug`.
 ///
 /// `WAYLAND_DEBUG` makes the client library print every request it sends and every event it
-/// dispatches, each with a microsecond wall-clock stamp, to stderr (`plxnative-stderr.log`). It is
+/// dispatches, each with a microsecond wall-clock stamp, to stderr (`dispatcharrtv-stderr.log`). It is
 /// the one place the compositor's side of a present is visible from inside the app: when
 /// `wl_buffer.release` and `wl_callback.done` actually arrive, against when the driver's
 /// `attach`/`commit` went out. libwayland reads the variable in `wl_display_connect`, so this has
@@ -231,7 +231,7 @@ pub(crate) fn arm_wayland_debug() {
 #[cfg(not(feature = "devtriggers"))]
 pub(crate) fn arm_wayland_debug() {}
 
-/// **Crash the app on purpose** — `plxnative-crashtest=<segv|abrt|bus|ill|trap|panic|unwind>`.
+/// **Crash the app on purpose** — `dispatcharrtv-crashtest=<segv|abrt|bus|ill|trap|panic|unwind>`.
 ///
 /// Not a feature. An INSTRUMENT for the instrument, and it exists because of the rule this repo
 /// keeps re-learning: prove the instrument can see the thing before you read its silence, and
@@ -316,9 +316,9 @@ pub(crate) fn crash_on_purpose() {
 #[cfg(not(feature = "devtriggers"))]
 pub(crate) fn crash_on_purpose() {}
 
-/// `plxnative-softfloat`: the ARM half of `plx_machine::motion`'s differential claim (spec §4.2). Runs the
+/// `dispatcharrtv-softfloat`: the ARM half of `plx_machine::motion`'s differential claim (spec §4.2). Runs the
 /// 4,096-operand table through this binary's own arithmetic, logs its hash beside the host's
-/// pinned one, and writes the words to `plxnative-softfloat.tbl` in the runtime root so a
+/// pinned one, and writes the words to `dispatcharrtv-softfloat.tbl` in the runtime root so a
 /// divergence can be diffed word by word. `make softfloat-probe` is the recipe.
 #[cfg(feature = "devtriggers")]
 pub(crate) fn softfloat_probe() {
@@ -335,7 +335,7 @@ pub(crate) fn softfloat_probe() {
     let mut t = Vec::new();
     plx_machine::motion::differential_table(&mut t);
     let body: String = t.iter().map(|w| format!("{w:08x}\n")).collect();
-    let path = plx_base::paths::runtime_dir().join("plxnative-softfloat.tbl");
+    let path = plx_base::paths::runtime_dir().join("dispatcharrtv-softfloat.tbl");
     if let Err(e) = std::fs::write(&path, body) {
         plx_base::eventlog::log(&format!("softfloat: table write failed: {e}"));
     }
@@ -343,7 +343,7 @@ pub(crate) fn softfloat_probe() {
 #[cfg(not(feature = "devtriggers"))]
 pub(crate) fn softfloat_probe() {}
 
-/// A test-only playback policy override from `plxnative-quality`.
+/// A test-only playback policy override from `dispatcharrtv-quality`.
 ///
 /// The server matrix grades established direct-play/remux/transcode routes. It must not silently
 /// become an Auto-HLS matrix because the television happened to persist that user preference in
@@ -387,7 +387,7 @@ fn parse_playback_quality(value: &str) -> Option<plx_plex::plex::session::Playba
     }
 }
 
-/// **Switch the playback quality MID-PLAYBACK** — `plxnative-qualityswitch=[gap=<ms>,]<q>[,<q>…]`.
+/// **Switch the playback quality MID-PLAYBACK** — `dispatcharrtv-qualityswitch=[gap=<ms>,]<q>[,<q>…]`.
 ///
 /// The one thing [`playback_quality_override`] above cannot do. That is a BOOT override: it decides
 /// what the playback starts as and is read once. What a person actually does at the television is
@@ -396,9 +396,9 @@ fn parse_playback_quality(value: &str) -> Option<plx_plex::plex::session::Playba
 /// way out of Auto) tears down a running ABR controller. None of that is reachable from a boot
 /// value, and none of it was reachable from a test at all.
 ///
-/// Same vocabulary as `plxnative-quality`, deliberately — one spelling of a rung across both
+/// Same vocabulary as `dispatcharrtv-quality`, deliberately — one spelling of a rung across both
 /// triggers, so a case cannot name a quality one of them accepts and the other silently ignores.
-/// Same grammar as `plxnative-autoseek`: an optional leading `gap=<ms>` then comma-separated steps
+/// Same grammar as `dispatcharrtv-autoseek`: an optional leading `gap=<ms>` then comma-separated steps
 /// fired one per gap. There is no default gap and none is invented: with a single step no cadence
 /// exists to state, and a case wanting several states its own, in the manifest, where a reader can
 /// see it beside the assertions it enables.
@@ -406,7 +406,7 @@ fn parse_playback_quality(value: &str) -> Option<plx_plex::plex::session::Playba
 /// **This writes the stored preference, and that is not incidental.** `route::set_quality` persists
 /// through `plex::session::update`, because a person picking a rung means it. A test therefore
 /// leaves the value behind — on the `debug` flavour's own session, never the install you watch
-/// with, and `tests/run.py` writes `plxnative-quality` on every server case, so the next boot
+/// with, and `tests/run.py` writes `dispatcharrtv-quality` on every server case, so the next boot
 /// overrides whatever this left. Both halves are load-bearing; neither alone would make it safe.
 fn parse_quality_switch_script(
     raw: &str,
@@ -445,7 +445,7 @@ pub(crate) fn quality_switch_script() -> Option<(u32, Vec<plx_plex::plex::sessio
 }
 
 /// One synchronized user Pause, optionally followed by Resume —
-/// `plxnative-autopause=[delay=<ms>,][at=<ms>,][hold=<ms>]`.
+/// `dispatcharrtv-autopause=[delay=<ms>,][at=<ms>,][hold=<ms>]`.
 ///
 /// An empty file preserves the original paused-HUD capture contract: pause at the player's
 /// ordinary six-second dev gate and stay paused. A non-empty script may delay that edge and name a
@@ -577,10 +577,10 @@ mod tests {
     // `devtriggers`-only, not merely dead code behind the runtime `ENABLED` check below), so this
     // test cannot exist in that build at all rather than just skip at runtime.
 
-    // ---- plxnative-playurl (the pipeline test tier's one trigger) ----
+    // ---- dispatcharrtv-playurl (the pipeline test tier's one trigger) ----
 
-    /// **One vocabulary for a rung, in both directions.** `plxnative-quality` and
-    /// `plxnative-qualityswitch` accept these strings and `quality: switch → …` prints them, so a
+    /// **One vocabulary for a rung, in both directions.** `dispatcharrtv-quality` and
+    /// `dispatcharrtv-qualityswitch` accept these strings and `quality: switch → …` prints them, so a
     /// case states its rung once and asserts on the same word. A one-way table would let the log
     /// drift from what the trigger accepts and the drift would show up as a case that arms
     /// correctly and then matches nothing — indistinguishable from the feature not working.
@@ -607,7 +607,7 @@ mod tests {
 
     /// The script grammar, including the two ways it must FAIL CLOSED. A typo that resolved to a
     /// default would switch the playback to something the case never asked for — the same hazard
-    /// `plxnative-abrpin` documents for its own value.
+    /// `dispatcharrtv-abrpin` documents for its own value.
     #[test]
     fn a_quality_script_fails_closed_and_never_substitutes() {
         use plx_plex::plex::session::PlaybackQuality as Q;

@@ -154,7 +154,7 @@ jobs:
       flavor: stable
       rc: ${{ needs.prepare.outputs.rc }}
       # PRODUCTION, like the release: a candidate is what will ship, and its reports are filed
-      # under their own Sentry release (`plxnative@X.Y.Z-rc.N`), apart from the final's.
+      # under their own Sentry release (`dispatcharrtv@X.Y.Z-rc.N`), apart from the final's.
       telemetry: production
       artifact: rc-assets
       homebrew-manifest: false
@@ -192,11 +192,11 @@ jobs:
           mkdir -p dist
           # Named for the candidate: every candidate of one version would otherwise download as the
           # same com.magness.dispatcharrtv_X.Y.Z_arm.ipk.
-          ipk="plxnative-v${LABEL}.ipk"
+          ipk="dispatcharrtv-v${LABEL}.ipk"
           cp raw/com.magness.dispatcharrtv_*_arm.ipk "dist/$ipk"
           ( cd dist && sha256sum "$ipk" > rc.sha256 )
           cp raw/ffmpeg-*.tar.xz raw/build-ffmpeg.sh dist/
-          cp raw/plxnative-source-*.tar.gz* dist/
+          cp raw/dispatcharrtv-source-*.tar.gz* dist/
           echo "ipk=$ipk" >> "$GITHUB_OUTPUT"
       - name: Render the prerelease body
         env:
@@ -225,9 +225,9 @@ jobs:
           sha=$(git rev-parse HEAD)
           # --verify-tag: the tag `prepare` pushed, never one gh would create at another commit.
           gh release create "$TAG" \
-            "dist/$IPK" dist/rc.sha256 dist/ffmpeg-*.tar.xz dist/build-ffmpeg.sh dist/plxnative-source-*.tar.gz* \
+            "dist/$IPK" dist/rc.sha256 dist/ffmpeg-*.tar.xz dist/build-ffmpeg.sh dist/dispatcharrtv-source-*.tar.gz* \
             --verify-tag \
-            --title "PlxNative $LABEL" \
+            --title "Dispatcharr TV $LABEL" \
             --prerelease \
             --latest=false \
             --notes-file "$RUNNER_TEMP/notes.md"

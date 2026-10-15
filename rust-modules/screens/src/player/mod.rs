@@ -2872,7 +2872,7 @@ mod repair_confirmation_tests {
         let _g = plx_base::testlock::serial();
         // The `failtest` trigger is armed in a PRIVATE trigger root, never in the shared runtime
         // root: that is the bare `/tmp` on a host test run, and another process's player tests
-        // read `plxnative-failtest` there (`player_hud::busy`), so arming it for the length of this
+        // read `dispatcharrtv-failtest` there (`player_hud::busy`), so arming it for the length of this
         // test turned their click on the picture into a click on a failed playback.
         plx_base::devtrig::with_private_triggers(|| {
             let path = plx_base::devtrig::path("failtest");

@@ -9,9 +9,9 @@
 #
 # Config resolution (nothing about your network is baked into this file):
 #   TV_HOST — $TV_HOST, else $TV, else tools/tv-config.sh (this checkout's .tv-host, the main
-#             checkout's, then the per-user ~/.config/plxnative/tv-host).
+#             checkout's, then the per-user ~/.config/dispatcharrtv/tv-host).
 #   TV_MAC  — $TV_MAC, else tools/tv-config.sh (.tv-mac of this checkout, of the main checkout, then
-#             the per-user ~/.config/plxnative/tv-mac), else looked up from the ARP table while
+#             the per-user ~/.config/dispatcharrtv/tv-mac), else looked up from the ARP table while
 #             the TV is reachable and written to the PER-USER tv-mac for next time -- never into
 #             the checkout, so every worktree benefits and a sleeping TV can still be woken.
 #   TV_USER (root)  WAKE_TIMEOUT (180 s)
@@ -35,7 +35,7 @@ TVCONFIG="$REPO/tools/tv-config.sh"
 # the `$(shell …)` text and the wake failed with a DNS error that read like the TV was gone.
 TV_HOST="${TV_HOST:-${TV:-}}"
 [ -n "$TV_HOST" ] || TV_HOST="$("$TVCONFIG" host 2>/dev/null || true)"
-[ -n "$TV_HOST" ] || { echo "ERROR: no TV host — put its IP in ~/.config/plxnative/tv-host (or .tv-host), or set TV_HOST=<ip>." >&2; exit 2; }
+[ -n "$TV_HOST" ] || { echo "ERROR: no TV host — put its IP in ~/.config/dispatcharrtv/tv-host (or .tv-host), or set TV_HOST=<ip>." >&2; exit 2; }
 
 TV_USER="${TV_USER:-root}"
 WAKE_TIMEOUT="${WAKE_TIMEOUT:-180}"
@@ -104,7 +104,7 @@ case "${1:-wake}" in
     if [ -z "$TV_MAC" ]; then
       echo "ERROR: no MAC for the magic packet, and the TV is unreachable so it cannot be" >&2
       echo "       learned from ARP. Set TV_MAC=<aa:bb:cc:dd:ee:ff> once (it is then cached" >&2
-      echo "       in ~/.config/plxnative/tv-mac), or wake the TV by hand and re-run to cache it." >&2
+      echo "       in ~/.config/dispatcharrtv/tv-mac), or wake the TV by hand and re-run to cache it." >&2
       exit 2
     fi
     echo "Waking the TV..."

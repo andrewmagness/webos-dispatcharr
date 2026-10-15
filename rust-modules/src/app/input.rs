@@ -356,7 +356,7 @@ pub(crate) fn key_back(
 /// **It does not end the process, and nothing about a BACK press does any more.** The remote's own
 /// EXIT key still terminates (LG checklist item 38), and a script that wants the app closed uses
 /// SAM's `closeByAppId` exactly as `make kill`, `tests/run.py` and `tools/tv-session.sh` already do.
-/// That is why the old `/tmp/plxnative-noexitconfirm` bypass went with the alert: it existed to let
+/// That is why the old `/tmp/dispatcharrtv-noexitconfirm` bypass went with the alert: it existed to let
 /// a headless caller quit by pressing BACK, and BACK is no longer a quit for anybody.
 pub(crate) fn back_at_root() {
     if plx_platform::tv::home::take_root_press() {

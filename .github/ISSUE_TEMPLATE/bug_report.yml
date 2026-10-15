@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in PlxNative does not work, for example playback fails, the app closes or sign-in breaks.
+description: Something in Dispatcharr TV does not work, for example playback fails, the app closes or sign-in breaks.
 labels: ["bug", "user-report"]
 body:
   - type: input
@@ -17,16 +17,16 @@ body:
     validations:
       required: true
   - type: input
-    id: plxnative-version
+    id: dispatcharrtv-version
     attributes:
-      label: PlxNative version
+      label: Dispatcharr TV version
       description: For example `0.7.0`, or the nightly's version.
     validations:
       required: true
   - type: dropdown
     id: install-method
     attributes:
-      label: How you installed PlxNative
+      label: How you installed Dispatcharr TV
       options:
         - Dev Manager (Developer Mode)
         - Homebrew Channel
@@ -38,7 +38,7 @@ body:
     id: what-happened
     attributes:
       label: What happened
-      description: What you did, what you expected, and what happened instead. For a playback failure, paste the bottom line of the failure screen (it starts with `PlxNative`) or attach a photo.
+      description: What you did, what you expected, and what happened instead. For a playback failure, paste the bottom line of the failure screen (it starts with `Dispatcharr TV`) or attach a photo.
     validations:
       required: true
   - type: dropdown
@@ -57,7 +57,7 @@ body:
     attributes:
       label: Logs
       description: |
-        How to get them: https://plxnative.com/troubleshooting/#collecting-logs
+        How to get them: https://github.com/andrewmagness/webos-dispatcharr/blob/main/docs/troubleshooting.md#collecting-logs
         Fetch before you reopen the app: the event log is emptied on every launch.
         Logs contain ratingKeys (item numbers on your server), so think before posting publicly.
       placeholder: Attach the log files here.

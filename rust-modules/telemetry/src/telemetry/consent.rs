@@ -461,7 +461,7 @@ pub fn errors_id() -> Option<String> {
     })
 }
 
-/// `/tmp/plxnative-consentstate=unset|yes4|yes7|no` — boot with this consent record instead of
+/// `/tmp/dispatcharrtv-consentstate=unset|yes4|yes7|no` — boot with this consent record instead of
 /// the stored one: never asked, error reports allowed at scope 4 (before the onboarding report
 /// existed) or 7, or declined. Installed through `consent::install` like a real load, and written
 /// nowhere. `None` without the trigger or with an unknown value (which is logged). Unused under

@@ -1,11 +1,11 @@
-//! `plxnative-sim` — the desktop UI simulator.
+//! `dispatcharrtv-sim` — the desktop UI simulator.
 //!
 //! The same application core the television runs, linked against a desktop SDL2 and desktop GL
 //! instead of LG's. It draws the real interface, against a real Plex Media Server, on a laptop.
 //!
 //! **What it is for.** The television serializes the entire dev loop: one set, one app instance,
 //! and two `tests/run.py` jobs kill each other's app. That makes every UI change a queue. Several
-//! simulators can run at once — each with its own instance root (`PLXNATIVE_RUNTIME_DIR`), so each
+//! simulators can run at once — each with its own instance root (`DISPATCHARRTV_RUNTIME_DIR`), so each
 //! has its own trigger namespace, its own remote FIFO and its own event log — which is what lets
 //! independent UI and data-layer work proceed in parallel.
 //!
@@ -18,13 +18,13 @@
 //! the parts that do transfer — and they are most of the UI work.
 //!
 //! Usage:
-//!   plxnative-sim [pms-host] [pms-port]
+//!   dispatcharrtv-sim [pms-host] [pms-port]
 //! Environment:
-//!   PLXNATIVE_PMS_HOST / PLXNATIVE_PMS_PORT   server to talk to (argv wins)
-//!   PLXNATIVE_RUNTIME_DIR                     this instance's trigger/FIFO/log root
-//!   PLXNATIVE_APP_DIR                         where appfont*.ttf and the icons live (repo `pkg/`)
+//!   DISPATCHARRTV_PMS_HOST / DISPATCHARRTV_PMS_PORT   server to talk to (argv wins)
+//!   DISPATCHARRTV_RUNTIME_DIR                     this instance's trigger/FIFO/log root
+//!   DISPATCHARRTV_APP_DIR                         where appfont*.ttf and the icons live (repo `pkg/`)
 
-use plxnative_modules::port::plex_run;
+use dispatcharrtv::port::plex_run;
 use std::ffi::CString;
 use std::os::raw::c_int;
 
@@ -39,11 +39,11 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let host = args
         .next()
-        .or_else(|| std::env::var("PLXNATIVE_PMS_HOST").ok())
+        .or_else(|| std::env::var("DISPATCHARRTV_PMS_HOST").ok())
         .unwrap_or_default();
     let port: u16 = args
         .next()
-        .or_else(|| std::env::var("PLXNATIVE_PMS_PORT").ok())
+        .or_else(|| std::env::var("DISPATCHARRTV_PMS_PORT").ok())
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_PORT);
 
@@ -57,8 +57,8 @@ fn main() {
     // silently booting a sign-in screen at somebody expecting Home.
     if host.is_empty() {
         eprintln!(
-            "plxnative-sim: no PMS host given — starting the plex.tv sign-in flow.\n\
-             (pass one as `plxnative-sim <numeric-ip> [port]`, or set PLXNATIVE_PMS_HOST, to boot\n\
+            "dispatcharrtv-sim: no PMS host given — starting the plex.tv sign-in flow.\n\
+             (pass one as `dispatcharrtv-sim <numeric-ip> [port]`, or set DISPATCHARRTV_PMS_HOST, to boot\n\
              straight at a known server. It must be a NUMERIC IP: stream.rs speaks HTTP/1.1 over a\n\
              raw socket with no DNS resolver, on the desktop exactly as on the television.)"
         );
@@ -67,33 +67,33 @@ fn main() {
     // The instance root must exist before anything writes into it, and the event log is truncated
     // per launch — `src/main.c` does the same on the television, and `tests/run.py` relies on the
     // log starting empty to date its first line.
-    let root = plxnative_modules::sim_runtime_dir();
+    let root = dispatcharrtv::sim_runtime_dir();
     if let Err(e) = std::fs::create_dir_all(&root) {
         eprintln!(
-            "plxnative-sim: cannot create runtime dir {}: {e}",
+            "dispatcharrtv-sim: cannot create runtime dir {}: {e}",
             root.display()
         );
         std::process::exit(1);
     }
-    let events = plxnative_modules::sim_events_log();
+    let events = dispatcharrtv::sim_events_log();
     // The banner is the FIRST line of the log, so a log read from the middle, tailed, or pasted
     // into an issue still declares what produced it. Every heartbeat additionally carries `sim=1`
     // (see `app.rs`'s SIM_TAG) — one marker at the top is easy to scroll past.
     let banner = "sim: THIS IS THE DESKTOP SIMULATOR, not a television. No video pipeline; \
                   frame rates here describe this Mac's GPU and must never be read as an fps gate.\n";
     if let Err(e) = std::fs::write(&events, banner) {
-        eprintln!("plxnative-sim: cannot truncate {}: {e}", events.display());
+        eprintln!("dispatcharrtv-sim: cannot truncate {}: {e}", events.display());
         std::process::exit(1);
     }
 
     eprintln!(
-        "plxnative-sim: pms={host}:{port} runtime={} log={}",
+        "dispatcharrtv-sim: pms={host}:{port} runtime={} log={}",
         root.display(),
         events.display()
     );
 
     let c_host = CString::new(host).unwrap_or_else(|_| {
-        eprintln!("plxnative-sim: host contains a NUL byte");
+        eprintln!("dispatcharrtv-sim: host contains a NUL byte");
         std::process::exit(2)
     });
 

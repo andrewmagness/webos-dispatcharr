@@ -82,7 +82,7 @@ class Fixture:
         self.budgets.write_text(json.dumps(doc or budgets_doc()))
         self.trees = d / "trees.json"
         self.trees.write_text(json.dumps(trees or listings()))
-        self.binary = d / "plxnative"
+        self.binary = d / "dispatcharrtv"
         self.binary.write_bytes(b"\x7fELF" + b"\0" * (binary_size - 4))
         self.src = d / "src"
         (self.src / "sub").mkdir(parents=True)

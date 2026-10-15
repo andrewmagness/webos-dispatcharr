@@ -7,7 +7,7 @@ import re
 import urllib.error
 import urllib.request
 
-MOCK_TOKEN = "plxnative-mock-guest"
+MOCK_TOKEN = "dispatcharrtv-mock-guest"
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):

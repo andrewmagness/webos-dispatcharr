@@ -53,7 +53,7 @@ import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEFAULT_FIXTURES = pathlib.Path(os.path.expanduser("~/plxnative-fixtures/pipeline"))
+DEFAULT_FIXTURES = pathlib.Path(os.path.expanduser("~/dispatcharrtv-fixtures/pipeline"))
 
 sys.path.insert(0, str(ROOT / "tests"))
 from run import RE_ABR_SAMPLE as RE_SAMPLE  # noqa: E402

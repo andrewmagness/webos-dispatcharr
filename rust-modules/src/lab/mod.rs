@@ -3,13 +3,13 @@
 //! LG Cloud Test Lab rents physical sets on webOS/SoC combinations we do not own. It gives a
 //! picture and a virtual remote, and **no console, no ssh, no stdout and no way to download a
 //! file**. So a bug can be reproduced on a k8hpp webOS 10 set, watched happening, and the agent
-//! fixing it cannot see one line of `plxnative-events.log`. Every other diagnostic surface in this
+//! fixing it cannot see one line of `dispatcharrtv-events.log`. Every other diagnostic surface in this
 //! repository assumes ssh (`crate::dev`'s ~44 `/tmp` triggers, the remote FIFO, the capture
 //! listener, `make -s print-eventlog`) and is therefore unreachable there.
 //!
 //! This module is the bridge: a **bounded ring of the log lines the app already writes**, plus the
 //! structured state `plx_media::player::Diag` already carries, uploaded over pinned TLS to a receiver
-//! on the developer's Mac (`tools/plxnative-lab`), triggered by a remote button, a menu row or the
+//! on the developer's Mac (`tools/dispatcharrtv-lab`), triggered by a remote button, a menu row or the
 //! optional authenticated command channel. `docs/lab-diagnostics.md` is the design note; read it
 //! before extending any of this.
 //!

@@ -150,7 +150,7 @@ since two frames ago**. That is exactly the quantity a damage scheme would have 
 
 ### 2b. The distributions
 
-`frame.ui` HWCNT, `plxnative-noidle` armed so presents are continuous, first 60 samples discarded,
+`frame.ui` HWCNT, `dispatcharrtv-noidle` armed so presents are continuous, first 60 samples discarded,
 ~1,400 samples per leg.
 
 | scene | frames 100% unchanged | p50 unchanged | p10 unchanged | GPU_ACTIVE p50 | L2_EXT_WRITE_BEATS p50 |
@@ -184,10 +184,10 @@ on a cross-fade*, which is exactly the third objection in the brief, quantified.
 
 ### 2c. An observation to hand on, not a conclusion
 
-**`/tmp/plxnative-homeosc` produced no measurable motion on Home.** The oscillator leg and a leg
+**`/tmp/dispatcharrtv-homeosc` produced no measurable motion on Home.** The oscillator leg and a leg
 with no oscillator at all agreed to within 0.02% on *every* counter — GPU_ACTIVE 8,745,464 vs
 8,741,941, `TEX_WORDS` 4,597,564 vs 4,597,548, and the same 78-79% of fully-eliminated frames.
-Focus *was* moving (53 `plxnative-focus` lines in a 34 s run, against the oscillator's 350 ms
+Focus *was* moving (53 `dispatcharrtv-focus` lines in a 34 s run, against the oscillator's 350 ms
 cadence). The reading that fits is that a focus step on Home changes little enough, and settles
 fast enough between 350 ms steps, that three quarters of presented frames are still bit-identical
 to two frames earlier. `tests/manifest.json`'s `fps:home-grid` scene arms this oscillator to make
@@ -201,7 +201,7 @@ The extension is not advertised, and a stub that accepts everything and returns 
 indistinguishable from a working implementation by return code alone. So this was measured rather
 than asked.
 
-**`/tmp/plxnative-egldamage[=WxH]`** declares a damage rect of that size at the bottom-left, every
+**`/tmp/dispatcharrtv-egldamage[=WxH]`** declares a damage rect of that size at the bottom-left, every
 frame, **while still drawing the entire screen unchanged**. That is deliberately not a dirty-rect
 renderer — a real one would draw only inside the rect, and then a wrong picture would prove
 nothing about the driver. Drawing everything makes the driver's behaviour the only variable.
@@ -211,7 +211,7 @@ spec makes a sub-buffer region an error otherwise).
 
 ### 3a. Whole-frame A/B, interleaved
 
-Scene: Library browse grid with `plxnative-libosc` sweeping focus, `plxnative-noidle`, HWCNT
+Scene: Library browse grid with `dispatcharrtv-libosc` sweeping focus, `dispatcharrtv-noidle`, HWCNT
 `frame.ui`, 30 s legs, order off/on/off/on, first 60 samples discarded, ~1,380 (off) and ~1,680
 (on) samples per leg. Medians of the sample distribution.
 
@@ -244,14 +244,14 @@ line above is evidence that the work was removed, not a claim about a shippable 
 
 ### 3b. What it looks like on the panel
 
-`/tmp/plxnative-egldamage` declares **180 frames of full damage first**, then narrows. That
+`/tmp/dispatcharrtv-egldamage` declares **180 frames of full damage first**, then narrows. That
 warm-up is not a nicety and was arrived at from the wrong end: with a sub-rect declared from the
 very first frame, **the panel showed the boot splash forever** and the app's own picture never
 appeared at all, because no frame ever declared the whole surface valid. That is the "default must
 be full damage" rule of any shippable version, discovered by violating it.
 
 With the warm-up, the captures (`tools/capture-screen.sh … DISPLAY`, hero pinned with
-`plxnative-heroidx`) are unambiguous:
+`dispatcharrtv-heroidx`) are unambiguous:
 
 - **damage = 1920x540** (bottom half): the top half of the panel is frozen on the hero the app was
   showing 20 seconds earlier, the bottom half is live — current hero caption, current card row —
@@ -286,7 +286,7 @@ compositor's 34.4% respectively and must be priced separately; only the first is
 
 ## 4. The opaque region: flat, and the compositor branch closes
 
-`docs/perf-damage-tracking-verdict.md` §5's lever, never tried before. `/tmp/plxnative-opaque`
+`docs/perf-damage-tracking-verdict.md` §5's lever, never tried before. `/tmp/dispatcharrtv-opaque`
 binds `wl_compositor` from a registry bind, creates one full-surface `wl_region` at boot, and
 asserts it on every route that is not the player — edge-triggered, so an unchanged route costs one
 static read. The player route keeps `set_opaque_region(NULL)` and gets it back on the transition,
@@ -405,7 +405,7 @@ shippable:
 
 ## 7. Reproducing
 
-> **The `/tmp/plxnative-…` paths below predate the two-install split: they are the STABLE install's
+> **The `/tmp/dispatcharrtv-…` paths below predate the two-install split: they are the STABLE install's
 > runtime root.** A flavoured install puts the same names under `$(make -s print-rundir
 > FLAVOR=<f>)` — `/tmp/com.magness.dispatcharrtv.debug` at the tracked `FLAVOR ?= debug` default — so pasted
 > verbatim the `ssh` lines arm one install while the `make deploy`/`make run` beside them drive the
@@ -416,15 +416,15 @@ shippable:
 make deploy && make run RUN_SECS=12 | grep -E '^(egl|gl extensions)'
 
 # the mutating probe (config surface type, BUFFER_PRESERVED attempt, the two damage calls)
-ssh root@TV 'touch /tmp/plxnative-eglprobe'
+ssh root@TV 'touch /tmp/dispatcharrtv-eglprobe'
 
 # the damage experiment: 180 frames of full damage, then a WxH rect, bottom-left origin
-ssh root@TV 'printf "480x270" > /tmp/plxnative-egldamage'
+ssh root@TV 'printf "480x270" > /tmp/dispatcharrtv-egldamage'
 
 # the opaque-region experiment
-ssh root@TV 'touch /tmp/plxnative-opaque'
+ssh root@TV 'touch /tmp/dispatcharrtv-opaque'
 
-tools/analyze-hwcnt.py pkg/plxnative-hwcnt.jsonl --phase frame.ui --discard 60
+tools/analyze-hwcnt.py pkg/dispatcharrtv-hwcnt.jsonl --phase frame.ui --discard 60
 ```
 
 Every trigger defaults to absent and every default path is unchanged: `make check` 756/756,

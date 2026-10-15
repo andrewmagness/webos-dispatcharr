@@ -7,7 +7,7 @@
 # from (`vendor/ffmpeg-prefix/lib/unstripped/*`, `vendor/libass-prefix/lib/*`). The shipped copy has
 # no `.symtab`, so a frame inside it symbolicates to nothing; the `.debug` made here keeps `.symtab`
 # and whatever DWARF the build left, and `.text` becomes NOBITS, exactly as `make symbols` treats
-# pkg/plxnative.
+# pkg/dispatcharrtv.
 #
 # FAILS CLOSED, because `sentry-cli debug-files check` passes a stripped object with no symbols and
 # an upload of a file that matches nothing is silent until a real crash fails to symbolicate:

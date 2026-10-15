@@ -1038,7 +1038,7 @@ mod tests {
 
     /// A store build refuses plaintext credentials until the person consents — so a refusal is
     /// normally met FIRST, and the consented send after it must still be said once: the log is
-    /// the only evidence a grant carried a token (PLX-NATIVE-10's device check reads it).
+    /// the only evidence a grant carried a token (upstream Sentry issue 10's device check reads it).
     #[test]
     fn each_plaintext_credential_outcome_is_reported_once() {
         let seen = std::sync::atomic::AtomicU8::new(0);

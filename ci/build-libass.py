@@ -153,7 +153,7 @@ def build_locked(host, darwin, target, prefix, work, sources):
     if not cmake or not pkgconfig:
         raise ValueError('cmake and pkg-config are required (see setup-environment)')
     flags = ['-O2', '-fPIC', '-fvisibility=hidden', '-funwind-tables', '-fno-omit-frame-pointer',
-             '-ffile-prefix-map=' + str(ROOT) + '=/plxnative']
+             '-ffile-prefix-map=' + str(ROOT) + '=/dispatcharrtv']
     cmake_flags = ['-DCMAKE_BUILD_TYPE=Release', '-DBUILD_SHARED_LIBS=OFF',
                    '-DCMAKE_POSITION_INDEPENDENT_CODE=ON', '-DCMAKE_INSTALL_LIBDIR=lib',
                    '-DCMAKE_PREFIX_PATH=' + str(prefix),

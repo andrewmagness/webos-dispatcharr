@@ -124,7 +124,7 @@ pub struct Client {
     // What "fixed" was actually protecting is stability ACROSS RUNS, and the persisted UUID gives
     // that too, per install rather than per binary.
     pub(super) client_id: String, // X-Plex-Client-Identifier — stable device id (NEVER per-item)
-    pub(super) product: String,   // "PlxNative"
+    pub(super) product: String,   // "Dispatcharr TV"
     pub(super) version: String,   // "0.1.0"
     pub(super) platform: String,  // "webOS"
     // Token generation, PER SERVER. Bumped by `set_token`; read by caches keyed on a path that
@@ -955,7 +955,7 @@ impl StreamUrl {
         format!("{}{}", self.origin.base(), self.path)
     }
 
-    /// Parse an EXTERNAL full URL (the `/tmp/plxnative-url` override) back into parts —
+    /// Parse an EXTERNAL full URL (the `/tmp/dispatcharrtv-url` override) back into parts —
     /// replaces `player::engine::parse_stream_url`.
     ///
     /// **Total**, because its caller has no failure path: a garbage override has to come back as
@@ -1283,7 +1283,7 @@ mod tests {
 
     /// The defaults `player::engine::parse_stream_url` had and this inherited: no scheme means
     /// http, no port means 32400, and no path at all means `/` — a bare host is a request for the
-    /// server's root, not for the empty string. The `/tmp/plxnative-url` override is written by
+    /// server's root, not for the empty string. The `/tmp/dispatcharrtv-url` override is written by
     /// hand, so all three are reachable.
     #[test]
     fn a_stream_url_keeps_the_defaults_the_override_trigger_relies_on() {

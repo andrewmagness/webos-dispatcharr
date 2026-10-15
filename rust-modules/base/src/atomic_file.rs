@@ -8,7 +8,7 @@
 //! avoid. `plex::session` re-exports [`write_atomic`] and [`WriteFailure`] under their old names.
 
 /// Write `json` to `path` so that whatever reads it sees the WHOLE previous file or the WHOLE new
-/// one — never a truncated one, and never bytes of both. The `plxnative.new` → `mv` dance the
+/// one — never a truncated one, and never bytes of both. The `dispatcharrtv.new` → `mv` dance the
 /// Makefile's deploy does, for the same reason and against a worse loss: the files this replaces
 /// are credentials (the Plex session, the Dispatcharr account).
 ///

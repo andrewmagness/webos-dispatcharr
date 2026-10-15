@@ -27,7 +27,7 @@ container *description tag* against the same spec that drew the banner, so a deg
 overlay would pass. Treat those four as intent, not evidence.
 
 ```
-python3 tests/fixtures/make_fixtures.py --out ~/plxnative-fixtures
+python3 tests/fixtures/make_fixtures.py --out ~/dispatcharrtv-fixtures
 # or, the same thing:  make fixtures            (make fixtures-quick for the smoke run)
 ```
 
@@ -71,7 +71,7 @@ shapes each one costs, and the brew line that fixes it:
 
 ```sh
 python3 tests/fixtures/make_fixtures.py --list
-python3 tests/fixtures/make_fixtures.py --quick --out ~/plxnative-fixtures   # ~75s smoke
+python3 tests/fixtures/make_fixtures.py --quick --out ~/dispatcharrtv-fixtures   # ~75s smoke
 ```
 
 **Missing optional tooling skips its shapes and prints why — it never aborts, and it exits
@@ -96,7 +96,7 @@ stream `subtitle_image_pgs` grades.
 ## 2. Generate
 
 ```sh
-python3 tests/fixtures/make_fixtures.py --out ~/plxnative-fixtures
+python3 tests/fixtures/make_fixtures.py --out ~/dispatcharrtv-fixtures
 ```
 
 Pick an `--out` **outside the repository** — the script refuses any path inside it, because
@@ -109,7 +109,7 @@ Output layout — **movies and shows must be separate Plex libraries**, the scan
 the two content types live apart and a mixed root matches badly or not at all:
 
 ```
-~/plxnative-fixtures/
+~/dispatcharrtv-fixtures/
   fixtures.json
   Movies/
     PlxTest H264 AC3 1080p (2001)/PlxTest H264 AC3 1080p (2001).mkv
@@ -134,8 +134,8 @@ there.
 
 | | type | folder | **agent** |
 |---|---|---|---|
-| 1 | Movies | `~/plxnative-fixtures/Movies` | **Personal Media** (a.k.a. *Other Videos*) |
-| 2 | TV Shows | `~/plxnative-fixtures/TV Shows` | **Personal Media Shows** |
+| 1 | Movies | `~/dispatcharrtv-fixtures/Movies` | **Personal Media** (a.k.a. *Other Videos*) |
+| 2 | TV Shows | `~/dispatcharrtv-fixtures/TV Shows` | **Personal Media Shows** |
 
 The agent matters. These clips match nothing online. With the normal Plex Movie agent the
 items still scan, still get a ratingKey and still play — they just sit there unmatched with
@@ -365,8 +365,8 @@ no `hdr` key, so `venc_args` picks `-profile:v main` / `yuv420p`) — the gap li
 not caught up. What neither of them closes is the half those entries were really about: a
 PMS *decision* on such an item, which no generated clip can give.
 
-Whatever is still missing is fed through the **`plxnative-playurl`** boot trigger rather
-than through Plex, so it is a different tool. **Not `plxnative-url`**, which this sentence
+Whatever is still missing is fed through the **`dispatcharrtv-playurl`** boot trigger rather
+than through Plex, so it is a different tool. **Not `dispatcharrtv-url`**, which this sentence
 said until 2026-08-23 and which would send you down a dead end: that one hands over a URL
 and no DECLARATION, so the payload describes whatever the route happened to hold — and
 several of the remaining gaps (HLG, HDR10+) are *about* what the payload declares. Four
@@ -437,7 +437,7 @@ built palette is 255/160, so this is not the case today.
 
 | flag | |
 |---|---|
-| `--out DIR` | output root; default `$FIXTURES_OUT`, else `~/plxnative-fixtures` — the same variable the Makefile and `tests/run.py` read, so all three agree without a flag. Refuses any path inside the repo. With `--tier pipeline` the pack goes in a `pipeline/` subdirectory, and naming that subdirectory yourself is idempotent (both spellings of the seam land in one place). |
+| `--out DIR` | output root; default `$FIXTURES_OUT`, else `~/dispatcharrtv-fixtures` — the same variable the Makefile and `tests/run.py` read, so all three agree without a flag. Refuses any path inside the repo. With `--tier pipeline` the pack goes in a `pipeline/` subdirectory, and naming that subdirectory yourself is idempotent (both spellings of the seam land in one place). |
 | `--tier T` | `integration` (default) or `pipeline`. **Two packs, for two suites.** The default builds the media the 21-case on-device matrix names — full length, laid out in two Plex-scannable trees, because every duration in it is a *Plex* constant (the ~90 % watched threshold that drops a seeded resume point, the marker windows, the Up Next tail). `pipeline` builds fifteen short clips, flat, for `./tests/run.py` — the DEFAULT tier since 2026-08-22, which serves them off this machine over HTTP and plays them with no Plex anywhere: ~0.7 GB and ~4 min against ~3 GB and ~20. Seven of those fifteen landed 2026-08-23 — the SD/HD/FHD/UHD resolution matrix (LG checklist #50/#51), plus the one 20 s clip in either pack that is meant to run OUT (#46). |
 | `--secs N` | override every shape's duration. Generalises `--quick` across its whole range. Note what the harness does with a pack built short: a pipeline case that seeks deeper than the clip is **skipped with the reason named**, not failed — the failure it would otherwise produce reads exactly like a player regression. |
 | `--quick` | every shape at ~20 s, whole run ~75 s. **Development only** — structurally correct but shallower than every seek, resume and marker depth the suite asserts, and short enough to hit EOF inside a case. The script says so on every quick run, and every record it writes is stamped `quick: true`. |

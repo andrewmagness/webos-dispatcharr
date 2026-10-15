@@ -1,7 +1,7 @@
 ---
 name: profile-tv
 description: >
-  Diagnose a live PlxNative process that is slow, janky, frozen or consuming unexpected CPU/GPU
+  Diagnose a live Dispatcharr TV process that is slow, janky, frozen or consuming unexpected CPU/GPU
   on the rooted LG TV. Use for stack samples, a missing heartbeat while the PID still exists,
   frame pacing, Mali IRQ activity, HWCNT attribution, or deciding which graphics profiler explains
   a regression. If the process died, use crash-triage instead.
@@ -9,13 +9,13 @@ description: >
 
 # Profile a live app on the TV
 
-This is opt-in developer tooling. None of it runs in PlxNative unless a command or dev trigger was
+This is opt-in developer tooling. None of it runs in Dispatcharr TV unless a command or dev trigger was
 explicitly armed, and the stack/IRQ helpers are temporary root processes that never enter an ipk.
 
 ## First split: dead or alive
 
 Resolve the selected install through `make -s print-appdir print-rundir print-eventlog FLAVOR=<f>`
-and find its process with `fuser <appdir>/plxnative`, never `pidof plxnative` (stable and debug have
+and find its process with `fuser <appdir>/dispatcharrtv`, never `pidof dispatcharrtv` (stable and debug have
 the same executable name).
 
 - No matching PID: use **`crash-triage`**.
@@ -28,10 +28,10 @@ tools also wrap themselves in `tv-lock.sh with` when invoked alone.
 ## Live stacks
 
 ```bash
-tools/plxnative-sample snapshot                         # all LWPs once
-tools/plxnative-sample profile --seconds 5 --hz 10      # render/main statistical sample
-tools/plxnative-sample profile --all-threads            # invasive, when ownership is unclear
-tools/plxnative-sample watch --stall-ms 2500             # foreground opt-in watchdog
+tools/dispatcharrtv-sample snapshot                         # all LWPs once
+tools/dispatcharrtv-sample profile --seconds 5 --hz 10      # render/main statistical sample
+tools/dispatcharrtv-sample profile --all-threads            # invasive, when ownership is unclear
+tools/dispatcharrtv-sample watch --stall-ms 2500             # foreground opt-in watchdog
 ```
 
 `watch` captures three all-thread snapshots for each heartbeat-stall episode and rearms only after
@@ -72,9 +72,9 @@ The bundle has three deliberately different meanings:
 3. **Mali HWCNT:** phase-attributable JM/tiler/shader/L2 counters. Its `glFinish` boundaries
    serialize the pipeline, so never quote FPS from this leg.
 
-If layer 1 says frames are slow, use `/tmp/plxnative-framedrop` and then
-`/tmp/plxnative-cpuprof` to localize render-thread wall time. Use asynchronous
-`/tmp/plxnative-profile` for GPU phase time. Arm only one profiler mode per launch. The HWCNT and
+If layer 1 says frames are slow, use `/tmp/dispatcharrtv-framedrop` and then
+`/tmp/dispatcharrtv-cpuprof` to localize render-thread wall time. Use asynchronous
+`/tmp/dispatcharrtv-profile` for GPU phase time. Arm only one profiler mode per launch. The HWCNT and
 GL-timer triggers invalidate production pacing even when their output looks plausible.
 
 ## What counts as verification

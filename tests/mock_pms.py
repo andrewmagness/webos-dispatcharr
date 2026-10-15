@@ -36,7 +36,7 @@ at startup.
 resume-point pages: 970001 has 12 seasons (every third one 30 episodes) and an `OnDeck` of S12E14,
 part-way through, which is also the newest Continue Watching entry; 970002 has 3 seasons and no
 `OnDeck`. `OnDeck` rides `/library/metadata/<show>?includeOnDeck=1`, as one object, like PMS's.
-Boot with `plxnative-detail=970001` (or `970002`), or onto Home for the Continue Watching card.
+Boot with `dispatcharrtv-detail=970001` (or `970002`), or onto Home for the Continue Watching card.
 
     python3 tests/mock_pms.py --port 32499              # serve until Ctrl-C
     python3 tests/mock_pms.py --port 32499 --selftest   # prove the shapes without an app
@@ -60,7 +60,7 @@ detail answers to `tests/demo_library/fixtures/` for the data crate's parse test
 
 Every mode also answers the four plex.tv calls of the QR sign-in (`/api/v2/pins`, the poll, the
 QR image, and `/api/v2/user`) with a fixed demo code, for an app booted with
-`plxnative-plextv=http://127.0.0.1:<port>`: the sign-in screen can then be driven and captured
+`dispatcharrtv-plextv=http://127.0.0.1:<port>`: the sign-in screen can then be driven and captured
 without touching plex.tv. The poll stays pending unless `--authorize-after N` (implied, N=2, by
 `--plaintext-only-lan`) links the code on the Nth poll with a synthetic account token, so a
 sign-in completes end to end without any real account.
@@ -71,9 +71,9 @@ mock stops, and PUTs are recorded in the mock write log. Ordinary mode advertise
 can reach Settings without a pre-seeded session.
 
 The app reaches it as any other server: `make sim-shot SIM_PMS=127.0.0.1 SIM_PORT=32499` with
-any non-empty string in `$SIM_DIR/plxnative-token` (the token is accepted, never checked).
+any non-empty string in `$SIM_DIR/dispatcharrtv-token` (the token is accepted, never checked).
 
-`--plaintext-only-lan` reproduces Sentry PLX-NATIVE-10: a person's OWN server (`owned=true`) on
+`--plaintext-only-lan` reproduces upstream Sentry issue 10: a person's OWN server (`owned=true`) on
 their LAN, whose owner never turned on port forwarding, so every HTTPS route plex.tv could name
 for it — a `*.plex.direct` connection AND relay — fails, while the plaintext local address still
 answers. It makes `/api/v2/resources` return exactly ONE resource, no relay connection at all,
@@ -100,9 +100,9 @@ sign-in against this mock (it authorizes the code by itself, on the 2nd poll):
        (hold the TV lock first):
          ssh -N -R 32499:127.0.0.1:32499 root@<TV-HOST>
     3. in the install's runtime root, arm (empty files unless shown):
-         plxnative-storepolicy                       store HttpsOnly policy (dev builds only)
-         plxnative-login                             boot to the QR sign-in
-         plxnative-plextv = http://127.0.0.1:32499
+         dispatcharrtv-storepolicy                       store HttpsOnly policy (dev builds only)
+         dispatcharrtv-login                             boot to the QR sign-in
+         dispatcharrtv-plextv = http://127.0.0.1:32499
     4. launch. The events log shows, in order:
          - the sign-in read-out "Couldn't sign in" with the reason "Your Plex server is on this
            network but can't be reached securely. Select Connect to connect without encryption."
@@ -121,15 +121,15 @@ read-out; the consent flow itself needs the TV and a real LAN address.
     # TV (replace 192.168.0.10 with the host's actual LAN IPv4; never a real private address from
     # a gitignored file — hold the TV lock for the device commands below):
     python3 tests/mock_pms.py --host 0.0.0.0 --plaintext-only-lan --advertise-ip 192.168.0.10
-    # `plxnative-plextv` only ever accepts a loopback address (see step 2 above), so make plex.tv
+    # `dispatcharrtv-plextv` only ever accepts a loopback address (see step 2 above), so make plex.tv
     # loopback ON THE DEVICE with a reverse tunnel from the host, then arm the loopback trigger:
     # ssh -N -R 32499:127.0.0.1:32499 root@<TV-HOST>
-    # plxnative-plextv=http://127.0.0.1:32499
+    # dispatcharrtv-plextv=http://127.0.0.1:32499
 
     # Simulator (loopback is both plex.tv and the LAN address it advertises; still exercises the
     # HTTPS-fails / plaintext-answers shape, just not the loopback-ineligibility warning):
     python3 tests/mock_pms.py --plaintext-only-lan --advertise-ip 127.0.0.1
-    # plxnative-plextv=http://127.0.0.1:32499
+    # dispatcharrtv-plextv=http://127.0.0.1:32499
 
 Issue #266 (Boost Dialog / Normalize Loudness) fixtures and flags, every one default-off except
 the loudness attribute itself:
@@ -242,7 +242,7 @@ VERIFY_PREFS = [
     {"id": "subtitleLanguage", "value": "en"},
     {"id": "subtitleMode", "value": "2"},
 ]
-# `--plaintext-only-lan` (PLX-NATIVE-10). Not a name — the fixed 32-hex label a real
+# `--plaintext-only-lan` (upstream Sentry issue 10). Not a name — the fixed 32-hex label a real
 # `*.plex.direct` hostname carries ahead of the dashed IP; the closed alphabet governs the
 # synthetic library's titles/tags, not a protocol constant like this or "h264".
 PLEX_DIRECT_HASH = "0123456789abcdef0123456789abcdef"
@@ -1121,8 +1121,8 @@ DEMO_QR_TEXT = b"https://plex.tv/link"
 
 
 def demo_cache_dir():
-    env = os.environ.get("PLXNATIVE_DEMO_CACHE")
-    return pathlib.Path(env) if env else pathlib.Path.home() / ".cache" / "plxnative-demo"
+    env = os.environ.get("DISPATCHARRTV_DEMO_CACHE")
+    return pathlib.Path(env) if env else pathlib.Path.home() / ".cache" / "dispatcharrtv-demo"
 
 
 _DEMO_TOOL = []
@@ -1528,7 +1528,7 @@ def colour_for(path):
     return (64 + h[0] % 128, 64 + h[1] % 128, 64 + h[2] % 128)
 
 
-# ---------------------------------------------------------------- PLX-NATIVE-10 (insecure LAN) --
+# ---------------------------------------------------------------- upstream Sentry issue 10 (insecure LAN) --
 
 def detect_lan_ip():
     """This host's primary LAN IPv4, best-effort. A UDP socket's `connect` only performs a routing
@@ -1582,7 +1582,7 @@ def open_insecure_fail_listener(fail_mode):
 
 
 def plaintext_only_lan_resources(lib, ip, http_port, fail_port, access_token):
-    """The exact `/api/v2/resources` PLX-NATIVE-10 needs: ONE owned server, no relay connection at
+    """The exact `/api/v2/resources` upstream Sentry issue 10 needs: ONE owned server, no relay connection at
     all, and two connections — the failing `https://…plex.direct` one and the plaintext LAN one,
     which is this same mock (`ip`:`http_port`). Field names match what
     `rust-modules/plex/src/plex/account.rs`'s `Resource`/`Connection` deserialize (`clientIdentifier`,
@@ -1884,7 +1884,7 @@ class MockPms:
         if write_path and not (method in ("GET", "HEAD") and p.startswith("/library/parts/")):
             self.note_write(method, path, body)
 
-        # plex.tv's QR sign-in, for `plxnative-plextv` (see the module doc). Pending — the state
+        # plex.tv's QR sign-in, for `dispatcharrtv-plextv` (see the module doc). Pending — the state
         # the sign-in screen is captured in — unless `--authorize-after N` links it on the Nth poll.
         if p == "/api/v2/pins" and method == "POST":
             return j({"id": DEMO_PIN_ID, "code": DEMO_PIN_CODE, "expiresIn": 1800, "authToken": None,
@@ -2550,7 +2550,7 @@ def serve(port, seed=1, host="127.0.0.1", verbose=False, movies=48, rail_fixture
     app on the simulator is on this machine, and a LAN-facing listener would be one more thing
     the outbound guard has to reason about. `catalog` serves the demo library instead of a seed.
 
-    `plaintext_only_lan=True` additionally answers `/api/v2/resources` (PLX-NATIVE-10; see the
+    `plaintext_only_lan=True` additionally answers `/api/v2/resources` (upstream Sentry issue 10; see the
     module doc) and opens the failing-HTTPS listener `insecure_fail_mode` names. `advertise_ip`
     picks the LAN address that resources row carries; `None` tries `detect_lan_ip()` and falls
     back to `"127.0.0.1"` with a stderr warning if nothing routes. The chosen address and the
@@ -2624,7 +2624,7 @@ def serve(port, seed=1, host="127.0.0.1", verbose=False, movies=48, rail_fixture
                 ip = "127.0.0.1"
                 print("mock_pms: WARNING --plaintext-only-lan found no routable LAN IPv4 to "
                       "advertise; falling back to 127.0.0.1, which the app classifies as "
-                      "loopback, NOT LAN-eligible — PLX-NATIVE-10's consent path will never "
+                      "loopback, NOT LAN-eligible — upstream Sentry issue 10's consent path will never "
                       "trigger against this fallback. Pass --advertise-ip with a real LAN "
                       "address.", file=sys.stderr, flush=True)
         fail_port, listener = open_insecure_fail_listener(insecure_fail_mode)
@@ -3041,7 +3041,7 @@ def _selftest_link():
 
 
 def _selftest_plaintext_only_lan():
-    """PLX-NATIVE-10: exactly two connections and no relay, the https one really fails a TLS
+    """upstream Sentry issue 10: exactly two connections and no relay, the https one really fails a TLS
     handshake (or is really unreachable, in the other fail mode), and the http one really answers
     `/identity` tokenless with the resource's own machineIdentifier. `advertise_ip="127.0.0.1"` is
     explicit here, so this is hermetic on a sandboxed CI runner with no real LAN route — it is
@@ -3123,7 +3123,7 @@ def _selftest_plaintext_only_lan():
 
 
 def main():
-    # The PLX-NATIVE-10 reproduction (module doc) is the help's epilog, so `--help` carries it.
+    # The upstream Sentry issue 10 reproduction (module doc) is the help's epilog, so `--help` carries it.
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  epilog=__doc__[__doc__.index("`--plaintext-only-lan` reproduces"):],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -3140,7 +3140,7 @@ def main():
     ap.add_argument("--catalog", type=pathlib.Path,
                     help="serve the demo library (tests/demo_library/catalog.json) instead of a seed")
     ap.add_argument("--catalog-cache", type=pathlib.Path,
-                    help="the demo library cache (default $PLXNATIVE_DEMO_CACHE or ~/.cache/plxnative-demo)")
+                    help="the demo library cache (default $DISPATCHARRTV_DEMO_CACHE or ~/.cache/dispatcharrtv-demo)")
     ap.add_argument("--home-hubs", type=int, default=0, metavar="N",
                     help="#395: make /hubs answer exactly N hubs (synthetic 'Mock Shelf i' rows pad "
                          "the library's own); 0 (default) leaves them as they are")
@@ -3152,7 +3152,7 @@ def main():
                          "(custom.collection.<section>.<rk>.<n>), whose headings link to the collection")
     ap.add_argument("--hero", help="with --catalog: the film at the head of Continue Watching (the hero)")
     ap.add_argument("--plaintext-only-lan", action="store_true",
-                    help="PLX-NATIVE-10: /api/v2/resources answers with ONE owned server, no "
+                    help="upstream Sentry issue 10: /api/v2/resources answers with ONE owned server, no "
                          "relay, whose only HTTPS route (a plex.direct connection) fails before "
                          "the app's own logic runs, and whose plaintext http://<advertise-ip>:"
                          "<port> connection is this same server, answering /identity tokenless. "

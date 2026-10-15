@@ -1,5 +1,5 @@
 {
-  "format": "plxnative-persistence-fixtures",
+  "format": "dispatcharrtv-persistence-fixtures",
   "version": 1,
   "tag_object_oids": {
     "v0.6.0": "b1393820c7a09b7fa6c83774be4ed8122b8efd29",

@@ -652,7 +652,7 @@ trailer video, `ui/CLAUDE.md`'s "when you're done" section; this repo treats the
 gate for anything that moves pixels)**
 
 - An `fps:`-style scene (`ui/CLAUDE.md`'s FPS-gate section) exercising the logo's move+shrink
-  transform end to end — reuse `plxnative-navosc`'s pattern of a headless, repeating trigger rather
+  transform end to end — reuse `dispatcharrtv-navosc`'s pattern of a headless, repeating trigger rather
   than inventing a new one, since this app's `Spring`-driven pops are already graded this way
   (`K_DISC_UNFURL`'s own disc-unfurl scene is the nearest existing analogue). Needs both a
   `fps_floor` (proves the spring still animates) if the app ever adds a still-settled variant, and
@@ -1310,7 +1310,7 @@ Claude Code or Codex; checkbox as you ship.
   - Files: `rust-modules/screens/src/detail/tests.rs`
   - Verify: `make check` — cases 2 and 6 must be written to fail against the uncorrected/unfixed code first, per this repo's reproduce-fail-fix-pass rule
 
-JSONL artifact: `~/.gstack/projects/MrcRjs-plx-native/tasks-eng-review-20260915-144303.jsonl` (6 tasks, for `/autoplan` aggregation).
+JSONL artifact: `~/.gstack/projects/<project>/tasks-eng-review-20260915-144303.jsonl` (6 tasks, for `/autoplan` aggregation).
 
 ### Completion summary
 

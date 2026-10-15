@@ -123,7 +123,7 @@ seek case in the suite is direct-play.
 ## 5. What this needed from the test suite, and what it exposed
 
 Neither shipped ABR case could express the scenario, for a reason worth recording: the app fires
-the first `plxnative-autoseek` step at a **fixed ~12 s** after the player route is entered, while an
+the first `dispatcharrtv-autoseek` step at a **fixed ~12 s** after the player route is entered, while an
 ABR transaction needs tens of seconds of samples before it can commit. So every seek this suite
 could ask for landed **before the controller had ever switched**.
 
@@ -159,7 +159,7 @@ all six.
 The general form is now a rule at the head of `docs/agent-reference.md`'s testing section. The mechanical part
 worth repeating: **keep the failing run's log**, because "would this test have caught it" is a
 question a fixed build cannot answer, and replaying a case's real assertions over a saved
-`plxnative-events.log` costs seconds.
+`dispatcharrtv-events.log` costs seconds.
 
 The same pass added **`max_reloads`**, and it closes a hole the flap investigation left open:
 `no_reload` cannot grade a mode-switching Auto case, which legitimately reloads twice — out of

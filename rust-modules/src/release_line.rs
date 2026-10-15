@@ -122,7 +122,7 @@ mod tests {
     ///
     /// A release commit leaves every tracked file at the version it just published, so every
     /// developer build after it reported that exact number: to `X-Plex-Version` on the account's
-    /// authorized-devices list, to Sentry as `plxnative@X.Y.Z`, and on the diagnostics panel that
+    /// authorized-devices list, to Sentry as `dispatcharrtv@X.Y.Z`, and on the diagnostics panel that
     /// is designed to be photographed into a bug report. Nothing downstream could tell the shipped
     /// binary from a working tree. So a non-release build names the version it is working TOWARDS,
     /// suffixed — `0.5.0` published, `0.6.0-dev` in the tree, the next MINOR because trunk is where

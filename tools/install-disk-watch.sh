@@ -10,7 +10,7 @@
 # make this the one setup step that fails a fresh Linux dev machine outright, for a feature that
 # machine can still get by pasting one line into its own crontab.
 #
-# WHAT IT INSTALLS. `~/Library/LaunchAgents/com.plxnative.build-gc.plist`: `StartInterval 3600`
+# WHAT IT INSTALLS. `~/Library/LaunchAgents/com.dispatcharrtv.build-gc.plist`: `StartInterval 3600`
 # (once an hour — `--auto`'s own lock and idle guard make a missed or doubled tick harmless, so
 # there is no reason to poll faster), `RunAtLoad false` (do not fire the moment this plist loads;
 # the first real run is the first scheduled tick, not login), and `LowPriorityIO` + `Nice` +
@@ -43,7 +43,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 COMMON_DIR=$(cd "$ROOT" 2>/dev/null && git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || COMMON_DIR=""
 if [ -n "$COMMON_DIR" ]; then MAIN=$(dirname "$COMMON_DIR"); else MAIN="$ROOT"; fi
-LABEL=com.plxnative.build-gc
+LABEL=com.dispatcharrtv.build-gc
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 SCRIPT="$MAIN/tools/build-gc.sh"
 
@@ -128,9 +128,9 @@ cat > "$PLIST" <<PLIST
   <key>ProcessType</key>
   <string>Background</string>
   <key>StandardOutPath</key>
-  <string>$HOME/Library/Logs/plxnative-build-gc-launchd.log</string>
+  <string>$HOME/Library/Logs/dispatcharrtv-build-gc-launchd.log</string>
   <key>StandardErrorPath</key>
-  <string>$HOME/Library/Logs/plxnative-build-gc-launchd.log</string>
+  <string>$HOME/Library/Logs/dispatcharrtv-build-gc-launchd.log</string>
 </dict>
 </plist>
 PLIST

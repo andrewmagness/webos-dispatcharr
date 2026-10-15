@@ -155,18 +155,17 @@ class Mode:
     def __init__(self, path, initial):
         self.path = path
         self.raw = initial
-        self._mtime = 0
 
     def read(self) -> str:
+        # The CONTENTS decide, read every time: the file is a few bytes, and an mtime test missed
+        # a second write landing in the same filesystem timestamp tick as the first (two edits a
+        # few milliseconds apart, which is exactly what a script and `make check` do).
         try:
-            st = os.stat(self.path)
-            if st.st_mtime != self._mtime:
-                self._mtime = st.st_mtime
-                with open(self.path) as f:
-                    new = f.read().strip()
-                if new and new != self.raw:
-                    say(f"[netcond] mode -> {new}")
-                    self.raw = new
+            with open(self.path) as f:
+                new = f.read().strip()
+            if new and new != self.raw:
+                say(f"[netcond] mode -> {new}")
+                self.raw = new
         except FileNotFoundError:
             pass
         return self.raw

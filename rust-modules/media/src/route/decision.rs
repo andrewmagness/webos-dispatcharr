@@ -2459,7 +2459,7 @@ pub(super) fn end_flight(serial: u64) {
 /// began cannot publish into the route it is destroying — so leaving it latched afterwards
 /// describes a teardown which never finishes.
 ///
-/// It cost LG App Self Checklist #46: a replayed `plxnative-playurl` stream asks
+/// It cost LG App Self Checklist #46: a replayed `dispatcharrtv-playurl` stream asks
 /// [`begin_route_start`] for an owner directly (no [`begin_playback_request`] resolve in front of
 /// it, because there is no library item behind the fixture), and a latched `Stopping` refused it —
 /// `start_bufferfeed: route reducer refused a start owner`, one Load where the case needs two.
@@ -5433,7 +5433,7 @@ pub fn sink_max_raster(ps: &PlaybackSession) -> (u16, u16) {
 }
 
 /// The SOURCE raster for a stream the app did not select — the pipeline tier's
-/// `plxnative-playurl` carries it as `source_raster`, the same field its Auto fixtures already
+/// `dispatcharrtv-playurl` carries it as `source_raster`, the same field its Auto fixtures already
 /// used to size the actuator catalog. One fact, one field: [`sink_max_raster`] reads it from the
 /// same place a PMS-chosen item's dimensions land, so the synthetic tier declares exactly what the
 /// production route would for a file of that size.
@@ -5445,7 +5445,7 @@ pub fn set_stream_source_raster(ps: &mut PlaybackSession, w: u16, h: u16) {
 }
 
 /// The whole Load-payload DECLARATION for a stream the app did not SELECT — the pipeline test
-/// tier's `/tmp/plxnative-playurl` ([`crate::player::playurl::PlayUrl`]), whose entire point is that no PMS
+/// tier's `/tmp/dispatcharrtv-playurl` ([`crate::player::playurl::PlayUrl`]), whose entire point is that no PMS
 /// chose anything and so `apply_plan` never runs.
 ///
 /// ONE write for the same reason [`set_server_output_declaration`] is one write and [`apply_plan`]
@@ -7464,7 +7464,7 @@ pub fn request_play(
 
 /// **Tune a live channel** (a Dispatcharr stream): `tune`'s channel in its lineup. There is no
 /// server resolve, so nothing runs on a worker. The URL and its Load declaration are installed at
-/// once, as `plxnative-playurl` does, and [`play_pending`] stays false, so the start ritual's
+/// once, as `dispatcharrtv-playurl` does, and [`play_pending`] stays false, so the start ritual's
 /// `prepare_start` starts the Load directly. The HUD title is the channel, and the line under it
 /// what airs at `now` (Unix seconds).
 ///
@@ -8849,7 +8849,7 @@ pub(super) fn commit_retranscode(
         .unwrap_or_default();
     // NEVER log the URL. `transcode_start_url` ends in `X-Plex-Token=…`, and this line is reached
     // by an ordinary audio-track switch — so the app's own support channel ("send us
-    // /tmp/plxnative-events.log") was asking users to paste a live PMS credential into a public
+    // /tmp/dispatcharrtv-events.log") was asking users to paste a live PMS credential into a public
     // issue thread. The rk, the track ids and the offset are the whole diagnostic value here; the
     // URL added nothing that is not derivable from them.
     crate::player::log(&format!(
@@ -8906,7 +8906,7 @@ fn prepare_retranscode_inputs(
     }
     let logical = sess(ps);
     let namespace = if logical.is_empty() {
-        format!("plxnative-{rk}")
+        format!("dispatcharrtv-{rk}")
     } else {
         logical
     };
@@ -9079,7 +9079,7 @@ pub fn subtitle_presenter(ps: &PlaybackSession) -> SubtitlePresenter {
 pub fn subtitles_burned(ps: &PlaybackSession) -> bool {
     is_transcoding(ps)
         && subtitle_presenter(ps) != SubtitlePresenter::ClientOverRemux
-        // Dev trigger `plxnative-subside` only: the reader draws an embedded track over a plain
+        // Dev trigger `dispatcharrtv-subside` only: the reader draws an embedded track over a plain
         // remux while the route has NO subtitle selected (so the presenter says `None`, not
         // `ClientOverRemux`). A selected subtitle is the presenter's alone to answer, so a refused
         // or failed reader (`ServerBurn`) is never silenced by a reader that is still shutting down.

@@ -1,4 +1,4 @@
-# PlxNative for macOS
+# Dispatcharr TV for macOS
 
 A native Plex client, built for LG webOS televisions, running here as a real Mac app. Everything it
 needs is inside the bundle — there is nothing to install.
@@ -8,11 +8,11 @@ needs is inside the bundle — there is nothing to install.
 macOS will refuse to open it on the first try: the app is signed, but not by a registered Apple
 developer, and Apple charges for that. This is normal and you only do it once.
 
-1. Drag **PlxNative.app** to your Applications folder (or anywhere you like).
+1. Drag **DispatcharrTV.app** to your Applications folder (or anywhere you like).
 2. **Right-click it → Open**, then click **Open** in the dialog.
    *If macOS says the app "is damaged and can't be opened", that is the download quarantine, not
    the app. Open Terminal and run:*
-   `xattr -dr com.apple.quarantine /Applications/PlxNative.app`
+   `xattr -dr com.apple.quarantine /Applications/DispatcharrTV.app`
 3. Say **Allow** when macOS asks about finding devices on your local network — the app talks to
    your Plex Media Server directly, and cannot work without it.
 

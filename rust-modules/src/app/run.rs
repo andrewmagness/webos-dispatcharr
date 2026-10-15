@@ -319,7 +319,7 @@ unsafe fn prepare_window(app: &mut App, fr: &mut Frame) {
     // A third term goes FIRST and short-circuits the other two: a page capture still in flight on
     // the GPU (`gfx::SNAPSHOT_THIS_FRAME`'s doc). Presenting now would only wait a whole vsync for
     // a buffer; not asking `should_present` leaves its damage and motion for the frame that does.
-    // The simulator's settled capture (`PLXNATIVE_SHOT_SETTLE`): once nothing has changed for the
+    // The simulator's settled capture (`DISPATCHARRTV_SHOT_SETTLE`): once nothing has changed for the
     // asked-for quiet, invalidate so the NEXT present is the settled frame and `maybe_capture`
     // takes it. Before the decision below, so that invalidate selects this very frame.
     #[cfg(feature = "hostsim")]
@@ -364,7 +364,7 @@ unsafe fn prepare_window(app: &mut App, fr: &mut Frame) {
             plx_base::diag::heartbeat::now_us,
         );
     }
-    // EXPERIMENT (`/tmp/plxnative-opaque`): one `static` read and a return when the trigger
+    // EXPERIMENT (`/tmp/dispatcharrtv-opaque`): one `static` read and a return when the trigger
     // is absent. Edge-triggered — see `system.rs`.
     //
     // Called on EVERY frame, from the BIT rather than from the route. The false edge after an
@@ -435,7 +435,7 @@ unsafe fn present_and_swap(
             crate::capture::tick(fr.now);
         }
         app.instr.mark(plx_base::diag::heartbeat::Phase::Capture); // capture
-        // `plxnative-simvideo`: the decoded picture goes UNDER the finished UI, as the television's
+        // `dispatcharrtv-simvideo`: the decoded picture goes UNDER the finished UI, as the television's
         // compositor puts its video plane under ours — before the capture, so shots include it.
         #[cfg(feature = "hostsim")]
         if fr.player {
@@ -453,7 +453,7 @@ unsafe fn present_and_swap(
             let _present_scope = plx_base::task::watchdog::present_scope();
             #[cfg(feature = "hostsim")]
             plx_base::surface::present_supersampled();
-            // dev (`/tmp/plxnative-framecb`): this frame's compositor callback, requested before
+            // dev (`/tmp/dispatcharrtv-framecb`): this frame's compositor callback, requested before
             // the swap that commits it. One latched bool unarmed.
             plx_platform::tv::window::frame_probe_request();
             SDL_GL_SwapWindow(app.win);
@@ -1804,12 +1804,12 @@ fn finish_landed_play(app: &mut App, resume_prepared: bool) {
 pub(crate) unsafe fn draw(app: &mut App, fr: &mut Frame) -> (i32, i32, i32, i32) {
     #[cfg(feature = "threadcheck")]
     let _draw_scope = plx_base::task::watchdog::draw_scope();
-            // EXPERIMENT (`/tmp/plxnative-egldamage`), no-op without the trigger. FIRST, before
+            // EXPERIMENT (`/tmp/dispatcharrtv-egldamage`), no-op without the trigger. FIRST, before
             // any GL command of this frame: `EGL_KHR_partial_update` only permits a damage
             // region to be declared before rendering begins. See `egl.rs`.
             plx_gfx::egl::frame_damage();
             // dev: the backdrop-glass LOAD DIAL and the blurred-transition prototype
-            // (`/tmp/plxnative-glassload`, `/tmp/plxnative-navblur`). Both are no-ops when
+            // (`/tmp/dispatcharrtv-glassload`, `/tmp/dispatcharrtv-navblur`). Both are no-ops when
             // their trigger is absent. HERE and not below the gate, because the dial's cadence
             // is counted in PRESENTS — a loop iteration the gate skipped drew no glass — and
             // because a step rollover invalidates the snapshot, which must precede every glass
@@ -1850,7 +1850,7 @@ pub(crate) unsafe fn draw(app: &mut App, fr: &mut Frame) -> (i32, i32, i32, i32)
                         glClearColor(0.0, 0.0, 0.0, 0.0);
                         // The frame's first framebuffer-0 command, where this driver parks the
                         // wait for a free back buffer: spanned like every other route's `clear`.
-                        // dev (`/tmp/plxnative-framecb`): the frame thread's cost over the wait
+                        // dev (`/tmp/dispatcharrtv-framecb`): the frame thread's cost over the wait
                         // and, from the acquired buffer to the swap, over the commit phase.
                         plx_platform::tv::window::frame_probe_waiting();
                         plx_base::diag::spans::span("clear", || glClear(GL_COLOR_BUFFER_BIT));
@@ -1900,7 +1900,7 @@ pub(crate) unsafe fn draw(app: &mut App, fr: &mut Frame) -> (i32, i32, i32, i32)
                             app.diagnostics.draw();
                         }
                     } else {
-                        // dev (`/tmp/plxnative-framecb`): the page's first clear is this route's
+                        // dev (`/tmp/dispatcharrtv-framecb`): the page's first clear is this route's
                         // first framebuffer command, so `gfx` brackets the back-buffer wait there.
                         plx_gfx::gfx::arm_clear_probe();
                         // Open the shared popover frame FIRST: it takes this frame's page damage
@@ -1938,7 +1938,7 @@ pub(crate) unsafe fn draw(app: &mut App, fr: &mut Frame) -> (i32, i32, i32, i32)
                             plx_base::diag::spans::span("disc", || page(Z::ALL));
                         }
                         sources.borrow_mut().resolve();
-                        // `plxnative-framedrop` armed: which recorded draw invalidated a source.
+                        // `dispatcharrtv-framedrop` armed: which recorded draw invalidated a source.
                         // Empty (no allocation, no work) unarmed.
                         for line in sources.borrow_mut().take_diffs() {
                             log(&line);
@@ -2052,7 +2052,7 @@ pub(crate) unsafe fn report(app: &mut App, fr: &mut Frame) {
         // tester was on would be worse than one that omitted the field. Compiles away in every
         // build that is not a lab build.
         crate::lab::note_route(fr.rn);
-        // dev: the FOCUS FINGERPRINT (`/tmp/plxnative-focus`, see `crate::focusprobe`). One
+        // dev: the FOCUS FINGERPRINT (`/tmp/dispatcharrtv-focus`, see `crate::focusprobe`). One
         // ordered line naming everything the key ladder above can move, logged only when it
         // changes, so a (route x key) characterization run can read what a press did out of the
         // diff instead of out of `route=` alone.
@@ -2109,7 +2109,7 @@ pub(crate) unsafe fn report(app: &mut App, fr: &mut Frame) {
             let content = super::bridge::content_probe(&app.pages, &app.bridge);
             crate::focusprobe::sample(&app.player.session, fr.rn, probe_screen(app), probe_hud(app), fr.ctrl, &content, app.bridge.metadata_view());
         }
-        // `plxnative-focusx`: the card read-out belongs to the frame just sampled.
+        // `dispatcharrtv-focusx`: the card read-out belongs to the frame just sampled.
         #[cfg(feature = "devtriggers")]
         plx_ui::card_probe::clear();
         // `coldopen screen=<name> ms=<n> prepared=<bool>` — one line per screen MOUNT, on every
@@ -2122,7 +2122,7 @@ pub(crate) unsafe fn report(app: &mut App, fr: &mut Frame) {
         }
         // frame-drop detector: attribute slow frames to pump(uploads)/draw/swap(GPU).
         // ONE tail for every route — this used to live only on the non-player path, which left
-        // /tmp/plxnative-framedrop dead during playback (the timings were collected, then a
+        // /tmp/dispatcharrtv-framedrop dead during playback (the timings were collected, then a
         // `continue` threw them away).
         // `present` gates this too: a frame the idle gate skipped drew nothing, so grading it
         // would drag `worstframe` toward zero and read as a perf WIN. A skipped frame is not a

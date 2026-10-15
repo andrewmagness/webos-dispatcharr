@@ -422,7 +422,7 @@ mod repeat_gate_tests {
 /// application stack can hold and the surfaces a `ModalStack` presents.
 ///
 /// **Both owned variants carry the page their inner stack is ROOTED at**, which is there for the
-/// dev boot targets and for nothing else: `/tmp/plxnative-settings=privacy` has to put a headless
+/// dev boot targets and for nothing else: `/tmp/dispatcharrtv-settings=privacy` has to put a headless
 /// run on a page that is normally two presses inside the surface, and rooting the stack at the
 /// target needs nothing from the page. The one thing it costs is that BACK at a dev-booted child
 /// DISMISSES the surface rather than revealing the root.
@@ -634,7 +634,7 @@ pub const SCREEN_SHAPES: &[&str] = &[
 /// The pin over [`SCREEN_SHAPES`] — bump it in the same edit that adds an entry, and say why.
 ///
 /// A committed replay fixture recorded against a different value cannot be LOADED at all, which is
-/// the cost this exists to make visible rather than silent; `tools/plxnative-rec rerecord` is the
+/// the cost this exists to make visible rather than silent; `tools/dispatcharrtv-rec rerecord` is the
 /// verb (`tests/fixtures/replay/README.md`). The APP-side half is pinned separately in
 /// `app/recorder.rs`, over the shapes that are the loop's, so neither pin moves for the other's
 /// reason. `#[cfg(test)]` because the pin is an ASSERTION about the array above and never a value

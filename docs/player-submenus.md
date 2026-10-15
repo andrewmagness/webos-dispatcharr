@@ -167,7 +167,7 @@ On the root the change refreshes in place. On a sub-page the page is refreshed i
    on `ui::page_stack::PageStack` (extracted from the track menu); live refresh keeps focus by id and
    pops to the root when Quality becomes unavailable; the failure screen's quality entry opens on the
    page, and BACK pops to the root before it dismisses; the `more-quality-osc` scene
-   (`plxnative-more=1`, `plxnative-moreosc=<period_ms>`, `dev::scenarios::moreosc_arm`).
+   (`dispatcharrtv-more=1`, `dispatcharrtv-moreosc=<period_ms>`, `dev::scenarios::moreosc_arm`).
 
 ## Decisions
 
@@ -182,7 +182,7 @@ On the root the change refreshes in place. On a sub-page the page is refreshed i
 
 ## Device frame-time check
 
-`track-menu-submenu-osc` (`tests/manifest.json`; trigger `plxnative-submenuosc=<period_ms>`,
+`track-menu-submenu-osc` (`tests/manifest.json`; trigger `dispatcharrtv-submenuosc=<period_ms>`,
 `dev::scenarios::submenuosc_arm`) loops real keys through the Subtitles menu: Style, the Size
 picker, back, back, Other languages and back (when the item has more than one subtitle language),
 the Audio tab and back. It needs no Plex account. Its `worst_ceiling_ms` of 25 is a budget, and
@@ -199,7 +199,7 @@ not been measured on the TV. The menu-closed control on the same clip graded 25.
   mock, every frame logged with `--arm framedrop=0.01 --arm framecb`): the compositor's own
   `wl_surface.frame` stamps show its repaint arriving 20–36 ms after the previous one while our
   commit before it was on time, and it does so on Settings and Home with no video at all
-  (`plxnative-noidle`), so it is not the player route and not the app's GPU load (a menu-closed
+  (`dispatcharrtv-noidle`), so it is not the player route and not the app's GPU load (a menu-closed
   player frame is a bare clear). 5–36 late repaints per ~95 s leg, varying leg to leg.
 - **A late commit.** The rest of the frames over 20 ms follow an on-time repaint: the work after
   the clear (page, surfaces, swap) took 3–8 ms longer than usual, the commit moved by that much,
@@ -247,7 +247,7 @@ tools below are the how-to; the findings follow.
    GPU interrupts and surface-manager's threads fell in the wait and commit windows.
    `tools/analyze-sched-trace.py --self-test` runs on the host.
 2. **Mali HWCNT.** Boot with `--arm hwcnt=frame.ui` and nothing else profiling; the `glFinish`
-   brackets serialize the pipeline, so no `fps=` from this leg. Pull `plxnative-hwcnt.jsonl` from
+   brackets serialize the pipeline, so no `fps=` from this leg. Pull `dispatcharrtv-hwcnt.jsonl` from
    the app's runtime directory, then `tools/analyze-hwcnt.py FILE --phase frame.ui --discard 60`
    and `tools/analyze-hwcnt-wait.py FILE`. The latter buckets the phase's serialized wall time and
    prints the GPU's active cycles per bucket: cycles that grow with wall time mean GPU-bound,
@@ -255,7 +255,7 @@ tools below are the how-to; the findings follow.
 3. **Wayland protocol log.** Boot with `--arm wldebug`: it sets `WAYLAND_DEBUG=client` and the
    event log gets a `wldebug:` line carrying `offset_us` (realtime minus monotonic). Intended:
    libwayland-client prints every request and event with a `CLOCK_REALTIME` microsecond stamp to
-   `plxnative-stderr.log`. There is no analyzer for it.
+   `dispatcharrtv-stderr.log`. There is no analyzer for it.
 
 Findings:
 
@@ -307,7 +307,7 @@ Findings:
    with the field already held. The menu-open frame measured 17.8 ms in one leg and 21.7 ms in the
    other (the difference is the prewarm drain above).
 7. **Leg 3 produced nothing.** `--arm wldebug` set `WAYLAND_DEBUG=client` (the `wldebug:` line is in
-   the event log) but libwayland-client printed no protocol lines to `plxnative-stderr.log` on this
+   the event log) but libwayland-client printed no protocol lines to `dispatcharrtv-stderr.log` on this
    firmware (webOS 4.10.2). The trigger is unverified as an instrument on this set.
 
 The probe's run-queue field (`w=<wall>/<cpu>/<runq>`, from `/proc/thread-self/schedstat`) does
@@ -326,7 +326,7 @@ Fixed on the way here:
   `PREWARM_BUDGET_US`, a time bound: the count it replaced, eight strings, was `warmdrain:22.7` on
   one frame).
 
-`more-quality-osc` (trigger `plxnative-more=1` to open More, `plxnative-moreosc=<period_ms>`,
+`more-quality-osc` (trigger `dispatcharrtv-more=1` to open More, `dispatcharrtv-moreosc=<period_ms>`,
 `dev::scenarios::moreosc_arm`) is the same check for More: RIGHT on the Quality row pushes the rung
 page and LEFT pops it, every 900 ms. Same sequence with `--arm more=1 --arm moreosc=900`, reading
 `route=player overlay=more`; `moreosc:` lines log each key. The Quality row is absent only under

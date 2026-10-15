@@ -1,4 +1,4 @@
-//! plx_net: the two transports of the PlxNative application core.
+//! plx_net: the two transports of the Dispatcharr TV application core.
 //!
 //! `net` is the blocking HTTPS client over the television's own libcurl (bound at run time by a
 //! SONAME candidate list through `plx_base::dynlib!`, so nothing is linked here) and `stream` is

@@ -1,4 +1,4 @@
-/* PlxNative — an unofficial native Plex client for LG webOS.
+/* Dispatcharr TV — an unofficial native Plex client for LG webOS.
  * Copyright © 2026 Gleb Linnik. Licensed under GPL-3.0-or-later; see LICENSE at the repository root.
  *
  * crashtrace.c — the fatal-signal tracer's I/O half: the descriptors, `write(2)`, the chunked read
@@ -70,7 +70,7 @@
  * is gone. Two frames plus the registers plus the faulting module is a FAULT EVENT, not a
  * backtrace, and the honest name is used in the docs for the same reason it is used here.
  *
- * No load-bias arithmetic either: `pkg/plxnative` is `ET_EXEC` (`readelf -h`, `Type: EXEC`), so
+ * No load-bias arithmetic either: `pkg/dispatcharrtv` is `ET_EXEC` (`readelf -h`, `Type: EXEC`), so
  * the PC already IS the link-time address and `crash-report.sh` subtracts the mapping base only
  * to sanity-check that the address falls inside our own text. `dl_iterate_phdr` would answer a
  * question this binary does not ask.
@@ -94,8 +94,8 @@ static const char *signame(int sig) {
  *
  * `sig_atomic_t` because they are read from signal context; -1 means "not open", and every write
  * below checks. */
-static volatile sig_atomic_t crash_fd = -1;   /* plxnative-crash.log — append-only, survives a relaunch */
-static volatile sig_atomic_t event_fd = -1;   /* plxnative-events.log — this session only */
+static volatile sig_atomic_t crash_fd = -1;   /* dispatcharrtv-crash.log — append-only, survives a relaunch */
+static volatile sig_atomic_t event_fd = -1;   /* dispatcharrtv-events.log — this session only */
 
 /* write(2) until it is all out, or until it stops making progress. Partial writes are real on a
  * file that hit a full filesystem, which is a state a television reaches. */

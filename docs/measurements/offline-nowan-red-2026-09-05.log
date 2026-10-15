@@ -1,6 +1,6 @@
 sim: THIS IS THE DESKTOP SIMULATOR, not a television. No video pipeline; frame rates here describe this Mac's GPU and must never be read as an fps gate.
-install: id=com.beb.plxnative flavour=- runtime=/tmp/plxnative-offline-sim-red features=dev APPID_env=unset
-appdir: /Users/gleblinnik/Developer/plex/plex-native-poc/.claude/worktrees/bridge-cse_01Qm24rXXAfqZ3nL9gFCJxiM/pkg (PLXNATIVE_APP_DIR)
+install: id=com.beb.dispatcharrtv flavour=- runtime=/tmp/dispatcharrtv-offline-sim-red features=dev APPID_env=unset
+appdir: /Users/gleblinnik/Developer/plex/plex-native-poc/.claude/worktrees/bridge-cse_01Qm24rXXAfqZ3nL9gFCJxiM/pkg (DISPATCHARRTV_APP_DIR)
 webos: /var/run/nyx/os_info.json unreadable (No such file or directory (os error 2)) — version unknown
 webos: /var/run/nyx/device_info.json unreadable (No such file or directory (os error 2)) — model/board unknown
 telemetry: answered=false errors=false usage=false id=none errors_id=none
@@ -37,7 +37,7 @@ ff: bound avcodec -> libavcodec-plx.63.dylib
 ff: bound avformat -> libavformat-plx.63.dylib
 ff: bound swscale -> libswscale-plx.10.dylib
 ff: avformat=63.1.100 avcodec=63.1.100 avutil=61.1.100
-idle: present gate DISABLED by /tmp/plxnative-noidle
+idle: present gate DISABLED by /tmp/dispatcharrtv-noidle
 hubs: source 0 FAILED (attempt 1) — retrying in 2s
 browse: source 0 (<name>) did not answer — its group reads unreachable
 net: nowan — refused name plex.tv
@@ -59,4 +59,4 @@ hubs: source 0 FAILED (attempt 3) — retrying in 8s
 net: nowan — refused name plex.tv
 auth: endpoint refresh for source 0 could not reach plex.tv
 loop=60 route=home fps=60 sim=1
-shot: wrote 960x540 to /tmp/plxnative-offline-sim-red/home.png
+shot: wrote 960x540 to /tmp/dispatcharrtv-offline-sim-red/home.png

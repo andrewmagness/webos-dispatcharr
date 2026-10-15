@@ -170,7 +170,7 @@ pub fn same_item(a: (ServerId, &str), b: (ServerId, &str)) -> bool {
 
 /// What the ROSTER says ABOUT a registered server, as opposed to the address a request dials:
 /// whose it is and what it is called. Set by whoever ingested the roster (plex.tv
-/// `/api/v2/resources`, the `plxnative-servers` dev trigger, or a server naming itself through
+/// `/api/v2/resources`, the `dispatcharrtv-servers` dev trigger, or a server naming itself through
 /// `Client::friendly_name`), read by the Sources list.
 ///
 /// Deliberately NOT fields on `Client`: a `Client` is re-pointed whenever the address moves, and
@@ -592,7 +592,7 @@ pub fn client() -> &'static Client {
 }
 
 /// Non-panicking accessor for paths that can legitimately run before login (playback teardown,
-/// the /tmp/plxnative-url + sample demo boots) — the old `route::CFG == None` guard semantics.
+/// the /tmp/dispatcharrtv-url + sample demo boots) — the old `route::CFG == None` guard semantics.
 pub fn client_opt() -> Option<&'static Client> {
     client_for(current())
 }
@@ -789,7 +789,7 @@ fn current_lifecycle_slot(
 /// idea for a caller that has only a name and no request to publish alongside it.
 ///
 /// This also enforces the half of the rule it can always see for itself, `owned ⇒ nobody is
-/// credited`, so no describer — the `plxnative-servers` dev trigger, a future one — can put a
+/// credited`, so no describer — the `dispatcharrtv-servers` dev trigger, a future one — can put a
 /// person's name on a server this account owns. The other half needs the household, which only the
 /// ingest holds.
 ///
@@ -2552,7 +2552,7 @@ mod tests {
 
     /// [`describe`] enforces the half of the rule it can see for itself, so that no describer can
     /// put a person's name on a server this account owns — not a roster entry read off disk that a
-    /// previous build wrote the raw `sourceTitle` into, and not the `plxnative-servers` dev
+    /// previous build wrote the raw `sourceTitle` into, and not the `dispatcharrtv-servers` dev
     /// trigger. The other half needs the household, which only the ingest holds.
     ///
     /// The clear has to beat the MERGE, which is the subtle part: `describe` keeps a known field

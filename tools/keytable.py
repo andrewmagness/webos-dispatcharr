@@ -38,8 +38,8 @@ noise, and read a change in a STRUCTURAL field as the regression. Diffing the tw
 job; nothing here is asserted by `make check`.
 
 Two triggers are armed in every root:
-  * `plxnative-focus`  — the fingerprint itself (`crate::focusprobe`)
-  * `plxnative-noidle` — the frame gate off. A settled screen stops presenting, and while the
+  * `dispatcharrtv-focus`  — the fingerprint itself (`crate::focusprobe`)
+  * `dispatcharrtv-noidle` — the frame gate off. A settled screen stops presenting, and while the
     fingerprint is logged from the frame loop rather than from a present, a screen that never
     repaints also never redraws what a key changed. Arming it keeps the run honest and costs
     nothing here; on the device it would cost the idle measurement, which is why it is DIAG-exempt.
@@ -62,7 +62,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SIM = os.path.join(
     os.environ.get("SIM_TDIR") or os.path.join(REPO, "rust-modules", "target-sim"),
     "debug",
-    "plxnative-sim",
+    "dispatcharrtv-sim",
 )
 if not os.path.isabs(SIM):
     SIM = os.path.join(REPO, SIM)
@@ -101,8 +101,8 @@ KEYS = [
 # screen name -> (trigger file, trigger content or None)
 SCREENS = {
     "home": (None, None),
-    "library": ("plxnative-library", ""),
-    "search": ("plxnative-search", "the"),
+    "library": ("dispatcharrtv-library", ""),
+    "search": ("dispatcharrtv-search", "the"),
 }
 
 FOCUS_RE = re.compile(r"^focus .*$", re.M)
@@ -133,16 +133,16 @@ def boot(root, screen, host, port, settle):
         for line in open(tok):
             m = re.match(r'\s*#define\s+PMS_TOKEN\s+"([^"]+)"', line)
             if m:
-                open(os.path.join(root, "plxnative-token"), "w").write(m.group(1))
-    open(os.path.join(root, "plxnative-focus"), "w").close()
-    open(os.path.join(root, "plxnative-noidle"), "w").close()
+                open(os.path.join(root, "dispatcharrtv-token"), "w").write(m.group(1))
+    open(os.path.join(root, "dispatcharrtv-focus"), "w").close()
+    open(os.path.join(root, "dispatcharrtv-noidle"), "w").close()
     trig, content = SCREENS[screen]
     if trig:
         open(os.path.join(root, trig), "w").write(content or "")
-    env = dict(os.environ, PLXNATIVE_RUNTIME_DIR=root, PLXNATIVE_APP_DIR=os.path.join(REPO, "pkg"))
+    env = dict(os.environ, DISPATCHARRTV_RUNTIME_DIR=root, DISPATCHARRTV_APP_DIR=os.path.join(REPO, "pkg"))
     proc = subprocess.Popen([SIM, host, port], env=env,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log = os.path.join(root, "plxnative-events.log")
+    log = os.path.join(root, "dispatcharrtv-events.log")
     for _ in range(int(settle * 10)):
         time.sleep(0.1)
         if os.path.exists(log) and FOCUS_RE.search(open(log, errors="replace").read()):
@@ -161,7 +161,7 @@ def run_screen(screen, host, port, settle, pause):
     """Drive every key from one boot and return the transition list."""
     root = f"/tmp/keytable-{screen}"
     proc, log = boot(root, screen, host, port, settle)
-    fifo = os.path.join(root, "plxnative-remote")
+    fifo = os.path.join(root, "dispatcharrtv-remote")
     rows = []
     try:
         # `<>` read-write: a write-only open on a FIFO with no reader blocks forever in open(2),

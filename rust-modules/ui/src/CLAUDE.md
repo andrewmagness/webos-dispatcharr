@@ -28,7 +28,7 @@ kill. Full design + migration status: `docs/ui-system-migration.md`.
    no such shade, as an exact 8-bit code via `rgb8`. Two roles landing on one stop is expected and
    stays two roles (`ACCENT` and `TEXT_PRIMARY` are both Cool 0): retuning the focus fill must not
    restyle every title on screen. Overlays are `with_a(WHITE, a)` on the measured alpha ramp — a new
-   overlay is a weight, never a new hue. The layering mirrors the `PlxNative Design System` project
+   overlay is a weight, never a new hue. The layering mirrors the `upstream design system` project
    (`tokens/primitives.css` + `tokens/colors.css`), so a palette decision is one edit in each.
 
 2. **Never write a raw text size — every text size in the UI is a `theme::size` token.** The named
@@ -311,8 +311,8 @@ process freeze, suspend, debugger stop or observer starvation from a main-thread
 rebases the stall origin, clears any warning, resets the fatal latch and reports nothing for
 that sample. A fresh uninterrupted two-second stall can still become fatal after the rebase.
 A guard's own `abort()` instead records the abort path; its log label identifies the guarded call.
-To investigate without termination, write `log` into `/tmp/plxnative-guard` before launch
-(`/tmp/plxnative-guard=log` notation; simulator: instance runtime directory). This DIAG trigger
+To investigate without termination, write `log` into `/tmp/dispatcharrtv-guard` before launch
+(`/tmp/dispatcharrtv-guard=log` notation; simulator: instance runtime directory). This DIAG trigger
 is latched at loop start and downgrades both fatal paths to log plus warning. It requires
 `devtriggers`; it never suppresses the profile picker. Release builds contain neither warning,
 fatal policy nor signal call, and keep the existing guard/watchdog logs.

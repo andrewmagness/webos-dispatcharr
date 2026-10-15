@@ -85,11 +85,11 @@ PY
     && ok "the release note quotes this hash" || bad "the note's hash is not the published artifact's"
 
   # Who built it. A person's name here means the gates did not run.
-  UP=$(gh api "repos/GLinnik21/plx-native/releases/tags/$TAG" --jq '[.assets[].uploader.login] | unique | join(",")' 2>/dev/null)
+  UP=$(gh api "repos/andrewmagness/webos-dispatcharr/releases/tags/$TAG" --jq '[.assets[].uploader.login] | unique | join(",")' 2>/dev/null)
   [ "$UP" = "github-actions[bot]" ] && ok "assets uploaded by CI" \
     || bad "assets uploaded by '$UP' — hand-published, so the build/verify gates were skipped"
 
-  # Every payload file, not just the binary. check-elf.sh only ever looked at pkg/plxnative, which
+  # Every payload file, not just the binary. check-elf.sh only ever looked at pkg/dispatcharrtv, which
   # is how the maintainer's working directory shipped inside three FFmpeg libraries.
   ( cd "$WORK" && python3 -c "
 d=open('$(basename "$IPK")','rb').read(); i=d.find(b'data.tar.gz')

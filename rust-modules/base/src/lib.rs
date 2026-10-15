@@ -1,4 +1,4 @@
-//! plx_base: the leaf layer of the PlxNative application core.
+//! plx_base: the leaf layer of the Dispatcharr TV application core.
 //!
 //! The event log, file locations, the spawn discipline, the dlopen seam, the frame instruments and
 //! the small leaf utilities every other layer calls. It names nothing outside itself (the

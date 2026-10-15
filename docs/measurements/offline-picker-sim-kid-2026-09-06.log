@@ -1,6 +1,6 @@
 sim: THIS IS THE DESKTOP SIMULATOR, not a television. No video pipeline; frame rates here describe this Mac's GPU and must never be read as an fps gate.
-install: id=com.beb.plxnative flavour=- runtime=/tmp/plxnative-offline-pick-kid features=dev APPID_env=unset
-appdir: /Users/gleblinnik/Developer/plex/plex-native-poc/.claude/worktrees/bridge-cse_01Qm24rXXAfqZ3nL9gFCJxiM/pkg (PLXNATIVE_APP_DIR)
+install: id=com.beb.dispatcharrtv flavour=- runtime=/tmp/dispatcharrtv-offline-pick-kid features=dev APPID_env=unset
+appdir: /Users/gleblinnik/Developer/plex/plex-native-poc/.claude/worktrees/bridge-cse_01Qm24rXXAfqZ3nL9gFCJxiM/pkg (DISPATCHARRTV_APP_DIR)
 webos: /var/run/nyx/os_info.json unreadable (No such file or directory (os error 2)) — version unknown
 webos: /var/run/nyx/device_info.json unreadable (No such file or directory (os error 2)) — model/board unknown
 telemetry: answered=false errors=false usage=false id=none errors_id=none
@@ -33,7 +33,7 @@ ff: bound avcodec -> libavcodec-plx.63.dylib
 ff: bound avformat -> libavformat-plx.63.dylib
 ff: bound swscale -> libswscale-plx.10.dylib
 ff: avformat=63.1.100 avcodec=63.1.100 avutil=61.1.100
-idle: present gate DISABLED by /tmp/plxnative-noidle
+idle: present gate DISABLED by /tmp/dispatcharrtv-noidle
 pickuser: auto-selecting roster index 1
 auth: switch — plex.tv was unreachable moments ago, trying the cached credentials first
 auth: switch 'Kid' -> ok (offline, cached credentials)
@@ -47,4 +47,4 @@ font chain: Base /Users/gleblinnik/Developer/plex/plex-native-poc/.claude/worktr
 pms: server 0 version=1.43.3.10896-cb3ebc72d plexPass=true
 hubs: source 0 ok — 4 shelves, 7 in CW
 hubs: landed — 42 items, 5 shelves
-shot: wrote 1920x1080 to /tmp/plxnative-offline-pick-kid/shot-1.png
+shot: wrote 1920x1080 to /tmp/dispatcharrtv-offline-pick-kid/shot-1.png

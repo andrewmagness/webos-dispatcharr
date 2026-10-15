@@ -7,7 +7,7 @@
 //!
 //! **Stats for nerds**, the diagnostics overlay (`crate::app::diagnostics`), needs a home a stranger can
 //! find, because it is how this app gets bug reports off televisions nobody here owns — every other
-//! diagnostic surface in the codebase (the `/tmp/plxnative-*` triggers, the remote FIFO, the
+//! diagnostic surface in the codebase (the `/tmp/dispatcharrtv-*` triggers, the remote FIFO, the
 //! capture stream) is compiled out of RELEASE builds by the `devtriggers` feature, which is what a
 //! user installs. "Press `…`, turn Stats for nerds on, photograph the screen" is a sentence that
 //! fits in a GitHub reply and needs no ssh, no root and no rebuild.

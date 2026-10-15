@@ -35,7 +35,7 @@ fn a_failed_write_changes_nothing() {
     let _restore = Restore(deck_press());
     restore_deck_press(DeckPress::Details);
     // the session file's parent is a regular file, so no write can land
-    let dir = std::env::temp_dir().join(format!("plxnative-deck-press-blocked-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("dispatcharrtv-deck-press-blocked-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("blocker"), b"x").unwrap();

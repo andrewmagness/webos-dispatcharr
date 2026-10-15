@@ -1,5 +1,5 @@
-install: id=com.beb.plxnative.debug flavour=debug runtime=/tmp/com.beb.plxnative.debug features=dev APPID_env=com.beb.plxnative.debug
-appdir: /media/developer/apps/usr/palm/applications/com.beb.plxnative.debug (from current_exe)
+install: id=com.beb.dispatcharrtv.debug flavour=debug runtime=/tmp/com.beb.dispatcharrtv.debug features=dev APPID_env=com.beb.dispatcharrtv.debug
+appdir: /media/developer/apps/usr/palm/applications/com.beb.dispatcharrtv.debug (from current_exe)
 webos: webOS TV release=4.10.2 codename=goldilocks2-grampians api=4.1.0 major=4
 devcaps: hevc=true 4096x2176 vp9=true audio=aac,ac3,eac3 (device table)
 video driver: wayland
@@ -38,7 +38,7 @@ ff: bound avformat -> libavformat-plx.so.63
 ff: bound swscale -> libswscale-plx.so.10
 ff: avformat=63.1.100 avcodec=63.1.100 avutil=61.1.100
 hubs: landed — 41 items, 5 shelves
-font chain: Base /media/developer/apps/usr/palm/applications/com.beb.plxnative.debug/appfont.ttf codepoints=2853
+font chain: Base /media/developer/apps/usr/palm/applications/com.beb.dispatcharrtv.debug/appfont.ttf codepoints=2853
 pms: server 1 version=1.43.4.10903-e5521bd8c plexPass=true
 LIFECYCLE: foreground (wasPlaying=0)
 LIFECYCLE: foreground (wasPlaying=0)

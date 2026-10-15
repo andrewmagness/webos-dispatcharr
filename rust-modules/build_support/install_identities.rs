@@ -1,7 +1,7 @@
 //! Install-identity code generation, shared by the two build scripts that need it.
 //!
 //! `platform/src/storage/state.rs` is compiled into BOTH the `plx_platform` library and the
-//! `plxnative-storage` helper (the helper is its own workspace package and does not depend on the
+//! `dispatcharrtv-storage` helper (the helper is its own workspace package and does not depend on the
 //! application crates), and it
 //! `include!`s the `Flavor` enum generated here from `ci/install-identities.json`. Each package's
 //! `build.rs` pulls this file in with `#[path]` and calls [`emit`], so the schema cannot drift

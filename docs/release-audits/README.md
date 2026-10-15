@@ -70,7 +70,7 @@ An audit regenerated from published assets should reproduce the committed one fi
 Every item below is automated — `ci/check-package.py` before the build, `ci/gen-release-audit.py` at publish time, `ci/verify-published.sh` after it — and this is how you re-run them against a release that already exists, including one cut before any of it existed. This is the old pre-publish checklist; it did not go away, it stopped being something a person had to remember.
 
 ```sh
-V=0.5.0; PREV=0.4.1; REPO=GLinnik21/plx-native
+V=0.5.0; PREV=0.4.1; REPO=andrewmagness/webos-dispatcharr
 D=$(mktemp -d) && cd "$D" && gh release download "v$V" --repo "$REPO"
 ```
 
@@ -103,7 +103,7 @@ diff <(sed -n '/^### Payload inventory/,/^### /p' docs/release-audits/v$PREV.md)
 
 ```sh
 ci/gen-release-audit.py --tag "v$V" --dist .   # extracts nothing; to grade the binary yourself:
-tools/fwcompat.py <the plxnative extracted from the .ipk>
+tools/fwcompat.py <the dispatcharrtv extracted from the .ipk>
 ```
 
 **9 — every version number in the note exists.** `ci/check-package.py` gates it on every build; this is the same question asked of a published body:
@@ -124,7 +124,7 @@ gh release view "v$V" --repo $REPO --json body -q .body | grep -oE 'https?://[^ 
 
 ```sh
 diff <(gh release view "v$V" --repo $REPO --json body -q .body) \
-     <(sed "s|__IPK_SHA256__|$(shasum -a 256 com.beb.plxnative_${V}_arm.ipk | cut -d' ' -f1)|" \
+     <(sed "s|__IPK_SHA256__|$(shasum -a 256 com.beb.dispatcharrtv_${V}_arm.ipk | cut -d' ' -f1)|" \
        docs/release-notes/v$V.md)
 # only GitHub's appended "What's Changed" / "Full Changelog" tail may differ
 ```
@@ -138,13 +138,13 @@ Every one of these is in the audit because a release of this project got it wron
 | asset uploader | v0.2.1 was published from a laptop with `gh release create`. `prepare` is gated on `workflow_dispatch`, GitHub propagates that skip down the whole chain, and `build + verify`, `redistributable assets` and `publish release` all silently did not run. Every asset's uploader was a person. **`github-actions[bot]` on every asset is the single strongest fact in the audit.** |
 | hash agreement | The hash appears in four places — the artifact, `ipk.sha256`, the Homebrew Channel manifest and the release body. The manifest's copy is enforced *on the television* at install time and by nothing in CI. |
 | `shasum -c` verifying beside the `.ipk` | `ipk.sha256` carried a `pkg/` prefix through v0.2.1, so the command the notes told people to run failed with "No such file or directory" in the directory they had actually downloaded into. |
-| build-machine paths, per payload file | v0.2.1 shipped the maintainer's home directory inside all three FFmpeg libraries, and with it a reproducibility claim that could not be true. `check-elf.sh` scanned `pkg/plxnative` and nothing beside it. |
+| build-machine paths, per payload file | v0.2.1 shipped the maintainer's home directory inside all three FFmpeg libraries, and with it a reproducibility claim that could not be true. `check-elf.sh` scanned `pkg/dispatcharrtv` and nothing beside it. |
 | dev-trigger witnesses | `RELEASE=1` must be on *every* make invocation, and any make without it deletes the release artifacts at parse time. A dev-featured binary under the released id ships a `/tmp` trigger surface, a world-writable FIFO that can drive the UI, and an unauthenticated TCP capture listener. Measured on the bytes, so no stamp and no command line has to be believed. |
 | FFmpeg's recorded configure invocation | It is simultaneously the licence evidence (no `--enable-gpl`, `--enable-version3` or `--enable-nonfree`), the reproducibility evidence (it is where the build directory leaked), and the answer to "does this FFmpeg have network" (it does not — `--disable-network`, `--enable-protocol=file` only). |
 | payload inventory with hashes | The package once shipped without its fonts, and once nearly shipped a host `.dylib`. A diff against the previous release's inventory is how "the payload gained nothing unannounced" is answered in one command. |
 | `DT_NEEDED` | A name the device lacks kills the process at `exec()`, before `main`, before the event log exists. Two families are deliberately absent and `dlopen`ed instead, and the audit says so where a reviewer will look for it. |
 | declared permissions, `requiredMemory` | What the reviewer's own checklist asks. A knowingly wrong number is disclosed rather than omitted: `requiredMemory` shipped as 60 against a measured 152 MiB peak, and saying so cost nothing while the reviewer finding it would have cost the release. |
-| host- and path-shaped strings | The reviewer will run `strings`. Better that the audit shows what they will find, including the three `/tmp/plxnative-*` literals that are log messages rather than paths the binary opens. |
+| host- and path-shaped strings | The reviewer will run `strings`. Better that the audit shows what they will find, including the three `/tmp/dispatcharrtv-*` literals that are log messages rather than paths the binary opens. |
 | static firmware matrix | The note carries one line of it. The evidence is fourteen rows and belongs here. |
 | device-test evidence | The only thing that grades whether video plays, and the only thing on this list a machine cannot produce. |
 

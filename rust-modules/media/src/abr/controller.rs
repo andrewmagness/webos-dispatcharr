@@ -460,7 +460,7 @@ impl Controller {
     /// **Pin the controller to one actuator, for measurement only.** A builder rather than a
     /// parameter so no existing call site or test moves.
     ///
-    /// Set from the `plxnative-abrpin` dev trigger, which is compiled out of a release build, so
+    /// Set from the `dispatcharrtv-abrpin` dev trigger, which is compiled out of a release build, so
     /// this is `None` in every shipped configuration and in every host test that does not ask for
     /// it. It exists for measurement step M4 (`docs/adaptive-playback-plan.md` §4), which has to
     /// hold one rung long enough to read a settled reserve at it — and which cannot use the

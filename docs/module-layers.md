@@ -16,7 +16,7 @@ client; the record below is the split as it was done.) **Thirteen of the fourtee
 `machine/`, `platform/`, `gfx/`, `net/`, `ui/`, `plex/`, `telemetry/`, `data/`, `session/`, `media/`,
 `appkit/` and `screens/`; "Split 1: base" to "Split 13 (screens)" below, and "Splits 9 and 10
 together" for how those two were combined). **The split is finished.** What is left in
-`rust-modules/src/` is the last layer, `app`, and it stays the top crate `plxnative-modules`: the
+`rust-modules/src/` is the last layer, `app`, and it stays the top crate `dispatcharrtv`: the
 loop, its adapters, every dev and diagnostic surface, and the application's side of the port
 (`port`, `system`, and the other `[port webos]` members that are not in a layer crate). They are
 the one `staticlib` the Makefile links and the one place that may name every other layer, so there
@@ -36,7 +36,7 @@ does not count `tv` or `port`.
 
 ## Why this exists
 
-rustc compiles and caches per **crate**. `plxnative-modules` is one 441k-line crate. Any edit
+rustc compiles and caches per **crate**. `dispatcharrtv` is one 441k-line crate. Any edit
 recompiles all of it, and with `CARGO_INCREMENTAL=0` (every linked worktree and every gate) it
 recompiles all of it from scratch. A Cargo workspace of smaller crates would recompile only the
 edited crate and the crates above it. Cargo rejects a dependency cycle between crates, so the
@@ -347,7 +347,7 @@ still webOS's. Three things are left:
 
 L15b is done when the sink is OS-neutral, the simulator is its own port, and these facts are the
 port's. The port can then leave its layers for a crate of its own on top: it names `app` to start
-it, and nothing names it. `plxnative-modules` stays the staticlib the Makefile links, now holding
+it, and nothing names it. `dispatcharrtv` stays the staticlib the Makefile links, now holding
 the port. Another TV OS is another port in that position. The simulator binary, `src/bin/sim.rs`,
 is already a separate crate there, and enters through `port::plex_run`.
 
@@ -370,7 +370,7 @@ on. Each extraction:
 - creates `rust-modules/<layer>/` as a workspace member (the storage helper in `storage/` is the
   existing example), moves the files, and turns `crate::x::` into `plx_<layer>::x::` in the layers
   above. `pub(crate)` items named from another layer become `pub`;
-- keeps `plxnative-modules` as the top crate and the one `staticlib` the Makefile links. The layer
+- keeps `dispatcharrtv` as the top crate and the one `staticlib` the Makefile links. The layer
   crates are `rlib`s it depends on. `ci/test_no_host_staticlib.py` and the `$(RUST_LIB)` rule
   stay valid;
 - forwards the features. `devtools`, `devtriggers`, `threadcheck`, `lab-diagnostics` and `hostsim`
@@ -413,7 +413,7 @@ on. Each extraction:
 ### Split 1: base
 
 `base` was extracted first: `rust-modules/base/` is the workspace member `plx_base` (an `rlib`, in
-the workspace beside the storage helper), `plxnative-modules` depends on it by path and is still
+the workspace beside the storage helper), `dispatcharrtv` depends on it by path and is still
 the one crate the Makefile links as a `staticlib`. Its members are the `[base]` list in
 `ci/module-layers.ini`; `diag::{heartbeat, spans, zlib}` left `diag` and are `plx_base::diag::*`
 (`base/src/diag.rs` holds only those three, and the application's own `diag` is a different module
@@ -446,7 +446,7 @@ What the extraction taught, beyond what the recipe above predicted:
   `rust-modules/<layer>/` package named `plx_*` as part of the same module tree (so the layer gate
   and `check-module-cycle` keep one graph and `base uses nothing` is still enforced; the cycle
   baseline shrank by `diag`, which was in the big cycle only through `diag::heartbeat`), the
-  `cargo test/check` recipes pass `-p plxnative-modules -p plx_base` (a bare `cargo test --lib`
+  `cargo test/check` recipes pass `-p dispatcharrtv -p plx_base` (a bare `cargo test --lib`
   would run the application's tests only), `ci/check-deps.sh` and `ci/check-build-budgets.py`
   scan `base/src` as well, `tools/cargo-seed.py` keys on the layer's manifest, and
   `ci/test_no_host_staticlib.py` holds the layer to `rlib`. The remaining layers each need the
@@ -512,7 +512,7 @@ is new. What it taught beyond the recipe:
   one-door gate for `present`) are pointed at `SRC_MACHINE` too, and `wholly_test_files` classifies
   the crate's `landing/stream_tests.rs` as test code. Without that the move would have removed six
   files from six gates and every gate would have stayed green.
-- **Tooling that knows the tree's shape**: the `-p` lists (`-p plxnative-modules -p plx_base -p
+- **Tooling that knows the tree's shape**: the `-p` lists (`-p dispatcharrtv -p plx_base -p
   plx_machine`) in the Makefile, the workflow, `tools/build-bench.py` and the tests that pin them;
   `--src rust-modules/machine/src` for the line budget; `RUST_INPUTS`; `tools/cargo-seed.py` keys on
   the new manifest; the eventlog scrub test's root list gained `../machine/src`;
@@ -594,7 +594,7 @@ suite is 5603 tests before and after (157 + 66 + 218 + 5162). What it taught bey
   (the only files with C declarations in the layer; there is no `#[link]` and no `dynlib!` in it)
   differ from their old text in `pub(crate)` alone, and the new build script links nothing, so
   `LIBS_REAL` and `ci/expected-dt-needed.txt` are untouched. The host never compiles the ARM arms:
-  `cargo check --target arm-unknown-linux-gnueabi --lib -p plxnative-modules` (`.cargo/config.toml`'s
+  `cargo check --target arm-unknown-linux-gnueabi --lib -p dispatcharrtv` (`.cargo/config.toml`'s
   `build-std`, no NDK, no link step) does, and passes with and without default features; use it for
   any split that moves FFI when no NDK is at hand.
 - **Gates scoped by the path of a moved file stopped seeing it, and some by its spelling.**
@@ -606,7 +606,7 @@ suite is 5603 tests before and after (157 + 66 + 218 + 5162). What it taught bey
   `devcaps/dv.rs` under `rust-modules/src` and skips a missing path without a word: it reads
   `platform/src` for them and for the constants table now. Grep the gate scripts for
   `crate::<member>` as well as for directory names.
-- **Tooling that knows the tree's shape**: the `-p` lists (`-p plxnative-modules -p plx_base -p
+- **Tooling that knows the tree's shape**: the `-p` lists (`-p dispatcharrtv -p plx_base -p
   plx_machine -p plx_platform`) in the Makefile, the workflow, `tools/build-bench.py` and the tests
   that pin them; `--src rust-modules/platform/src` for the line budget; `RUST_INPUTS` and
   `STORAGE_INPUTS` (the helper's `#[path]` files are under `platform/`); `tools/cargo-seed.py` keys
@@ -662,7 +662,7 @@ layer run in their own binary. What it taught beyond the recipe:
   dispatch table is a null vtable and the call is an immediate SIGSEGV (`screens::login`'s
   `unmount_frees_the_qr_texture` is the test that proves it). A dependent's tests build `plx_gfx`
   without `cfg(test)`, so all three would have run in their shipping form: the last one as a crash
-  of the whole `plxnative-modules` test binary. A fourth was nested, `cfg(all(debug_assertions,
+  of the whole `dispatcharrtv` test binary. A fourth was nested, `cfg(all(debug_assertions,
   not(test)))` on `video_plane_refuses`' panic, and a grep for `cfg(not(test))` did not find it: the
   suite did (two `ui` tests that drive the refusal on purpose died on it), so grep for `test` inside
   any `cfg(...)`, not for the spelled forms. All are `cfg(any(test, feature = "test-support"))`
@@ -776,7 +776,7 @@ the recipe and Splits 1 to 3:
   together, and the cycle itself is the same 8 modules (no moved module was on it; the smaller
   `gfx`/`text`/`ui` component the baseline also listed is gone with `gfx`);
   `ci/check-module-cycle.py --update-baseline` records it.
-- **Tooling that knows the tree's shape**: the `-p` lists (`-p plxnative-modules -p plx_base -p
+- **Tooling that knows the tree's shape**: the `-p` lists (`-p dispatcharrtv -p plx_base -p
   plx_machine -p plx_platform -p plx_gfx -p plx_net`) in the Makefile, the workflow, `tools/build-bench.py` and
   the tests that pin them; `--src rust-modules/net/src` for the line budget; `RUST_INPUTS`;
   `tools/cargo-seed.py` keys on the new manifest; `ci/test_no_host_staticlib.py` holds the crate to
@@ -800,7 +800,7 @@ The two splits were made in parallel from the same commit and landed as one chan
   scripts were re-run on the result and on a `main` that had moved meanwhile, and changed nothing.
 - **Both gates still fire.** Proven by a temporary violating edit, not by reading: a
   `plx_gfx::text::text_width(` call in `coldstart.rs` fails `textmeasure`; a `thread::spawn`, an
-  `SDL_GetTicks(` and a `/tmp/plxnative-` literal in `net/src/stream_redirect.rs` fail `threads`,
+  `SDL_GetTicks(` and a `/tmp/dispatcharrtv-` literal in `net/src/stream_redirect.rs` fail `threads`,
   `ticks` and `tmppath`; `SDL_GetTicks(` and `Effect::` in `gfx/src/overdraw.rs` fail `ticks` and
   `effect`; and a `log(&format!(.., d.title))` in either crate fails the eventlog scrub scan.
 - **The `pub` `dynlib!` table stands.** The alternative, a narrower wrapper API exported from
@@ -1049,7 +1049,7 @@ that moved twice meanwhile (four changes, three of them to Home). Combining them
   reach it today (`set_version` is the first statement of `enter_application`, which has one
   caller), and a source-order test now holds that; if it is ever reached, the process stops instead
   of labelling itself with a version no release had.
-- **The simulator draws the same screens.** `plxnative-sim` against `tests/mock_pms.py` (the seed
+- **The simulator draws the same screens.** `dispatcharrtv-sim` against `tests/mock_pms.py` (the seed
   library, the placeholder token, plex.tv replaced by the mock) settles on Home and on a library
   page, and the captures match the same captures from `main` apart from the frame-pacing tick.
 
@@ -1094,13 +1094,13 @@ taught is mostly about what would have gone quiet:
   auth header, the consent preview, the native SDK's release, `diag::schema`'s `app_version`
   dimension and one test assertion). They read `telemetry::release()` and `telemetry::app_version()`
   now, which answer what `telemetry::set_release` was handed: `enter_application`'s second
-  statement, right behind `plex::identity::set_version`, passes `concat!("plxnative@",
+  statement, right behind `plex::identity::set_version`, passes `concat!("dispatcharrtv@",
   env!("PLX_VERSION"))`. Unset, a shipping build panics (it never reports a placeholder), a
-  `test-support` build answers `plxnative@0.0.0-test`, and `app::boot::seam_order_tests` pins both
+  `test-support` build answers `dispatcharrtv@0.0.0-test`, and `app::boot::seam_order_tests` pins both
   hand-ins' order. **Why a second hand-in and not `plx_plex::plex::identity::version()`, which the
   first version of this change read: the release gate.** `ci/check-package.py` greps the packaged
-  binary for the contiguous `plxnative@<version>` that `concat!` composes at compile time, in the
-  crate that can see `PLX_VERSION`. Composed at run time in `plx_telemetry` (`format!("plxnative@{}",
+  binary for the contiguous `dispatcharrtv@<version>` that `concat!` composes at compile time, in the
+  crate that can see `PLX_VERSION`. Composed at run time in `plx_telemetry` (`format!("dispatcharrtv@{}",
   ..)`) the prefix and the number sit in different places in `.rodata`, and the gate, which no host
   check runs, would have failed on the first real package. Both hand-ins are the same `env!` on
   adjacent lines, so they cannot disagree; one version source for both would need the store to move
@@ -1142,7 +1142,7 @@ taught is mostly about what would have gone quiet:
   is never dead. `cargo check -p plx_telemetry --features test-support` is clean with no new
   `allow`.
 - **The shipping build was checked for the seams, in the artifact.** `cargo tree -e normal -f '{p}
-  [{f}]'` for `plxnative-modules` lists no `test-support` on any crate, with the default features
+  [{f}]'` for `dispatcharrtv` lists no `test-support` on any crate, with the default features
   and with `--no-default-features` (`-e normal,dev` lists it 34 times). In the `plx_telemetry` rlib
   of a `--no-default-features` release build, `strings` finds none of `redirect_for_test`,
   `redirect_root_for_test`, `set_test_path`, `last_call_thread`, `test_events`, `deferred_len`,
@@ -1289,7 +1289,7 @@ ready. What it taught beyond the recipe:
   server identities). `ci/check-module-layers.py` reports the layer ready and `--report`'s count of
   `cfg(test)` items named across layers went from 44 to 18 (14 with Split 10).
 - **The shipping build was checked for the seams, in the artifact.** `cargo tree -e normal -f '{p} [{f}]'`
-  for `plxnative-modules` lists no `test-support` on any crate, with the default features and with
+  for `dispatcharrtv` lists no `test-support` on any crate, with the default features and with
   `--no-default-features` (`-e normal,dev` listed it 41 times in the lane, 49 in the combination). In the `plx_data` rlib of a
   `--no-default-features` release build, `strings` finds none of `begin_detail_for_test`,
   `land_detail_for_test`, `detail_generation_for_test`, `set_current_for_test`, `seed_for_test`,
@@ -1375,7 +1375,7 @@ not ship:
   `include_str!("owner.rs")`) found the same relative layout under `session/`, so they read what
   they read before; they were checked by running, not by assumption.
 - **The seams were checked in the artifact.** `cargo tree -e normal -f '{p} [{f}]'` for
-  `plxnative-modules` lists no `test-support` on any crate with the default features and with
+  `dispatcharrtv` lists no `test-support` on any crate with the default features and with
   `--no-default-features` (`-e normal,dev` listed it 42 times in the lane). In the `plx_session` rlib of a
   `--release --no-default-features` build, `strings` and `nm -C` find none of
   `settled_probe_for_test`, `synthetic_incident`, `late_roster_of_the_seated_profile`,
@@ -1401,7 +1401,7 @@ not ship:
   release-configuration hook and the build-budget `--src` list know the crate. Proven by temporary
   violating edits, reverted byte for byte: a `log(&format!(.., ep_title))` in `session/src/auth/observation.rs` fails
   `no_log_call_site_interpolates_viewing_content` in `plx_base` with the new file's path in the
-  message; an `SDL_GetTicks(` there fails `ticks` and a `/tmp/plxnative-` literal in
+  message; an `SDL_GetTicks(` there fails `ticks` and a `/tmp/dispatcharrtv-` literal in
   `session/src/auth/scripted.rs` fails `tmppath` in `ci/check-deps.sh`; and `use plx_ui::..` in the
   crate fails `ci/check-module-layers.py` (`[session]` may not use `[ui]`). `--report` lists the
   layer as ready and the count of `cfg(test)` items named across layers was 40 after this lane's split
@@ -1455,7 +1455,7 @@ they were combined) and landed as one change. Combining them:
   `[dev-dependencies]`. Alone, each crate builds itself and every layer below as the Makefile's
   suite does and runs the same tests (425 and 258, twice each, green); `make test-fast T=…` is
   unchanged. A dev-dependency feature reaches test builds only: `cargo tree -e
-  features,normal,build --no-default-features` for `plxnative-modules` differs from `main`'s by the
+  features,normal,build --no-default-features` for `dispatcharrtv` differs from `main`'s by the
   two new crates and nothing else, with no `devtriggers`, `test-support` or `hostsim` in it. A later
   layer whose tests need the dev set uses the same line; the lower
   crates did not need it, because their tests pass without the feature.
@@ -1489,7 +1489,7 @@ they were combined) and landed as one change. Combining them:
   or directory it reads, and it skipped what was missing without a word, so each lane had to notice. A listed product file or a
   scanned directory that does not exist is a failure with the path in it; the unit test runs the
   gate on an empty tree and on the real one.
-- **The simulator draws the same screens.** `plxnative-sim` against `tests/mock_pms.py` (the seed
+- **The simulator draws the same screens.** `dispatcharrtv-sim` against `tests/mock_pms.py` (the seed
   library, the placeholder token, plex.tv replaced by the mock) settles on Home, a library page and
   a detail page; the detail capture is byte-identical to `main`'s and the other two differ in the
   frame-pacing tick only. Sign-in goes through `plx_session` and all three read through `plx_data`.
@@ -1584,7 +1584,7 @@ modules on the cycle (`app dev textinput`), 10 outside". What it taught:
   `FEED_TEST_CLOCK_US`, `drain_test_elapsed`, ...); the `--features test-support` control build
   finds 29 of the 36 (the other seven are inlined or `hostsim`-only). `cargo tree -e normal` lists
   no `test-support` with the default features or with `--no-default-features`. `cargo tree -e
-  normal,build -f '{p} [{f}]'` for `plxnative-modules` differs from `main`'s by one line,
+  normal,build -f '{p} [{f}]'` for `dispatcharrtv` differs from `main`'s by one line,
   `plx_media v0.0.0 [default,..]`, in the default, release and `hostsim` configurations.
 - **Gates that read the old location.** `ci/check-deps.sh` has `SRC_MEDIA` wherever it reads
   `SRC_SESSION`, and the rules that named the directories by path follow the files: `wall`
@@ -1610,7 +1610,7 @@ modules on the cycle (`app dev textinput`), 10 outside". What it taught:
   move and stayed green: both name `-p plx_media` now (they need the host FFmpeg and libass builds,
   which this lane did not have, so the ignored tests themselves were listed, not run).
 - **Proven by temporary violating edits, reverted byte for byte** (`split-media-violate.py`):
-  `SDL_GetTicks(` in `media/src/player/pump.rs` fails `ticks`; a `/tmp/plxnative-` literal in
+  `SDL_GetTicks(` in `media/src/player/pump.rs` fails `ticks`; a `/tmp/dispatcharrtv-` literal in
   `hls.rs` fails `tmppath`; an `Instant::now()` in `route/plan.rs` fails `wall`; naming
   `tv::sink::installed` in `route/plan.rs` fails `sink`; a `std::thread::spawn` in `abr/units.rs`
   fails `threads`; `static mut SESSION` in `route/decision.rs` fails `ci/check-statics.sh`;
@@ -1687,7 +1687,7 @@ doc links that named `screens`, `app`, `lab` and `focusprobe` unbracketed. What 
   `--features test-support` control build finds five of them (the other two are inlined). `selected_id`
   and `offset_ms` are left out of the list: both occur as substrings of unrelated symbols in either
   build. `cargo tree -e normal` lists no `test-support` with the default features or with
-  `--no-default-features`, and `cargo tree -e normal,build -f '{p} [{f}]'` for `plxnative-modules` differs
+  `--no-default-features`, and `cargo tree -e normal,build -f '{p} [{f}]'` for `dispatcharrtv` differs
   from `main`'s by one line, `plx_appkit v0.0.0 [default,devtriggers]` (`[default]` with
   `--no-default-features`), in the default, release and `hostsim` configurations.
 - **FFI and linkage are untouched, proven in the artifact.** The crate declares no `extern "C"`,
@@ -1757,8 +1757,8 @@ unbracketed (there were none left to rewrite). What it taught:
   it has the shared host-link `build.rs` of `plx_ui`, `plx_gfx` and `plx_appkit` (it prints
   nothing on the television).
 - **The layer rule is stronger and one gate changed shape.** `plx_screens` cannot name the
-  application any more: there is no cargo edge from it to `plxnative-modules` (a temporary
-  `plxnative-modules = { path = ".." }` makes `cargo metadata` fail with a dependency cycle), and
+  application any more: there is no cargo edge from it to `dispatcharrtv` (a temporary
+  `dispatcharrtv = { path = ".." }` makes `cargo metadata` fail with a dependency cycle), and
   `crate::app` does not resolve inside the crate. `ci/check-module-layers.py` does not see this
   case (a mounted crate's `crate::app` is read as `screens::app`, which is no module), so
   the `layer` gate of `ci/check-deps.sh` keeps grepping for the spelling `crate::app::` / `super::app::`
@@ -1789,7 +1789,7 @@ unbracketed (there were none left to rewrite). What it taught:
   `return_waiting_for_test`, `restore_target_for_test`, `refresh_for_test`, `toolbar_group`,
   `overscan_rects`); the `--features test-support` control build finds four of them (the
   others are inlined). `cargo tree -e normal` lists no `test-support` with the default features or
-  with `--no-default-features`, and `cargo tree -e features,normal,build` for `plxnative-modules`
+  with `--no-default-features`, and `cargo tree -e features,normal,build` for `dispatcharrtv`
   differs from `main`'s by two lines (`plx_screens v0.0.0` and its `default` feature) in the default and release configurations.
 - **FFI and linkage are untouched, proven in the artifact.** The crate declares no `extern "C"`,
   `#[no_mangle]` or `dynlib!`. The ARM staticlib built the way the Makefile builds it from `main` and
@@ -1817,7 +1817,7 @@ unbracketed (there were none left to rewrite). What it taught:
 The split made the shipped binary bigger, split by split. Every layer crate is compiled on its own,
 and with the default release profile (no LTO, 16 codegen units) a function can no longer be inlined
 into, or dropped from, the crate above it when it lives behind a crate boundary. `binary_bytes` in
-`ci/build-budgets.json` is the stripped ARM `plxnative` that the cross-build job stages (default
+`ci/build-budgets.json` is the stripped ARM `dispatcharrtv` that the cross-build job stages (default
 features, dev flavour), and CI's "Binary size budget" table reported:
 
 | After | binary_bytes |

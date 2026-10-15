@@ -3,8 +3,8 @@ name = "plx_platform"
 version = "0.0.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-description = "PlxNative platform layer: what this television is and keeps (webOS identity, the storage helper client, the key stores, the codec table, the artwork cache, the localization catalog, the Cloud Lab session file)."
-repository = "https://github.com/GLinnik21/plx-native"
+description = "Dispatcharr TV platform layer: what this television is and keeps (webOS identity, the storage helper client, the key stores, the codec table, the artwork cache, the localization catalog, the Cloud Lab session file)."
+repository = "https://github.com/andrewmagness/webos-dispatcharr"
 publish = false
 build = "build.rs"
 

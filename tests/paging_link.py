@@ -3,11 +3,11 @@
 
 Every list in the app pages through a sliding window of cards. That is only correct when a page
 landing and a key repeat coincide correctly, and on a loopback mock a page lands before the next
-key, so nothing exercised it. This drives the real simulator (`plxnative-sim`) with real keys
+key, so nothing exercised it. This drives the real simulator (`dispatcharrtv-sim`) with real keys
 against `tests/mock_pms.py` behind a `tests/link_conditioner.py` profile and grades what the app
 itself reports:
 
-  * `plxnative-focus` + `plxnative-focusx`: one `focus route=... ` line per CHANGE of focus and,
+  * `dispatcharrtv-focus` + `dispatcharrtv-focusx`: one `focus route=... ` line per CHANGE of focus and,
     with focusx, per frame the focused card moves. Every page that draws a card section
     (`plx_ui::card_probe`) adds `cdx cdy cdw` (the card's DRAWN screen rect), `cdi cdn` (its slot
     in the run of cards the section holds and that run's length), `cdg` (index in the source),
@@ -17,8 +17,8 @@ itself reports:
     came back without a picture they once had: reported, not graded, since a 64-slot store cannot
     hold a 1000-card walk) and `cdc cdcw` (the caption's left edge and width). From them: reach, one-card-per-key, no focus
     change without a key, no slot jump, the window bound, off-canvas frames, art regressions.
-  * `plxnative-phcount`: placeholder (skeleton) card draws per second.
-  * `plxnative-framedrop`: `FRAMEDROP` lines (one per late frame) and the heartbeat's `frame_*`.
+  * `dispatcharrtv-phcount`: placeholder (skeleton) card draws per second.
+  * `dispatcharrtv-framedrop`: `FRAMEDROP` lines (one per late frame) and the heartbeat's `frame_*`.
   * the mock's own wire log (`GET /_mock/wire`): when each page was asked for and finished, on
     the same monotonic clock (the mock runs in this process).
 
@@ -57,7 +57,7 @@ sys.path.insert(0, str(HERE))
 
 import link_conditioner  # noqa: E402
 
-SIM = ROOT / "rust-modules" / "target-sim" / "debug" / "plxnative-sim"
+SIM = ROOT / "rust-modules" / "target-sim" / "debug" / "dispatcharrtv-sim"
 CANVAS_W, CANVAS_H = 1920, 1080  # plx_base::surface::LOGICAL_W / LOGICAL_H: what every x/y here is in
 EXTRA_PROFILES = {
     # High latency with a fat pipe, low bandwidth with low latency (the first two pass on the Home
@@ -103,7 +103,7 @@ def _grid_order(lib, pms):
 SURFACES = {
     "home-row": {
         "what": "Home > Recently Added Movies, a 24-card sliding window over the movie library",
-        "mock": {"movies": 200}, "triggers": {"plxnative-grid": ""},
+        "mock": {"movies": 200}, "triggers": {"dispatcharrtv-grid": ""},
         "pick": lambda f: f["route"] == "home" and f.get("row") == "1",
         "seat": "down", "key": "right", "back": "left", "stride": 1, "window_max": 24,
         "pages": r"^/library/sections/1/recentlyAdded$",
@@ -111,7 +111,7 @@ SURFACES = {
     },
     "library-section-hub-row": {
         "what": "Library > Movies > a pageable section shelf (a Shelf; the hub's own key serves the listing)",
-        "mock": {"movies": 300, "section_hubs": 3}, "triggers": {"plxnative-library": "0"},
+        "mock": {"movies": 300, "section_hubs": 3}, "triggers": {"dispatcharrtv-library": "0"},
         "pick": lambda f: f["route"] == "library" and f.get("region") == "shelf" and f.get("row") == "2",
         "seat": "down", "key": "right", "back": "left", "stride": 1, "window_max": 24,
         "pages": r"^/hubs/mock/section/1/shelf/",
@@ -119,7 +119,7 @@ SURFACES = {
     },
     "library-grid": {
         "what": "Library > Movies, the poster grid (6 columns, row-band window over the section listing)",
-        "mock": {"movies": 1000}, "triggers": {"plxnative-library": "0"},
+        "mock": {"movies": 1000}, "triggers": {"dispatcharrtv-library": "0"},
         "pick": lambda f: f["route"] == "library" and f.get("region") == "grid",
         "seat": "down", "key": "down", "back": "up", "stride": 6, "window_max": None,
         "pages": r"^/library/sections/1/all$",
@@ -127,7 +127,7 @@ SURFACES = {
     },
     "search-row": {
         "what": "Search > the Movies result row for a 2-letter query (preview of 12, then the typed listing)",
-        "mock": {"movies": 1000}, "triggers": {"plxnative-search": "sf"},
+        "mock": {"movies": 1000}, "triggers": {"dispatcharrtv-search": "sf"},
         "pick": lambda f: f["route"] == "search" and f.get("zone") == "Results" and f.get("row") == "0",
         "seat": "down", "key": "right", "back": "left", "stride": 1, "window_max": 24,
         "pages": r"^/library/search$",
@@ -135,7 +135,7 @@ SURFACES = {
     },
     "detail-related-row": {
         "what": "Detail (a movie) > the related row (head of 8, then the similar listing)",
-        "mock": {"movies": 300}, "triggers": {"plxnative-detail": "1001", "plxnative-detailsec": "2"},
+        "mock": {"movies": 300}, "triggers": {"dispatcharrtv-detail": "1001", "dispatcharrtv-detailsec": "2"},
         "pick": lambda f: f["route"] == "detail" and f.get("sec") == "3",
         "seat": None, "key": "right", "back": "left", "stride": 1, "window_max": 32,
         "pages": r"^/library/metadata/1001/similar$",
@@ -143,7 +143,7 @@ SURFACES = {
     },
     "collection": {
         "what": "Collection page (a collection of ~130 members; a 6-column Grid over a paged listing)",
-        "mock": {"movies": 1000}, "triggers": {"plxnative-collection": "50002"},
+        "mock": {"movies": 1000}, "triggers": {"dispatcharrtv-collection": "50002"},
         "pick": lambda f: f["route"] == "collection" and f.get("card") == "1",
         "seat": "down", "key": "down", "back": "up", "stride": 6, "window_max": None,
         "pages": r"^/library/collections/50002/children$",
@@ -152,7 +152,7 @@ SURFACES = {
     "long-season": {
         "what": "Detail (a show) > the episode strip of a 150-episode season (pages of 60)",
         "mock": {"movies": 10, "shows": 2, "seasons": 2, "episodes": 150},
-        "triggers": {"plxnative-detail": "2001"},
+        "triggers": {"dispatcharrtv-detail": "2001"},
         "pick": lambda f: f["route"] == "detail" and f.get("sec") == "2" and f.get("ep", "-") != "-",
         "seat": "down", "key": "right", "back": "left", "stride": 1, "window_max": None,
         "pages": r"^/library/metadata/20011/children$",
@@ -361,10 +361,10 @@ class SimRun:
         self.lines = []  # (t, text)
         self.lock = threading.Lock()
         self.stop = threading.Event()
-        (self.dir / "plxnative-token").write_text("x")
+        (self.dir / "dispatcharrtv-token").write_text("x")
         for name, value in triggers.items():
             (self.dir / name).write_text(str(value))
-        env = dict(os.environ, PLXNATIVE_RUNTIME_DIR=str(self.dir), PLXNATIVE_APP_DIR=str(ROOT / "pkg"))
+        env = dict(os.environ, DISPATCHARRTV_RUNTIME_DIR=str(self.dir), DISPATCHARRTV_APP_DIR=str(ROOT / "pkg"))
         self.proc = subprocess.Popen([str(binary), "127.0.0.1", str(port)], env=env,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.thread = threading.Thread(target=self._tail, daemon=True)
@@ -372,7 +372,7 @@ class SimRun:
         self.fifo = None
 
     def _tail(self):
-        log = self.dir / "plxnative-events.log"
+        log = self.dir / "dispatcharrtv-events.log"
         while not log.exists() and not self.stop.is_set():
             time.sleep(0.01)
         buf = b""
@@ -412,7 +412,7 @@ class SimRun:
 
     def key(self, name):
         if self.fifo is None:
-            self.fifo = os.open(self.dir / "plxnative-remote", os.O_RDWR)
+            self.fifo = os.open(self.dir / "dispatcharrtv-remote", os.O_RDWR)
         os.write(self.fifo, (name + " ").encode())
         return time.monotonic()
 
@@ -446,11 +446,11 @@ def run_surface(name, profile_name, args):
     srv, pms = mock_pms.serve(0, seed=args.seed, link=[], **mock)  # fast during boot; the profile is applied once seated
     base = f"http://127.0.0.1:{srv.server_address[1]}"
     tmp = tempfile.mkdtemp(prefix="plx-paging-")
-    triggers = dict(spec["triggers"], **{"plxnative-focus": "", "plxnative-focusx": "",
-                                         "plxnative-phcount": "", "plxnative-framedrop": "17"})
+    triggers = dict(spec["triggers"], **{"dispatcharrtv-focus": "", "dispatcharrtv-focusx": "",
+                                         "dispatcharrtv-phcount": "", "dispatcharrtv-framedrop": "17"})
     for extra in args.trigger or []:
         k, _, v = extra.partition("=")
-        triggers["plxnative-" + k] = v
+        triggers["dispatcharrtv-" + k] = v
     sim = SimRun(args.sim, srv.server_address[1], triggers, tmp)
     fails, keys, result = [], [], {}
     order = []
@@ -773,7 +773,7 @@ def main():
     if args.build:
         subprocess.check_call(["cargo", "build", "--manifest-path", str(ROOT / "rust-modules/Cargo.toml"),
                                "--target-dir", str(ROOT / "rust-modules/target-sim"), "--features",
-                               "hostsim", "--bin", "plxnative-sim"], env=dict(os.environ, CARGO_INCREMENTAL="0"))
+                               "hostsim", "--bin", "dispatcharrtv-sim"], env=dict(os.environ, CARGO_INCREMENTAL="0"))
     if not args.sim.exists():
         sys.exit(f"no simulator at {args.sim}; run with --build")
     results, bad = [], 0

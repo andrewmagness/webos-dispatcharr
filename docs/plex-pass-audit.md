@@ -59,4 +59,4 @@ disagrees with its codec table is actually observed.
 Playing an H.264+AAC MP4 on a subscription-free server should now log
 `stream: … /library/parts/…` (direct play, no transcoder involved), and an episode should offer
 Up Next in its last 30 seconds with no markers on the server. Both are one line of
-`/tmp/plxnative-events.log` or one photograph of the panel.
+`/tmp/dispatcharrtv-events.log` or one photograph of the panel.

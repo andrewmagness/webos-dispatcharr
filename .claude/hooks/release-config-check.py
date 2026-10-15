@@ -74,7 +74,7 @@ and this project has already had a disk fill from per-worktree builds (memory
 *`$TMPDIR`, not `rust-modules/target/`.* This checkout can live on a filesystem cargo cannot build
 in. Measured 2026-08-25 with the repo on a **network mount** (`mount` reporting `smbfs`): every edit
 failed the hook with `error: incremental compilation: could not create session directory lock file:
-Operation not supported (os error 45)` followed by `error: could not compile plxnative-modules
+Operation not supported (os error 45)` followed by `error: could not compile dispatcharrtv
 (build script)` — i.e. a **false RELEASE-CONFIG BREAK on a tree that compiles perfectly**, on every
 `.rs` write, reported against whatever the author had just touched. A network mount also costs the
 wall clock this hook's whole budget is measured in: the same host suite that runs in 15 s of CPU
@@ -232,7 +232,7 @@ BUILD_DIR_UNUSABLE = re.compile(
 # The build directory, shared by every lane and both configurations, on a filesystem cargo can
 # actually lock. See the docstring's WHERE IT BUILDS.
 TARGET_DIR_ENV = "CARGO_TARGET_DIR"
-TARGET_DIR_NAME = "plxnative-relcheck-target"
+TARGET_DIR_NAME = "dispatcharrtv-relcheck-target"
 
 
 def rust_src_target(payload, root, cwd=None):
@@ -322,8 +322,8 @@ def first_error(text):
     """The line worth quoting when the check could not RUN. PURE.
 
     The first line that says `error`, not the first non-empty one: on the paths that land here
-    cargo has usually printed `Checking plxnative-modules v0.4.1 (…)` first, and a note reading
-    "could not run the check (Checking plxnative-modules)" tells the reader nothing about the
+    cargo has usually printed `Checking dispatcharrtv v0.4.1 (…)` first, and a note reading
+    "could not run the check (Checking dispatcharrtv)" tells the reader nothing about the
     uninstalled toolchain that actually stopped it.
     """
     lines = [l.strip() for l in (text or "").splitlines() if l.strip()]

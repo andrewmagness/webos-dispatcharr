@@ -38,9 +38,9 @@ pub mod spool;
 pub mod transition;
 
 /// The prefix of the Sentry `release` string, and of the one handed to [`set_release`].
-const RELEASE_PREFIX: &str = "plxnative@";
+const RELEASE_PREFIX: &str = "dispatcharrtv@";
 
-/// The release this build reports, `plxnative@<version>`, handed in by the application.
+/// The release this build reports, `dispatcharrtv@<version>`, handed in by the application.
 static RELEASE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 
 /// Record the release string every outbound report carries (Sentry `release`, the SDK and client
@@ -48,30 +48,30 @@ static RELEASE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 ///
 /// **The application hands it in**: `PLX_VERSION` is published by the application's build script, a
 /// `cargo:rustc-env` reaches that one crate only, and the rule that derives it is written once
-/// (`build.rs`, `ci/version_rule.py`). The application passes `concat!("plxnative@",
+/// (`build.rs`, `ci/version_rule.py`). The application passes `concat!("dispatcharrtv@",
 /// env!("PLX_VERSION"))`, composed at compile time in ITS crate, because `ci/check-package.py`
 /// grades the packaged binary for exactly that contiguous string; a `format!` here would leave the
 /// prefix and the number in different places. It is the second statement of `enter_application`,
 /// right behind `plex::identity::set_version`, which `app::boot::seam_order_tests` pins. Idempotent
 /// for the same string; a different one is a wiring bug and is refused in a debug build.
 pub fn set_release(release: &'static str) {
-    debug_assert!(release.starts_with(RELEASE_PREFIX), "telemetry::set_release takes `plxnative@<version>`");
+    debug_assert!(release.starts_with(RELEASE_PREFIX), "telemetry::set_release takes `dispatcharrtv@<version>`");
     let kept = RELEASE.get_or_init(|| release);
     debug_assert_eq!(*kept, release, "telemetry::set_release called with two releases");
 }
 
-/// The Sentry `release` string, `plxnative@<version>`.
+/// The Sentry `release` string, `dispatcharrtv@<version>`.
 ///
 /// Read before [`set_release`], a shipping build PANICS rather than label a report with a version no
 /// release had (the television's build is `--release`, where a `debug_assert!` is compiled out);
-/// a `test-support` build answers `plxnative@0.0.0-test`.
+/// a `test-support` build answers `dispatcharrtv@0.0.0-test`.
 pub fn release() -> &'static str {
     match RELEASE.get() {
         Some(r) => r,
         None => {
             #[cfg(any(test, feature = "test-support"))]
             {
-                "plxnative@0.0.0-test"
+                "dispatcharrtv@0.0.0-test"
             }
             #[cfg(not(any(test, feature = "test-support")))]
             {
@@ -144,7 +144,7 @@ pub fn activate_initial(c: Consent) -> native::Guard {
 /// for the same reason: which of the two `/media` directories is writable depends on the jail
 /// profile, so the answer cannot be a literal.
 ///
-/// `plxnative-consentstate` (dev builds) replaces what is stored, for the onboarding-report
+/// `dispatcharrtv-consentstate` (dev builds) replaces what is stored, for the onboarding-report
 /// captures — see `consent::state_override`. Never under test: a stray trigger in
 /// the shared runtime directory must not change what a test's redirected file says.
 pub fn capture_initial() -> Consent {
@@ -593,7 +593,7 @@ mod tests {
             }
         }
         let _g = plx_base::testlock::serial();
-        let dir = std::env::temp_dir().join(format!("plxnative-forget-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dispatcharrtv-forget-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let _redirects = Redirects {
@@ -632,7 +632,7 @@ mod tests {
     #[test]
     fn an_upgraded_06_decision_is_kept_and_the_next_answer_does_not_narrow_it() {
         let _g = plx_base::testlock::serial();
-        let dir = std::env::temp_dir().join(format!("plxnative-consent-upgrade-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dispatcharrtv-consent-upgrade-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let saved = consent::current();
@@ -683,7 +683,7 @@ mod tests {
         use std::os::unix::fs::symlink;
         let _g = plx_base::testlock::serial();
         let dir =
-            std::env::temp_dir().join(format!("plxnative-consent-symlink-{}", std::process::id()));
+            std::env::temp_dir().join(format!("dispatcharrtv-consent-symlink-{}", std::process::id()));
         let _ = std::fs::create_dir(&dir);
         let victim = dir.join("attacker.json");
         let candidate = dir.join("consent.json");

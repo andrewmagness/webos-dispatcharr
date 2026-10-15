@@ -1,8 +1,8 @@
-# `PlxNative.app` — the app as a self-contained macOS application
+# `DispatcharrTV.app` — the app as a self-contained macOS application
 
 *Written 2026-08-16, when the bundle was first built and verified.*
 
-`make macapp` (or `make macapp-zip`) produces `pkg/PlxNative.app`: the same application core the
+`make macapp` (or `make macapp-zip`) produces `pkg/DispatcharrTV.app`: the same application core the
 television runs, packaged so it starts on a Mac that has none of this repo's build environment —
 no Homebrew, no SDL, no toolchain. `ci/mkmacapp.py` is the whole recipe; this note is why it looks
 the way it does and what the result is and is not.
@@ -62,10 +62,10 @@ Four things, and three of them were bugs that had been sitting in the tree unrea
 4. **`paths.rs` learned what a macOS bundle is.** An app bundle keeps its executable in
    `Contents/MacOS` and its payload in `Contents/Resources`, so "next to the binary" is wrong by
    one directory — and getting it wrong is the silent font fallback that module's doc opens with.
-   A bundled app also gets `~/Library/Application Support/PlxNative` as its runtime root instead of
+   A bundled app also gets `~/Library/Application Support/DispatcharrTV` as its runtime root instead of
    `/tmp`, because that root is where `auth.json` lives and `/tmp` is swept: the friend would be
    re-doing the QR sign-in every few days with nothing to explain why. Both are structural probes
-   (is there a `Contents/MacOS` above me?), so the dev loop and every `PLXNATIVE_RUNTIME_DIR`
+   (is there a `Contents/MacOS` above me?), so the dev loop and every `DISPATCHARRTV_RUNTIME_DIR`
    recipe are untouched.
 
 The window changed too, though that is taste rather than a bug: it opens at an exact integer

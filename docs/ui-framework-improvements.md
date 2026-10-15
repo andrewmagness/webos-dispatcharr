@@ -39,7 +39,7 @@ cap-band text contract are real and load-bearing.
    for clicks (`app.rs:1365`) though the key path is modal for all three (`:948`, `:967`, `:1014`).
    A click on the Info card's "Go to Show" starts a blind scrub-seek. *(Verified by hand.)*
 3. **The frame has two hand-copied tails** (`app.rs:1993`, `:2030` are the only `SDL_GL_SwapWindow`
-   sites) and they diverged: `/tmp/plxnative-framedrop` timings are collected at `app.rs:1967/1969`
+   sites) and they diverged: `/tmp/dispatcharrtv-framedrop` timings are collected at `app.rs:1967/1969`
    and thrown away by the `continue` at `:2006`. The documented judder tool is **dead on the player
    route**.
 
@@ -505,7 +505,7 @@ verbatim**; invariant #9 is byte-identical motion). `C3` controls hard-cut betwe
 `C4` `elide` clones a `String` on every cache hit. `C5` `tabs_layout` rebuilds a `Vec<CString>` up to
 twice per frame. `C6` poster resolve does 2 allocs + a mutex + a 64-slot byte-walk per tile per
 frame. `C7` `poster_pump(3)` budgets by slot count though slots vary 130× in cost. `C8` `anim::probe`
-covers 6 of 21 springs (and `plxnative-anim.log` is missing from `DIAG`). `C9` `ScrollColumn` computes
+covers 6 of 21 springs (and `dispatcharrtv-anim.log` is missing from `DIAG`). `C9` `ScrollColumn` computes
 the flow twice — but note `Column::height` for detail reaches `ep_meta_h()`, which fingerprints 4
 fields per call and on a miss re-measures every episode, so "make draw call `child_top`" turns 6
 `height()` calls into 21 on exactly the frame no FPS scene covers. Measure first.
@@ -521,7 +521,7 @@ decision. They are commits 1-5 below.
 **The harness is a prerequisite for two commits, not eight.** Because `(Content,0)` stays immediate
 (§1.4), the mechanism commit is inert *by construction* rather than by pixel-proof. Only two later
 commits genuinely move or risk pixels: the Home one-loop rewrite and the Library chrome flip. Build
-the harness before *those* — a `/tmp/plxnative-freeze` trigger pinning every spring at its target
+the harness before *those* — a `/tmp/dispatcharrtv-freeze` trigger pinning every spring at its target
 plus a ~30-line `tools/pixdiff.py`, since `tools/` today has no diff script, no golden images and no
 way to freeze a deterministic frame. Add the four missing FPS scenes at the same time:
 `route=player overlay=none` (the bare HUD + B7's 5x subtitle path — the route A2 makes framedrop live
@@ -529,12 +529,12 @@ on), profiles, login/account, chapters. The suite covers 7 of ~11 drawable state
 plan moves pixels on three uncovered ones.
 
 **Commit 1 — lazy program cache** (A3). `gfx.rs` + `text.rs` only. Verify with
-`/tmp/plxnative-profile` before/after; expect the win in `FRAMEDROP`'s `draw=` term, not necessarily
+`/tmp/dispatcharrtv-profile` before/after; expect the win in `FRAMEDROP`'s `draw=` term, not necessarily
 in `FPS=`.
 
 **Commit 2 — `modal_of` + pointer modality** (A1). Restructure `app.rs:1356-1390` so any non-`None`
 overlay is handled *before* `icon_hit`/`scrub_hit` are computed. Verify with a
-`/tmp/plxnative-remote` case: open Info, `ck:1600,830`, assert playback position unchanged.
+`/tmp/dispatcharrtv-remote` case: open Info, `ck:1600,830`, assert playback position unchanged.
 
 **Commit 3 — one frame tail + `compose_head`** (A2). Replace the `continue` at `app.rs:2006` with
 `if player { … } else { … }`, and factor the clear into `compose_head(player)` **now** so commit 5

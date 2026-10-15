@@ -2,7 +2,7 @@
 
 ## Project
 
-PlxNative is a production-quality native Plex client for rooted LG webOS 4.5 TVs. Most of the
+Dispatcharr TV is a production-quality native Plex client for rooted LG webOS 4.5 TVs. Most of the
 application is Rust under `rust-modules/` (the application in `src/`, the layers in their own crates); `src/main.c` is the boot/crash shim,
 `src/starfish.c` is the StarfishMediaAPIs/ACB seam, and `src/svg.c` rasterizes SVGs. Keep changes
 properly factored and finished; "only a demo" is never a reason to leave a shortcut behind.
@@ -54,7 +54,7 @@ the macOS simulator are valuable, but they cannot prove every device behavior.
 - This repository is public. Never publish values from gitignored private files such as `.tv-host`,
   `.tv-mac`, `src/config.local.h`, `tests/manifest.local.json`, `pkg/auth.json`, `pkg/lab.json`, or
   the other paths enumerated by `.claude/hooks/outbound-guard.py` — including the per-user copies of
-  the TV address and MAC, `~/.config/plxnative/tv-host` and `tv-mac` (the files a worktree reads;
+  the TV address and MAC, `~/.config/dispatcharrtv/tv-host` and `tv-mac` (the files a worktree reads;
   see `docs/agent-reference.md`). Use the documented placeholders.
 - webOS native behavior is under-documented. When an answer depends on platform behavior, verify it
   from primary documentation, vendored source, firmware inventories, or the device binaries; do not
@@ -93,8 +93,8 @@ the macOS simulator are valuable, but they cannot prove every device behavior.
   that crate's lib tests in `make test-fast`'s incremental tree. It is a loop, not a gate.
 - `make test-crate` does NOT enable `hostsim`: tests under `#[cfg(all(test, feature = "hostsim"))]`
   (`app/run.rs` `lifecycle_regression_tests`, the player-return rig) run as `cd rust-modules &&
-  CARGO_INCREMENTAL=1 CARGO_TARGET_DIR=/tmp/<dir> PLXNATIVE_RUNTIME_DIR=$(mktemp -d)
-  cargo +nightly test --lib -p plxnative-modules --features hostsim -- <filter>`; a filter that
+  CARGO_INCREMENTAL=1 CARGO_TARGET_DIR=/tmp/<dir> DISPATCHARRTV_RUNTIME_DIR=$(mktemp -d)
+  cargo +nightly test --lib -p dispatcharrtv --features hostsim -- <filter>`; a filter that
   matches nothing reports `0 tests` and still exits 0. Keep that target dir OUTSIDE the checkout
   and `git add` explicit paths: an untracked `rust-modules/target-*` is not ignored, and
   `git add -A rust-modules` commits it.

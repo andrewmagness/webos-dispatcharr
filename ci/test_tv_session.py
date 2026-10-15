@@ -38,7 +38,7 @@ class EnsureBinary(unittest.TestCase):
             root = pathlib.Path(directory)
             (root / "pkg").mkdir()
             (root / "tools").mkdir()
-            (root / "pkg" / "plxnative").write_bytes(b"placeholder")
+            (root / "pkg" / "dispatcharrtv").write_bytes(b"placeholder")
             script_link = root / "tools" / "tv-session.sh"
             script_link.symlink_to(SCRIPT)
 
@@ -112,9 +112,9 @@ class EnsureBinary(unittest.TestCase):
                   [ "$presence" = missing ] && return 1
                   if [ "{remote_status}" -ne 0 ]; then return {remote_status}; fi
                   if [ "$(cat "{state}")" = deployed ]; then
-                    printf '%s  %s\\n' "{remote_after}" "$APPDIR/plxnative"
+                    printf '%s  %s\\n' "{remote_after}" "$APPDIR/dispatcharrtv"
                   else
-                    printf '%s  %s\\n' "{remote_before}" "$APPDIR/plxnative"
+                    printf '%s  %s\\n' "{remote_before}" "$APPDIR/dispatcharrtv"
                   fi
                 }}
                 ensure_binary
@@ -491,7 +491,7 @@ class HeartbeatWords(unittest.TestCase):
         # under test is the script's own -- a stub that just echoed the heartbeat back would
         # bypass the very expression this is about and pass for the wrong reason.
         with tempfile.TemporaryDirectory() as directory:
-            log = pathlib.Path(directory) / "plxnative-events.log"
+            log = pathlib.Path(directory) / "dispatcharrtv-events.log"
             log.write_text(f"loop=60 {heartbeat} fps=0\n", encoding="utf-8")
             body = textwrap.dedent(
                 f"""\
@@ -538,8 +538,8 @@ class HeartbeatWords(unittest.TestCase):
         self.assertIn("RC:0", out)
 
     def test_a_caller_naming_only_a_page_tolerates_a_surface_over_it(self):
-        # `--screen detail=<rk>` with a panel trigger armed beside it (plxnative-tracks,
-        # plxnative-about) lands on the detail page with that panel up. The caller asked for
+        # `--screen detail=<rk>` with a panel trigger armed beside it (dispatcharrtv-tracks,
+        # dispatcharrtv-about) lands on the detail page with that panel up. The caller asked for
         # the page and got it; comparing an overlay it never named would turn the ordinary way
         # of reaching a page-owned panel into a permanent red line.
         out = self._assert_route("route=detail overlay=tracks", "detail")

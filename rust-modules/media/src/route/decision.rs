@@ -113,6 +113,11 @@ pub struct PlaybackSession {
     requested_resume_ns: i64,
     /// The stream URL for this playback (empty = nothing resolved, or torn down).
     url: String,
+    /// The URL is a LIVE stream (a Dispatcharr channel): endless, unseekable, and timestamped
+    /// wherever the broadcaster's clock happens to be, so the engine rebases its first keyframe
+    /// to 0 exactly as it does a resume. Set with [`set_live_url`]; cleared by [`set_url`],
+    /// [`clear_url`] and a new [`request_play`].
+    live: bool,
     /// The server-side transcode session id, EMPTY on a direct play — that emptiness is the
     /// "is this a transcode?" test ([`is_transcoding`]) and the key the stop is sent with.
     tsession: String,
@@ -443,6 +448,7 @@ impl PlaybackSession {
         request: None,
         requested_resume_ns: 0,
         url: String::new(),
+        live: false,
         tsession: String::new(),
         play_verdict: None,
         resolve_failed: false,
@@ -518,6 +524,7 @@ impl PlaybackSession {
             request,
             requested_resume_ns,
             url,
+            live,
             tsession,
             play_verdict,
             resolve_failed,
@@ -574,6 +581,7 @@ impl PlaybackSession {
             request: request.clone(),
             requested_resume_ns: *requested_resume_ns,
             url: url.clone(),
+            live: *live,
             tsession: tsession.clone(),
             play_verdict: play_verdict.clone(),
             resolve_failed: *resolve_failed,
@@ -685,11 +693,42 @@ pub fn has_url(ps: &PlaybackSession) -> bool {
 pub fn transport_kbps(ps: &PlaybackSession) -> i64 {
     ps.cur_transport_kbps
 }
+/// Install a file's URL (not live; see [`set_live_url`]).
 pub fn set_url(ps: &mut PlaybackSession, s: &str) {
-    ps.url = s.to_owned()
+    ps.url = s.to_owned();
+    ps.live = false;
 }
 pub fn clear_url(ps: &mut PlaybackSession) {
-    ps.url.clear()
+    ps.url.clear();
+    ps.live = false;
+}
+/// Install a LIVE stream's URL (see [`PlaybackSession::live`]).
+pub fn set_live_url(ps: &mut PlaybackSession, s: &str) {
+    ps.url = s.to_owned();
+    ps.live = true;
+}
+/// Is the stream being played live? Read by the engine when it starts a Load.
+pub fn is_live(ps: &PlaybackSession) -> bool {
+    ps.live && !ps.url.is_empty()
+}
+
+#[cfg(test)]
+mod live_url_tests {
+    use super::*;
+
+    #[test]
+    fn live_lasts_as_long_as_its_url() {
+        let mut ps = PlaybackSession::IDLE;
+        assert!(!is_live(&ps));
+        set_live_url(&mut ps, "http://192.0.2.1:9191/proxy/ts/stream/x");
+        assert!(is_live(&ps));
+        assert!(ps.publication().live, "the published copy says so too");
+        clear_url(&mut ps);
+        assert!(!is_live(&ps), "teardown ends it");
+        set_live_url(&mut ps, "http://192.0.2.1:9191/proxy/ts/stream/x");
+        set_url(&mut ps, "http://192.0.2.1:32400/a.mkv");
+        assert!(!is_live(&ps), "a file URL replaces it");
+    }
 }
 pub fn transcode_session(ps: &PlaybackSession) -> String {
     ps.tsession.clone()
@@ -7465,6 +7504,7 @@ fn request_play_inner(
     // for itself while the next one resolves.
     { let s = &mut *ps; {
         s.request = Some(request.clone());
+        s.live = false;
         s.requested_resume_ns = if request.preview {
             0
         } else {
@@ -8047,6 +8087,8 @@ fn apply_plan(ps: &mut PlaybackSession, meta: &mut plx_data::stores::metadata::M
             request,
             requested_resume_ns,
             url: plan.url,
+            // A PMS plan is never live.
+            live: false,
             tsession: plan.tsession,
             // Installed on EVERY landing, not only a refusing one: a plan that resolved is itself
             // the statement that the last refusal is over, and assigning unconditionally is what

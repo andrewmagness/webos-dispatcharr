@@ -3030,12 +3030,24 @@ fn vp9_packet_to_frame(pkt: &[u8], key: bool, out: &mut Vec<u8>) -> bool {
 /// Parse an avcC (H264) / hvcC (HEVC) extradata record into a ready-to-prepend Annex-B
 /// parameter-set blob (VPS/SPS/PPS with 4-byte start codes) + the NAL length-prefix size.
 /// (Ported from the retired mkv.rs demuxer) — the format the Starfish decoder wants.
+///
+/// **A length-prefix size of 0 means the packets are already Annex-B.** That is an MPEG-TS
+/// stream (live TV): its parameter sets travel in-band, so codecpar has no record at all, or an
+/// Annex-B one, which is returned as the blob unchanged. [`packet_to_annexb`] then passes the
+/// start-code framing through instead of reading it as lengths.
 unsafe fn parse_extradata(ed: *const u8, len: usize, is_hevc: bool) -> (Vec<u8>, usize) {
     let mut blob = Vec::new();
-    if ed.is_null() || len < 7 {
-        return (blob, 4);
+    if ed.is_null() || len == 0 {
+        return (blob, 0);
     }
     let e = std::slice::from_raw_parts(ed, len);
+    if starts_with_start_code(e) {
+        blob.extend_from_slice(e);
+        return (blob, 0);
+    }
+    if len < 7 {
+        return (blob, 4);
+    }
     let sc = [0u8, 0, 0, 1];
     if is_hevc {
         // HEVCDecoderConfigurationRecord: ver@0==1, nal_len@21, numArrays@22, arrays@23.
@@ -3166,9 +3178,57 @@ fn nal_end(i: usize, nl: usize, size: usize) -> Option<usize> {
     Some(end as usize)
 }
 
+/// Does `d` open with an Annex-B start code (`00 00 01` or `00 00 00 01`)?
+fn starts_with_start_code(d: &[u8]) -> bool {
+    d.starts_with(&[0, 0, 1]) || d.starts_with(&[0, 0, 0, 1])
+}
+
+/// Is this NAL (header first, no start code) a random access point: H264 IDR (type 5) or an
+/// HEVC IRAP (types 16-23)?
+fn nal_is_key(nal: &[u8], is_hevc: bool) -> bool {
+    let Some(&b0) = nal.first() else { return false };
+    if is_hevc {
+        (16..=23).contains(&((b0 >> 1) & 0x3f))
+    } else {
+        (b0 & 0x1f) == 5
+    }
+}
+
+/// The NAL units of an Annex-B buffer, without their start codes. A NAL unit never ends in a
+/// zero byte (H.264 7.4.1, H.265 7.4.2), so zeros after one are `trailing_zero_8bits` or the
+/// first byte of a 4-byte start code, and are trimmed off.
+fn annexb_nals(d: &[u8]) -> Vec<&[u8]> {
+    let mut starts = Vec::new();
+    let mut i = 0usize;
+    while i + 3 <= d.len() {
+        if d[i] == 0 && d[i + 1] == 0 && d[i + 2] == 1 {
+            starts.push(i + 3);
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    let mut nals = Vec::with_capacity(starts.len());
+    for (k, &b) in starts.iter().enumerate() {
+        let mut e = starts.get(k + 1).map_or(d.len(), |&n| n - 3);
+        while e > b && d[e - 1] == 0 {
+            e -= 1;
+        }
+        if e > b {
+            nals.push(&d[b..e]);
+        }
+    }
+    nals
+}
+
 /// Convert one length-prefixed video packet to Annex-B (4-byte start codes) into `out`,
 /// prepending `param` (VPS/SPS/PPS) when the AU is a keyframe (H264 IDR type 5 / HEVC IRAP
 /// types 16-23). Returns true if it is a keyframe. Mirrors mkv_handle_block.
+///
+/// `nls == 0` is an Annex-B packet ([`parse_extradata`]): its NALs are re-emitted with 4-byte
+/// start codes under the same keyframe, parameter-set and HDR10+ rules. A packet that does not
+/// open with a start code is still read as 4-byte lengths, the old default for a stream with no
+/// record.
 unsafe fn packet_to_annexb(
     data: *const u8,
     size: usize,
@@ -3178,6 +3238,18 @@ unsafe fn packet_to_annexb(
     out: &mut Vec<u8>,
 ) -> bool {
     out.clear();
+    let nls = if nls == 0 {
+        if data.is_null() || size == 0 {
+            return false;
+        }
+        let d = std::slice::from_raw_parts(data, size);
+        if starts_with_start_code(d) {
+            return annexb_passthrough(d, is_hevc, param, out);
+        }
+        4
+    } else {
+        nls
+    };
     if data.is_null() || size < nls + 1 {
         return false;
     }
@@ -3194,13 +3266,7 @@ unsafe fn packet_to_annexb(
         if nal_end(i, nl, size).is_none() {
             break;
         }
-        let b0 = d[i];
-        let key = if is_hevc {
-            (16..=23).contains(&((b0 >> 1) & 0x3f))
-        } else {
-            (b0 & 0x1f) == 5
-        };
-        if key {
+        if nal_is_key(&d[i..], is_hevc) {
             is_key = true;
             break;
         }
@@ -3233,6 +3299,27 @@ unsafe fn packet_to_annexb(
         out.extend_from_slice(&sc);
         out.extend_from_slice(nal);
         i += nl;
+    }
+    is_key
+}
+
+/// [`packet_to_annexb`] for a packet that is already Annex-B.
+fn annexb_passthrough(d: &[u8], is_hevc: bool, param: &[u8], out: &mut Vec<u8>) -> bool {
+    let nals = annexb_nals(d);
+    let is_key = nals.iter().any(|n| nal_is_key(n, is_hevc));
+    if is_key {
+        out.extend_from_slice(param);
+    }
+    for nal in nals {
+        if is_hevc && is_hdr10plus_sei(nal) {
+            let n = SEI_STRIPPED.fetch_add(1, Ordering::Relaxed) + 1;
+            if n <= 3 || n % 500 == 0 {
+                crate::player::log(&format!("ff: stripped HDR10+ SEI #{n} ({} bytes)", nal.len()));
+            }
+            continue;
+        }
+        out.extend_from_slice(&[0, 0, 0, 1]);
+        out.extend_from_slice(nal);
     }
     is_key
 }
@@ -3437,8 +3524,9 @@ fn annexb_start(data: &[u8], from: usize) -> Option<(usize, usize)> {
 }
 
 /// Validate an MPEG-TS H.264 packet as Annex-B, retain its in-band SPS/PPS and prepend whichever
-/// set is missing on an IDR. The progressive demuxer cannot be reused here: it interprets the
-/// first `00 00 00 01` as an AVCC length of one and corrupts the access unit.
+/// set is missing on an IDR. Stricter than the progressive demuxer's Annex-B passthrough
+/// ([`packet_to_annexb`] with no length prefix): an HLS segment must open on an IDR whose
+/// parameter sets are known, where a live channel simply starts at its next keyframe.
 fn ts_h264_access_unit(
     data: &[u8],
     params: &mut H264ParamSets,
@@ -4237,6 +4325,24 @@ struct HlsAu {
     pts_ns: i64,
     key: c_int,
     es: c_int,
+}
+
+/// The progressive demuxer's audio timestamps. MPEG-TS stamps only the first AAC frame of each
+/// PES packet, and libavformat leaves the frames after it untimed. Read as 0, they sat seconds
+/// behind the video, so the audio lane's throttle stopped feeding, and live TV played no audio or
+/// video at all. An untimed frame starts where the one before it ended. Reset on every seek.
+#[derive(Clone, Copy, Debug, Default)]
+struct AudioCarry {
+    next_ns: Option<i64>,
+}
+
+impl AudioCarry {
+    /// The frame's start: its own timestamp, else the previous frame's end, else 0 (as before).
+    fn stamp(&mut self, raw_ns: Option<i64>, duration_ns: Option<i64>) -> i64 {
+        let pts = raw_ns.or(self.next_ns).unwrap_or(0);
+        self.next_ns = duration_ns.and_then(|d| pts.checked_add(d));
+        pts
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8701,6 +8807,7 @@ pub fn demux(
                 // engine's audio lead-in has been pushed, then released as the consumer drains.
                 // Restarted (and the lane's grant withdrawn) by every seek and at loop exit.
                 let mut headroom = PreAudioHeadroom::default();
+                let mut audio_clock = AudioCarry::default();
                 SHARED.first_audio_pts.store(i64::MIN, Ordering::Release);
                 // INNER read loop
                 loop {
@@ -8757,6 +8864,7 @@ pub fn demux(
                             seek_ns / 1_000_000_000
                         ));
                         headroom.restart(aq_p);
+                        audio_clock = AudioCarry::default();
                         SHARED.first_audio_pts.store(i64::MIN, Ordering::Release);
                     }
                     let r = av_read_frame(fmt, pkt);
@@ -8874,13 +8982,27 @@ pub fn demux(
                         SHARED.hls_video_tail_ns.store(pts, Ordering::Release);
                     } else if si == ai && FEED_AUDIO.load(Ordering::Relaxed) {
                         let ast = *streams.add(ai as usize);
-                        let pts = pts_ns(pkt, ast);
+                        let raw = if (*pkt).data.is_null() {
+                            &[][..]
+                        } else {
+                            std::slice::from_raw_parts((*pkt).data, (*pkt).size.max(0) as usize)
+                        };
+                        let packet_duration = ((*pkt).duration > 0)
+                            .then(|| av_rescale_q((*pkt).duration, stream_time_base(ast), NS_TB))
+                            .filter(|d| *d > 0);
+                        let pts = audio_clock.stamp(
+                            pts_ns_opt(pkt, ast),
+                            packet_duration.or_else(|| adts_duration_ns(raw)),
+                        );
                         if headroom.first_audio_ns.is_none() {
                             // Before the push, so the feed thread that pops this AU sees it: the
                             // audio lane feeds a late-starting track's first AU on this mark.
                             SHARED.first_audio_pts.store(pts, Ordering::Release);
                         }
-                        let pushed = if let Some((freq_idx, chan_cfg)) = aac_adts {
+                        // MPEG-TS AAC arrives already ADTS-framed; a second header would make
+                        // every frame undecodable.
+                        let adts_reframe = aac_adts.filter(|_| !packet_has_adts(raw));
+                        let pushed = if let Some((freq_idx, chan_cfg)) = adts_reframe {
                             // prepend a 7-byte ADTS header so LG's decoder can frame the raw AAC
                             let plen = (*pkt).size as usize;
                             let mut framed = Vec::with_capacity(7 + plen);

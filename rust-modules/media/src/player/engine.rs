@@ -1528,8 +1528,10 @@ fn start_bufferfeed_inner(
         // if a seek is armed for the FIRST open (resume, or reload_at), rebase the first
         // post-seek keyframe to fed-pts 0 so the pipeline sees a 0-based timeline identical
         // to fresh play (disp_base carries the content offset). Plain fresh play leaves this
-        // false (first keyframe is already ~0).
-        rebase_pending: SHARED.seek_to_ns.load(Ordering::Relaxed) >= 0,
+        // false (first keyframe is already ~0). A LIVE stream's first keyframe is wherever the
+        // broadcast clock stands (up to 26.5 h for MPEG-TS), and an un-rebased pipeline would wait
+        // that long to present it, so live always rebases.
+        rebase_pending: SHARED.seek_to_ns.load(Ordering::Relaxed) >= 0 || crate::route::is_live(ps),
         rebase_drops: 0,
         seek_armed_at: 0,
         seek_retries: 0,
@@ -1617,7 +1619,11 @@ fn install_synthetic_playurl(
         return Err(crate::route::RouteStartResult::StartFailed);
     }
     let url = play.url.clone();
-    crate::route::set_url(ps, &url);
+    if play.live {
+        crate::route::set_live_url(ps, &url);
+    } else {
+        crate::route::set_url(ps, &url);
+    }
     Ok(url)
 }
 
@@ -2902,6 +2908,15 @@ fn audio_lead_in(fp: i64, opens: bool, start: Option<i64>) -> bool {
     opens || start.is_some_and(|s| fp >= s && fp - s < AUDIO_LEAD_IN_NS)
 }
 
+/// Whether an audio AU lies before the keyframe a REBASED timeline starts at (`shift != 0`: a
+/// resume, a reload, or a live stream). Such audio has no picture to play with, and clamped to
+/// fed-pts 0 it played as a burst: a live channel tuned two seconds before its next IDR fed about
+/// a hundred AUs at 0. A plain fresh play (`shift == 0`) keeps the old clamp, which a file's small
+/// negative start (codec delay) relies on.
+fn audio_precedes_anchor(fp: i64, shift: i64) -> bool {
+    shift != 0 && fp < 0
+}
+
 /// AUDIO lane feeder (two-lane ff path only). Independent of the video lane: its own queue, its
 /// own fed-pts high-water, its own BufferFull retry — so a video BufferFull never starves audio.
 /// HOLDS while a seek rebase is pending (the VIDEO lane sets pts_shift on its first post-seek
@@ -2949,6 +2964,10 @@ fn feed_audio_lane(mt: &MainThread, eng: &mut Engine) {
         }
         if fp < eng.max_fed_audio_pts - STALE_BACKJUMP_NS {
             eng.pending_audio = None; // stale (a big backward jump)
+            continue;
+        }
+        if audio_precedes_anchor(fp, shift) {
+            eng.pending_audio = None;
             continue;
         }
         if fp < 0 {
@@ -3527,6 +3546,7 @@ mod payload_tests {
                 el_present: false,
             },
             atmos: false,
+            live: false,
             auto_source_kbps: 0,
             auto_hls_base: String::new(),
             auto_start_hls: false,
@@ -5891,6 +5911,26 @@ mod audio_lead_in_tests {
         assert!(audio_lead_in(start + AUDIO_LEAD_IN_NS - 1, false, Some(start)));
         assert!(!audio_lead_in(start + AUDIO_LEAD_IN_NS, false, Some(start)), "the window ends");
         assert!(!audio_lead_in(start - 1, false, Some(start)), "nothing before the start");
+    }
+}
+
+#[cfg(test)]
+mod audio_anchor_tests {
+    use super::audio_precedes_anchor;
+
+    /// A live channel tuned at broadcast pts 1.4 s whose first IDR is at 3.47 s: every AU before
+    /// the IDR lands below 0 after the rebase and is dropped instead of being fed at 0.
+    #[test]
+    fn audio_before_a_rebased_keyframe_is_dropped() {
+        let shift = -3_469_400_000;
+        assert!(audio_precedes_anchor(1_400_000_000 + shift, shift));
+        assert!(!audio_precedes_anchor(3_469_400_000 + shift, shift), "the anchor itself plays");
+        assert!(!audio_precedes_anchor(3_500_000_000 + shift, shift));
+    }
+
+    #[test]
+    fn a_fresh_play_keeps_its_small_negative_start() {
+        assert!(!audio_precedes_anchor(-21_000_000, 0), "codec delay on an un-rebased file");
     }
 }
 

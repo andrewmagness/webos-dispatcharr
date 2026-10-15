@@ -64,6 +64,10 @@ pub struct PlayUrl {
     /// Dolby Atmos, for the payload's `contents.immersive` node.
     #[serde(default)]
     pub atmos: bool,
+    /// A live stream (MPEG-TS from a Dispatcharr channel): endless, and timestamped from wherever
+    /// the broadcast clock stands, so the engine rebases it to 0 (`route::set_live_url`).
+    #[serde(default)]
+    pub live: bool,
     /// Pipeline-tier Auto watchdog seam: whole Original wire bitrate. Zero leaves the ordinary
     /// Plex-free one-shot playback unchanged.
     #[serde(default)]
@@ -202,6 +206,7 @@ mod tests {
         .unwrap();
         assert_eq!(p.fps, 0.0);
         assert!(!p.atmos);
+        assert!(!p.live, "a file unless the spec says live");
         let dv = p.dovi.to_dovi();
         assert!(!dv.present);
         assert_eq!(

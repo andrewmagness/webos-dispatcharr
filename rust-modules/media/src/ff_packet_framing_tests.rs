@@ -206,6 +206,94 @@ fn a_runt_packet_is_rejected_before_any_indexing() {
     assert!(out.is_empty(), "size < nls + 1 must bail before the walk");
 }
 
+// -- Annex-B input (MPEG-TS) -----------------------------------------------------------
+//
+// A transport stream carries H.264/HEVC as Annex-B with its parameter sets in-band, and its
+// codecpar has no avcC/hvcC record. Read as 4-byte length prefixes, the start code `00 00 00 01`
+// is a length of 1, so every AU came out as a lone 5-byte access-unit delimiter (measured on a
+// live Dispatcharr channel: `ff: AU#0 size=5 key=false head=[00 00 00 01 09]`, then no video fed).
+
+fn annexb_in(buf: &[u8], is_hevc: bool, param: &[u8]) -> (bool, Vec<u8>) {
+    let mut out = Vec::new();
+    let key = unsafe { packet_to_annexb(buf.as_ptr(), buf.len(), 0, is_hevc, param, &mut out) };
+    (key, out)
+}
+
+#[test]
+fn no_extradata_record_means_annexb_input() {
+    let (blob, nls) = unsafe { parse_extradata(std::ptr::null(), 0, false) };
+    assert_eq!((blob.len(), nls), (0, 0), "no avcC: the packets carry start codes");
+    let ed = [0u8, 0, 0, 1, 0x67, 0x42, 0, 0, 1, 0x68, 0xCE];
+    let (blob, nls) = unsafe { parse_extradata(ed.as_ptr(), ed.len(), false) };
+    assert_eq!(nls, 0, "Annex-B extradata is not an avcC record");
+    assert_eq!(blob, ed, "Annex-B parameter sets are prepended as they are");
+    let ed = [0u8, 0, 1, 0x40, 0x01, 0x0C];
+    assert_eq!(unsafe { parse_extradata(ed.as_ptr(), ed.len(), true) }.1, 0, "HEVC too");
+}
+
+#[test]
+fn an_annexb_idr_passes_through_whole_and_is_a_keyframe() {
+    // AUD, SPS, PPS, IDR — the shape a broadcast keyframe arrives in. Mixed 3- and 4-byte start
+    // codes; the output uses 4-byte ones throughout.
+    let buf = [
+        0u8, 0, 0, 1, 0x09, 0xF0, 0, 0, 1, 0x67, 0x64, 0x00, 0x1F, 0, 0, 1, 0x68, 0xEE, 0, 0, 0, 1,
+        0x65, 0x88, 0x84,
+    ];
+    let (key, out) = annexb_in(&buf, false, &[]);
+    assert!(key, "an IDR NAL makes the AU a keyframe");
+    assert_eq!(
+        out,
+        vec![
+            0, 0, 0, 1, 0x09, 0xF0, 0, 0, 0, 1, 0x67, 0x64, 0x00, 0x1F, 0, 0, 0, 1, 0x68, 0xEE, 0,
+            0, 0, 1, 0x65, 0x88, 0x84
+        ]
+    );
+}
+
+#[test]
+fn an_annexb_non_idr_is_not_a_keyframe_and_gets_no_parameter_set() {
+    let buf = [0u8, 0, 0, 1, 0x09, 0x30, 0, 0, 1, 0x41, 0x9A, 0x07];
+    let (key, out) = annexb_in(&buf, false, &[0xDE, 0xAD]);
+    assert!(!key);
+    assert_eq!(out, vec![0, 0, 0, 1, 0x09, 0x30, 0, 0, 0, 1, 0x41, 0x9A, 0x07]);
+}
+
+#[test]
+fn an_annexb_keyframe_gets_annexb_extradata_prepended() {
+    let param = [0u8, 0, 0, 1, 0x67, 0x42];
+    let (key, out) = annexb_in(&[0, 0, 1, 0x65, 0x11], false, &param);
+    assert!(key);
+    assert_eq!(out, vec![0, 0, 0, 1, 0x67, 0x42, 0, 0, 0, 1, 0x65, 0x11]);
+}
+
+#[test]
+fn trailing_zero_bytes_belong_to_the_next_start_code() {
+    // `00 00 00 01` after a NAL: the leading zero is trailing_zero_8bits, not NAL payload.
+    let buf = [0u8, 0, 1, 0x41, 0x01, 0, 0, 0, 1, 0x41, 0x02, 0, 0];
+    let (_, out) = annexb_in(&buf, false, &[]);
+    assert_eq!(out, vec![0, 0, 0, 1, 0x41, 0x01, 0, 0, 0, 1, 0x41, 0x02]);
+}
+
+#[test]
+fn an_annexb_hevc_irap_is_a_keyframe_and_hdr10plus_sei_is_stripped() {
+    let sei = [39u8 << 1, 0x01, 0x04, 0x10, 0xB5, 0x00, 0x3C, 0x00, 0x01];
+    let mut buf = vec![0u8, 0, 0, 1];
+    buf.extend_from_slice(&sei);
+    buf.extend_from_slice(&[0, 0, 0, 1, 19 << 1, 0x01, 0xAB]);
+    let (key, out) = annexb_in(&buf, true, &[]);
+    assert!(key, "IDR_W_RADL (19) is IRAP");
+    assert_eq!(out, vec![0, 0, 0, 1, 19 << 1, 0x01, 0xAB], "the HDR10+ SEI is dropped");
+}
+
+#[test]
+fn a_packet_without_a_start_code_still_reads_as_length_prefixed() {
+    // No record and no start code: the old reading (4-byte lengths) is the only sensible one.
+    let buf = avcc(&[&[0x65, 0xAA]]);
+    let (key, out) = annexb_in(&buf, false, &[]);
+    assert!(key);
+    assert_eq!(out, vec![0, 0, 0, 1, 0x65, 0xAA]);
+}
+
 // -- AV1: leb128 ----------------------------------------------------------------------
 
 #[test]

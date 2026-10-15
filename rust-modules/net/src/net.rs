@@ -406,6 +406,11 @@ pub fn set_user_agent(user_agent: String) {
     let _ = USER_AGENT.set(user_agent);
 }
 
+/// The installed `User-Agent`, for the socket transport's own requests (`stream.rs`).
+pub fn user_agent() -> Option<&'static str> {
+    USER_AGENT.get().map(String::as_str)
+}
+
 /// The installed `User-Agent` as the `CString` curl takes: `Ok(None)` while none is installed.
 fn user_agent_c() -> Result<Option<CString>, std::ffi::NulError> {
     USER_AGENT.get().map(|ua| CString::new(ua.as_str())).transpose()

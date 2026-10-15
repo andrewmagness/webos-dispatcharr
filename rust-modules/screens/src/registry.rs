@@ -90,6 +90,9 @@ pub enum DispatcharrCmd {
     /// Store whether the app starts on the last channel watched (the Server page's switch). No
     /// answer, for the same reason.
     SetResume { on: bool },
+    /// Look for a Dispatcharr on the television's own network. Answers once, with the address of
+    /// every server that answered (`http://<ip>:9191`), possibly none.
+    Discover { reply: std::sync::mpsc::Sender<Vec<String>> },
 }
 
 /// The answer to [`DispatcharrCmd::Guide`].
@@ -2333,7 +2336,9 @@ pub const SCREEN_SHAPES: &[&str] = &[
 // only_favourites:bool`); the previous pin was 0xe8d0_26d5_2943_05e6.
 // Resume on launch: `screens::setup::SHAPE` gains the Server page's switch (`resume:u8`); the
 // previous pin was 0x99ec_fc56_b8d6_cda6.
-const SCREEN_SHAPES_PIN: u64 = 0x5914_3011_5c1f_8596;
+// Setup discovery: `screens::setup::SHAPE` gains the network search (`discovery:u8`); the previous
+// pin was 0x5914_3011_5c1f_8596.
+const SCREEN_SHAPES_PIN: u64 = 0xe3ee_b698_fe70_769c;
 
 #[cfg(test)]
 mod arg_tests {

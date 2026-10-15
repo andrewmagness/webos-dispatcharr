@@ -1422,7 +1422,9 @@ unsafe fn perform_http_request(
     // HTTP/1.1 keep-alive is the default; omitting Connection lets the server reuse this
     // socket for the next HLS segment instead of forcing a fresh TCP handshake each time.
     let req = format!(
-        "{method} {path_s} HTTP/1.1\r\nHost: {host_hdr}\r\nUser-Agent: plxnative/0.1\r\n{accept}{extra_s}\r\n"
+        "{method} {path_s} HTTP/1.1\r\nHost: {host_hdr}\r\nUser-Agent: {ua}\r\n{accept}{extra_s}\r\n",
+        // The app's own `User-Agent` (`net::set_user_agent`): a Dispatcharr names its clients by it.
+        ua = crate::net::user_agent().unwrap_or("DispatcharrTV")
     );
     let bytes = req.as_bytes();
     let mut off = 0usize;

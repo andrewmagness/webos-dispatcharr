@@ -51,5 +51,7 @@
   "dispatcharr.setup.resume_on": "Пачынаць з апошняга канала: Так",
   "dispatcharr.setup.resume_off": "Пачынаць з апошняга канала: Не",
   "dispatcharr.setup.resume_note": "Калі ўключана, праграма адкрываецца на апошнім праглядзеным канале. НАЗАД вядзе ў Тэлегід.",
-  "dispatcharr.live.up_next": "Далей · {time}"
+  "dispatcharr.live.up_next": "Далей · {time}",
+  "dispatcharr.setup.searching": "Шукаем Dispatcharr у вашай сетцы…",
+  "dispatcharr.setup.found": "Знойдзены ў вашай сетцы · без шыфравання"
 }

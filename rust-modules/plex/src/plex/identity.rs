@@ -32,8 +32,12 @@
 //! The client IDENTIFIER is deliberately not here — it is per-install, not per-build. It is minted
 //! once from `/dev/urandom` and persisted by [`session`](super::session).
 
-/// The product name. Unique, and not `Plex …` anything.
-pub const PRODUCT: &str = "PlxNative";
+/// The product token: what headers and the `User-Agent` carry. Unique, not `Plex …` anything,
+/// and one token (no space) because a `User-Agent` product is one.
+pub const PRODUCT: &str = "DispatcharrTV";
+
+/// The app's name as a person reads it: the failure read-out's footer, the diagnostics panel.
+pub const DISPLAY_NAME: &str = "Dispatcharr TV";
 
 /// The app version, handed in by the application: `plx_plex` cannot see `PLX_VERSION`, because a
 /// `cargo:rustc-env` reaches one crate only and the rule that derives it (`rust-modules/build.rs`)

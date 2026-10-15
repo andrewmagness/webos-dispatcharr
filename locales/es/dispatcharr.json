@@ -50,5 +50,7 @@
   "dispatcharr.setup.resume_on": "Empezar en el último canal: Sí",
   "dispatcharr.setup.resume_off": "Empezar en el último canal: No",
   "dispatcharr.setup.resume_note": "Si está activado, la app se abre reproduciendo el último canal que viste. ATRÁS va a la Guía.",
-  "dispatcharr.live.up_next": "A continuación · {time}"
+  "dispatcharr.live.up_next": "A continuación · {time}",
+  "dispatcharr.setup.searching": "Buscando Dispatcharr en tu red…",
+  "dispatcharr.setup.found": "Encontrado en tu red · sin cifrar"
 }

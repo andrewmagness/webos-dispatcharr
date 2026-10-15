@@ -717,7 +717,7 @@ fn support_line_of(i: &plx_platform::tv::device::Info, hw: &plx_platform::tv::de
     let set: &str = if set.is_empty() { plx_platform::i18n::msg::settings_login_unknown_device() } else { &set };
     format!(
         "{} {} · {} · {} · {}",
-        plx_plex::plex::identity::PRODUCT,
+        plx_plex::plex::identity::DISPLAY_NAME,
         plx_plex::plex::identity::version(),
         plx_platform::i18n::webos_release_line(i),
         set,
@@ -855,6 +855,9 @@ pub struct FailureContext {
     pub can_retry: bool,
     /// The sandbox repair can still be started (nothing is running or finished).
     pub repair_idle: bool,
+    /// The failed attempt was a live channel: *Try again* tunes it again, and there is no quality
+    /// to change.
+    pub live: bool,
 }
 
 /// **The failure read-out's row, as ONE table** — every control the read-out draws, in draw order;
@@ -888,6 +891,9 @@ pub fn failure_actions(kind: FailureKind, cx: FailureContext) -> Vec<FailureActi
         }
         // The file itself has no picture; no rung and no retry puts one in it.
         K::NoVideoTrack => {}
+        // A live channel: whatever stopped it (a busy server, a dropped connection, a stream that
+        // never opened) may be gone a moment later, and tuning again is the one thing to offer.
+        _ if cx.live => v.push(A::TryAgain),
         _ if cx.forced => {
             if cx.can_retry {
                 v.push(A::PlayAutomatically);
@@ -912,12 +918,27 @@ pub fn failure_actions(kind: FailureKind, cx: FailureContext) -> Vec<FailureActi
     v
 }
 
+#[cfg(test)]
+mod live_failure_tests {
+    use super::{failure_actions, FailureAction as A, FailureContext, FailureKind as K};
+
+    #[test]
+    fn a_failed_live_channel_offers_try_again_and_never_a_quality() {
+        let cx = FailureContext { forced: false, can_retry: false, repair_idle: true, live: true };
+        for kind in [K::MediaSource, K::PlaybackInterrupted, K::LoadTimeout, K::Unspecified] {
+            assert_eq!(failure_actions(kind, cx), vec![A::TryAgain, A::Back], "{kind:?}");
+        }
+        assert_eq!(failure_actions(K::NoVideoTrack, cx), vec![A::Back], "a stream with no picture stays one");
+    }
+}
+
 /// The live [`FailureContext`] (main thread).
 pub fn failure_context(ps: &crate::route::PlaybackSession) -> FailureContext {
     FailureContext {
         forced: crate::route::forced_direct_play(ps) || failtest_forced(),
         can_retry: crate::route::can_retry_current_play(ps),
         repair_idle: ps.repair_status == plx_platform::tv::sandbox::State::Idle,
+        live: crate::route::live_tune(ps).is_some(),
     }
 }
 
@@ -2494,7 +2515,7 @@ pub fn every_failure_row() -> Vec<(FailureKind, FailureContext, Vec<FailureActio
         for forced in [false, true] {
             for can_retry in [false, true] {
                 for repair_idle in [false, true] {
-                    let cx = FailureContext { forced, can_retry, repair_idle };
+                    let cx = FailureContext { forced, can_retry, repair_idle, live: false };
                     out.push((kind, cx, failure_actions(kind, cx)));
                 }
             }
@@ -2583,7 +2604,7 @@ mod tests {
     /// every rung Force overrides. The fix is the one change that re-enables the fallback.
     #[test]
     fn forced_direct_play_offers_the_fix_and_never_the_quality_ladder() {
-        let cx = FailureContext { forced: true, can_retry: true, repair_idle: true };
+        let cx = FailureContext { forced: true, can_retry: true, repair_idle: true, live: false };
         let row = failure_actions(FailureKind::PlaybackPolicy, cx);
         assert_eq!(row.first(), Some(&FailureAction::PlayAutomatically));
         assert!(!row.contains(&FailureAction::ChangeQuality), "{row:?}");
@@ -2625,7 +2646,7 @@ mod tests {
             assert_eq!(row.contains(&A::Repair), kind == K::JailMissingRtkmem && cx.repair_idle, "{at}");
         }
         // and a transient failure without Force keeps both of its recoveries
-        let cx = FailureContext { forced: false, can_retry: true, repair_idle: true };
+        let cx = FailureContext { forced: false, can_retry: true, repair_idle: true, live: false };
         let row = failure_actions(K::PlaybackInterrupted, cx);
         assert_eq!(&row[..2], &[A::TryAgain, A::ChangeQuality]);
     }
@@ -2832,7 +2853,7 @@ mod tests {
         assert_eq!(
             line,
             format!(
-                "PlxNative {} · webOS 4.10.2 · 43LM6300PVB · m3r · tv_pipeline",
+                "Dispatcharr TV {} · webOS 4.10.2 · 43LM6300PVB · m3r · tv_pipeline",
                 plx_plex::plex::identity::version()
             )
         );

@@ -12,8 +12,8 @@ ask your server for it.
 webOS has no good way to watch a self-hosted IPTV lineup. Dispatcharr already does the hard work on
 the server — channels, EPG, stream proxying — so this app aims to be the living-room end of it:
 
-- **Setup on the TV.** Enter your server's address, username and password once; the TV keeps an API
-  key, never your password.
+- **Setup on the TV.** The TV finds your Dispatcharr on the network and fills in its address; you
+  enter your username and password once, and the TV keeps an API key, never your password.
 - **A real guide.** Every channel against time, with what's on now and next, logos, favourites and
   the coloured remote keys.
 - **Live playback that feels like a TV.** Channel up/down, number entry, last-channel recall and a

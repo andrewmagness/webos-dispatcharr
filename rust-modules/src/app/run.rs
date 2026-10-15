@@ -41,8 +41,6 @@ use super::*;
 /// The per-iteration values that cross a phase boundary. Reset at the top of every iteration
 /// (`Frame::begin`); every field is written by exactly one phase and read by the ones after it.
 pub(crate) struct Frame {
-    /// The HUD's control slot for this frame, sampled once before input is read.
-    pub(crate) ctrl: plx_appkit::player_hud::ControlSlot,
     /// `clock::now()` at the ingest boundary — THE frame time every phase after it uses.
     pub(crate) now: u32,
     /// Seconds since the previous frame's `now`, clamped to 50 ms (the animation timestep).
@@ -64,9 +62,8 @@ pub(crate) struct Frame {
 }
 
 impl Frame {
-    fn begin(ps: &plx_media::route::PlaybackSession, meta: plx_data::metadata::MetadataView<'_>) -> Frame {
+    fn begin() -> Frame {
         Frame {
-            ctrl: plx_appkit::player_hud::slot(ps, meta),
             now: 0,
             dt: 0.0,
             underlay_moving: false,
@@ -102,7 +99,7 @@ pub(crate) unsafe fn run(app: &mut App) {
         // the input. Eight phases between the nine stamps, named after the frame algorithm
         // the restructure moves this loop onto (spec §3.3/§8.4); on THIS loop navcommit
         // precedes tick_drain, and the FRAMEDROP line prints them in the algorithm's order.
-        let mut fr = Frame::begin(&app.player.session, app.bridge.metadata_view());
+        let mut fr = Frame::begin();
         let fr = &mut fr;
         app.instr.mark(plx_base::diag::heartbeat::Phase::Top);
         plx_platform::tv::window::pump_bus();
@@ -563,24 +560,6 @@ unsafe fn ingress_token(app: &mut App, fr: &mut Frame, token: &str) -> bool {
     dispatch_remote_token(token, &app.player.session)
 }
 
-/// **Pin the transport for a headless run, and park its ring** — the dev triggers' half of what
-/// `start_playback` does for a real one.
-///
-/// One helper rather than three copies of `set_hud(now + HUD_HEADLESS_MS)`: the deadline and the
-/// cursor are the player INSTANCE's since restructure phase 9, so every one of those copies would
-/// have had to learn the same `player_mut` lookup and the same `publish`. `tab` parks the bottom
-/// tab row (the Info card is tab 0, the Chapters strip tab 1) and moves the ring onto it; `None`
-/// leaves the cursor alone, which is what the track menu and the auto-pause script want.
-pub(crate) fn pin_headless_hud(app: &mut App, now: u32, tab: Option<i32>) {
-    if let Some(player) = super::bridge::player_mut(&mut app.pages) {
-        player.hud.extend(now, HUD_HEADLESS_MS);
-        if let Some(tab) = tab {
-            player.hud.nav.focus = 2;
-            player.hud.nav.tab = tab;
-        }
-        player.publish();
-    }
-}
 
 fn ingest_text(app: &mut App, text: &str, panel: bool, source: plx_machine::machine::Source) {
     if text.is_empty() { return; }
@@ -749,13 +728,6 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
             // The OS took the screen; whatever the pointer was doing, its button-up is never
             // going to arrive here.
             app.ptr.button_down = false;
-            // The session is preserved for the foreground reload, so
-            // this is the RELOAD half of the reset — the in-flight gesture goes, the transport's
-            // timer and the countdown stay. It is spelled as a delivery to the owner because
-            // `player::TX::reset_for_reload` no longer clears `scrub_ns` from under it (§2.3).
-            if let Some(player) = super::bridge::player_mut(&mut app.pages) {
-                player.transport_reset(true);
-            }
             close_player_overlays(&mut app.pages);
             plx_media::player::suspend_bufferfeed(&mut app.player.session, &mut app.adapters.player);
             // Also retire the resolve generation: its worker may finish after backgrounding,
@@ -886,15 +858,10 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
             wcode,
             app.last_input,
             &mut app.down_sym,
-            super::bridge::player_mut(&mut app.pages).map(|player| &mut player.hud),
             &mut app.ptr,
             &mut app.ok_armed,
             &mut app.input.press,
         );
-        // `note_fresh_press` may have extended the auto-hide deadline; publish it once, here.
-        if let Some(player) = super::bridge::player_mut(&mut app.pages) {
-            player.publish();
-        }
 
         // LAB BUILDS ONLY, and above every arm below including the modals: the
         // diagnostics trigger. It has to outrank the chain because the screen a tester
@@ -1275,14 +1242,6 @@ fn finish_foreground_launch(app: &mut App) {
     // because a foreground that finds the player gone has to put it back rather
     // than resume a session with nothing on screen.
     super::bridge::show_page(&mut app.pages, AppArg::Player);
-    // A live page pins its own transport from the instant it mounts
-    // (`AppMounter::player_hud_ms`); a live one is re-pinned here, which is the
-    // foreground half of `start_playback`'s two paths.
-    app.bridge.seed_player_hud(HUD_LINGER_MS);
-    if let Some(player) = super::bridge::player_mut(&mut app.pages) {
-        player.hud.extend(clock::now(), HUD_LINGER_MS);
-        player.publish();
-    }
 }
 
 /// Permission to advance playback is independent of the retained page stack. WILL foreground
@@ -1427,22 +1386,6 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             log("EOS: stopping an off-route engine nothing owns");
             plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
         }
-        // Up Next countdown elapsed → start the queued episode on its own. Beside the EOS
-        // handoff so the whole auto-advance chain reads in one place.
-        if playback_may_run(app)
-            && super::bridge::player(&app.pages).is_some_and(|p| p.up_next.expired(fr.now))
-        {
-            if !play_up_next(&mut app.player.session,
-                &mut app.adapters.player,
-                HUD_LINGER_MS,
-                &mut app.pages,
-                &mut app.bridge,
-            ) {
-                if let Some(player) = super::bridge::player_mut(&mut app.pages) {
-                    player.up_next.cancel(); // nothing queued after all — don't re-fire
-                }
-            }
-        }
         // (The lost-keyup safety net and the CLIENT-SIDE LONG-PRESS REPEAT stood here — the one
         // hold-to-move path for every discrete focus list, driven by `App::held_key` at 110 ms so
         // the feel was identical everywhere and independent of the remote's hardware repeat delay.
@@ -1465,94 +1408,6 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
         // against the mounted `PlayerScreen`'s own `scrub` from the loop. They are that screen's
         // `Tick` now — `step_scrub_hold` and `step_tap_commit`, formula for formula — which is
         // what makes the field have one owner. Phase 12, PX-PLAYER.)
-        // Focus follows the control row's OCCUPANT, on both edges. Driven by slot identity
-        // rather than a "was something shown" bool, because the two edges have different jobs
-        // and the previous bool implemented neither of the ones its comment promised.
-        if let Some(player) = super::bridge::player_mut(&mut app.pages) {
-            // Keyed on the SEGMENT, not the slot, and `last_offer` is only ever advanced to
-            // a real offer — never cleared back to None. `active_marker` is gated on `is_playing`,
-            // so a momentary drop out of Playing mid-segment reads as "no segment" and flips the
-            // row to the discs and back; keyed on the slot that round trip looked like a new
-            // offer and re-raised the HUD over an intro the user was simply watching.
-            let offer = fr.ctrl.offer();
-            let fresh = offer.is_some() && offer != player.hud.last_offer;
-            if offer.is_some() {
-                player.hud.last_offer = offer;
-            }
-            if fresh {
-                // One line per SEGMENT offered — the on-device suite grades this feature from
-                // the event log like everything else, and "the control row offered a skip" had
-                // no observable signal at all before it.
-                if let Some((kind, start)) = offer {
-                    log(&format!("marker offer: {kind:?} at {}s", start / 1000));
-                }
-                // A segment beginning puts the HUD ON SCREEN and offers the row — the timer,
-                // the DISMISSAL and the ring in one act, because raising the timer alone left
-                // the tile behind a transport nobody drew. `HudState::raise_for_offer` is where
-                // that rule, its resting-position clause and the bug are written down.
-                player.hud.raise_for_offer(fr.now, fr.ctrl.primary_btn());
-            } else if plx_appkit::player_hud::standin_left_the_ring(
-                player.hud.was_standin,
-                fr.ctrl,
-                player.hud.nav.focus == 1,
-            ) {
-                // The stand-in went away under the focus ring. Without this the row swaps back
-                // to the discs with focus still on it and `btn` still 0, so the next OK opened
-                // the SUBTITLES menu instead of toggling pause — exactly the bug class HudNav's
-                // own doc says it exists to kill. Strictly the EDGE: as a steady state it also
-                // fired on a user who walked UP to the discs on purpose, yanking the ring back
-                // the same frame and making OK on a disc unreachable by remote.
-                player.hud.nav = HudNav::HOME;
-            }
-            player.hud.was_standin = !fr.ctrl.is_discs();
-            player.publish();
-        }
-        // While the countdown runs, hold the HUD up — a timer nobody can see is a cut to the
-        // next episode out of nowhere. `hud.dismissed` has to clear with it, not just the
-        // timer: a user who UP-hid the HUD and then touched nothing until the credits still
-        // carries the dismissal, which BEATS `extend_hud` inside `hud_visible`, so the
-        // countdown would run behind a tile `draw_hud` never draws. Whether they may
-        // re-dismiss it is the cancel's business, one line below — a dismissed HUD is focus
-        // off the row.
-        //
-        // …and that cancel is `up_next::countdown_may_run`, the ONE rule, applied here rather
-        // than at each key arm because every way of taking hold of the row (arrows, a click,
-        // walking away to the tabs, opening a panel) ends up as a cursor position and a route
-        // by the time this frame draws. Reading it as a steady state is what makes that true.
-        //
-        // Outside the `Overlay::None` gate above, deliberately: an overlay is the one way of
-        // taking hold of the transport that never moves the ring, and `draw_hud` draws the
-        // control row only for the BARE transport — so gated with the edges above, this block
-        // simply did not run for a tile that was already counting down when the Info card
-        // opened, and it cut to the next episode from behind a panel. The route is the rule's
-        // third input rather than a condition here, so there is still exactly one place that
-        // decides.
-        // `bare` is the rule's third input and is the CONTAINER's answer now: "no panel is
-        // up". It used to be `matches!(route, Route::Player { overlay: Overlay::None })`.
-        let bare = !app.pages.surface_up();
-        if matches!(app.route(), AppArg::Player) {
-            let paused_now = paused();
-            if let Some(player) = super::bridge::player_mut(&mut app.pages) {
-                if player.up_next.armed() {
-                    if plx_appkit::up_next::countdown_may_run(
-                        bare,
-                        player.hud.nav.focus == 1,
-                        player.hud.nav.btn,
-                    ) {
-                        player.hud.dismissed = false;
-                        player.hud.extend(fr.now, HUD_LINGER_MS);
-                    } else {
-                        player.up_next.cancel();
-                    }
-                }
-                // when the HUD auto-hides, park focus back on the scrubber so the next reveal
-                // is clean
-                if !player.hud.visible(&mut app.player.session, fr.now, paused_now) {
-                    player.hud.nav = HudNav::HOME;
-                }
-                player.publish();
-            }
-        }
         // hide the idle pointer during playback
         if matches!(app.route(), AppArg::Player)
             && !app.ptr.cur_hidden
@@ -1592,33 +1447,9 @@ pub(crate) unsafe fn land_results(app: &mut App, fr: &mut Frame) {
                 app.ok_armed = false;
                 app.input.press.cancel();
             } else if app.input.press.take_commit(fr.now) {
+                // The player's control row was the one deferred press the loop performed; it went
+                // with the VOD transport, so a committed press here has nothing left to activate.
                 app.ok_armed = false;
-                // The deferred activation, dispatched by asking the SAME questions the key ladder
-                // asked when it armed the press, in the SAME order: the Info card's own action
-                // column is the SURFACE's press, so it is asked first and by identity; the
-                // transport's control row (discs or a stand-in) is the page's.
-                match app.route() {
-                    AppArg::Player
-                        if matches!(
-                            super::bridge::player_overlay_kind(&app.pages),
-                            Some(plx_screens::player::overlay::OverlayKind::Info)
-                        ) =>
-                    {
-                        commit_info_press(&mut app.player.session,
-                            &mut app.adapters.player,
-                            &mut app.pages,
-                            &mut app.bridge,
-                        )
-                    }
-                    AppArg::Player => activate_player_row(&mut app.player.session,
-                        &mut app.adapters.player,
-                        fr.ctrl,
-                        fr.now,
-                        &mut app.pages,
-                        &mut app.bridge,
-                    ),
-                    _ => {}
-                }
             } else if !app.input.press.is_active() {
                 app.ok_armed = false; // long-press / cancelled — disarm without activating
             }
@@ -1671,25 +1502,12 @@ fn loop_requests(app: &mut App) {
 /// dev oscillators, the play landing and the remaining pumps — `tick_drain` on the FRAMEDROP
 /// line.
 pub(crate) unsafe fn update(app: &mut App, fr: &mut Frame) {
-        // (Each player panel is a surface and the dispatcher ticks it, containers before pages,
-        // once per frame: `PlayerOverlayScreen::step`'s `Tick` arm.)
         // Re-samples on its own 2 Hz hold; a no-op when the panel is off.
         app.diagnostics.update(&app.player.session, fr.now);
         // …and the lab upload's toast, which expires on a clock rather than a spring.
         crate::lab::update(fr.now);
         #[cfg(feature = "threadcheck")]
         plx_ui::runtime_warning::update(false);
-        // The Up Next countdown and the control row's focus pop are the PLAYER INSTANCE's and
-        // are stepped from its own `Tick` for the reason `TransportRow::step` gives — the row is
-        // not drawn on every frame of the route, so a spring advanced in the draw would run at a
-        // rate that depended on which panel was open. What the loop still owes the instance is
-        // this frame's ONE resolve of the control-row slot (`slot()`'s own doc: `playpos_ns` is
-        // written by LG's media thread and `player::pump` runs between the input handlers and
-        // the draw, so re-deriving it per call site let a keypress dispatch to a control the
-        // same frame then declined to draw).
-        if let Some(player) = super::bridge::player_mut(&mut app.pages) {
-            player.slot = fr.ctrl;
-        }
         // Async play resolve: install the worker's plan and start the engine. Permission comes
         // from the window/playback lifecycle, independently of which screen is mounted.
         // A fresh accepted resolve owns a different playback from any parked foreground retry.
@@ -1855,32 +1673,12 @@ pub(crate) unsafe fn draw(app: &mut App, fr: &mut Frame) -> (i32, i32, i32, i32)
                         plx_platform::tv::window::frame_probe_waiting();
                         plx_base::diag::spans::span("clear", || glClear(GL_COLOR_BUFFER_BIT));
                         plx_platform::tv::window::frame_probe_acquired();
-                        // ONE resolve of which surface owns the "pipeline is working" signal,
-                        // handed to both the transport and the read-out, so the centred read-out
-                        // and the transport's inline spinner can never both light in the same
-                        // frame. Resolved HERE (not beside `ctrl` at the top of the iteration)
-                        // because `player::pump` republishes the state mid-iteration and this must
-                        // be the post-pump value.
-                        //
-                        // `transport` is the other per-frame fact the instance cannot resolve for
-                        // itself: the transport's MIDDLE is hidden behind an open Info card or
-                        // Chapters strip, and which panel is up is the container's answer.
+                        // ONE resolve of which surface owns the "pipeline is working" signal, taken
+                        // HERE because `player::pump` republishes the state mid-iteration and this
+                        // must be the post-pump value.
                         let busy = plx_appkit::player_hud::busy(&app.player.session);
-                        let bare_middle = !matches!(
-                            super::bridge::player_overlay_kind(&app.pages),
-                            Some(plx_screens::player::overlay::OverlayKind::Info)
-                                | Some(plx_screens::player::overlay::OverlayKind::Chapters)
-                        );
-                        // Both subtitle paths lift clear of the transport for the same reason and
-                        // by the same test — an open track menu counts, since that is exactly when
-                        // the user is reading the bottom of the screen. The Timing capsule is the
-                        // one panel that instead HIDES the transport outright (`HudPolicy::Hidden`
-                        // outranks `Lifted` — see `bridge::player_hud_policy`).
-                        let hud_policy = super::bridge::player_hud_policy(&app.pages);
                         if let Some(player) = super::bridge::player_mut(&mut app.pages) {
                             player.busy = busy;
-                            player.transport = bare_middle;
-                            player.set_hud_policy(hud_policy);
                         }
                         // THE PAGE, and its panels: `Dispatcher::draw(.., true)` runs the page
                         // pass (subtitles, the transport, the read-out — `PlayerScreen::draw`) and
@@ -1892,13 +1690,7 @@ pub(crate) unsafe fn draw(app: &mut App, fr: &mut Frame) -> (i32, i32, i32, i32)
                         // cannot read back, so there is no host snapshot to take
                         // (`RenderStrategy::VideoPlane`).
                         app.pages.draw(&mut app.bridge, true);
-                        // Skipped rather than drawn while one of the player's own panels is
-                        // up — `More` carries this very panel's own toggle, and the panel's
-                        // content routinely spans wide enough to reach any of their bottom-right
-                        // rects. See `bridge::player_diagnostics_visible` (issue #163).
-                        if super::bridge::player_diagnostics_visible(&app.pages) {
-                            app.diagnostics.draw();
-                        }
+                        app.diagnostics.draw();
                     } else {
                         // dev (`/tmp/dispatcharrtv-framecb`): the page's first clear is this route's
                         // first framebuffer command, so `gfx` brackets the back-buffer wait there.
@@ -2074,40 +1866,10 @@ pub(crate) unsafe fn report(app: &mut App, fr: &mut Frame) {
                 AppArg::Guide => crate::focusprobe::Screen::Guide {
                     elem: app.pages.focus_record().map_or(-1, |(_, elem, _)| elem as i64),
                 },
-                // The same words the heartbeat's `overlay=` uses, and from the same place: the
-                // SURFACE that is up. There is no second table; see
-                // `heartbeat_word_tests::focusprobe_player_overlay_delegates_to_the_shared_overlay_word_function`.
-                AppArg::Player => crate::focusprobe::Screen::Player {
-                    overlay: super::words::overlay_word(&app.pages, &app.route()).unwrap_or(super::words::NO_OVERLAY),
-                },
-                // Not a page: a surface never reaches the top of the PAGE stack, so it cannot be
-                // the probe's `route=`. Named rather than swept into a `_` so a new page variant
-                // is a compile error here rather than a silently mis-probed screen.
-                AppArg::PlayerOverlay(_) => crate::focusprobe::Screen::Player {
-                    overlay: super::words::NO_OVERLAY,
-                },
-        };
-        // The probe reads the OWNER, and answers the resting cursor when no player is mounted —
-        // which is what every non-player screen used to read off `App`'s second copy.
-        let probe_hud = |app: &App| {
-            super::bridge::player(&app.pages).map_or(
-                crate::focusprobe::Hud {
-                    focus: HudNav::HOME.focus,
-                    btn: HudNav::HOME.btn,
-                    tab: HudNav::HOME.tab,
-                    visible: false,
-                },
-                |player| crate::focusprobe::Hud {
-                    focus: player.hud.nav.focus,
-                    btn: player.hud.nav.btn,
-                    tab: player.hud.nav.tab,
-                    visible: player.hud.visible(&app.player.session, app.last_input, paused()),
-                },
-            )
+                AppArg::Player => crate::focusprobe::Screen::Player,
         };
         if crate::focusprobe::armed() {
-            let content = super::bridge::content_probe(&app.pages, &app.bridge);
-            crate::focusprobe::sample(&app.player.session, fr.rn, probe_screen(app), probe_hud(app), fr.ctrl, &content, app.bridge.metadata_view());
+            crate::focusprobe::sample(&app.player.session, fr.rn, probe_screen(app));
         }
         // `dispatcharrtv-focusx`: the card read-out belongs to the frame just sampled.
         #[cfg(feature = "devtriggers")]
@@ -2323,7 +2085,6 @@ pub(crate) unsafe fn shutdown(
 #[cfg(all(test, feature = "hostsim"))]
 mod lifecycle_regression_tests {
     use super::*;
-    use std::sync::atomic::Ordering;
 
     // No boot, renderer or device: the real App/event/frame phases with Bridge's host rig.
     fn app() -> App {
@@ -2427,7 +2188,7 @@ mod lifecycle_regression_tests {
         let _serial = plx_base::testlock::serial();
         let _consent = CrashReports::granted();
         let mut app = app();
-        let mut fr = Frame::begin(&app.player.session, app.bridge.metadata_view());
+        let mut fr = Frame::begin();
         for et in [0x103, 0x104, 0x105, 0x106] {
             event(&mut app, &mut fr, et);
         }
@@ -2461,7 +2222,7 @@ mod lifecycle_regression_tests {
     fn hang_probe_dispatch_uses_frame_guard() {
         let _serial = plx_base::testlock::serial();
         let mut app = app();
-        let mut fr = Frame::begin(&app.player.session, app.bridge.metadata_view());
+        let mut fr = Frame::begin();
         let _scope = plx_base::task::FrameScope::enter();
         unsafe { ingress_token(&mut app, &mut fr, "hang:1"); }
     }
@@ -2471,7 +2232,7 @@ mod lifecycle_regression_tests {
     fn hang_probe_dispatch_raw_bypasses_frame_guard() {
         let _serial = plx_base::testlock::serial();
         let mut app = app();
-        let mut fr = Frame::begin(&app.player.session, app.bridge.metadata_view());
+        let mut fr = Frame::begin();
         let _scope = plx_base::task::FrameScope::enter();
         assert!(unsafe { ingress_token(&mut app, &mut fr, "hang-raw:1") });
     }
@@ -2491,7 +2252,7 @@ mod lifecycle_regression_tests {
             let mut app = app();
             super::super::bridge::show_page(&mut app.pages, AppArg::Guide);
             frame(&mut app, 0);
-            let mut fr = Frame::begin(&app.player.session, app.bridge.metadata_view());
+            let mut fr = Frame::begin();
             if fifo {
                 app.remote = Some(crate::remote::Remote::buffered_for_test("down\nhang:1\nup\n"));
             }
@@ -2534,7 +2295,7 @@ mod lifecycle_regression_tests {
         let mut app = app();
         super::super::bridge::show_page(&mut app.pages, AppArg::Player);
         frame(&mut app, 0);
-        let mut fr = Frame::begin(&app.player.session, app.bridge.metadata_view());
+        let mut fr = Frame::begin();
         for (token, held) in [("pd:900,870", true), ("pm:1200,870", true),
             ("pm:1400,870", true), ("pu:1400,870", false)] {
             assert!(unsafe { ingress_token(&mut app, &mut fr, token) },
@@ -2547,40 +2308,6 @@ mod lifecycle_regression_tests {
         assert!(matches!(app.inputs[1].kind, InputKind::Drag { x: 1200.0, y: 870.0, .. }));
         assert!(matches!(app.inputs[2].kind, InputKind::Drag { x: 1400.0, y: 870.0, .. }));
         assert!(matches!(app.inputs[3].kind, InputKind::Key { key: Key::Ok, edge: Edge::Up, .. }));
-
-        // Deliver the same collected edges through the dispatcher and the real player, one
-        // frame per edge. Screen tests separately grade these coordinates against record_stops;
-        // this map isolates the FIFO -> SDL -> app -> dispatcher -> scrub ownership boundary.
-        use plx_ui::{screen::{Activate, Hover, Stop}, Rect};
-        use plx_machine::{machine::{FocusKey, Tick}};
-        use plx_screens::registry::PlayerReq;
-        let key = FocusKey { elem: plx_appkit::player_hud::ELEM_SCRUB,
-            ..app.pages.focus().expect("the player has a scrub seat") };
-        let rect = plx_appkit::player_hud::scrub_hit_rect();
-        app.pages.input.hit.fill(vec![Stop { key, rect, rest_rect: rect, clip: Rect::FULL,
-            hover: Hover::Ignore, activate: Activate::Direct }]);
-        app.pages.input.hit.swap();
-        plx_media::player::SHARED.duration_ns.store(100_000_000_000, Ordering::Relaxed);
-        for (index, input) in std::mem::take(&mut app.inputs).into_iter().enumerate() {
-            super::super::bridge::frame(&mut app.pages, &mut app.bridge,
-                Tick { ms: 1_000 + index as u32 * 500, dt_us: 16_000 }, vec![input]);
-            let reqs = app.bridge.take_player_reqs();
-            if index < 3 {
-                assert!(reqs.is_empty(), "a held drag previews without any transport request");
-                let page = super::super::bridge::player(&app.pages).unwrap();
-                assert!(page.scrub.drag);
-                assert!(page.scrub.ns > 0);
-            } else {
-                let expected = (plx_appkit::player_hud::scrub_frac_x(1400.0) as f64 * 100_000_000_000.0) as i64;
-                assert_eq!(reqs, vec![PlayerReq::CommitSeek(expected)], "release commits once at the final motion");
-            }
-        }
-        // Neither the key's tap debounce nor a repeated pointer-up can replay this seek.
-        assert!(unsafe { ingress_token(&mut app, &mut fr, "pu:1400,870") });
-        unsafe { drain_sdl(&mut app, &mut fr); }
-        super::super::bridge::frame(&mut app.pages, &mut app.bridge,
-            Tick { ms: 4_000, dt_us: 16_000 }, std::mem::take(&mut app.inputs));
-        assert!(app.bridge.take_player_reqs().is_empty());
     }
 }
 

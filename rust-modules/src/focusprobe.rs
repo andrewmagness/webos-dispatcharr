@@ -62,11 +62,8 @@
 //! `RELEASE=1` drops the `devtriggers` feature, `devtrig::flag` becomes `false`, and this whole surface
 //! goes quiet.
 
-use std::ffi::c_int;
 use std::fmt::Write as _;
 use std::sync::Mutex;
-
-use plx_appkit::player_hud::ControlSlot;
 
 /// Which screen the frame ended on, as the probe dispatches on it.
 ///
@@ -91,26 +88,9 @@ pub(crate) enum Screen {
         /// The focused element, or `-1` with nothing focused (the page still loading).
         elem: i64,
     },
-    /// `overlay` is the same word the heartbeat prints after `overlay=`, supplied by `app.rs` from
-    /// its own exhaustive match on the private `Overlay` enum.
-    Player {
-        overlay: &'static str,
-    },
-}
-
-/// The player HUD's focus cursor, plus whether the transport is on screen at all.
-///
-/// A copy of the `HudNav` cursor `plex_run` holds as a local. The type is a non-`pub` item of
-/// `app`, which `lib.rs` declares as a private `mod`, so it cannot be named from here — the same
-/// boundary `Route` sits behind. `visible` is `app.rs`'s `hud_visible(…)` — the same
-/// value its own OK and LEFT/RIGHT arms branch on — because the HUD's visibility decides whether a
-/// press moves the cursor or merely reveals the bar.
-#[derive(Clone, Copy)]
-pub(crate) struct Hud {
-    pub(crate) focus: c_int,
-    pub(crate) btn: c_int,
-    pub(crate) tab: c_int,
-    pub(crate) visible: bool,
+    /// The live player. It has no cursor of its own outside the failure read-out, so what it
+    /// prints is whether that read-out owns the frame.
+    Player,
 }
 
 plx_base::devtrig::latched_flag!(
@@ -130,11 +110,11 @@ plx_base::devtrig::latched_flag!(
 ///
 /// Call once per frame, AFTER the frame's input has been handled and the screen drawn, so what is
 /// recorded is the state a key press has already moved rather than the state it is about to.
-pub(crate) fn sample(ps: &plx_media::route::PlaybackSession, route: &str, screen: Screen, hud: Hud, ctrl: ControlSlot, content: &str, meta: plx_data::metadata::MetadataView<'_>) {
+pub(crate) fn sample(ps: &plx_media::route::PlaybackSession, route: &str, screen: Screen) {
     if !armed() {
         return;
     }
-    let line = fingerprint_content(ps, route, screen, hud, ctrl, content, meta);
+    let line = fingerprint(ps, route, screen);
     static LAST: Mutex<Option<String>> = Mutex::new(None);
     let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
     if last.as_deref() == Some(line.as_str()) {
@@ -146,16 +126,11 @@ pub(crate) fn sample(ps: &plx_media::route::PlaybackSession, route: &str, screen
 
 /// Build the line. Split out from [`sample`] so its determinism and its grammar are host-testable
 /// without a log file or a change-detection state.
-#[cfg(test)]
-fn fingerprint(ps: &plx_media::route::PlaybackSession, route: &str, screen: Screen, hud: Hud, ctrl: ControlSlot, meta: plx_data::metadata::MetadataView<'_>) -> String {
-    fingerprint_content(ps, route, screen, hud, ctrl, "", meta)
-}
-
-fn fingerprint_content(ps: &plx_media::route::PlaybackSession, route: &str, screen: Screen, hud: Hud, ctrl: ControlSlot, content: &str, meta: plx_data::metadata::MetadataView<'_>) -> String {
-    let mut s = String::with_capacity(192);
+fn fingerprint(ps: &plx_media::route::PlaybackSession, route: &str, screen: Screen) -> String {
+    let mut s = String::with_capacity(96);
     s.push_str("focus route=");
     s.push_str(route);
-    push_fields(ps, &mut s, screen, hud, ctrl, content, meta);
+    push_fields(ps, &mut s, screen);
     // The tvOS click, which is route-agnostic: an OK over a card arms a press and the activation
     // commits from the per-frame loop on the spring-back, so "a press is in flight" is a state the
     // ladder put the app into and a state the NEXT key cancels.
@@ -164,7 +139,7 @@ fn fingerprint_content(ps: &plx_media::route::PlaybackSession, route: &str, scre
 }
 
 /// One screen's own fields.
-fn push_fields(ps: &plx_media::route::PlaybackSession, s: &mut String, screen: Screen, hud: Hud, ctrl: ControlSlot, content: &str, meta: plx_data::metadata::MetadataView<'_>) {
+fn push_fields(ps: &plx_media::route::PlaybackSession, s: &mut String, screen: Screen) {
     match screen {
         Screen::Setup { elem } => {
             let _ = write!(s, " elem={elem}");
@@ -172,53 +147,12 @@ fn push_fields(ps: &plx_media::route::PlaybackSession, s: &mut String, screen: S
         Screen::Guide { elem } => {
             let _ = write!(s, " elem={elem}");
         }
-        // The panels' own fields ride on `content`: since restructure phase 9 each is the state of a
-        // MOUNTED INSTANCE
-        // (`screens::player::overlay`), and this module cannot reach into the container — the
-        // caller (`app::bridge::content_probe`) builds them from the surface that is up.
-        Screen::Player { overlay } => {
-            push_player(ps, s, overlay, hud, ctrl, meta);
-            s.push_str(content);
+        // `hidden` is `player_hud::transport_hidden()`: while it is true the failure read-out owns
+        // the frame and its row is the only thing a key can drive (`PlayerScreen::handle_key`).
+        Screen::Player => {
+            let _ = write!(s, " hidden={}", b(plx_appkit::player_hud::transport_hidden(ps)));
         }
     }
-}
-
-
-/// The player: the HUD cursor, what the control row currently holds, and each panel's own state.
-fn push_player(ps: &plx_media::route::PlaybackSession, s: &mut String, overlay: &str, hud: Hud, ctrl: ControlSlot, meta: plx_data::metadata::MetadataView<'_>) {
-    // `upnext` is the PLAYER INSTANCE's countdown since phase 9, so it arrives on `content` with
-    // the panels' fields rather than being read off a module global here.
-    let slot = match ctrl {
-        ControlSlot::Discs => "discs",
-        ControlSlot::Skip(_) => "skip",
-        ControlSlot::UpNext(_) => "upnext",
-    };
-    // `hidden` is `player_hud::transport_hidden()`, read here for the reason
-    // `PlayerScreen::handle_key` reads it: it is that page's FIRST test, so while it is true every
-    // transport arm beneath it is unreachable and only the read-out's two DRAWN escapes — OK to
-    // the quality ladder, BACK out — plus EXIT do anything. A characterization run that could not
-    // see this field would record those arms as dead code rather than as shadowed ones.
-    // (Phase 12, PX-PLAYER: the loop does not read this predicate at all any more.)
-    let _ = write!(
-        s,
-        " ov={} hud={} f={} btn={} tab={} slot={} items={} hidden={}",
-        overlay,
-        b(hud.visible),
-        hud.focus,
-        hud.btn,
-        hud.tab,
-        slot,
-        ctrl.items(),
-        b(plx_appkit::player_hud::transport_hidden(ps))
-    );
-    // Whether this item HAS chapters at all — a fact about the item, not about a panel, which is
-    // why it stays here while each overlay's own open flag and cursor arrive on `content` from the
-    // surface (`app::bridge::content_probe`).
-    let _ = write!(
-        s,
-        " haschap={}",
-        b(plx_appkit::chapters_panel::has_chapters(meta))
-    );
 }
 
 fn b(v: bool) -> u8 {
@@ -228,23 +162,6 @@ fn b(v: bool) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    thread_local! {
-        static TEST_METADATA: std::cell::UnsafeCell<plx_data::stores::metadata::MetadataStore> =
-            std::cell::UnsafeCell::new(plx_data::stores::metadata::MetadataStore::default());
-    }
-    fn test_store() -> &'static mut plx_data::stores::metadata::MetadataStore {
-        TEST_METADATA.with(|cell| unsafe { &mut *cell.get() })
-    }
-
-    fn hud() -> Hud {
-        Hud {
-            focus: 0,
-            btn: 0,
-            tab: 0,
-            visible: false,
-        }
-    }
 
     /// Every screen this app can end a frame on, so a grammar or determinism assertion covers the
     /// whole instrument rather than the one screen a test happened to pick.
@@ -256,25 +173,19 @@ mod tests {
             ("setup", Screen::Setup { elem: -1 }),
             ("guide", Screen::Guide { elem: (3 << 12) | 2 }),
             ("guide", Screen::Guide { elem: -1 }),
-            ("player", Screen::Player { overlay: "none" }),
-            ("player", Screen::Player { overlay: "info" }),
+            ("player", Screen::Player),
         ]
     }
 
     /// **The property the whole instrument rests on**: with nothing moved between two samples, the
     /// two lines are byte-identical. A fingerprint that varied on its own would log every frame and
     /// a harness could not read a key press out of the diff.
-    ///
-    /// It takes the crate-wide serial lock because it walks every screen's accessors, several of
-    /// which read process-global stores that other modules' tests mutate.
     #[test]
     fn a_fingerprint_is_stable_while_nothing_moves() {
         let ps = plx_media::route::PlaybackSession::IDLE;
         let _g = plx_base::testlock::serial();
         for (rn, sc) in every_screen() {
-            let a = fingerprint(&ps, rn, sc, hud(), ControlSlot::Discs, test_store().view());
-            let b = fingerprint(&ps, rn, sc, hud(), ControlSlot::Discs, test_store().view());
-            assert_eq!(a, b, "{rn} fingerprinted differently twice in a row");
+            assert_eq!(fingerprint(&ps, rn, sc), fingerprint(&ps, rn, sc), "{rn} fingerprinted differently twice in a row");
         }
     }
 
@@ -286,143 +197,29 @@ mod tests {
         let ps = plx_media::route::PlaybackSession::IDLE;
         let _g = plx_base::testlock::serial();
         for (rn, sc) in every_screen() {
-            let line = fingerprint(&ps, rn, sc, hud(), ControlSlot::Discs, test_store().view());
-            assert!(
-                !line.contains('\n'),
-                "{rn}: a fingerprint is ONE line: {line}"
-            );
+            let line = fingerprint(&ps, rn, sc);
+            assert!(!line.contains('\n'), "{rn}: a fingerprint is ONE line: {line}");
             let mut fields = line.split(' ');
             assert_eq!(fields.next(), Some("focus"), "{line}");
             for f in fields {
-                let (k, v) = f
-                    .split_once('=')
-                    .unwrap_or_else(|| panic!("{rn}: {f:?} is not key=value in {line}"));
+                let (k, v) = f.split_once('=').unwrap_or_else(|| panic!("{rn}: {f:?} is not key=value in {line}"));
+                assert!(!k.is_empty() && k.chars().all(|c| c.is_ascii_lowercase()), "{rn}: odd key {k:?}");
                 assert!(
-                    !k.is_empty() && k.chars().all(|c| c.is_ascii_lowercase()),
-                    "{rn}: odd key {k:?}"
-                );
-                assert!(
-                    v.chars()
-                        .all(|c| !c.is_whitespace() && c != '/' && c != '?' && c != '&'),
+                    v.chars().all(|c| !c.is_whitespace() && c != '/' && c != '?' && c != '&'),
                     "{rn}: value {v:?} could carry a path, query or title: {line}"
                 );
             }
         }
     }
 
-    /// A field's PRESENCE is a function of the screen alone — the property that lets a harness diff
-    /// two fingerprints key by key instead of re-parsing a variable schema.
+    /// A moved cursor must actually show up — the instrument's whole purpose.
     #[test]
-    fn one_screen_always_carries_the_same_keys() {
+    fn moving_the_cursor_changes_the_line() {
         let ps = plx_media::route::PlaybackSession::IDLE;
         let _g = plx_base::testlock::serial();
-        let keys = |rn, sc, ctrl| {
-            fingerprint(&ps, rn, sc, hud(), ctrl, test_store().view())
-                .split(' ')
-                .skip(1)
-                .filter_map(|f| f.split_once('=').map(|(k, _)| k.to_string()))
-                .collect::<Vec<_>>()
-        };
-        // the player's control row swaps occupants under the same cursor — the keys must not swap
-        // with it, or every marker segment would look like a schema change
-        let credits = plx_data::metadata::Marker {
-            kind: plx_data::metadata::MarkerKind::Credits,
-            start_ms: 1000,
-            end_ms: 2000,
-            final_seg: false,
-        };
-        let discs = keys(
-            "player",
-            Screen::Player { overlay: "none" },
-            ControlSlot::Discs,
-        );
-        let up = keys(
-            "player",
-            Screen::Player { overlay: "none" },
-            ControlSlot::UpNext(credits),
-        );
-        assert_eq!(
-            discs, up,
-            "the control row's occupant changed the SCHEMA, not just a value"
-        );
-        // …and a HUD cursor move is a value change, never a key change
-        let moved = fingerprint(&ps, 
-            "player",
-            Screen::Player { overlay: "none" },
-            Hud {
-                focus: 2,
-                btn: 1,
-                tab: 1,
-                visible: true,
-            },
-            ControlSlot::Discs, test_store().view(),
-        );
-        let moved_keys: Vec<String> = moved
-            .split(' ')
-            .skip(1)
-            .filter_map(|f| f.split_once('=').map(|(k, _)| k.to_string()))
-            .collect();
-        assert_eq!(discs, moved_keys);
+        assert_ne!(fingerprint(&ps, "guide", Screen::Guide { elem: 1 }), fingerprint(&ps, "guide", Screen::Guide { elem: 2 }));
+        assert_ne!(fingerprint(&ps, "setup", Screen::Setup { elem: 0 }), fingerprint(&ps, "setup", Screen::Setup { elem: 3 }));
     }
-
-    /// A moved cursor must actually show up. This is the instrument's whole purpose, and it is the
-    /// one assertion that fails if a future edit prints a constant where a getter belongs.
-    #[test]
-    fn moving_the_hud_cursor_changes_the_line() {
-        let ps = plx_media::route::PlaybackSession::IDLE;
-        let _g = plx_base::testlock::serial();
-        let at = |f, btn, tab| {
-            fingerprint(&ps, 
-                "player",
-                Screen::Player { overlay: "none" },
-                Hud {
-                    focus: f,
-                    btn,
-                    tab,
-                    visible: true,
-                },
-                ControlSlot::Discs, test_store().view(),
-            )
-        };
-        assert_ne!(
-            at(0, 0, 0),
-            at(1, 0, 0),
-            "the HUD focus row is not observable"
-        );
-        assert_ne!(
-            at(1, 0, 0),
-            at(1, 1, 0),
-            "the control-row cursor is not observable"
-        );
-        assert_ne!(
-            at(2, 0, 0),
-            at(2, 0, 1),
-            "the tab-row cursor is not observable"
-        );
-        assert_ne!(
-            at(0, 0, 0),
-            fingerprint(&ps, 
-                "player",
-                Screen::Player { overlay: "info" },
-                Hud {
-                    focus: 0,
-                    btn: 0,
-                    tab: 0,
-                    visible: true
-                },
-                ControlSlot::Discs, test_store().view()
-            ),
-            "the overlay tag is not observable"
-        );
-    }
-
-    /// **The stalled-sign-in control appearing must actually show up.** This is the exact gap
-    /// `Screen::Login`'s own doc names: `phase=` alone reports nothing for the ~12 s (a stalled
-    /// spinner) or ~60 s (an unscanned QR code) the escape/restart control sits on screen with the
-    /// phase unchanged, so a (route × key) harness reading `phase=` alone cannot see OK land on the
-    /// control at all — only the phase change a beat later, once the press has already been acted
-    /// on. This is the assertion that fails if a future edit prints a constant (`ctl=0` always, or
-    /// the field dropped) where `has_control` belongs — the same shape as
 
     /// `armed()` is what every call site checks first, and it must answer the same thing for the
     /// whole boot. Without the latch a run that cleared `/tmp` mid-case would stop fingerprinting

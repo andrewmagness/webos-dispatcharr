@@ -68,8 +68,6 @@ fn no_required_content_enters_the_safe_area_exclusion_zone() {
     probe("player_hud", &plx_appkit::player_hud::overscan_rects);
 
     // ---- the panels, each at the widest/tallest state its own clamp admits ---------------
-    probe("track_menu", &plx_appkit::track_menu::overscan_rects);
-    probe("more_menu", &plx_appkit::more_menu::overscan_rects);
     probe("stats", &crate::app::diagnostics::overscan_rects);
     drop(probe);
 

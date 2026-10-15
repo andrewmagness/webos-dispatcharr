@@ -15,7 +15,6 @@ struct HeldFeature {
     resume_ns: i64,
     /// The page navigation's own captured spot (BACK returns there).
     ret: Option<ReturnState<u32, PageMemory>>,
-    hud_ms: u32,
 }
 
 std::thread_local! {
@@ -48,7 +47,6 @@ pub(super) fn hold_feature(
             play,
             resume_ns,
             ret,
-            hud_ms: HUD_LINGER_MS,
         });
     });
 }
@@ -146,7 +144,6 @@ fn drain_held_feature(app: &mut App) {
         &mut app.adapters.player,
         held.resume_ns,
         super::playback::Origin::Here,
-        held.hud_ms,
         held.ret,
         &mut app.pages,
         &mut app.bridge,
@@ -179,22 +176,18 @@ mod play_clearance_tests {
     }
 }
 
-pub(crate) fn content_requests(app: &mut App, fr: &Frame) {
+pub(crate) fn content_requests(app: &mut App, _fr: &Frame) {
     drain_held_feature(app);
-    // The player's overlays are surfaces on its own stack, so what they decide reaches the
-    // loop the same way every other owned screen's decision does — as requests, drained here,
-    // after the dispatcher and before the frame's own arms (`playback::player_requests`).
+    // What the player decides reaches the loop the same way every other owned screen's decision
+    // does — as requests, drained here, after the dispatcher and before the frame's own arms
+    // (`playback::player_requests`).
     let player_reqs = app.bridge.take_player_reqs();
     if !player_reqs.is_empty() {
         super::playback::player_requests(&mut app.player.repair, &mut app.player.session,
             &mut app.adapters.player,
             player_reqs,
-            fr.now,
             &mut app.pages,
             &mut app.bridge,
-            &mut app.ok_armed,
-            &mut app.input.press,
-            &mut app.repause_at,
         );
     }
     for (source, request, ret) in app.bridge.take_content_reqs() {
@@ -217,7 +210,6 @@ pub(crate) fn content_requests(app: &mut App, fr: &Frame) {
                 // the spot the Play was pressed from.
                 start_playback(&mut app.player.session, &mut app.adapters.player, resume_ns,
                     super::playback::Origin::Here,
-                    HUD_LINGER_MS,
                     Some(ret), &mut app.pages, &mut app.bridge);
             }
         }

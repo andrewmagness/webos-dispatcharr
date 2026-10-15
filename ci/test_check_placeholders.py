@@ -223,14 +223,16 @@ class Hooks(unittest.TestCase):
         self.assertEqual(self.problems(files), [])
 
     def test_a_required_site_must_stay_in_its_file(self):
-        enum = 'pub enum Reason {\n    CardSkeleton,\n    InfoPanelStill,\n    HeroLogoText,\n}\n'
+        enum = 'pub enum Reason {\n    CardSkeleton,\n    ProfileChip,\n    HeroLogoText,\n    HeroLogoAbsent,\n}\n'
         files = {'ui/src/placeholder.rs': enum,
-                 'ui/src/widgets.rs': ('fn f() { note(p, Reason::CardSkeleton, ""); }\n'
-                                       'fn g() { note(p, Reason::InfoPanelStill, ""); }\n'),
-                 'ui/src/hero_logo.rs': 'fn h() { ink(p, Reason::HeroLogoText, "", c); }\n'}
+                 'ui/src/widgets.rs': 'fn f() { note(p, Reason::CardSkeleton, ""); }\n',
+                 # ProfileChip is still named, but in the wrong FILE: the one problem is its site
+                 'ui/src/hero_logo.rs': ('fn h() { ink(p, Reason::HeroLogoText, "", c); }\n'
+                                         'fn i() { ink(p, Reason::HeroLogoAbsent, "", c); }\n'
+                                         'fn j() { face(p, Reason::ProfileChip, "", r, 8.0, c, c); }\n')}
         out = self.problems(files)
         self.assertEqual(len(out), 1, out)
-        self.assertIn('appkit/src/info_panel.rs must name Reason::InfoPanelStill', out[0])
+        self.assertIn('ui/src/widgets.rs must name Reason::ProfileChip', out[0])
 
     def test_the_real_tree_names_every_required_site(self):
         self.assertEqual(gate.hook_problems(gate.REPO), [])

@@ -26,10 +26,9 @@
 
 use std::ffi::CStr;
 
-use plx_screens::player::HudPolicy;
 use plx_screens::registry::{AppArg, AppFx, AppMounter, AppMsg, ContentReq, LoopReq, PageMemory};
 use plx_data::stores::{StoreCmd, StoreId};
-use plx_ui::containers::modal::{HostRender, Phase, Style};
+use plx_ui::containers::modal::{HostRender, Phase};
 use plx_ui::dispatch::{CxParts, Dispatcher, FrameReport, Rig, Split};
 #[cfg(test)]
 use plx_screens::registry::every_surface_arg;
@@ -38,7 +37,7 @@ use plx_ui::dispatch::NoTap;
 use plx_ui::frame::Budget;
 use plx_machine::machine::{
     Canon, Cx, Delivery, Edge, Effects, EntryId, Fx, Handled, Host, InputEvent, InputKind,
-    InputOwner, Key, LogicalState, MachineId, Measure, NavOp, Source, Tick, TimerId,
+    Key, LogicalState, MachineId, Measure, NavOp, Source, Tick, TimerId,
 };
 use plx_machine::present::Present;
 use plx_ui::screen::{FocusSource, ReturnState};
@@ -201,12 +200,6 @@ impl Bridge {
     /// Where the next player instance returns to — see `AppMounter::player_origin`.
     pub(crate) fn seed_player_origin(&mut self, origin: plx_screens::player::Origin) {
         self.mounter.player_origin = Some(origin);
-    }
-
-    /// How long the next player instance pins its transport for — see
-    /// [`AppMounter::player_hud_ms`]. Set by `start_playback` and consumed by the mount.
-    pub(crate) fn seed_player_hud(&mut self, ms: u32) {
-        self.mounter.player_hud_ms = Some(ms);
     }
 
     /// Drive `popover`'s host-user counters from the surface phases (module doc).
@@ -499,158 +492,13 @@ pub(crate) fn frame_with_results(
     (word, report)
 }
 
-/// The focus probe's per-page fields: the player's panels and its countdown, read where the
-/// container is in scope. The panel fields keep the spellings the characterization line has always
-/// used (`menu=`/`msel=`/`taudio=`/`tsub=`/`info=`/`isel=`/`infolast=`/`chap=`/`csel=`/`more=`/
-/// `osel=`).
-pub(crate) fn content_probe(d: &Dispatcher<AppHost>, _rig: &Bridge) -> String {
-    use std::fmt::Write;
-    let Some(page) = d.nav.top_page() else { return String::new() };
-    if !matches!(page.arg, AppArg::Player) {
-        return String::new();
-    }
-    use plx_screens::player::overlay::{OverlayKind, Panel};
-    let player = page.inst.as_ref().and_then(|i| i.screen.as_any())
-        .and_then(|s| s.downcast_ref::<plx_screens::player::PlayerScreen>());
-    let surface = d.nav.modals.surfaces.iter().rev()
-        .filter(|s| matches!(s.entry.arg, AppArg::PlayerOverlay(_)))
-        .find_map(|s| s.entry.inst.as_ref())
-        .and_then(|i| i.screen.as_any())
-        .and_then(|s| s.downcast_ref::<plx_screens::player::overlay::PlayerOverlayScreen>());
-    let kind = surface.map(|s| s.kind());
-    let is = |want: fn(&OverlayKind) -> bool| kind.as_ref().is_some_and(want);
-    let sel = surface.map_or(0, |s| s.sel());
-    let mut out = format!(" upnext={}", u8::from(player.is_some_and(|p| p.up_next.armed())));
-    let (taudio, tsub) = match surface.map(|s| s.panel()) {
-        Some(Panel::Tracks(t)) => (t.active_audio(), t.active_sub()),
-        _ => (0, -1),
-    };
-    let infolast = matches!(surface.map(|s| s.panel()), Some(Panel::Info(p)) if p.at_last());
-    let menu = is(|k| matches!(k, OverlayKind::Tracks { .. }));
-    let info = is(|k| matches!(k, OverlayKind::Info));
-    let chap = is(|k| matches!(k, OverlayKind::Chapters));
-    let more = is(|k| matches!(k, OverlayKind::More { .. }));
-    let _ = write!(
-        out,
-        " menu={} msel={} taudio={taudio} tsub={tsub} info={} isel={} infolast={} chap={} csel={} more={} osel={}",
-        u8::from(menu), if menu { sel } else { 0 },
-        u8::from(info), if info { sel } else { 0 }, u8::from(infolast),
-        u8::from(chap), if chap { sel } else { 0 },
-        u8::from(more), if more { sel } else { 0 },
-    );
-    out
-}
 
-/// **Open one of the player's panels on the PLAYER PAGE's own `ModalStack`** (§6.2).
-///
-/// Idempotent per KIND while that kind is up: a second press on the disc that opened it must not
-/// stack a second copy. Opening a DIFFERENT kind over an open one is allowed and is what the
-/// transport's own tab row does — the container's `input_owner()` gives the topmost surface the
-/// keys, so the stack is the answer to "which panel owns the frame".
-///
-/// The style is `PlayerPanel { survives_failure }`, whose host policy is `(Live, Live)`: what is
-/// behind these panels is a hardware video plane GL cannot read back, so there is no host snapshot
-/// to take and nothing to freeze. `survives_failure` is the `…` popover's alone — see `OverlayKind`.
-pub(crate) fn open_player_overlay(
-    ps: &plx_media::route::PlaybackSession,
-    meta: plx_data::metadata::MetadataView<'_>,
-    d: &mut Dispatcher<AppHost>,
-    kind: plx_screens::player::overlay::OverlayKind,
-) {
-    // Already up? Then this press is a re-ADDRESS of the entry that exists — the Audio disc
-    // pressed while the Subtitles tab is showing — and never a second surface of the same kind.
-    if player_overlay_kind(d).is_some_and(|up| up.slot() == kind.slot()) {
-        if let Some(surface) = player_overlay_mut(d) {
-            surface.retarget(ps, meta, kind);
-        }
-        return;
-    }
-    d.nav.next_style = Style::PlayerPanel { survives_failure: kind.survives_failure() };
-    d.request(
-        MachineId::Nav,
-        NavOp::Present(AppArg::PlayerOverlay(
-            plx_screens::player::overlay::PlayerOverlayArg { kind },
-        )),
-    );
-}
 
-/// Which player panel owns input right now, if one does.
-pub(crate) fn player_overlay_kind(
-    d: &Dispatcher<AppHost>,
-) -> Option<plx_screens::player::overlay::OverlayKind> {
-    let InputOwner::Entry(id) = d.nav.input_owner()? else { return None };
-    match &d.nav.entry(id)?.arg {
-        AppArg::PlayerOverlay(arg) => Some(arg.kind),
-        _ => None,
-    }
-}
 
-/// Is ANY player panel up (including one still fading out)? A fading-out panel still paints its
-/// own opaque ground and must count exactly the way a fully open one does
-/// ([`player_diagnostics_visible`]).
-pub(crate) fn player_overlay_up(d: &Dispatcher<AppHost>) -> bool {
-    d.nav
-        .modals
-        .surfaces
-        .iter()
-        .any(|s| matches!(s.entry.arg, AppArg::PlayerOverlay(_)))
-}
 
-/// **This frame's [`HudPolicy`] for the transport** (plan `subtitle-menu-capsule` §4): scans every
-/// surface whose phase is not `Hidden` — Opening, Open, AND Closing, because a Tracks→Timing
-/// hand-off dismisses the Tracks surface the same frame the fresh Timing surface starts opening,
-/// and Tracks' closing fade must not flash the transport either.
-///
-/// [`HudPolicy::Hidden`] if ANY such player-overlay surface's kind says so
-/// (`OverlayKind::hud_policy`); otherwise [`HudPolicy::Lifted`] if ANY modal surface is up;
-/// otherwise [`HudPolicy::Normal`].
-pub(crate) fn player_hud_policy(d: &Dispatcher<AppHost>) -> HudPolicy {
-    let hides = |arg: &AppArg| matches!(arg, AppArg::PlayerOverlay(p) if p.kind.hud_policy() == HudPolicy::Hidden);
-    if surface_up(d, hides) {
-        HudPolicy::Hidden
-    } else if d.surface_up() {
-        HudPolicy::Lifted
-    } else {
-        HudPolicy::Normal
-    }
-}
 
-/// Should the player's diagnostics ("Stats for nerds") panel draw this frame? No, while any of the
-/// player's own overlay panels is up: the read-out reaches their bottom-right-anchored rects, and
-/// the `More` panel carries the very toggle that turns it off (issue #163).
-pub(crate) fn player_diagnostics_visible(d: &Dispatcher<AppHost>) -> bool {
-    !player_overlay_up(d)
-}
 
-/// Dismiss every player panel — the exit ritual's half of `close_player_overlays`.
-pub(crate) fn dismiss_player_overlays(d: &mut Dispatcher<AppHost>) {
-    let ids: Vec<EntryId> = d
-        .nav
-        .modals
-        .surfaces
-        .iter()
-        .filter(|s| matches!(s.entry.arg, AppArg::PlayerOverlay(_)))
-        .map(|s| s.entry.id)
-        .collect();
-    for id in ids {
-        d.request(MachineId::Nav, NavOp::Dismiss(id));
-    }
-}
 
-/// A live panel's own state, for the dev triggers that drive one by hand
-/// (`dispatcharrtv-menupick`) and for the focus probe's `sel=`.
-pub(crate) fn player_overlay_mut(
-    d: &mut Dispatcher<AppHost>,
-) -> Option<&mut plx_screens::player::overlay::PlayerOverlayScreen> {
-    let InputOwner::Entry(id) = d.nav.input_owner()? else { return None };
-    d.nav
-        .entry_mut(id)?
-        .inst
-        .as_mut()?
-        .screen
-        .as_any_mut()?
-        .downcast_mut::<plx_screens::player::overlay::PlayerOverlayScreen>()
-}
 
 // ---------------------------------------------------------------------------------------------
 // the loop's navigations, as container ops
@@ -736,16 +584,6 @@ pub(crate) fn foreground(d: &mut Dispatcher<AppHost>) {
 }
 
 
-/// Is a surface matching `which` on screen in ANY phase — a dismissal that is still fading
-/// included? That is the conservative reading and the one every caller wants: an opener must not
-/// present a second surface over one that is on its way out.
-fn surface_up(d: &Dispatcher<AppHost>, which: impl Fn(&AppArg) -> bool) -> bool {
-    d.nav
-        .modals
-        .surfaces
-        .iter()
-        .any(|s| which(&s.entry.arg) && s.phase != Phase::Hidden)
-}
 
 /// **The player instance, if one is mounted** — the one door to the state phase 9 moved off `App`.
 ///
@@ -846,7 +684,7 @@ pub(crate) fn every_surface_word() -> Vec<&'static str> {
         frame(&mut d, &mut rig, Tick { ms: 0, dt_us: 16_000 }, vec![]);
         // The style is the application's to choose per surface (`Navigation::next_style`), and it
         // does not change the word — `Compact` is enough for every one of them here.
-        d.nav.next_style = Style::Compact;
+        d.nav.next_style = plx_ui::containers::modal::Style::Compact;
         d.request(MachineId::Nav, NavOp::Present(arg));
         frame(&mut d, &mut rig, Tick { ms: 16, dt_us: 16_000 }, vec![]);
         out.push(overlay_word(&d).expect("a presented surface names a word"));
@@ -950,19 +788,7 @@ pub(crate) fn release_input(now: Tick) -> InputEvent<u32> {
     }
 }
 
-/// A scripted direction (the dev oscillators), both edges.
-pub(crate) fn script_key(key: Key, now: Tick) -> Vec<InputEvent<u32>> {
-    [Edge::Down, Edge::Up].into_iter().map(|edge| script_edge(key, edge, now)).collect()
-}
 
-/// One scripted key edge.
-pub(crate) fn script_edge(key: Key, edge: Edge, now: Tick) -> InputEvent<u32> {
-    InputEvent {
-        at: now,
-        source: Source::Script,
-        kind: InputKind::Key { key, sym: 0, wcode: 0, edge, at_edge: false },
-    }
-}
 
 #[allow(dead_code)]
 fn _measure_is_object_safe(m: &dyn Measure, s: &CStr) -> f32 {

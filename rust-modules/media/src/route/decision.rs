@@ -929,19 +929,6 @@ enum OriginalTrialPhase {
     Failed(u64),
 }
 
-/// The only three ways an external route effect may return to the synchronized owner.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RouteApplyResult {
-    /// PMS accepted and installed the candidate projection. Native `Load` is still outstanding;
-    /// this moves `Applying -> Prepared`. [`claim_route_start_attempt`] later moves it to
-    /// `Starting`, and it never moves directly to `Stable`.
-    Prepared,
-    /// The external system refused or failed before changing the applied route.
-    Rejected,
-    /// A newer command/lease superseded this result while its effect was in flight.
-    Cancelled,
-}
-
 /// The part of [`Session`] which describes bytes already accepted as the live route.
 ///
 /// User controls are allowed to stage a different projection in `Session` while their PMS/native
@@ -1303,13 +1290,6 @@ fn applied_quality() -> Quality {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .applied_quality
-}
-
-fn desired_quality() -> Quality {
-    PLAYER_CONTROL
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .desired_quality
 }
 
 fn retarget_automatic_intent(
@@ -1674,93 +1654,6 @@ pub fn cancel_user_route_intent(intent: UserRouteIntent) {
         control.pending_user = None;
         control.displaced_pick = false;
     }
-}
-
-/// Reserve one main-thread action. The mutex is released before PMS or native I/O; `serial`
-/// prevents a completion from settling any later action by mistake.
-pub fn claim_route_action() -> Option<ClaimedRouteAction> {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    if control.phase != ControlPhase::Stable {
-        return None;
-    }
-    let mut displaced_pick = false;
-    let intent = if let Some(user) = control.pending_user.take() {
-        displaced_pick = std::mem::take(&mut control.displaced_pick);
-        RouteIntent::User(user)
-    } else {
-        let automatic = control.pending_auto.take()?;
-        if !ticket_is_current(&control, automatic_ticket(&automatic)) {
-            return None;
-        }
-        RouteIntent::Automatic(automatic)
-    };
-    control.next_action = next_generation(control.next_action);
-    let serial = control.next_action;
-    let ticket = worker_ticket_of(&control);
-    control.phase = ControlPhase::Applying(serial);
-    control.claimed_user = match intent {
-        RouteIntent::User(user) => Some((serial, user, displaced_pick)),
-        RouteIntent::Automatic(_) => None,
-    };
-    Some(ClaimedRouteAction {
-        serial,
-        ticket,
-        intent,
-        displaced_pick,
-        claim_snapshot: None,
-    })
-}
-
-/// Settle the PMS/projection half of a claimed action which did not enter the explicit Original
-/// trial phase. A prepared candidate advances the applied contract but remains non-publishable in
-/// `Prepared`; claiming a physical `Load` moves it to `Starting`, and only [`settle_route_start`]
-/// may expose it as `Stable`. Refusal/cancellation restores the previous complete projection while
-/// the phase still blocks workers, then publishes Stable.
-///
-/// Returns whether this call actually owned the transition. `false` means the phase had already
-/// moved past `Applying(action.serial)` — a landing whose PMS half ran on a worker can arrive after
-/// a teardown/new playback superseded it — and NEITHER `ps` nor `PlayerControl` was touched;
-/// callers whose next step is a reload (`retranscode_tail`/`native_audio_tail`) must skip it rather
-/// than reload onto an action nobody owns any more.
-pub fn finish_route_action(ps: &mut PlaybackSession, action: &ClaimedRouteAction, result: RouteApplyResult) -> bool {
-    // Phase ownership is checked FIRST, before anything reads `ps`: a superseded action's `ps` may
-    // already belong to a different playback (see `take_ready_flight`'s own doc), and
-    // `route_projection` must never run against it.
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    if control.phase != ControlPhase::Applying(action.serial) {
-        return false;
-    }
-    if result == RouteApplyResult::Prepared {
-        // A claim whose PMS half ran on a worker carries the revision/quality/projection it was
-        // BUILT from (finding: a second edit queued mid-flight must not get marked applied — see
-        // `execute_retranscode_claim`'s capture of `ClaimSnapshot`). Every other claim settles
-        // within the same frame it was claimed in, so nothing else could have advanced
-        // `desired_revision`/`ps` in between and reading them live is exactly correct.
-        let (revision, quality, projection) = match &action.claim_snapshot {
-            Some(snapshot) => (snapshot.revision, snapshot.quality, snapshot.projection.clone()),
-            None => (control.desired_revision, control.desired_quality, route_projection(ps)),
-        };
-        if matches!(action.intent, RouteIntent::User(_)) {
-            control.applied_revision = revision;
-            control.applied_quality = quality;
-        }
-        // Automatic actions retain the applied contract revision carried by their ticket.
-        // Route identity has its own epoch; rebinding an automatic result to a later rejected
-        // user desire would immediately revoke the worker which the automatic action created.
-        control.applied_projection = Some(projection);
-        control.phase = ControlPhase::Prepared(action.serial);
-        return true;
-    }
-    let restore = control.applied_projection.clone();
-    drop(control);
-    if let Some(applied) = restore {
-        install_route_projection(ps, &applied);
-    }
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    if control.phase == ControlPhase::Applying(action.serial) {
-        control.phase = ControlPhase::Stable;
-    }
-    true
 }
 
 /// Return the pending route-start transaction while the reducer is between preparation and a
@@ -3666,37 +3559,6 @@ pub fn arm_auto_fixture(
     Some(url)
 }
 
-/// Main-thread half of the progressive watchdog transaction. The demux worker has stopped at a
-/// packet boundary and published its CONSERVATIVE delivery estimate — not the last window's raw
-/// rate, which is one sample of a distribution; atomically move the route to the best HLS state
-/// that estimate sustains, then build the replacement encoder at the current movie position. The
-/// caller performs the fresh Starfish Load only when this returns a URL.
-// Dev-only: used only by the `#[cfg(feature = "devtriggers")]` tests in this module's `tests`
-// submodule below (see the comment on the first one).
-#[cfg(all(any(test, feature = "test-support"), feature = "devtriggers"))]
-pub fn fallback_auto_to_hls(ps: &mut PlaybackSession, measured_kbps: u32, offset_secs: i64) -> Option<String> {
-    let expected = worker_ticket();
-    fallback_auto_to_hls_for(ps, &expected, measured_kbps, offset_secs)
-}
-
-/// The three steps of [`plan_auto_hls`], [`run_auto_hls`] and [`install_auto_hls_outcome`] run in a
-/// row on the calling thread, for the host tests that grade the steps' joint outcome (the Auto
-/// watchdog's own fallback is a flight: [`execute_auto_hls_claim`]). No shipping caller is left, so
-/// it is not built into the binary.
-#[cfg(any(test, feature = "test-support"))]
-pub fn fallback_auto_to_hls_for(
-    ps: &mut PlaybackSession,
-    expected: &WorkerTicket,
-    measured_kbps: u32,
-    offset_secs: i64,
-) -> Option<String> {
-    let plan = plan_auto_hls(ps, expected, measured_kbps, offset_secs)?;
-    let outcome = run_auto_hls(&plx_base::task::OffFrame::for_test(), &plan);
-    let installed = install_auto_hls_outcome(ps, plan, outcome)?;
-    installed.retire_replaced();
-    Some(installed.url())
-}
-
 /// The rejection the automatic Original-to-HLS fallback settles with: the Auto worker exited to
 /// hand the action over, so the pump raises the producer's failure for its ordinary recovery.
 pub(super) const AUTO_HLS_REJECTED: &str = "auto: synchronized Original fallback could not build HLS";
@@ -3714,15 +3576,6 @@ pub enum RecoveryDispatch {
 
 /// The rollback's rebase gave up: said once, by whoever settles the refusal.
 pub const ROLLBACK_REBASE_REFUSED: &str = "abr: restored HLS encoder but could not rebase it to the recovery position";
-
-/// Start the flight for the rollback after a failed Original trial: rebase the restored HLS route
-/// at `offset_ns` ([`plan_rebase`] with [`RebaseFor::Rollback`] on the frame thread, [`run_rebase`]
-/// on a worker, [`install_rebase`] at the landing). The reducer holds `Preparing(serial)` until the
-/// landing, which hands the pump [`RecoveryVerdict::Install`] to reload on or
-/// [`RecoveryVerdict::Refused`] to fail on — the `Some`/`None` the synchronous rebase answered.
-pub fn dispatch_rollback_rebase(ps: &mut PlaybackSession, offset_ns: i64) -> RecoveryDispatch {
-    dispatch_rebase_recovery(ps, offset_ns, RebaseFor::Rollback, ROLLBACK_REBASE_REFUSED, false)
-}
 
 /// [`dispatch_rollback_rebase`] for a rollback NO ENGINE waits on: the Original trial's Load failed
 /// while it was being constructed (the foreground restore's, or the pump's
@@ -3784,85 +3637,6 @@ fn dispatch_rebase_recovery(
     }
 }
 
-/// The frame-thread half of the unopened-source fallback: reuse the exact contingency
-/// [`crate::abr::bootstrap`] chose while it still owned the evidence.
-///
-/// An HTTP 4xx/5xx, connect refusal or demux open error before the first body byte is not a
-/// zero-throughput observation. For Remote the rung came from the completed source probe; for
-/// Local it remains the unknown-link fallback — source consumption is demand, not capacity.
-fn plan_unopened_auto_hls(ps: &PlaybackSession, offset_secs: i64) -> Option<AutoHlsPlan> {
-    let expected = worker_ticket();
-    let watch = auto_original_watch(ps)?;
-    if cur_rk(ps).is_empty() {
-        return None;
-    }
-    let bootstrap_rung = ps.auto_bootstrap_rung;
-    let rung = crate::abr::original_open_fallback_rung(
-        bootstrap_rung,
-        &watch.catalog,
-        &crate::abr::AbrPolicy::measured(),
-    );
-    crate::player::log(&format!(
-        "auto: Original source open failed without a throughput sample; reusing bootstrap {:?} as {}kbps {}x{} HLS",
-        bootstrap_rung,
-        rung.kbps(),
-        rung.raster().0,
-        rung.raster().1,
-    ));
-    // A source which never opened showed no Original picture, so its recovery is not a visible
-    // switch for the anti-flap history.
-    plan_auto_hls_for(
-        ps,
-        &expected,
-        rung,
-        offset_secs,
-        false,
-        crate::player::report::DeliveryReason::OriginalOpenRollback,
-    )
-}
-
-/// Start the flight that replaces an Auto Original whose source never opened: plan on the frame
-/// thread ([`plan_unopened_auto_hls`]), PMS on a worker ([`run_auto_hls`]), install at the landing
-/// ([`install_auto_hls_outcome`]). Nothing is playing, so there is no Original to keep: the flight
-/// is the only way forward, and [`RecoveryDispatch::Refused`] / [`RecoveryVerdict::Refused`] are the
-/// refusal (the pump raises the failure).
-pub fn dispatch_unopened_auto_hls(ps: &mut PlaybackSession, offset_secs: i64) -> RecoveryDispatch {
-    let Some(plan) = plan_unopened_auto_hls(ps, offset_secs) else {
-        return RecoveryDispatch::Refused;
-    };
-    let Some(ticket) = begin_recovery_flight_start() else {
-        return RecoveryDispatch::Refused;
-    };
-    let offset_ns = offset_secs * 1_000_000_000;
-    begin_recovery_flight(ticket.serial, offset_ns);
-    if spawn_flight(
-        FlightOwner::Recovery(ticket),
-        offset_ns,
-        offset_ns,
-        None,
-        ClaimWork::AutoHls(Box::new(plan)),
-        RetranscodeFallback::RejectWith(AUTO_HLS_REJECTED),
-    ) {
-        RecoveryDispatch::Flying { serial: ticket.serial }
-    } else {
-        let _ = reject_route_start_preparation(ticket);
-        RecoveryDispatch::Refused
-    }
-}
-
-/// [`plan_unopened_auto_hls`], [`run_auto_hls`] and [`install_auto_hls_outcome`] run in a row on
-/// the calling thread, for the host tests that grade the steps' joint outcome (the pump's own
-/// fallback is a flight: [`dispatch_unopened_auto_hls`]). No shipping caller is left, so it is not
-/// built into the binary.
-#[cfg(any(test, feature = "test-support"))]
-pub fn fallback_unopened_auto_to_hls(ps: &mut PlaybackSession, offset_secs: i64) -> Option<String> {
-    let plan = plan_unopened_auto_hls(ps, offset_secs)?;
-    let outcome = run_auto_hls(&plx_base::task::OffFrame::for_test(), &plan);
-    let installed = install_auto_hls_outcome(ps, plan, outcome)?;
-    installed.retire_replaced();
-    Some(installed.url())
-}
-
 /// The segmentation every automatic HLS route is built with.
 const AUTO_HLS_DELIVERY: plx_plex::plex::TranscodeDelivery =
     plx_plex::plex::TranscodeDelivery::FixedHls { seconds_per_segment: 2 };
@@ -3903,70 +3677,6 @@ pub(super) enum AutoHlsOutcome {
     Prepared(PreparedEncode),
     /// PMS refused (or never answered); the replacement it may have registered is already stopped.
     Refused,
-}
-
-/// The frame-thread half of the fallback: decide whether one is allowed and capture what its PMS
-/// half will need. `None` touches nothing but the anti-flap seed ([`PlaybackSession::auto_prior_kbps`],
-/// which the controller reads whether or not the rebuild succeeds), exactly as before the split.
-pub(super) fn plan_auto_hls(
-    ps: &mut PlaybackSession,
-    expected: &WorkerTicket,
-    measured_kbps: u32,
-    offset_secs: i64,
-) -> Option<AutoHlsPlan> {
-    if forced_direct_play(ps) { return None; }
-    if !is_worker_ticket_current(expected) {
-        return None;
-    }
-    // Publication already proved that this exact applied worker was Auto Original. The durable
-    // picker may have moved while the accepted handoff waited on the main thread; consulting it
-    // here relabelled the old applied event as the new (possibly refused) desire and killed the
-    // only producer. Applied quality is reducer state and changes only on a committed user action.
-    if applied_quality() != Quality::Auto || cur_rk(ps).is_empty() {
-        return None;
-    }
-    let rung = crate::abr::original_fallback_rung(
-        measured_kbps,
-        &auto_catalog(ps),
-        &crate::abr::AbrPolicy::measured(),
-    );
-    { let s = &mut *ps; s.auto_prior_kbps = measured_kbps };
-    crate::player::log(&format!(
-        "auto: Original became unsustainable at {measured_kbps}kbps; switching to {}kbps {}x{} HLS",
-        rung.kbps(),
-        rung.raster().0,
-        rung.raster().1,
-    ));
-    plan_auto_hls_for(
-        ps,
-        expected,
-        rung,
-        offset_secs,
-        true,
-        crate::player::report::DeliveryReason::LinkFallback,
-    )
-}
-
-/// [`plan_auto_hls`]'s second half, for a rung already chosen from the appropriate evidence.
-fn plan_auto_hls_for(
-    ps: &PlaybackSession,
-    expected: &WorkerTicket,
-    rung: crate::abr::Rung,
-    offset_secs: i64,
-    visible_switch: bool,
-    reason: crate::player::report::DeliveryReason,
-) -> Option<AutoHlsPlan> {
-    let route = if ps.auto_fixture_base.is_empty() {
-        AutoHlsRoute::Encode {
-            inputs: prepare_retranscode_inputs(ps, expected, offset_secs)?,
-            // Today's rebuild of the contract the session will carry once this lands: HLS at the
-            // rung, never an enhanced remux (a re-encode is family `Other`).
-            contract: re_encode_contract(ps, AUTO_HLS_DELIVERY, Some(rung.ceiling())),
-        }
-    } else {
-        AutoHlsRoute::Fixture { base: ps.auto_fixture_base.clone() }
-    };
-    Some(AutoHlsPlan { expected: expected.clone(), rung, visible_switch, reason, route })
 }
 
 /// The PMS half of the fallback — everything that blocks on the server and nothing that touches a
@@ -4035,15 +3745,6 @@ impl AutoHlsInstalled {
                 Some((applied.client, applied.superseded.clone()))
             }
             _ => None,
-        }
-    }
-
-    /// The replacement route's URL, for the host tests that run the steps in a row.
-    #[cfg(any(test, feature = "test-support"))]
-    fn url(&self) -> String {
-        match &self.landed {
-            LandedAutoHls::Fixture { url, .. } => url.clone(),
-            LandedAutoHls::Encoded(applied) => applied.url.clone(),
         }
     }
 
@@ -4133,91 +3834,12 @@ pub(super) fn discard_auto_hls(plan: AutoHlsPlan, outcome: AutoHlsOutcome) {
     }
 }
 
-/// Main-thread half of HLS→Original recovery. The demux worker has already established, from
-/// probes of the actual source file, that its uncertainty-discounted delivery estimate clears the
-/// source's declared average consumption rate AND that the switch is worth its visible cost for the
-/// playback that remains. Re-check the route and atomically retire the encoder identity before
-/// changing any playback declaration.
-#[cfg(any(test, feature = "test-support"))]
-pub fn recover_auto_to_original(ps: &mut PlaybackSession, offset_secs: i64) -> Option<AutoOriginalReload> {
-    let expected = worker_ticket();
-    let cause = if quality() == Quality::Auto {
-        RecoveryCause::Automatic
-    } else {
-        RecoveryCause::ManualOriginal
-    };
-    recover_auto_to_original_for(ps, &expected, offset_secs, cause)
-}
-
 /// Which Original route a recovery restores (issue #266).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RecoveryFlavour {
     Direct,
     /// A codec-preserving remux carrying these enhancement params (`NONE` for a plain remux).
     Remux(plx_plex::plex::AudioEnhancements),
-}
-
-/// The enhancement a recovery to `candidate` should carry: the offer is evaluated against the
-/// family of the route being BUILT (`candidate.feeds_part() ? Direct : Remux`), never the live one —
-/// during an HLS recovery the live contract still says `FixedHls` (family `Other`, never offered)
-/// and is only overwritten once the replacement is published.
-fn recovery_route(ps: &PlaybackSession, candidate: &AutoOriginalCandidate) -> Option<EnhancementRoute> {
-    // `pass`/`subtitle_effect`/`refused` are the live session's own facts, identical to `facts(ps)`;
-    // only `base`/`carried` differ, because this candidate is not yet `ps.auto_original`/`cur_audio`.
-    let facts = EnhancementFacts {
-        base: Some(candidate),
-        carried: candidate.audio.as_ref(),
-        ..facts(ps)
-    };
-    // `feeds_part`, not `direct`: a candidate whose audio the server must convert is built as a
-    // remux, so the offer is judged as one.
-    let family = if candidate.feeds_part() {
-        RouteFamily::Direct
-    } else {
-        RouteFamily::Remux
-    };
-    enhancement_route(&facts, family)
-}
-
-fn recovery_want(ps: &PlaybackSession, candidate: &AutoOriginalCandidate) -> plx_plex::plex::AudioEnhancements {
-    desired_audio(crate::player::audio_enhancements(), recovery_route(ps, candidate).is_some())
-}
-
-/// **Pure: Direct only when the candidate direct-plays AND no enhancement is wanted.** An enhanced
-/// Original is a remux by definition (M1), so a wanted enhancement turns a direct candidate into
-/// the codec-preserving remux carrying the params — the same shape the resolve would have built.
-pub(super) fn recovery_flavour(
-    candidate: &AutoOriginalCandidate,
-    want: plx_plex::plex::AudioEnhancements,
-) -> RecoveryFlavour {
-    if candidate.feeds_part() && !want.any() {
-        RecoveryFlavour::Direct
-    } else {
-        RecoveryFlavour::Remux(want)
-    }
-}
-
-/// **An Original recovery in three steps, so that the middle one — the only one that reaches PMS —
-/// runs on a worker.** The frame thread plans ([`plan_original_recovery`]: every read of the
-/// session, the ticket and the control state), the PMS half runs ([`run_original_recovery`]: the
-/// Part admission probe, and the replacement remux's selection PUT + `/decision`), and the frame
-/// thread installs the outcome ([`install_original_recovery`]: every write to the session and to the
-/// `PendingOriginal` rollback). All three recoveries are flights ([`super::flight`]): an enhancement
-/// release (`execute_retranscode_claim`'s `ClaimPrimary::ReleaseToDirect`), the viewer's Original
-/// pick and the Auto watchdog's HLS-to-Original handoff (both [`execute_recover_original_claim`]).
-/// This function is the three steps run in a row on the calling thread, and it exists only for the
-/// host tests that grade the steps' joint outcome: no shipping caller is left, so it is not built
-/// into the binary.
-#[cfg(any(test, feature = "test-support"))]
-pub fn recover_auto_to_original_for(
-    ps: &mut PlaybackSession,
-    expected: &WorkerTicket,
-    offset_secs: i64,
-    cause: RecoveryCause,
-) -> Option<AutoOriginalReload> {
-    let plan = plan_original_recovery(ps, expected, offset_secs, cause)?;
-    let net = run_original_recovery(&plx_base::task::OffFrame::for_test(), &plan)?;
-    install_original_recovery(ps, plan, net)
 }
 
 /// What an Original recovery's PMS half needs, owned: read off the session on the frame thread so
@@ -4255,103 +3877,6 @@ impl OriginalRecoveryPlan {
         audio.any() && self.burn
     }
 
-    /// Whether the PMS half will actually reach the server: a replacement remux's selection PUT and
-    /// `/decision`, or a Part admission probe ([`admit_original_part`]). A direct trial the cause
-    /// needs no admission for (an automatic recovery, whose Auto worker already sampled the Part)
-    /// settles without a byte on the wire, so its flight lands within a frame and has no seconds
-    /// to hold presentation for.
-    fn reaches_pms(&self) -> bool {
-        matches!(self.flavour, RecoveryFlavour::Remux(_))
-            || (self.cause.needs_part_admission() && self.candidate.probe_part.starts_with('/'))
-    }
-}
-
-/// The frame-thread half of an Original recovery: decide whether one is allowed and capture what
-/// its PMS half will need. `None` is a refusal that touched nothing but the session's own live-HLS
-/// mirror.
-fn plan_original_recovery(
-    ps: &mut PlaybackSession,
-    expected: &WorkerTicket,
-    offset_secs: i64,
-    cause: RecoveryCause,
-) -> Option<OriginalRecoveryPlan> {
-    let automatic = cause == RecoveryCause::Automatic;
-    if forced_direct_play(ps) { return None; }
-    // One handoff owns both the unproven replacement and the retained client-side HLS route until
-    // decoded frames commit it or an open failure restores that route snapshot. PMS-side HLS
-    // cursor continuity is proved only by an actual later HLS response. Re-entering here would
-    // replace that PendingOriginal, retire its only retained HLS identity, and leave the first
-    // replacement ownerless while neither open had yet proved a frame.
-    if original_recovery_pending() {
-        return None;
-    }
-    let contract_allows = match cause {
-        RecoveryCause::Automatic => applied_quality() == Quality::Auto,
-        RecoveryCause::ManualOriginal => desired_quality() == Quality::Original,
-        RecoveryCause::EnhancementReleased => {
-            matches!(applied_quality(), Quality::Auto | Quality::Original)
-        }
-    };
-    if !contract_allows || !is_transcoding(ps) {
-        return None;
-    }
-    // The Auto watchdog keeps watching an Original it put there itself, and an enhancement
-    // release inside an Auto playback — the viewer changed the audio, not the quality policy.
-    let watched = automatic
-        || (cause == RecoveryCause::EnhancementReleased && applied_quality() == Quality::Auto);
-    let candidate = ps.auto_original.clone()?;
-    let route = recovery_route(ps, &candidate);
-    let flavour = recovery_flavour(&candidate, recovery_want(ps, &candidate));
-    // The worker may have committed several HLS encoders since the main-thread plan was installed.
-    // Mirror the physical route into the session before replacing it, otherwise the rollback pairs
-    // the newest encoder id with the bootstrap URL/rung and reopens different media at a different
-    // position.
-    if !is_worker_ticket_current(expected) {
-        return None;
-    }
-    let live_hls = sync_active_hls_to_session(ps);
-    if live_hls
-        .as_ref()
-        .is_some_and(|(ticket, _)| ticket != expected)
-    {
-        return None;
-    }
-    if expected.encoder().is_empty() {
-        return None;
-    }
-    // The replacement must have its own exact physical/resource identity. Reusing `sess()` can
-    // equal the initial HLS encoder and would mutate the very rollback this handoff promises to
-    // retain; a fresh child also makes a failed remux safe to stop without touching HLS.
-    let logical_session = sess(ps);
-    let namespace = if logical_session.is_empty() {
-        expected.encoder().to_owned()
-    } else {
-        logical_session
-    };
-    // A fresh id (never the live remux's) for the direct trial, unless the route being left is an
-    // hls encoder, whose resource the raw Part deliberately shares (see `recover_original_direct`).
-    let direct_session = if live_hls.is_some() {
-        expected.encoder().to_owned()
-    } else {
-        next_encoder_session(&namespace)
-    };
-    Some(OriginalRecoveryPlan {
-        flavour,
-        burn: matches!(route, Some(EnhancementRoute::Burn)),
-        client: cur_client(ps),
-        sid: cur_sid(ps),
-        rk: cur_rk(ps),
-        part_id: cur_part_id(ps),
-            subtitle_sid: cur_sub_sid(ps),
-        namespace,
-        direct_session,
-        src_acodec: ps.src_acodec.clone(),
-        candidate,
-        expected: expected.clone(),
-        cause,
-        offset_secs,
-        watched,
-    })
 }
 
 /// What an Original recovery's PMS half settled on.
@@ -4830,75 +4355,6 @@ pub fn original_recovery_pending() -> bool {
         .is_some()
 }
 
-/// **The new source delivered.** Make the recovery permanent: drop the way back and ask the server
-/// to stop the encoder that is still running behind it.
-///
-/// The pump calls this on decoded frames rather than on `loadCompleted`, because the question the
-/// deferral exists to answer is whether the SOURCE delivers — and a Load the pipeline accepted is
-/// an acknowledgement of a payload declaration, not of a byte having arrived.
-pub fn confirm_original_recovery(ps: &mut PlaybackSession) {
-    let current_projection = route_projection(ps);
-    let (mut pending, serial, use_current_projection) = {
-        let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        let ControlPhase::OriginalTrial(OriginalTrialPhase::AwaitingFrame(serial)) = control.phase
-        else {
-            return;
-        };
-        let Some(pending) = control.pending_original.take() else {
-            return;
-        };
-        let use_current =
-            control.desired_revision == control.applied_revision && control.pending_user.is_none();
-        control.phase = ControlPhase::Completing(serial);
-        (pending, serial, use_current)
-    };
-    // If no user contract was staged during the trial, immediate client-only edits (notably a
-    // direct-play subtitle renderer change) are already applied and current Session is truthful.
-    // Otherwise commit exactly the candidate snapshot and leave the staged Session fields for the
-    // queued action; its rejection will restore this candidate rather than blessing the proposal.
-    let mut committed_projection = if use_current_projection {
-        current_projection
-    } else {
-        pending.candidate_projection.clone()
-    };
-    let deferred = DeferredOriginalEffects::from_pending(&mut pending);
-    if pending.adopted_by_user {
-        committed_projection.auto_original_watched = false;
-    }
-    {
-        let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        if control.phase != ControlPhase::Completing(serial) {
-            return;
-        }
-        if pending.adopted_by_user {
-            control.applied_revision = control.desired_revision;
-            control.applied_quality = Quality::Original;
-        }
-        control.applied_projection = Some(committed_projection);
-    }
-    if pending.charge_visible_switch_on_commit {
-        note_visible_switch(ps, ps.now_ms);
-    }
-    if pending.replacement_encoder.is_empty() {
-        crate::player::log(
-            "abr: direct Original confirmed by decoded frames; stopping HLS encoder and retaining source resource",
-        );
-        retire_hls_encoder_keep_source(ps, pending.encoder);
-    } else {
-        crate::player::log(
-            "abr: Original confirmed by decoded frames on a fresh session; retiring old encoder resource",
-        );
-        retire_replaced_encoder(ps, pending.encoder);
-    }
-    apply_deferred_original_effects(ps, deferred);
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    if control.phase == ControlPhase::Completing(serial) {
-        // This is the last reducer publication: workers cannot observe Stable before the applied
-        // projection and every trial-attached user command have crossed into reducer ownership.
-        control.phase = ControlPhase::Stable;
-    }
-}
-
 /// **The new source never delivered.** Restore the HLS projection as a `Prepared` candidate and
 /// return its offset. The caller must rebase it ([`dispatch_rollback_rebase`] on the pump's frames,
 /// [`dispatch_engineless_rollback_rebase`] where there is no Engine to drive a flight), claim a fresh exact Load
@@ -5022,26 +4478,6 @@ fn retire_replaced_encoder(ps: &PlaybackSession, encoder: String) {
     );
 }
 
-/// The raw Part already exact-reuses `encoder`'s Streaming Resource. Stop only the physical HLS
-/// producer; keeping the resource alive is what lets the current body and every later seek remain
-/// admitted. [`scrobble_stop`] still owns the id in `ACTIVE_ENCODER` and closes it at teardown.
-fn retire_hls_encoder_keep_source(ps: &PlaybackSession, encoder: String) {
-    if encoder.is_empty() || !ps.auto_fixture_base.is_empty() {
-        return;
-    }
-    let Some(client) = cur_client(ps) else { return };
-    plx_base::task::spawn_small_or_inline(
-        "abr-original-physical-stop",
-        const { &plx_base::task::BlockingLabel::new("encoder physical stop (worker thread refused)") },
-        move || {
-            let ok = client.transcode_stop_physical(&encoder);
-            crate::player::log(&format!(
-                "abr: stopped HLS encoder while retaining Original resource ok={}",
-                ok as i32
-            ));
-        },
-    );
-}
 /// true while this playback is a server transcode (a live transcode session exists). Cheap
 /// in-place check — the pump polls it every tick, so no String clone here.
 pub fn is_transcoding(ps: &PlaybackSession) -> bool {
@@ -7835,96 +7271,6 @@ fn install_original_remux(
     crate::player::log(&format!("decision output: v={} a={}", prepared.vcodec, prepared.acodec));
 }
 
-/// The ticket/HLS-sync check `retranscode_for` runs before building the "rebuild today's route"
-/// contract — split out so the async claim worker (which never touches `PlaybackSession`) can run
-/// it on the main thread once, up front, and hand the resulting [`plx_plex::plex::EncodeContract`]
-/// into whichever attempt (primary or Legacy fallback) actually needs it.
-fn plain_rebuild_precheck(ps: &mut PlaybackSession, expected: &WorkerTicket) -> Option<plx_plex::plex::EncodeContract> {
-    if !is_worker_ticket_current(expected) {
-        return None;
-    }
-    if matches!(
-        cur_delivery(ps),
-        plx_plex::plex::TranscodeDelivery::FixedHls { .. }
-    ) {
-        let live = sync_active_hls_to_session(ps);
-        if live.as_ref().is_some_and(|(ticket, _)| ticket != expected) {
-            return None;
-        }
-    }
-    Some(retranscode_contract(ps))
-}
-
-/// The contract a plain rebuild of the current route asks for: today's delivery, ceiling and
-/// video-copy rule with `remux: false`, and the enhancement run through the one offer predicate
-/// (a re-encode is family `Other`, so NONE) — a pick mid-play never keeps params the offer no
-/// longer covers.
-///
-/// **Two branches keep the route a remux instead of a re-encode.**
-///   1. An ENHANCED remux stays one. A pick that leaves the offer standing (another capable track
-///      the candidate can carry) makes [`enhancement_step`] `NotInvolved` because the params
-///      already match, and its legacy reload lands here; rebuilding that as a re-encode would
-///      silently drop the enhancement the viewer still has switched on.
-///   2. A PLAIN remux ([`plain_rebuild_is_remux`]): the standing Original candidate on Auto/Original
-///      whose carried audio the TV cannot decode. The server copies the video and converts only
-///      that audio, so the rebuild asks for exactly that, with no enhancement params.
-fn retranscode_contract(ps: &PlaybackSession) -> plx_plex::plex::EncodeContract {
-    // A ceiling means a fixed rung was picked, and an enhanced remux is uncapped by definition:
-    // keeping it would erase the cap the picker shows (I5).
-    let route = enhancement_route(&facts(ps), enhancement_family(ps));
-    let keep_enhanced = route.is_some()
-        && ps.cur_contract.ceiling.is_none()
-        && ps.cur_contract.audio.any()
-        && want_live(ps).any();
-    if keep_enhanced {
-        return enhanced_remux_contract(want_live(ps), matches!(route, Some(EnhancementRoute::Burn)));
-    }
-    if plain_rebuild_is_remux(ps) {
-        // Not the enhancement's remux (`NONE`, on purpose): the Legacy fallback contract is built
-        // before a refusal is known, so carrying the Boost/Normalize params here would repeat the
-        // ask the server just refused and reject the track pick itself. Wanted-and-offered
-        // enhancement is already `enhancement_step`'s job.
-        return enhanced_remux_contract(plx_plex::plex::AudioEnhancements::NONE, false);
-    }
-    re_encode_contract(ps, cur_delivery(ps), cur_ceiling(ps))
-}
-
-/// A re-encode of the current item at `delivery`/`ceiling`: never a remux, the video-copy rule
-/// carried, and the enhancement run through the one offer predicate for family `Other` (so NONE).
-/// [`retranscode_contract`] asks it for today's route; an automatic HLS fallback asks it for the
-/// route it is about to become.
-fn re_encode_contract(
-    ps: &PlaybackSession,
-    delivery: plx_plex::plex::TranscodeDelivery,
-    ceiling: Option<plx_plex::plex::Ceiling>,
-) -> plx_plex::plex::EncodeContract {
-    plx_plex::plex::EncodeContract {
-        remux: false,
-        delivery,
-        no_video_copy: is_no_video_copy(ps),
-        ceiling,
-        audio: desired_audio(
-            crate::player::audio_enhancements(),
-            enhancements_offered(&facts(ps), RouteFamily::Other),
-        ),
-    }
-}
-
-/// **Does a plain rebuild of this route stay the Original remux?** A standing Original candidate
-/// on Auto/Original quality, no fixed rung, progressive MKV, video still copyable and no subtitle
-/// on screen: the viewer is hearing a track the TV cannot decode, the server copies the video and
-/// converts only that audio, and a rebuild (a seek, a track pick) must ask for exactly that
-/// instead of a capped re-encode. No live-family term, so turning a burned subtitle off returns
-/// to the remux. `cur_sub_sid == 0` is required: every transcode rebuild with a subtitle sends
-/// `subtitles=burn`, which the remux shape does not honour.
-///
-/// Not a loop: the automatic Original -> HLS fallback writes a ceiling and `FixedHls` into the
-/// contract before it rebuilds, a fixed rung fails `enhancement_quality`, and a refused remux is
-/// rejected with the current stream retained rather than retried.
-fn plain_rebuild_is_remux(ps: &PlaybackSession) -> bool {
-    original_remux_shape(ps) && (ps.cur_sub_sid == 0 || side_subs_allowed(ps))
-}
-
 /// **Is the live session the Original remux's SHAPE**, whatever subtitle is on screen: a standing
 /// Original candidate on Auto/Original quality, no fixed rung, progressive MKV, video still
 /// copyable. [`plain_rebuild_is_remux`] adds the subtitle term; [`side_subs_allowed`] adds who
@@ -8252,43 +7598,6 @@ pub(super) fn try_retranscode(
     }
 }
 
-/// Snapshot everything [`try_retranscode`] needs off `ps`, or `None` when the claim has no PMS
-/// work to do.
-fn prepare_retranscode_inputs(
-    ps: &PlaybackSession,
-    expected: &WorkerTicket,
-    offset_secs: i64,
-) -> Option<RetranscodeClaimInputs> {
-    if forced_direct_play(ps) {
-        return None;
-    }
-    let client = cur_client(ps)?;
-    let rk = cur_rk(ps);
-    if rk.is_empty() || !is_worker_ticket_current(expected) {
-        return None;
-    }
-    let logical = sess(ps);
-    let namespace = if logical.is_empty() {
-        format!("dispatcharrtv-{rk}")
-    } else {
-        logical
-    };
-    Some(RetranscodeClaimInputs {
-        client,
-        sid: cur_sid(ps),
-        part_id: cur_part_id(ps),
-        audio_sid: cur_audio_sid(ps),
-        subtitle_sid: cur_sub_sid(ps),
-        namespace,
-        offset_secs,
-        expected: expected.clone(),
-        src_vcodec: ps.src_vcodec.clone(),
-        src_acodec: ps.src_acodec.clone(),
-        carried_audio: ps.cur_audio.clone(),
-        rk,
-    })
-}
-
 /// The fields a successful attempt changes, on a projection rather than on the session: the one
 /// list [`install_retranscode_outcome`] writes to `ps` AND [`advance_claim_snapshot`] writes to the
 /// claim's snapshot, so the reducer's restore point can never describe a stream the claim already
@@ -8562,18 +7871,6 @@ fn enhancement_family(ps: &PlaybackSession) -> RouteFamily {
     }
 }
 
-/// What the viewer's preference asks of the live route: an Original-family route (Direct or
-/// Remux) is judged as the remux an enhancement would make it; anything else is never offered.
-/// Under a fixed rung nothing is: the enhanced route is an uncapped remux, so wanting it there
-/// would override the bitrate cap the viewer picked (I5) — the quality refresh already queued
-/// rebuilds that route as a capped re-encode without the params.
-fn want_live(ps: &PlaybackSession) -> plx_plex::plex::AudioEnhancements {
-    if !enhancement_quality() {
-        return plx_plex::plex::AudioEnhancements::NONE;
-    }
-    desired_audio(crate::player::audio_enhancements(), audio_enhancements_offered_live(ps))
-}
-
 /// The [`EnhancementRoute`] a live `Retranscode` would ask for right now — `None` when the
 /// enhancement is not offered at all. `want_live`/`audio_enhancements_offered_live` collapse this
 /// to a bool for the menu's toggle; `enhancement_step` needs the flavour too, since a subtitle
@@ -8678,33 +7975,6 @@ pub fn reconcile_enhancement(ps: &PlaybackSession, legacy_reloads: bool) -> bool
     true
 }
 
-/// What the legacy commit branch would do NOW for the current selection — the reload a displaced
-/// pick is owed. Mirrors `commit_audio_selection`'s own native/transcode split.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum LegacyAction {
-    Native { ordinal: i32, codec: String },
-    Retranscode,
-}
-
-pub fn legacy_action(ps: &PlaybackSession) -> LegacyAction {
-    match (live_family(ps), ps.cur_audio.as_ref()) {
-        (RouteFamily::Direct, Some(a)) if audio_track_direct_plays(ps, &a.codec, a.channels) => {
-            LegacyAction::Native {
-                ordinal: a.ordinal,
-                codec: a.codec.clone(),
-            }
-        }
-        (RouteFamily::Direct, None) => {
-            // Unreachable: a displaced pick always installed `cur_audio` first. Should it ever
-            // happen, a rebuild carrying the server default is the reload that cannot mis-feed.
-            debug_assert!(false, "enhancement: legacy_action Direct+None");
-            crate::player::log("enhancement: legacy_action Direct+None");
-            LegacyAction::Retranscode
-        }
-        _ => LegacyAction::Retranscode,
-    }
-}
-
 /// The first thing a claimed `Retranscode` tries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClaimPrimary {
@@ -8726,45 +7996,12 @@ pub enum ClaimFallback {
 }
 
 impl ClaimFallback {
-    /// What a failed claim owes: the displaced pick's legacy reload when there is one to honour,
-    /// otherwise a plain rejection.
-    fn owed(displaced_pick: bool) -> Self {
-        if displaced_pick {
-            Self::Legacy
-        } else {
-            Self::Reject
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dispatch {
     pub primary: ClaimPrimary,
     pub on_failure: ClaimFallback,
-}
-
-/// **Pure: the claim-time dispatch table** for a `Retranscode` (plan §6.1). Kept separate from the
-/// effects so every cell is unit-testable without PMS or an Engine.
-pub fn claim_dispatch(step: EnhancementStep, displaced_pick: bool) -> Dispatch {
-    let owed = ClaimFallback::owed(displaced_pick);
-    match step {
-        EnhancementStep::ReleaseToDirect => Dispatch {
-            primary: ClaimPrimary::ReleaseToDirect,
-            on_failure: owed,
-        },
-        EnhancementStep::Remux(contract) => Dispatch {
-            primary: ClaimPrimary::Remux(contract),
-            on_failure: owed,
-        },
-        EnhancementStep::NotInvolved if displaced_pick => Dispatch {
-            primary: ClaimPrimary::Legacy,
-            on_failure: ClaimFallback::Reject,
-        },
-        EnhancementStep::NotInvolved => Dispatch {
-            primary: ClaimPrimary::Retranscode,
-            on_failure: ClaimFallback::Reject,
-        },
-    }
 }
 
 /// The physical half the pump performs after a claim's PMS half has run. The PMS half (this
@@ -8785,381 +8022,15 @@ pub enum ClaimTail {
     Rejected(&'static str),
 }
 
-/// Run the legacy reload a displaced pick is owed, inside the still-claimed action. No new intent
-/// is queued, so the user contract is not advanced mid-claim.
-fn run_legacy(ps: &mut PlaybackSession) -> Option<ClaimTail> {
-    match legacy_action(ps) {
-        LegacyAction::Native { ordinal, codec } => {
-            crate::player::stage_native_audio(ps, ordinal, &codec);
-            Some(ClaimTail::NativeAudio)
-        }
-        // The rebuild needs the very inputs the plan has just failed to capture (this is only
-        // reached once `prepare_retranscode_inputs` refused them: no server, no item, a forced
-        // direct play or a moved route), so it can only refuse too.
-        LegacyAction::Retranscode => None,
-    }
-}
-
 pub(super) const RETRANSCODE_REJECTED: &str =
     "route transition: user retranscode was rejected; current stream retained";
 pub(super) const ENHANCEMENT_REJECTED: &str = "enhancement change rejected; current stream retained";
-pub(super) const MANUAL_ORIGINAL_REJECTED: &str =
-    "route transition: manual Original was rejected; current stream retained";
-/// An automatic Original recovery the server refused. The Auto worker stopped to hand the action
-/// over, so "retained" is the HLS ROUTE: the pump reopens it ([`ClaimTail::Rejected`]'s automatic arm).
-pub(super) const AUTO_ORIGINAL_REJECTED: &str = "auto: Original recovery was rejected; reopening retained HLS";
 pub(super) const ADAPTIVE_REJECTED: &str = "route transition: adaptive transcode reload was rejected";
 pub(super) const SEEK_REJECTED: &str = "seek(transcode): rebuild failed";
 pub(super) const LEGACY_REJECTED: &str =
     "enhancement: displaced pick's own reload was rejected; current stream retained";
 pub(super) const RETRANSCODE_WORKER_PANICKED: &str =
     "route transition: retranscode worker panicked; current stream retained";
-
-fn claim_fallback(ps: &mut PlaybackSession, fallback: ClaimFallback, reject: &'static str) -> ClaimTail {
-    match fallback {
-        ClaimFallback::Legacy => run_legacy(ps).unwrap_or(ClaimTail::Rejected(LEGACY_REJECTED)),
-        ClaimFallback::Reject => ClaimTail::Rejected(reject),
-    }
-}
-
-/// What the pump does with [`execute_retranscode_claim`]'s result.
-#[derive(Debug)]
-pub enum RetranscodeClaimDispatch {
-    /// Resolved without reaching PMS: the pump may call `run_claim_tail` this same frame.
-    Sync(ClaimTail),
-    /// A worker now owns the PMS half; [`take_ready_flight`] collects the result on a
-    /// later frame. `ControlPhase` stays `Applying` throughout (`claim_route_action` already
-    /// refuses a new claim until then), so nothing else can race it. The pump holds presentation
-    /// at the claim offset for the flight (`player::claim_hold`).
-    Pending,
-    /// [`Pending`](Self::Pending) for an AUTOMATIC flight whose worker never reaches PMS (a direct
-    /// Original the Auto worker already sampled): it lands within a frame or two, so there are no
-    /// seconds to hold and the stream is not paused for them.
-    PendingNoHold,
-}
-
-/// PMS half of a claimed user `Retranscode` ("reconcile at claim").
-///
-/// This is the PLAN step of a **flight** (see [`super::flight`]'s `//!`): it runs on the frame
-/// thread, captures owned inputs, and hands them to the claim worker; the worker, the landing
-/// mailbox, the drain ([`take_ready_flight`]) and the stale-landing rules all live in
-/// `flight.rs`.
-///
-/// **The freeze this exists to fix:** a live track pick, an enhancement toggle or a quality change
-/// used to run `put_selection` (a synchronous PUT) and then `/decision` (a synchronous GET, up to
-/// 15 s on stable, aborted at ~2 s by the dev threadcheck watchdog) right here, on the frame
-/// thread — so the whole app froze while PMS was slow. Every arm that reaches PMS now runs on a
-/// worker: `ClaimPrimary::Remux`/`Retranscode`, Legacy's own `LegacyAction::Retranscode`, and
-/// `ClaimPrimary::ReleaseToDirect` — the last split three ways ([`plan_original_recovery`] here on
-/// the frame thread, the Part admission probe and any replacement remux's `/decision` on the
-/// worker, [`install_original_recovery`] when the drain lands it), because that arm also writes the
-/// session and arms `PendingOriginal`, which no worker may. The viewer's Original pick and the
-/// Auto watchdog's HLS-to-Original handoff are the same arm ([`execute_recover_original_claim`]); its
-/// Original-to-HLS fallback is the same flight ([`execute_auto_hls_claim`]). No route-changing PMS
-/// call is left on the frame thread (the foreground resume and every rollback are flights too: [`dispatch_resume_rebase`], [`dispatch_rollback_rebase`],
-/// [`dispatch_engineless_rollback_rebase`]).
-pub fn execute_retranscode_claim(
-    ps: &mut PlaybackSession,
-    action: &ClaimedRouteAction,
-    offset_secs: i64,
-    pending_seek: i64,
-    user_target: i64,
-) -> RetranscodeClaimDispatch {
-    let dispatch = claim_dispatch(enhancement_step(ps), action.displaced_pick);
-    plan_claim_flight(
-        ps,
-        action,
-        FlightPlan { offset_secs, pending_seek, user_target },
-        dispatch,
-        OriginalAttempt { cause: RecoveryCause::EnhancementReleased, rejected: ENHANCEMENT_REJECTED },
-    )
-}
-
-/// Where a claim's flight is flying to: the offset its PMS half builds at, and the seek state the
-/// landing's tail crosses.
-#[derive(Clone, Copy)]
-struct FlightPlan {
-    offset_secs: i64,
-    pending_seek: i64,
-    user_target: i64,
-}
-
-/// What a claim whose primary is `ClaimPrimary::ReleaseToDirect` tries: the recovery's cause, and
-/// the line a refusal settles with.
-#[derive(Clone, Copy)]
-struct OriginalAttempt {
-    cause: RecoveryCause,
-    rejected: &'static str,
-}
-
-/// The ONE plan step of every claim whose PMS half is a flight: pick the work and the owed
-/// fallback off the session, capture the owned inputs, begin the flight and hand it to a worker.
-/// [`execute_retranscode_claim`] (an enhancement release, a track pick, a quality change) and
-/// [`execute_recover_original_claim`] (the viewer's Original pick, the Auto watchdog's handoff)
-/// differ only in the [`Dispatch`] they start from and in what a refused Original reports.
-fn plan_claim_flight(
-    ps: &mut PlaybackSession,
-    action: &ClaimedRouteAction,
-    flight: FlightPlan,
-    mut dispatch: Dispatch,
-    original: OriginalAttempt,
-) -> RetranscodeClaimDispatch {
-    let FlightPlan { offset_secs, pending_seek, user_target } = flight;
-    let expected = action.ticket.clone();
-    // A release with nothing it may try (a refusal the plan reads off the session alone) owes what
-    // `claim_fallback` owed it: the displaced pick's own reload, as a Legacy primary, or a rejection.
-    let mut recovery = None;
-    if dispatch.primary == ClaimPrimary::ReleaseToDirect {
-        recovery = plan_original_recovery(ps, &expected, offset_secs, original.cause);
-        if recovery.is_none() {
-            dispatch = match dispatch.on_failure {
-                ClaimFallback::Legacy => Dispatch { primary: ClaimPrimary::Legacy, on_failure: ClaimFallback::Reject },
-                ClaimFallback::Reject => {
-                    return RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(original.rejected));
-                }
-            };
-        }
-    }
-    let holds_presentation = recovery
-        .as_ref()
-        .is_none_or(|plan| plan.cause != RecoveryCause::Automatic || plan.reaches_pms());
-    let work = match dispatch.primary {
-        ClaimPrimary::ReleaseToDirect => match recovery.take() {
-            Some(plan) => ClaimWork::RecoverOriginal(Box::new(plan)),
-            None => return RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(original.rejected)),
-        },
-        ClaimPrimary::Legacy => match legacy_action(ps) {
-            LegacyAction::Native { ordinal, codec } => {
-                crate::player::stage_native_audio(ps, ordinal, &codec);
-                return RetranscodeClaimDispatch::Sync(ClaimTail::NativeAudio);
-            }
-            LegacyAction::Retranscode => match plain_rebuild_precheck(ps, &expected) {
-                Some(contract) => ClaimWork::Encode(contract),
-                None => return RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(LEGACY_REJECTED)),
-            },
-        },
-        ClaimPrimary::Remux(contract) => ClaimWork::Encode(contract),
-        ClaimPrimary::Retranscode => match plain_rebuild_precheck(ps, &expected) {
-            Some(contract) => ClaimWork::Encode(contract),
-            None => return RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(RETRANSCODE_REJECTED)),
-        },
-    };
-    let primary_reject = match dispatch.primary {
-        ClaimPrimary::ReleaseToDirect => original.rejected,
-        ClaimPrimary::Remux(_) => ENHANCEMENT_REJECTED,
-        // A Legacy primary is the displaced pick's own reload, not the enhancement's and not
-        // today's plain rebuild — its refusal keeps the label that names what it actually was.
-        ClaimPrimary::Legacy => LEGACY_REJECTED,
-        ClaimPrimary::Retranscode => RETRANSCODE_REJECTED,
-    };
-    // The fallback owed on refusal, precomputed the same way: `legacy_action`/the plain-rebuild
-    // contract are pure reads of `ps` as it stands right now — the worker never gets another
-    // chance to read it.
-    let fallback = match dispatch.on_failure {
-        ClaimFallback::Reject => RetranscodeFallback::RejectWith(primary_reject),
-        ClaimFallback::Legacy => match legacy_action(ps) {
-            LegacyAction::Native { ordinal, codec } => RetranscodeFallback::Native { ordinal, codec },
-            LegacyAction::Retranscode => match plain_rebuild_precheck(ps, &expected) {
-                Some(contract) => RetranscodeFallback::Retranscode(contract),
-                None => RetranscodeFallback::RejectWith(LEGACY_REJECTED),
-            },
-        },
-    };
-    let Some(inputs) = prepare_retranscode_inputs(ps, &expected, offset_secs) else {
-        return RetranscodeClaimDispatch::Sync(claim_fallback(ps, dispatch.on_failure, primary_reject));
-    };
-    let owner = begin_claim_flight(ps, action);
-    if spawn_flight(owner, pending_seek, user_target, Some(inputs), work, fallback) {
-        if holds_presentation {
-            RetranscodeClaimDispatch::Pending
-        } else {
-            RetranscodeClaimDispatch::PendingNoHold
-        }
-    } else {
-        // The OS refused the thread: settle exactly like a synchronous rejection. `run_claim_tail`'s
-        // `Rejected` arm calls `finish_route_action`, which returns `ControlPhase` to `Stable` —
-        // there is no stuck `Applying` the way an unspawned resolve needed `settle_failed_resolve_spawn`
-        // to unstick, because `claim_route_action` already reserved this exact serial for us.
-        RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(primary_reject))
-    }
-}
-
-/// The claim a flight carries to its landing: `action` plus the reducer's restore point as it
-/// stands right now. A second edit that queues while the worker runs advances
-/// `desired_revision`/`desired_quality`/`ps` right away (nothing stops it — the frame thread is
-/// free), so `finish_route_action` must publish THIS snapshot rather than whatever those happen to
-/// hold when the worker lands.
-fn snapshotted_claim(ps: &PlaybackSession, action: &ClaimedRouteAction) -> ClaimedRouteAction {
-    let (revision, quality) = {
-        let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        (control.desired_revision, control.desired_quality)
-    };
-    let mut claim = action.clone();
-    claim.claim_snapshot = Some(Box::new(ClaimSnapshot { revision, quality, projection: route_projection(ps) }));
-    claim
-}
-
-/// Record the flight of `action` and return its owner: the claim with the reducer's restore point
-/// as it stands now ([`snapshotted_claim`]), begun before the worker can land.
-fn begin_claim_flight(ps: &PlaybackSession, action: &ClaimedRouteAction) -> FlightOwner {
-    let owner = FlightOwner::Claim(snapshotted_claim(ps, action));
-    begin_flight(owner.serial());
-    owner
-}
-
-/// PMS half of a claimed AUTOMATIC `OriginalToHls`, the Auto watchdog's fallback from an Original
-/// that cannot keep up: plan on the frame ([`plan_auto_hls`]), the PMS half on the claim worker
-/// ([`run_auto_hls`]), the install at the drain ([`install_auto_hls_outcome`], landing as
-/// [`ClaimTail::Retranscode`]) — the same flight as every other claim, owned by the automatic
-/// claim, which never carries a displaced pick.
-///
-/// **Nothing is held for it** ([`RetranscodeClaimDispatch::PendingNoHold`]): the Original is what
-/// plays until the landing replaces it, and only a refusal or a success changes that. A user pick
-/// made meanwhile WAITS in `pending_user` and is claimed after the landing. A plan the session
-/// refuses settles on the spot as [`AUTO_HLS_REJECTED`].
-pub fn execute_auto_hls_claim(
-    ps: &mut PlaybackSession,
-    action: &ClaimedRouteAction,
-    offset_secs: i64,
-    conservative_kbps: u32,
-    pending_seek: i64,
-    user_target: i64,
-) -> RetranscodeClaimDispatch {
-    let Some(plan) = plan_auto_hls(ps, &action.ticket, conservative_kbps, offset_secs) else {
-        return RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(AUTO_HLS_REJECTED));
-    };
-    let owner = begin_claim_flight(ps, action);
-    if spawn_flight(
-        owner,
-        pending_seek,
-        user_target,
-        None,
-        ClaimWork::AutoHls(Box::new(plan)),
-        RetranscodeFallback::RejectWith(AUTO_HLS_REJECTED),
-    ) {
-        RetranscodeClaimDispatch::PendingNoHold
-    } else {
-        RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(AUTO_HLS_REJECTED))
-    }
-}
-
-/// PMS half of a claimed user `AdaptiveReload` on a transcode: rebuild the encoder at the claim
-/// offset so the fresh demux worker captures the adaptive contract ("quality: Auto picked —
-/// retaining live HLS and refreshing its adaptive contract"). The same flight as a seek, owned by
-/// the CLAIM: plan here ([`plan_rebase`] with [`RebaseFor::Claim`]), PMS on the claim worker
-/// ([`run_rebase`]), install at the drain ([`install_rebase`], landing as [`ClaimTail::Adaptive`]).
-///
-/// [`RebaseFor::Claim`] is what lets the plan run inside the claim that is the flight: the
-/// synchronous seek path refuses while any claim is in flight.
-pub fn execute_adaptive_reload_claim(
-    ps: &mut PlaybackSession,
-    action: &ClaimedRouteAction,
-    offset_secs: i64,
-    pending_seek: i64,
-    user_target: i64,
-) -> RetranscodeClaimDispatch {
-    let Ok(plan) = plan_rebase(ps, offset_secs, RebaseFor::Claim(action.serial())) else {
-        return RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(ADAPTIVE_REJECTED));
-    };
-    // Captured AFTER the plan, which mirrors a live HLS rung into the session: the snapshot is the
-    // reducer's restore point and must describe the route the plan started from.
-    let owner = begin_claim_flight(ps, action);
-    if spawn_flight(
-        owner,
-        pending_seek,
-        user_target,
-        None,
-        ClaimWork::Rebase(Box::new(plan)),
-        RetranscodeFallback::RejectWith(ADAPTIVE_REJECTED),
-    ) {
-        RetranscodeClaimDispatch::Pending
-    } else {
-        RetranscodeClaimDispatch::Sync(ClaimTail::Rejected(ADAPTIVE_REJECTED))
-    }
-}
-
-/// PMS half of a claimed `RecoverOriginal`, the viewer's own pick (`RecoveryCause::ManualOriginal`)
-/// or the Auto watchdog's HLS-to-Original handoff (`RecoveryCause::Automatic`): plan on the frame
-/// ([`plan_original_recovery`]), the PMS half on the claim worker ([`run_original_recovery`]), the
-/// install at the drain ([`install_original_recovery`], landing as [`ClaimTail::Original`]) — the
-/// same flight as an enhancement release.
-///
-/// A displaced pick merged under the claim (the merge table lets `RecoverOriginal` absorb a queued
-/// `Retranscode`) is still owed its reload if Original is refused: [`ClaimFallback::owed`] picks
-/// the owed fallback exactly as for a release, precomputed here and paid by the worker. An
-/// automatic claim never carries a displaced pick, so a refusal is a plain rejection
-/// ([`AUTO_ORIGINAL_REJECTED`]); the pump reopens the retained HLS for it.
-pub fn execute_recover_original_claim(
-    ps: &mut PlaybackSession,
-    action: &ClaimedRouteAction,
-    offset_secs: i64,
-    cause: RecoveryCause,
-    pending_seek: i64,
-    user_target: i64,
-) -> RetranscodeClaimDispatch {
-    let dispatch = Dispatch {
-        primary: ClaimPrimary::ReleaseToDirect,
-        on_failure: ClaimFallback::owed(action.displaced_pick),
-    };
-    let rejected = match cause {
-        RecoveryCause::Automatic => AUTO_ORIGINAL_REJECTED,
-        RecoveryCause::ManualOriginal => MANUAL_ORIGINAL_REJECTED,
-        RecoveryCause::EnhancementReleased => ENHANCEMENT_REJECTED,
-    };
-    plan_claim_flight(
-        ps,
-        action,
-        FlightPlan { offset_secs, pending_seek, user_target },
-        dispatch,
-        OriginalAttempt { cause, rejected },
-    )
-}
-
-/// C38: a `NativeAudioReload`/`AdaptiveReload` claim that took a displaced pick's marker (the
-/// merge table let it replace the Retranscode that carried it). On a direct route the reload
-/// feeds `desired_audio_idx`, which a displaced pick never wrote — store the picked track before
-/// reloading. Every other case already rebuilds from `cur_audio`/`cur_sub_sid`.
-pub fn honour_displaced_pick(ps: &mut PlaybackSession, displaced_pick: bool, arm: &str) {
-    if !displaced_pick {
-        return;
-    }
-    crate::player::log(&format!("enhancement: displaced pick on {arm}"));
-    if is_transcoding(ps) {
-        return;
-    }
-    let desired = crate::player::SHARED
-        .desired_audio_idx
-        .load(std::sync::atomic::Ordering::Relaxed);
-    if let Some(a) = ps.cur_audio.clone() {
-        if a.ordinal != desired {
-            crate::player::stage_native_audio(ps, a.ordinal, &a.codec);
-        }
-    }
-    debug_assert!(
-        ps.cur_audio.as_ref().is_none_or(|a| a.ordinal
-            == crate::player::SHARED.desired_audio_idx.load(std::sync::atomic::Ordering::Relaxed)),
-        "the displaced pick is honoured before a direct reload",
-    );
-}
-
-/// **The Audio tab's one question, answered once.** `Hidden` only for the one case that stays
-/// silent (no Plex Pass); every other reason the toggle cannot run right now comes back as
-/// `Disabled(reason)` so the row stays visible with a plain-language note (owner direction,
-/// 2026-09-29 — supersedes the earlier I1/I2 "absent, never greyed" reading of the enhancement
-/// row itself; I1/I2's Plex-Pass gate is the one part of that reading that stands). Uses
-/// [`enhancement_family`], not `live_family`, so an already-applied Burn reads as its own route
-/// rather than as an unrelated `Other`-family re-encode.
-pub fn menu_enhancement_availability(ps: &PlaybackSession) -> EnhancementAvailability {
-    enhancement_availability(&facts(ps), enhancement_family(ps))
-}
-
-/// Are the rows offered at all — the toggle itself actionable? `true` only for
-/// [`EnhancementAvailability::Offered`]; both `Hidden` and `Disabled` answer `false` here, since
-/// callers that need to draw a `Disabled` row with its reason use [`menu_enhancement_availability`]
-/// directly instead.
-pub fn audio_enhancements_offered_live(ps: &PlaybackSession) -> bool {
-    matches!(menu_enhancement_availability(ps), EnhancementAvailability::Offered(_))
-}
 
 /// **Test-only session builder for the Audio tab's enhancement rows (issue #266 PR 4).** Every
 /// `PlaybackSession` field is private to this module by design (see `PlaybackSession::IDLE`'s own

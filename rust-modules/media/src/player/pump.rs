@@ -529,127 +529,14 @@ pub fn drain_engineless_rollback(ps: &mut crate::route::PlaybackSession, pa: &mu
     }
 }
 
-/// Which recovery owns a source/pipeline open failure. Pure so the ordering cannot regress while
-/// the device-only reload calls remain outside host tests.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OpenFailureAction {
-    /// HLS→Original had a live encoder held specifically for this outcome.
-    RollbackPendingOriginal,
-    /// Cold Auto Original never produced a frame; build the HLS contingency bootstrap retained.
-    StartAutoHls,
-    /// Manual Original, a post-frame interruption, or no viable route.
-    Error,
-}
-
-fn open_failure_action(
-    pending_original: bool,
-    auto_original: bool,
-    no_frames: bool,
-) -> OpenFailureAction {
-    if pending_original {
-        OpenFailureAction::RollbackPendingOriginal
-    } else if auto_original && no_frames {
-        OpenFailureAction::StartAutoHls
-    } else {
-        OpenFailureAction::Error
-    }
-}
-
-/// What the pump's failure branches got from [`recover_failed_source_route`].
-enum SourceRecovery {
-    /// A flight owns the replacement route; [`land_recovery_flight`] reloads onto it, or fails the
-    /// Engine, when it lands. The frames in between wait ([`recovery_flight_outstanding`]).
-    Flying,
-    /// Nothing to recover with: the failure means what it always did.
-    Failed,
-}
-
-/// Recover either kind of failed Original open. Pending HLS rollback has priority; a failed
-/// rollback is terminal rather than silently starting a third transaction on route state whose
-/// encoder restore already failed. Both recoveries are flights: the replacement route's PMS half
-/// runs on a worker while the viewer keeps the connecting spinner they had.
-fn recover_failed_source_route(ps: &mut crate::route::PlaybackSession) -> SourceRecovery {
-    let action = open_failure_action(
-        crate::route::original_recovery_pending(),
-        crate::route::auto_original_watch(ps).is_some(),
-        SHARED.frames.load(Relaxed) == 0,
-    );
-    let dispatch = match action {
-        OpenFailureAction::RollbackPendingOriginal => {
-            // Capture before the reload clears the engine-scoped HTTP mirror. This sticky pair is
-            // the reason a successful HLS rollback can still explain on screen why Original was
-            // refused.
-            let status = SHARED.dg_http_status.load(Relaxed);
-            let Some(rollback) = take_failed_original_rollback(ps, status) else {
-                return SourceRecovery::Failed;
-            };
-            let dispatched = crate::route::dispatch_rollback_rebase(ps, rollback.offset_ns);
-            if dispatched == crate::route::RecoveryDispatch::Refused {
-                super::log(crate::route::ROLLBACK_REBASE_REFUSED);
-            }
-            dispatched
-        }
-        OpenFailureAction::StartAutoHls => {
-            let status = SHARED.dg_http_status.load(Relaxed);
-            if status >= 400 {
-                super::note_original_failure(super::ABR_FAILURE_ORIGINAL_HTTP, status);
-            } else {
-                super::note_original_failure(super::ABR_FAILURE_ORIGINAL_OPEN, status);
-            }
-            let secs = (SHARED.playpos_ns.load(Relaxed) / 1_000_000_000).max(0);
-            crate::route::dispatch_unopened_auto_hls(ps, secs)
-        }
-        OpenFailureAction::Error => return SourceRecovery::Failed,
-    };
-    match dispatch {
-        crate::route::RecoveryDispatch::Flying { .. } => SourceRecovery::Flying,
-        crate::route::RecoveryDispatch::Refused => SourceRecovery::Failed,
-    }
-}
-
 /// The three source-failure branches' shared answer: either a recovery is flying (the frame is
 /// done, the spinner stays up) or the Engine fails and the viewer gets the read-out. Always the
 /// frame's last act.
-fn fail_or_wait_for_recovery(ps: &mut crate::route::PlaybackSession, eng: &Engine) {
-    match recover_failed_source_route(ps) {
-        SourceRecovery::Flying => hold_connecting_state(eng),
-        SourceRecovery::Failed => {
-            crate::route::fail_current_engine();
-            set_state(super::shared::PlaybackState::Error);
-        }
-    }
-}
-
-/// What the viewer sees while a recovery flies: the connecting spinner the failed open left, not a
-/// frozen frame and not the failure read-out. Mirrors the ladder at the foot of [`pump`] for a
-/// stream that has decoded nothing.
-fn hold_connecting_state(eng: &Engine) {
-    set_state(if eng.stage == Stage::Loading {
-        super::shared::PlaybackState::Connecting
-    } else {
-        super::shared::PlaybackState::Buffering
-    });
-}
-
-/// A recovery flight landed: reload onto the replacement route at the recovery position, or — it
-/// was refused — fail the Engine.
-fn land_recovery_flight(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    landing: crate::route::RecoveryLanding,
-) {
-    match landing.verdict {
-        crate::route::RecoveryVerdict::Install => {
-            let _ = settle_reload(
-                super::engine::reload_transcode(ps, pa, landing.offset_ns),
-                "HLS recovery after failed source open",
-            );
-        }
-        crate::route::RecoveryVerdict::Refused => {
-            crate::route::fail_current_engine();
-            set_state(super::shared::PlaybackState::Error);
-        }
-    }
+/// A failed open or a stream that died: publish the failure, which the read-out and the live
+/// reconnect both key on.
+fn fail_engine() {
+    crate::route::fail_current_engine();
+    set_state(super::shared::PlaybackState::Error);
 }
 
 /// Settle a synchronous native reload effect.  A failed `start_bufferfeed` used to be only a log:
@@ -672,217 +559,6 @@ pub(super) fn settle_reload(outcome:super::engine::ReloadOutcome, operation: &st
     }
     set_state(super::shared::PlaybackState::Error);
     false
-}
-
-/// Start the native half of an HLS→Original transaction.  The reducer already owns a complete HLS
-/// rollback snapshot; a synchronous Load construction failure is the same typed rejection as an
-/// HTTP/demux/Load callback failure and must cross that rollback edge immediately. There is no
-/// Engine for a pump to drive the way back, so the rebase is an Engine-less flight
-/// ([`begin_engineless_rollback`]): the viewer keeps the spinner, and the app loop's
-/// [`drain_engineless_rollback`] reloads onto the restored route when it lands.
-fn start_original_trial_reload(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    reload: crate::route::AutoOriginalReload,
-    position_ns: i64,
-) {
-    let outcome = match reload {
-        crate::route::AutoOriginalReload::Direct => super::engine::reload_at(ps, pa, position_ns),
-        crate::route::AutoOriginalReload::Remux => super::engine::reload_transcode(ps, pa, position_ns),
-    };
-    if outcome == super::engine::ReloadOutcome::Started {
-        return;
-    }
-    super::log(&format!(
-        "abr: Original trial could not start ({outcome:?}); taking explicit rollback edge",
-    ));
-    // Capture before the reload clears the engine-scoped HTTP mirror. This sticky pair is the
-    // reason a successful HLS rollback can still explain on screen why Original was refused.
-    let status = SHARED.dg_http_status.load(Relaxed);
-    if matches!(
-        begin_engineless_rollback(ps, status),
-        ForegroundOriginalRecovery::NotOriginal | ForegroundOriginalRecovery::Terminal
-    ) {
-        set_state(super::shared::PlaybackState::Error);
-    }
-}
-
-/// Re-borrow the live Engine + main-thread token from `pa` after a claim's `Rejected` tail, which
-/// leaves the Engine exactly where it was. `run_claim_tail` itself takes `pa` back (the only way to
-/// call a function that MAY replace the Engine), which ends the pump's own `eng`/`mt` borrows for
-/// the call's duration; this restores them so the rest of `pump` can keep reading/mutating `eng`.
-fn reacquire_engine(pa: &mut super::adapter::PlayerAdapter) -> (&mut Engine, &MainThread) {
-    let (eng, mt) = pa.split();
-    (
-        eng.expect("a rejected route claim never tears down the live Engine"),
-        mt,
-    )
-}
-
-/// Physical half of a claimed user action whose PMS half `route` already ran (`ClaimTail`).
-/// Returns whether it replaced the Engine: every arm but `Rejected` does, and the caller must
-/// return immediately in that case (`eng` dangles); `Rejected` restores the previous projection
-/// and lets the pump keep using the live Engine, so callers read
-/// `if run_claim_tail(..) { return; } eng = ...; mt = ...;` via [`reacquire_engine`] — passing `pa`
-/// into this function ends the pump's own borrow of it for the call, same as every other function
-/// here that might replace the Engine.
-fn run_claim_tail(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    action: &crate::route::ClaimedRouteAction,
-    tail: crate::route::ClaimTail,
-    pending_seek: i64,
-    user_target: i64,
-) -> bool {
-    match tail {
-        crate::route::ClaimTail::Retranscode => {
-            retranscode_tail(ps, pa, action, pending_seek, user_target);
-            true
-        }
-        crate::route::ClaimTail::Adaptive => {
-            adaptive_tail(ps, pa, action, pending_seek, user_target);
-            true
-        }
-        crate::route::ClaimTail::NativeAudio => {
-            native_audio_tail(ps, pa, action, pending_seek, user_target);
-            true
-        }
-        crate::route::ClaimTail::Original(reload) => {
-            original_tail(ps, pa, reload, pending_seek, user_target);
-            true
-        }
-        crate::route::ClaimTail::Rejected(msg) => {
-            rejected_tail(ps, action, msg);
-            false
-        }
-    }
-}
-
-/// At claim-landing time, decide whether the seek target this claim was built with (`pending_seek`,
-/// captured when the claim was made) is still the newest one requested. The pump's own pending-seek
-/// branch skips entirely while `flight_outstanding()` holds (see its own doc), so a fresher tap that
-/// landed during this claim's flight sits untouched in `TX.seek_to_ns` rather than being folded in —
-/// committing THIS claim's stale target with `commit_user_seek` would silently discard it. Returns
-/// the fresher value to re-arm into `TX.seek_to_ns` after the reload resets it
-/// (`TX::reset_for_reload`), or `None` if there is nothing to carry.
-fn commit_or_carry_seek(pending_seek: i64) -> Option<i64> {
-    let current = TX.seek_to_ns.load(Relaxed);
-    // Anything on the mailbox that is not exactly the target this claim was built for is a press
-    // the claim never saw — including the first press of the flight when NO seek was pending at
-    // claim time (`pending_seek < 0`), which the reload's `TX.reset_for_reload()` would otherwise
-    // clear. Its reducer intent (`pending_seek_ns`) is left owed: the pump's own seek branch
-    // commits it when it applies the re-armed target.
-    if current >= 0 && current != pending_seek {
-        return Some(current);
-    }
-    if pending_seek >= 0 {
-        // The reload lands AT the claim's own seek: cross it in the reducer now.
-        crate::route::commit_user_seek();
-    }
-    None
-}
-
-/// Restore a fresher seek target carried past a reload by [`commit_or_carry_seek`]. The pump's
-/// ordinary pending-seek branch (no longer blocked — the claim it was waiting on just settled)
-/// picks it up on the very next tick, exactly as if it had just arrived.
-fn rearm_carried_seek(carried: Option<i64>) {
-    if let Some(target) = carried {
-        TX.seek_to_ns.store(target, Release);
-    }
-}
-
-/// The shared shape of the two prepared-route tails: settle the action, cross or carry the seek,
-/// log the transition, run `reload`, re-arm the carried seek. `label` names the transition in the
-/// log and `detail` is anything it adds after the label.
-fn land_prepared_route(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    action: &crate::route::ClaimedRouteAction,
-    pending_seek: i64,
-    user_target: i64,
-    (label, detail): (&str, &str),
-    reload: impl FnOnce(&mut crate::route::PlaybackSession, &mut super::adapter::PlayerAdapter, i64) -> super::engine::ReloadOutcome,
-) {
-    if !crate::route::finish_route_action(ps, action, crate::route::RouteApplyResult::Prepared) {
-        // A teardown or a fresh playback request superseded this action while the worker ran (see
-        // `finish_route_action`'s own doc on its `bool` return) — `ps` may already belong to a
-        // different item. Reloading onto it now would be exactly the corruption the mailbox-clearing
-        // fix exists to prevent.
-        super::log(&format!("route transition: {label} landing superseded; not reloading"));
-        return;
-    }
-    let carried_seek = commit_or_carry_seek(pending_seek);
-    super::log(&format!(
-        "route transition: {label}{detail} at {}s{}",
-        user_target / 1_000_000_000,
-        if pending_seek >= 0 { " + seek" } else { "" },
-    ));
-    settle_reload(reload(ps, pa, user_target), &format!("{label} reload"));
-    rearm_carried_seek(carried_seek);
-}
-
-/// A prepared transcode route: settle the action, cross the seek, reload onto it.
-fn retranscode_tail(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    action: &crate::route::ClaimedRouteAction,
-    pending_seek: i64,
-    user_target: i64,
-) {
-    land_prepared_route(ps, pa, action, pending_seek, user_target, ("user retranscode", ""), super::engine::reload_transcode);
-}
-
-/// A rebuilt transcode of the same stream (an `AdaptiveReload` landing): settle the action, cross
-/// the seek, reload onto it at the claim offset.
-fn adaptive_tail(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    action: &crate::route::ClaimedRouteAction,
-    pending_seek: i64,
-    user_target: i64,
-) {
-    land_prepared_route(ps, pa, action, pending_seek, user_target, ("adaptive worker reload", ""), super::engine::reload_transcode);
-}
-
-/// A transcode seek's landing, run on the frame that drained it. The pump held presentation for
-/// the flight ([`super::claim_hold`]); `hold` is what it owes the viewer back.
-fn seek_landing_tail(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    serial: u64,
-    target_ns: i64,
-    verdict: crate::route::SeekVerdict,
-) {
-    let hold = super::claim_hold::take(serial);
-    match verdict {
-        crate::route::SeekVerdict::Install(_) => {
-            // The route names the replacement and its start transaction is `Prepared`: this is the
-            // applied media boundary, exactly where the synchronous rebuild crossed it.
-            crate::route::commit_user_seek();
-            super::log(&format!("route transition: transcode seek at {}s", target_ns / 1_000_000_000));
-            settle_reload(super::engine::reload_transcode(ps, pa, target_ns), "transcode seek reload");
-            // The reload kept the hold's pause; only now does the new stream get its Play.
-            super::claim_hold::release(pa, hold);
-        }
-        crate::route::SeekVerdict::Superseded => {
-            // A newer tap is waiting in the seek target: fly at THAT, carrying the hold over.
-            let newest = TX.seek_to_ns.swap(-1, Relaxed);
-            if newest >= 0 {
-                take_coalesced();
-                start_transcode_seek_flight(ps, pa, newest, hold);
-            } else {
-                super::claim_hold::release(pa, hold);
-            }
-        }
-        crate::route::SeekVerdict::Refused => {
-            super::claim_hold::release(pa, hold);
-            // Give up on THIS seek and say so, or the spinner and the frozen playhead outlive the
-            // playback — see `player::abandon_seek`. The engine is untouched (no flush happened),
-            // so the stream itself carries on from where it was.
-            super::abandon_seek();
-            super::log("seek(transcode): rebuild failed");
-        }
-    }
 }
 
 /// Start the flight for a seek on a live transcode at `target_ns` (already taken off
@@ -913,131 +589,14 @@ fn start_transcode_seek_flight(
     }
 }
 
-/// A staged native audio switch (`desired_audio_idx` + payload codec): settle, reload direct.
-fn native_audio_tail(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    action: &crate::route::ClaimedRouteAction,
-    pending_seek: i64,
-    user_target: i64,
-) {
-    let idx = SHARED.desired_audio_idx.load(Relaxed);
-    land_prepared_route(
-        ps,
-        pa,
-        action,
-        pending_seek,
-        user_target,
-        ("native audio", &format!(" idx={idx}")),
-        |ps, pa, target| super::engine::switch_audio_native(ps, pa, idx, target),
-    );
-}
-
-/// A staged Original trial: its PendingOriginal already owns the phase, so there is no
-/// `finish_route_action` here; the reload lands on the requested position. A seek pressed during
-/// the recovery's flight is carried past the reload ([`commit_or_carry_seek`]), not dropped by it.
-fn original_tail(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    reload: crate::route::AutoOriginalReload,
-    pending_seek: i64,
-    user_target: i64,
-) {
-    let carried_seek = commit_or_carry_seek(pending_seek);
-    start_original_trial_reload(ps, pa, reload, user_target);
-    rearm_carried_seek(carried_seek);
-}
-
-/// An AUTOMATIC HLS-to-Original claim's tail. An accepted recovery is [`original_tail`]. A refused
-/// one is not an ordinary rejection: the Auto worker exited to hand the action over, so the stream
-/// has no producer, and a refused/lost Original decision leaves the HLS route fully intact —
-/// rebuild that exact HLS Engine at the action's position rather than turning a recoverable probe
-/// failure into the terminal playback screen. Returns whether the Engine was replaced.
-fn land_automatic_original(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    action: &crate::route::ClaimedRouteAction,
-    tail: crate::route::ClaimTail,
-    pending_seek: i64,
-    position_ns: i64,
-) -> bool {
-    let crate::route::ClaimTail::Rejected(msg) = tail else {
-        return run_claim_tail(ps, pa, action, tail, pending_seek, position_ns);
-    };
-    if !crate::route::finish_route_action(ps, action, crate::route::RouteApplyResult::Rejected) {
-        // A teardown or a fresh playback request superseded the action: `ps` may belong to
-        // another item, and there is no retained HLS of ours to reopen.
-        return false;
-    }
-    super::log(msg);
-    let carried_seek = commit_or_carry_seek(pending_seek);
-    settle_reload(
-        super::engine::reload_transcode(ps, pa, position_ns),
-        "retained HLS reopen after rejected Original",
-    );
-    rearm_carried_seek(carried_seek);
-    true
-}
-
-/// An AUTOMATIC Original-to-HLS claim's tail. An accepted fallback is an ordinary prepared
-/// transcode: settle the action, reload onto the HLS route at the action's position. A refused one
-/// is not an ordinary rejection: the Auto worker exited to hand the action over, so the Original
-/// has no producer left to carry on and the failure is raised for the pump's own recovery
-/// (`demux_io_failed`). Returns whether the Engine was replaced.
-fn land_automatic_hls(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    action: &crate::route::ClaimedRouteAction,
-    tail: crate::route::ClaimTail,
-    pending_seek: i64,
-    position_ns: i64,
-) -> bool {
-    match tail {
-        crate::route::ClaimTail::Retranscode => {
-            land_prepared_route(
-                ps,
-                pa,
-                action,
-                pending_seek,
-                position_ns,
-                ("automatic Original-to-HLS", ""),
-                super::engine::reload_transcode,
-            );
-            true
-        }
-        crate::route::ClaimTail::Rejected(msg) => {
-            if !crate::route::finish_route_action(ps, action, crate::route::RouteApplyResult::Rejected) {
-                // A teardown or a fresh playback request superseded the action: the failure
-                // belongs to a playback that is gone, so it must not be raised on the next one.
-                return false;
-            }
-            super::log(msg);
-            SHARED.demux_io_failed.store(true, Relaxed);
-            false
-        }
-        other => run_claim_tail(ps, pa, action, other, pending_seek, position_ns),
-    }
-}
-
-/// Refused: restore the previous projection and keep playing what plays.
-fn rejected_tail(
-    ps: &mut crate::route::PlaybackSession,
-    action: &crate::route::ClaimedRouteAction,
-    msg: &str,
-) {
-    if crate::route::finish_route_action(ps, action, crate::route::RouteApplyResult::Rejected) {
-        super::log(msg);
-    }
-}
-
 pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, now: u32) {
     use super::shared::PlaybackState;
     // ONE `&mut PlayerAdapter`, split into the live session and the seam token. Everything below
     // that replaces the session (`reload_*`) takes `pa` back, which the borrow checker only allows
     // where neither half is read afterwards — the "`eng` dangles after it, return immediately"
     // rule this function used to state in three comments and enforce by hand.
-    let (eng, mut mt) = pa.split();
-    let mut eng = match eng {
+    let (eng, mt) = pa.split();
+    let eng = match eng {
         Some(e) => e,
         None => {
             set_state(PlaybackState::Idle);
@@ -1059,21 +618,10 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // the route Stable before this Engine exists in the main-thread slot. Drain its exact-token
     // result here, after installation and before any worker publication can be accepted.
     crate::route::drain_route_start_results(ps);
-    // A failed open's recovery flight (the Original rollback's rebase, the unopened source's HLS
-    // fallback): land it, or wait for it. Ahead of every failure branch below, whose flags stay up
-    // for the whole flight and which would otherwise fail the Engine the landing replaces.
-    if let Some(landing) = crate::route::take_ready_recovery_flight(ps) {
-        land_recovery_flight(ps, pa, landing);
-        return;
-    }
-    if crate::route::recovery_flight_outstanding() {
-        hold_connecting_state(eng);
-        return;
-    }
     // `sf_load == 0` may leave no callable object, so this must precede the sf_ready wait below;
     // otherwise the pump returns Connecting forever and never consumes the explicit failure.
     if SHARED.load_failed.load(Acquire) {
-        fail_or_wait_for_recovery(ps, eng);
+        fail_engine();
         return;
     }
     // wait for the media-thread ctor
@@ -1083,20 +631,6 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         }
         set_state(PlaybackState::Connecting);
         return;
-    }
-    // ---------- the Original recovery, once it has to answer for itself ----------
-    //
-    // `recover_auto_to_original` deferred two irreversible things — the server-side stop and the
-    // old route — because the probes that authorised the switch are a claim about a byte range
-    // fetched seconds ago, not about the fresh open the reload above just performed. Here is where
-    // that open is graded.
-    //
-    // **Decoded frames, not `loadCompleted`.** A completed Load is the pipeline accepting a
-    // PAYLOAD DECLARATION; it says nothing about the source delivering. `frames` is zeroed by
-    // `teardown(for_reload=true)` on the way into this reload (`SHARED::reset_session`), so a
-    // non-zero count here belongs to the new source and to nothing else.
-    if crate::route::original_recovery_pending() && SHARED.frames.load(Relaxed) > 0 {
-        crate::route::confirm_original_recovery(ps);
     }
     if SHARED.frames.load(Relaxed) > 0 {
         crate::route::confirm_resume_presented(ps);
@@ -1115,256 +649,14 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // flag. Acquire is the matching hand-off; `error_now` can then report the transaction cause
     // instead of racing it into the generic producer bucket.
     if SHARED.demux_io_failed.load(Acquire) {
-        fail_or_wait_for_recovery(ps, eng);
+        fail_engine();
         return;
     }
     if SHARED.demux_failed.load(Acquire) && SHARED.frames.load(Relaxed) == 0 {
-        fail_or_wait_for_recovery(ps, eng);
+        fail_engine();
         return;
     }
     let stream = matches!(eng.source, Source::Stream);
-
-    // ---------- one synchronized route/action state machine ----------
-    //
-    // User quality/track changes survive pre-roll and outrank automatic ABR. A simultaneous seek
-    // is not a competing mailbox: it supplies this action's target, so the two become ONE reload
-    // instead of either resetting the seek or rebuilding at the position the viewer already left.
-    if stream && eng.stage >= Stage::Playing && !(eng.flushed && eng.rebase_pending) {
-        // A retranscode claim's PMS half may now be running on a worker (the freeze this fixes:
-        // `execute_retranscode_claim` used to run `put_selection` + `/decision` right on this frame
-        // thread). Drain any landing BEFORE trying to claim a new action — `ControlPhase` stays
-        // `Applying` the whole time, so `claim_route_action` below never fires for the SAME action
-        // while this is pending; it only starts returning `Some` again once `run_claim_tail`
-        // settles the drained landing.
-        let ready = crate::route::take_ready_flight(ps, TX.seek_to_ns.load(Relaxed) >= 0);
-        if let Some(crate::route::ReadyFlight::Claim { action, tail, pending_seek, user_target }) = ready {
-            // The claim held presentation at its offset for the flight (`claim_hold`). Give play
-            // back only once the tail has run: a rejection left the same Engine playing, and an
-            // accepted claim's reload has kept the pause, so the Play lands on the NEW stream.
-            let hold = super::claim_hold::take(action.serial());
-            let replaced = if matches!(
-                action.intent,
-                crate::route::RouteIntent::Automatic(crate::route::AutomaticRouteIntent::HlsToOriginal { .. })
-            ) {
-                land_automatic_original(ps, pa, &action, tail, pending_seek, user_target)
-            } else if matches!(
-                action.intent,
-                crate::route::RouteIntent::Automatic(crate::route::AutomaticRouteIntent::OriginalToHls { .. })
-            ) {
-                land_automatic_hls(ps, pa, &action, tail, pending_seek, user_target)
-            } else {
-                run_claim_tail(ps, pa, &action, tail, pending_seek, user_target)
-            };
-            // The reload (if any) has moved the Engine onto the new stream; only now is the
-            // encoder it replaced safe to stop.
-            crate::route::retire_superseded_encoder();
-            super::claim_hold::release(pa, hold);
-            if replaced {
-                return;
-            }
-            (eng, mt) = reacquire_engine(pa);
-        } else if let Some(crate::route::ReadyFlight::Seek { serial, target_ns, verdict }) = ready {
-            let reloads = matches!(verdict, crate::route::SeekVerdict::Install(_));
-            seek_landing_tail(ps, pa, serial, target_ns, verdict);
-            if reloads {
-                return; // REPLACED the engine — `eng` dangles.
-            }
-            (eng, mt) = reacquire_engine(pa);
-        } else if let Some(action) = crate::route::claim_route_action() {
-            let pending_seek = TX.seek_to_ns.load(Relaxed);
-            let current_pos = SHARED.playpos_ns.load(Relaxed).max(0);
-            let user_target = if pending_seek >= 0 {
-                pending_seek
-            } else {
-                current_pos
-            };
-            match action.intent.clone() {
-                crate::route::RouteIntent::User(intent) => match intent {
-                    crate::route::UserRouteIntent::Retranscode => {
-                        // "Retranscode" means "reconcile at claim" (issue #266): the route PMS
-                        // half decides between the enhancement and today's rebuild.
-                        let secs = user_target / 1_000_000_000;
-                        match crate::route::execute_retranscode_claim(ps, &action, secs, pending_seek, user_target) {
-                            crate::route::RetranscodeClaimDispatch::Sync(tail) => {
-                                if run_claim_tail(ps, pa, &action, tail, pending_seek, user_target) {
-                                    return;
-                                }
-                                (eng, mt) = reacquire_engine(pa);
-                            }
-                            crate::route::RetranscodeClaimDispatch::Pending
-                            | crate::route::RetranscodeClaimDispatch::PendingNoHold => {
-                                // A worker now owns the PMS half. The drain at the top of this
-                                // block picks up the landing later — never a join, never a
-                                // blocked frame. Meanwhile presentation holds at the claim offset:
-                                // the landing reloads THERE, so letting the flight play would show
-                                // the same seconds twice.
-                                super::claim_hold::engage(pa, action.serial());
-                                (eng, mt) = reacquire_engine(pa);
-                            }
-                        }
-                    }
-                    crate::route::UserRouteIntent::NativeAudioReload => {
-                        crate::route::honour_displaced_pick(ps, action.displaced_pick, "NativeAudioReload");
-                        native_audio_tail(ps, pa, &action, pending_seek, user_target);
-                        return;
-                    }
-                    crate::route::UserRouteIntent::AdaptiveReload => {
-                        if crate::route::is_transcoding(ps) {
-                            // The same flight as a seek, owned by this claim: PMS on a worker,
-                            // the claim stays `Applying`, and the drain at the top of this block
-                            // lands it (`adaptive_tail`). The claim offset is where the reload
-                            // goes, so presentation holds there for the flight.
-                            crate::route::honour_displaced_pick(ps, action.displaced_pick, "AdaptiveReload");
-                            let secs = user_target / 1_000_000_000;
-                            match crate::route::execute_adaptive_reload_claim(ps, &action, secs, pending_seek, user_target) {
-                                crate::route::RetranscodeClaimDispatch::Sync(tail) => {
-                                    if run_claim_tail(ps, pa, &action, tail, pending_seek, user_target) {
-                                        return;
-                                    }
-                                    (eng, mt) = reacquire_engine(pa);
-                                }
-                                crate::route::RetranscodeClaimDispatch::Pending
-                                | crate::route::RetranscodeClaimDispatch::PendingNoHold => {
-                                    super::claim_hold::engage(pa, action.serial());
-                                    (eng, mt) = reacquire_engine(pa);
-                                }
-                            }
-                        } else {
-                            crate::route::honour_displaced_pick(ps, action.displaced_pick, "AdaptiveReload");
-                            crate::route::finish_route_action(
-                                ps,
-                                &action,
-                                crate::route::RouteApplyResult::Prepared,
-                            );
-                            if pending_seek >= 0 {
-                                crate::route::commit_user_seek();
-                            }
-                            super::log(&format!(
-                                "route transition: adaptive direct reload at {}s{}",
-                                user_target / 1_000_000_000,
-                                if pending_seek >= 0 { " + seek" } else { "" },
-                            ));
-                            settle_reload(
-                                super::engine::reload_at(ps, pa, user_target),
-                                "adaptive direct reload",
-                            );
-                            return;
-                        }
-                    }
-                    crate::route::UserRouteIntent::RecoverOriginal(cause) => {
-                        // The viewer's Original pick: the same flight as an enhancement release.
-                        // PMS (the Part admission, the replacement remux) runs on a worker while
-                        // presentation holds at the claim offset; the drain lands it.
-                        let secs = user_target / 1_000_000_000;
-                        match crate::route::execute_recover_original_claim(
-                            ps, &action, secs, cause, pending_seek, user_target,
-                        ) {
-                            crate::route::RetranscodeClaimDispatch::Sync(tail) => {
-                                if run_claim_tail(ps, pa, &action, tail, pending_seek, user_target) {
-                                    return;
-                                }
-                                (eng, mt) = reacquire_engine(pa);
-                            }
-                            crate::route::RetranscodeClaimDispatch::Pending
-                            | crate::route::RetranscodeClaimDispatch::PendingNoHold => {
-                                super::claim_hold::engage(pa, action.serial());
-                                (eng, mt) = reacquire_engine(pa);
-                            }
-                        }
-                    }
-                },
-                crate::route::RouteIntent::Automatic(intent) => {
-                    match intent {
-                        crate::route::AutomaticRouteIntent::OriginalToHls {
-                            ticket,
-                            conservative_kbps,
-                            position_ns,
-                        } => {
-                            let position_ns = position_ns.max(0);
-                            let secs = position_ns / 1_000_000_000;
-                            if ticket != action.ticket {
-                                crate::route::finish_route_action(
-                                    ps,
-                                    &action,
-                                    crate::route::RouteApplyResult::Cancelled,
-                                );
-                                super::log("auto: discarded fallback action whose ticket changed before claim");
-                                return;
-                            }
-                            // The Auto worker exited to hand this action over; the Original is
-                            // what plays until the landing replaces it. The replacement's PUT +
-                            // `/decision` run on a worker (nothing is held or paused for them: a
-                            // refusal or a success is the only thing that changes the stream), and
-                            // the drain at the top of this block lands them.
-                            match crate::route::execute_auto_hls_claim(
-                                ps,
-                                &action,
-                                secs,
-                                conservative_kbps,
-                                pending_seek,
-                                position_ns,
-                            ) {
-                                crate::route::RetranscodeClaimDispatch::Sync(tail) => {
-                                    if land_automatic_hls(ps, pa, &action, tail, pending_seek, position_ns) {
-                                        return;
-                                    }
-                                    (eng, mt) = reacquire_engine(pa);
-                                }
-                                crate::route::RetranscodeClaimDispatch::Pending
-                                | crate::route::RetranscodeClaimDispatch::PendingNoHold => {
-                                    (eng, mt) = reacquire_engine(pa);
-                                }
-                            }
-                        }
-                        crate::route::AutomaticRouteIntent::HlsToOriginal {
-                            ticket,
-                            evidence_kbps: _,
-                            position_ns,
-                        } => {
-                            let position_ns = position_ns.max(0);
-                            let secs = position_ns / 1_000_000_000;
-                            if ticket != action.ticket {
-                                crate::route::finish_route_action(
-                                    ps,
-                                    &action,
-                                    crate::route::RouteApplyResult::Cancelled,
-                                );
-                                super::log("auto: discarded Original action whose ticket changed before claim");
-                                return;
-                            }
-                            // The Auto worker exited to hand this action over, and it published
-                            // `position_ns`: the same flight as the viewer's own Original pick. A
-                            // direct Original never reaches PMS, so its flight is a frame or two
-                            // and the stream keeps playing; a remux's PUT + `/decision` holds the
-                            // picture at `position_ns`, because the landing reloads THERE.
-                            match crate::route::execute_recover_original_claim(
-                                ps,
-                                &action,
-                                secs,
-                                crate::route::RecoveryCause::Automatic,
-                                pending_seek,
-                                position_ns,
-                            ) {
-                                crate::route::RetranscodeClaimDispatch::Sync(tail) => {
-                                    if land_automatic_original(ps, pa, &action, tail, pending_seek, position_ns) {
-                                        return;
-                                    }
-                                    (eng, mt) = reacquire_engine(pa);
-                                }
-                                crate::route::RetranscodeClaimDispatch::Pending => {
-                                    super::claim_hold::engage(pa, action.serial());
-                                    (eng, mt) = reacquire_engine(pa);
-                                }
-                                crate::route::RetranscodeClaimDispatch::PendingNoHold => {
-                                    (eng, mt) = reacquire_engine(pa);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     // ---------- an in-place seek is still resolving (flushed, not yet re-anchored): COALESCE.
     // Firing another now would race the demux reopen (rapid tap-seeks) and the rebase guard would
@@ -1957,10 +1249,9 @@ mod drained_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        commit_or_carry_seek, rearm_carried_seek, TX,
-        hls_buffered_ms, native_clock_silence_ms, native_clock_stopped, open_failure_action,
-        prime_before_play, rebuffer_request_is_current, should_begin_hls_rebuffer,
-        OpenFailureAction, CLOCK_WATCH_SINCE_MS, NATIVE_CLOCK_STOPPED_MS, SHARED,
+        
+        hls_buffered_ms, native_clock_silence_ms, native_clock_stopped, prime_before_play, rebuffer_request_is_current, should_begin_hls_rebuffer,
+        CLOCK_WATCH_SINCE_MS, NATIVE_CLOCK_STOPPED_MS, SHARED,
     };
     use std::sync::atomic::Ordering::{Relaxed, Release};
 
@@ -2036,27 +1327,6 @@ mod tests {
         assert!(
             held_at_ms.is_some_and(|ms| ms <= 1_500),
             "a presentation clock that has physically stopped is the terminal reserve boundary:              expected the hold within 1500 ms of the last position callback, got {held_at_ms:?}              (the device waited 82682 ms for the fetch to complete instead)"
-        );
-    }
-
-    #[test]
-    fn a_failed_original_open_prefers_rollback_then_cold_auto_before_error() {
-        use OpenFailureAction::{Error, RollbackPendingOriginal, StartAutoHls};
-
-        assert_eq!(
-            open_failure_action(true, true, true),
-            RollbackPendingOriginal
-        );
-        assert_eq!(open_failure_action(false, true, true), StartAutoHls);
-        assert_eq!(
-            open_failure_action(false, true, false),
-            Error,
-            "a post-frame failure is not a cold open"
-        );
-        assert_eq!(
-            open_failure_action(false, false, true),
-            Error,
-            "manual Original stays the user's fixed choice"
         );
     }
 
@@ -2158,64 +1428,5 @@ mod tests {
         assert!(!rebuffer_request_is_current(false, 10_000, 10_000));
     }
 
-    /// Run one claim landing's seek settlement the way the tails do: the viewer pressed `pressed`
-    /// (if anything) during the flight, the claim was built with `pending_seek`, then the reload
-    /// resets the mailbox. Returns what was carried, the mailbox after the re-arm, and whether the
-    /// reducer still owed the seek intent.
-    fn run_carry(pending_seek: i64, pressed: Option<i64>) -> (Option<i64>, i64, bool) {
-        let _serial = plx_base::testlock::serial();
-        TX.reset();
-        crate::route::reject_user_seek();
-        if let Some(target) = pressed {
-            crate::route::note_user_seek_intent(target);
-            TX.seek_to_ns.store(target, Release);
-        }
-        let carried = commit_or_carry_seek(pending_seek);
-        TX.reset_for_reload();
-        rearm_carried_seek(carried);
-        let landed = TX.seek_to_ns.load(Relaxed);
-        let still_owed = crate::route::commit_user_seek();
-        TX.reset();
-        crate::route::reject_user_seek();
-        (carried, landed, still_owed)
-    }
-
-    /// Finding: a seek pressed during a claim's flight, when NO seek was pending at claim time
-    /// (`pending_seek < 0`), was dropped — `commit_or_carry_seek` returned `None` for every
-    /// negative `pending_seek`, and the reload's `TX.reset_for_reload()` then cleared the press.
-    #[test]
-    fn a_seek_pressed_mid_flight_lands_after_the_reload_when_none_was_pending_at_claim_time() {
-        let target = 40_000_000_000;
-        let (_, landed, intent_still_owed) = run_carry(-1, Some(target));
-        assert_eq!(landed, target, "the mid-flight seek was cleared by the reload instead of carried");
-        assert!(intent_still_owed, "the seek intent stays owed for the pump's own seek branch to commit");
-    }
-
-    /// A seek pressed AFTER the claim captured an older one supersedes it: carried, not committed.
-    #[test]
-    fn a_fresher_seek_than_the_claims_is_carried_past_the_reload() {
-        let (_, landed, owed) = run_carry(30_000_000_000, Some(50_000_000_000));
-        assert_eq!(landed, 50_000_000_000);
-        assert!(owed);
-    }
-
-    /// The exact-match path: the claim's own seek is still the newest, so the reload crosses it and
-    /// the intent is committed (settled) rather than carried.
-    #[test]
-    fn the_claims_own_seek_is_committed_not_carried() {
-        let target = 30_000_000_000;
-        let (carried, landed, still_owed) = run_carry(target, Some(target));
-        assert_eq!(carried, None);
-        assert_eq!(landed, -1, "nothing is re-armed: the reload lands AT the claim's target");
-        assert!(!still_owed, "the exact-match commit settled the intent");
-    }
-
-    /// No seek anywhere: nothing to carry, nothing to commit.
-    #[test]
-    fn no_seek_at_all_carries_nothing() {
-        let (carried, _, still_owed) = run_carry(-1, None);
-        assert_eq!(carried, None);
-        assert!(!still_owed);
-    }
 }
 

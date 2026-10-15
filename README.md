@@ -26,14 +26,15 @@ Early and under active development. Nothing here has been released.
 | Milestone | State |
 |---|---|
 | M0 — fork, rebrand, x86_64 Linux build environment | done |
-| M1 — Dispatcharr client and the Setup screen | done (simulator) |
-| M2 — live MPEG-TS playback on the television | not started — the go/no-go for the approach |
-| M3 — the programme guide | grid done (simulator); logos and remote keys next |
-| M4 — player overlay, channel up/down, favourites, recall | not started |
+| M1 — Dispatcharr client and the Setup screen | done |
+| M2 — live MPEG-TS playback on the television | done — H.264/AAC channels play on the TV's hardware decoder |
+| M3 — the programme guide | done — grid, logos, OK to tune |
+| M4 — player overlay, channel up/down, favourites, recall | in progress — channel up/down, number entry, now/next banner, hold-OK recall and favourites done; resume-on-launch next |
 | M5 — codec coverage, error handling, packaging and release | not started |
 
-Development targets a webOS 6 set. Everything so far is verified in the desktop simulator against a
-mock Dispatcharr server (`tests/mock_dispatcharr.py`), not yet on a television.
+Development targets a webOS 6 set. Features are verified in the desktop simulator against a mock
+Dispatcharr server (`tests/mock_dispatcharr.py`), and on the television against a real Dispatcharr
+server.
 
 ## Building
 

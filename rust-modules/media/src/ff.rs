@@ -7959,6 +7959,38 @@ fn unproductive_exit_failed(pushed_any: bool, lane_aborted: bool) -> bool {
     !pushed_any && !lane_aborted
 }
 
+/// `ff: ready http_ms=… first_byte_ms=… probe_ms=…`: the three parts of an open — the request to
+/// the response's headers, the headers to the first body byte, and that byte to the stream's
+/// codecs being known (`avformat_find_stream_info`). `first_byte_ms` and `probe_ms` read `-1` when
+/// no body byte was ever read before the probe returned.
+fn open_timing_line(
+    started: std::time::Instant,
+    headers: std::time::Instant,
+    first_byte: Option<std::time::Instant>,
+    ready: std::time::Instant,
+) -> String {
+    let ms = |a: std::time::Instant, b: std::time::Instant| b.saturating_duration_since(a).as_millis() as i64;
+    let (first, probe) = match first_byte {
+        Some(t) => (ms(headers, t), ms(t, ready)),
+        None => (-1, -1),
+    };
+    format!("ff: ready http_ms={} first_byte_ms={first} probe_ms={probe}", ms(started, headers))
+}
+
+#[cfg(test)]
+mod open_timing_tests {
+    use super::open_timing_line;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn the_open_is_reported_in_its_three_parts() {
+        let t = Instant::now();
+        let line = open_timing_line(t, t + Duration::from_millis(1200), Some(t + Duration::from_millis(1500)), t + Duration::from_millis(4500));
+        assert_eq!(line, "ff: ready http_ms=1200 first_byte_ms=300 probe_ms=3000");
+        assert_eq!(open_timing_line(t, t, None, t), "ff: ready http_ms=0 first_byte_ms=-1 probe_ms=-1");
+    }
+}
+
 /// The log line for an `avformat_open_input` that returned no context. Teardown aborts the lanes
 /// and `read_cb` answers the abort with EOF, so an open cut short that way returns whatever the
 /// truncated probe made of it (`AVERROR_INVALIDDATA` on a Matroska header) — a stop that must not
@@ -8478,6 +8510,9 @@ pub fn demux(
                     crate::player::log("ff: aborted before reopen");
                     break;
                 }
+                // How long the open takes, in its three parts (`ff: ready …` below): a live channel
+                // change spends seconds here, waiting on the server and then on the first packets.
+                let open_started = std::time::Instant::now();
                 // ONE decision, here, from the scheme; the only later switch is a plaintext open
                 // redirected to https, which `open_plain_progressive` hands to curl. Both arms publish the same two diagnostics (`dg_http_status`, `file_size`)
                 // before anything else can fail, because the read-out panel is the first thing anybody
@@ -8542,6 +8577,7 @@ pub fn demux(
                     }
                 };
 
+                let headers_at = std::time::Instant::now();
                 let mut state = Box::new(AvioState {
                     src,
                     aq: aq_p,
@@ -8602,6 +8638,7 @@ pub fn demux(
                     free_avio(avio);
                     break;
                 }
+                crate::player::log(&open_timing_line(open_started, headers_at, state.first_byte_at, std::time::Instant::now()));
                 // The container's own track names, published before anything else can fail: the track
                 // menu is the only reader and it wants them whether or not this part turns out to have
                 // a video stream. See `stream_name` for why they are read at all — for an MP4 they are

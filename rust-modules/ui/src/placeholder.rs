@@ -130,8 +130,6 @@ pub enum Reason {
     CardSkeleton,
     /// A `Thumb` or `Person` tile with no texture: the flat `CARD_PLACEHOLDER` ground.
     CardGround,
-    /// The playing item's still on the player's info panel (`appkit::info_panel`).
-    InfoPanelStill,
     /// The profile chip's avatar whose picture has not arrived (`widgets::profile_chip`).
     ProfileChip,
     /// One line of text that has not arrived (`widgets::skeleton_bar`, the Person page header).
@@ -163,7 +161,6 @@ impl Reason {
         match self {
             Reason::CardSkeleton => "card-skeleton",
             Reason::CardGround => "card-ground",
-            Reason::InfoPanelStill => "info-panel-still",
             Reason::ProfileChip => "profile-chip",
             Reason::SkeletonBar => "skeleton-bar",
             Reason::SkeletonSheet => "skeleton-sheet",
@@ -565,7 +562,7 @@ mod tests {
         let (_, f) = capture_declared(|| {
             skeleton(Painter::root(), Reason::CardSkeleton, "/library/metadata/1/thumb", rect(), 8.0);
             ground(Painter::root(), Reason::CardGround, "/p", rect(), 8.0);
-            flat(Painter::root(), Reason::InfoPanelStill, "", rect(), 8.0);
+            flat(Painter::root(), Reason::CardSkeleton, "/f", rect(), 8.0);
             face(Painter::root(), Reason::ProfileChip, "/a", rect(), 8.0, theme::CONTROL_IDLE_FILL, theme::CONTROL_IDLE_FILL);
         });
         assert_eq!(f.count, 4);
@@ -574,7 +571,7 @@ mod tests {
             vec![
                 (Reason::CardSkeleton, "/library/metadata/1/thumb"),
                 (Reason::CardGround, "/p"),
-                (Reason::InfoPanelStill, ""),
+                (Reason::CardSkeleton, "/f"),
                 (Reason::ProfileChip, "/a"),
             ]
         );

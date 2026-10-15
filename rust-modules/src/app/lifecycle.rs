@@ -188,13 +188,30 @@ mod root_back_tests {
         let entry = d.nav.top_page().expect("Guide root").id;
         let instance = d.nav.instance_of(entry).expect("owned Guide body");
         assert_eq!(d.top_screen().unwrap().name(), "guide");
+        // The Guide's load runs on a worker and lands "no account" here (there is none in a test)
+        // as a request of its own. Let it land first, so the press below is graded alone: landing
+        // in the same frame as the BACK made this fail one run in three.
+        let mut ms = 0;
+        let mut landed = false;
+        // Up to ~5 s of 1 ms waits, counted rather than timed (`app/` reads no wall clock).
+        for _ in 0..5_000 {
+            ms += 16;
+            crate::app::bridge::frame(&mut d, &mut rig, plx_machine::machine::Tick { ms, dt_us: 16_000 }, vec![]);
+            if rig.take_reqs().iter().any(|r| matches!(r, plx_screens::registry::LoopReq::DispatcharrSetup)) {
+                landed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(landed, "the Guide's load never landed");
 
+        ms += 16;
         let (_, report) = crate::app::bridge::frame(&mut d, &mut rig,
-            plx_machine::machine::Tick { ms: 16, dt_us: 16_000 }, vec![back_input(16)]);
+            plx_machine::machine::Tick { ms, dt_us: 16_000 }, vec![back_input(ms)]);
         assert!(!report.back_at_root, "the Guide answered its own root BACK exactly once");
         let requests = rig.take_reqs();
         assert!(matches!(requests.as_slice(),
-            [plx_screens::registry::LoopReq::BackAtRoot]));
+            [plx_screens::registry::LoopReq::BackAtRoot]), "{requests:?}");
         for request in requests {
             crate::app::run::reduce_navigation_request(request, &mut d);
         }

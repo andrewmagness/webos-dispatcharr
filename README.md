@@ -39,7 +39,8 @@ off.
 
 ## Status
 
-Early and under active development. Nothing here has been released.
+Early and under active development. Nothing here has been released yet; the first release will be
+0.1.0.
 
 | Milestone | State |
 |---|---|

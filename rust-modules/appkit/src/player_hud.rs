@@ -2805,7 +2805,7 @@ mod tests {
     }
 
     fn readout_of(e: &plx_media::player::ErrorShape) -> FailureReadout {
-        let cx = plx_media::player::FailureContext { forced: true, can_retry: true, repair_idle: true };
+        let cx = plx_media::player::FailureContext { forced: true, can_retry: true, repair_idle: true, live: false };
         FailureReadout::of(e, plx_media::player::failure_actions(e.kind, cx), "0.7.0 · webOS 4.5 · code".into())
     }
 

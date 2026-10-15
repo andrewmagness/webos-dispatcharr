@@ -479,7 +479,7 @@ fn header(ps: &plx_media::route::PlaybackSession, d: &plx_media::player::Diag, n
             plx_platform::devcaps::dv::capability().compact_display(),
             &vh.to_string(),
             &os,
-            plx_plex::plex::identity::PRODUCT,
+            plx_plex::plex::identity::DISPLAY_NAME,
             plx_plex::plex::identity::version(),
             &vw.to_string(),
         ),
@@ -2003,7 +2003,7 @@ mod tests {
             "[ŵéƀÖŠ üñķñöŵñ — öš_ïñƒö.ĵšöñ üñŕéàðàƀļé··············]",
         ] {
             for idle in [true, false] {
-                let identity = format!("PlxNative 0.7.0-dev · dev · {os} · surface 1920×1080");
+                let identity = format!("Dispatcharr TV 0.7.0-dev · dev · {os} · surface 1920×1080");
                 let verdict = "Playback failed — the server could not open the requested stream".to_string();
                 let panel = header_fixture(idle, [identity.clone(), verdict]);
                 let frame = panel.panel_rect();

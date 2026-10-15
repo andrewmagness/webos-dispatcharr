@@ -44,5 +44,9 @@
   "dispatcharr.guide.season_episode": "С{season} Э{episode}",
   "dispatcharr.guide.episode": "Серыя {episode}",
   "dispatcharr.live.next": "Далей {time} · {title}",
-  "dispatcharr.live.no_channel": "Няма канала {number}"
+  "dispatcharr.live.no_channel": "Няма канала {number}",
+  "dispatcharr.guide.favourites": "Абранае",
+  "dispatcharr.guide.all_channels": "Усе каналы",
+  "dispatcharr.guide.no_favourites": "Абранага пакуль няма",
+  "dispatcharr.guide.no_favourites_reason": "Утрымлівайце OK на канале, каб дадаць яго ў абранае."
 }

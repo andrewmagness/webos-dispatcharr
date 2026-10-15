@@ -43,5 +43,9 @@
   "dispatcharr.guide.season_episode": "S{season} É{episode}",
   "dispatcharr.guide.episode": "Épisode {episode}",
   "dispatcharr.live.next": "Ensuite {time} · {title}",
-  "dispatcharr.live.no_channel": "Aucune chaîne {number}"
+  "dispatcharr.live.no_channel": "Aucune chaîne {number}",
+  "dispatcharr.guide.favourites": "Favoris",
+  "dispatcharr.guide.all_channels": "Toutes les chaînes",
+  "dispatcharr.guide.no_favourites": "Aucun favori pour l'instant",
+  "dispatcharr.guide.no_favourites_reason": "Maintenez OK sur une chaîne pour l'ajouter à vos favoris."
 }

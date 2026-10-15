@@ -709,18 +709,29 @@ pub fn telemetry_candidates() -> Vec<PathBuf> {
 /// its instance root, so two simulators never share an account. No legacy entry: there is no older
 /// location to migrate from.
 pub fn dispatcharr_account_candidates() -> Vec<(PathBuf, bool)> {
+    dispatcharr_candidates("dispatcharr")
+}
+
+/// Candidate locations for the Dispatcharr viewing preferences (favourite channels, the last one
+/// watched): the account's tiers and order, as a file of their own, so a sign-out that removes the
+/// account leaves them for the next sign-in to the same server.
+pub fn dispatcharr_prefs_candidates() -> Vec<(PathBuf, bool)> {
+    dispatcharr_candidates("dispatcharr-prefs")
+}
+
+fn dispatcharr_candidates(stem: &str) -> Vec<(PathBuf, bool)> {
     let mut v = Vec::new();
     if ENV_STEERABLE {
-        v.push((in_runtime_dir("dispatcharr.json"), true));
+        v.push((in_runtime_dir(&format!("{stem}.json")), true));
     }
     let id = app_id();
     v.extend([
-        (PathBuf::from(format!("/media/developer/{id}-dispatcharr.json")), true),
-        (PathBuf::from(format!("/media/internal/.{id}-dispatcharr.json")), true),
-        (in_app_dir("dispatcharr.json"), true),
+        (PathBuf::from(format!("/media/developer/{id}-{stem}.json")), true),
+        (PathBuf::from(format!("/media/internal/.{id}-{stem}.json")), true),
+        (in_app_dir(&format!("{stem}.json")), true),
     ]);
     if !ENV_STEERABLE {
-        v.push((in_runtime_dir("dispatcharr.json"), false));
+        v.push((in_runtime_dir(&format!("{stem}.json")), false));
     }
     v
 }

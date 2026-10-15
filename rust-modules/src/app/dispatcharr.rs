@@ -4,7 +4,7 @@
 //!
 //! The event log gets one `dispatcharr:` line per outcome and never the password or the key.
 
-use plx_dispatcharr::dispatcharr::{account, api, auth, Server};
+use plx_dispatcharr::dispatcharr::{account, api, auth, prefs, Server};
 use plx_screens::registry::{DispatcharrCmd, GuideOutcome, SetupOutcome};
 use std::sync::mpsc::Sender;
 
@@ -28,6 +28,30 @@ pub(super) fn execute(command: DispatcharrCmd) {
         DispatcharrCmd::Guide { reply } => {
             plx_base::task::spawn_small("dispatcharr guide", move || guide(&reply));
         }
+        DispatcharrCmd::SaveFavourites { favourites } => {
+            let generation = SAVES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            plx_base::task::spawn_small("dispatcharr prefs", move || save_favourites(generation, favourites));
+        }
+    }
+}
+
+/// Favourites saves issued, and the newest one written: each save carries the whole list, so a
+/// worker that lost the race to a newer one writes nothing rather than putting the old list back.
+static SAVES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static WRITTEN: std::sync::Mutex<u64> = std::sync::Mutex::new(0);
+
+fn save_favourites(generation: u64, favourites: Vec<String>) {
+    let mut written = WRITTEN.lock().unwrap_or_else(|e| e.into_inner());
+    if generation < *written {
+        return;
+    }
+    let account::Loaded::Signed(record, _) = account::load() else { return };
+    let server = record.account.server.base();
+    let mut p = prefs::load(&server);
+    p.favourites = favourites;
+    if prefs::save(&server, &p).is_ok() {
+        *written = generation;
+        plx_base::eventlog::log(&format!("dispatcharr: favourites={}", p.favourites.len()));
     }
 }
 
@@ -122,7 +146,8 @@ fn guide(reply: &Sender<GuideOutcome>) {
             ));
             let logos = channels.iter().map(|c| c.logo_id.map(|id| account.logo_url(id))).collect();
             let streams = channels.iter().map(|c| account.stream_url(c)).collect();
-            answer(reply, GuideOutcome::Loaded { channels, logos, streams, guide, fetched_at });
+            let favourites = prefs::load(&account.server.base()).favourites;
+            answer(reply, GuideOutcome::Loaded { channels, logos, streams, favourites, guide, fetched_at });
         }
         Err(e) => {
             plx_base::eventlog::log(&format!("dispatcharr: guide failed: {e}"));

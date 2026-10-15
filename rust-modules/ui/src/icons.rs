@@ -110,6 +110,9 @@ pub enum Icon {
     /// [`Icon::CheckCircleFill`].
     Trailer,
     Info,
+    /// A filled five-point star: a favourite channel, on its Guide row and the Guide's favourites
+    /// switch. Drawn for this project, one clockwise path.
+    Star,
     /// Warning triangle — `info.svg`'s sibling (same 24 viewBox, 2.2 stroke, round caps/joins,
     /// dot-and-bar inverted). From `Plex Pass Awareness.dc.html`: the facts row's HDR chip at
     /// ~24px and the playback-failed read-out at 96px. Outline, not filled — a solid triangle
@@ -286,6 +289,7 @@ fn src(id: Icon) -> &'static str {
         Icon::Restart => include_str!("../../../assets/icons/restart.svg"),
         Icon::Trailer => include_str!("../../../assets/icons/trailer.svg"),
         Icon::Info => include_str!("../../../assets/icons/info.svg"),
+        Icon::Star => include_str!("../../../assets/icons/star.svg"),
         Icon::Alert => include_str!("../../../assets/icons/alert.svg"),
         Icon::User => include_str!("../../../assets/icons/user.svg"),
         Icon::Backspace => include_str!("../../../assets/icons/backspace.svg"),

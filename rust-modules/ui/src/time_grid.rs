@@ -216,10 +216,16 @@ pub fn logo_rect(rect: Rect, w: f32, h: f32, measure: &dyn Measure) -> Rect {
     Rect::new(slot.x + (slot.w - dw) * 0.5, slot.y + (slot.h - dh) * 0.5, dw, dh)
 }
 
+/// A favourite's star: at the label's right edge, a little under the label text's line height.
+pub fn star_rect(rect: Rect, measure: &dyn Measure) -> Rect {
+    let side = (measure.line_h(theme::size::LABEL) * 0.8).round();
+    Rect::new(rect.x + rect.w - CELL_PAD - side, rect.y + (rect.h - side) * 0.5, side, side)
+}
+
 /// One row's label: its number over a fixed column, its logo (`(texture, w, h)` once resident;
 /// the slot stays empty until then and for a row without one), then its name, elided to the column.
-pub fn draw_row_label(p: Painter, rect: Rect, number: &str, logo: Option<(u32, f32, f32)>, name: &str, hot: f32,
-    measure: &dyn Measure) {
+pub fn draw_row_label(p: Painter, rect: Rect, number: &str, logo: Option<(u32, f32, f32)>, name: &str, favourite: bool,
+    hot: f32, measure: &dyn Measure) {
     let size = theme::size::LABEL;
     let ink = theme::cross(theme::TEXT_SECONDARY, theme::TEXT_PRIMARY, hot);
     let number_w = measure.width_str("0000", size, true);
@@ -231,7 +237,12 @@ pub fn draw_row_label(p: Painter, rect: Rect, number: &str, logo: Option<(u32, f
         p.tex(tex, logo_rect(rect, w, h, measure), 0.0, theme::TINT_WHITE);
     }
     let x = rect.x + number_w + CELL_PAD + LOGO_W + CELL_PAD;
-    let w = (rect.x + rect.w - x).max(0.0);
+    let mut w = (rect.x + rect.w - x).max(0.0);
+    if favourite {
+        let star = star_rect(rect, measure);
+        crate::icons::draw(p, crate::icons::Icon::Star, star, theme::FAVOURITE_MARK);
+        w = (star.x - CELL_PAD - x).max(0.0);
+    }
     let n = measure.fit_line(name, w, size, false);
     Label::new(n.as_ptr(), size, ink).draw(p, Rect::new(x, rect.y, w, rect.h));
 }

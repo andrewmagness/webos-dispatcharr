@@ -1,0 +1,2 @@
+<!-- A five-point star, drawn for this project (a favourite channel's mark). One clockwise path: see ui/src/icons.rs's authoring contract. -->
+<svg viewBox="0 0 24 24" fill="#ffffff" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"><path d="M12.00 2.10 L14.59 9.04 L21.99 9.36 L16.18 13.96 L18.17 21.09 L12.00 17.00 L5.83 21.09 L7.82 13.96 L2.01 9.36 L9.41 9.04Z"/></svg>

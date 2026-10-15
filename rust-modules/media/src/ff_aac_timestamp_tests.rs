@@ -173,7 +173,9 @@ fn audio_that_is_not_what_the_load_declared_is_a_mismatch() {
     assert!(!audio_mismatch(3, "aac", true), "AAC declared, AAC found");
     assert!(audio_mismatch(3, "ac3", true), "AAC declared, AC-3 found");
     assert!(audio_mismatch(1, "aac", true));
-    assert!(audio_mismatch(3, "mp2", true), "a codec the Load cannot name is never what it declared");
+    assert!(audio_mismatch(3, "mp2", true), "AAC declared, MP2 found");
+    assert!(!audio_mismatch(5, "mp2", true), "MP2 is what an MP3 declaration plays");
+    assert!(audio_mismatch(3, "opus", true), "a codec no Load can name is never what it declared");
     assert!(!audio_mismatch(3, "ac3", false), "not feeding audio: nothing to mismatch");
     assert!(!audio_mismatch(0, "ac3", true), "no audio declared");
     assert!(!audio_mismatch(3, "", true), "no audio stream");

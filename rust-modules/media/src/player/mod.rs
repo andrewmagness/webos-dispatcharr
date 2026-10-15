@@ -584,7 +584,8 @@ mod codec_correction_tests {
         assert_eq!(codec_correction(("h264", "aac"), ("hevc", "eac3")), Some(("hevc".into(), "eac3".into())));
         assert_eq!(codec_correction(("h264", "aac"), ("h264", "aac")), None, "nothing to correct");
         assert_eq!(codec_correction(("h264", "aac"), ("mpeg2video", "aac")), None, "no Load names MPEG-2 video");
-        assert_eq!(codec_correction(("h264", "aac"), ("h264", "mp2")), None, "nor MP2 audio");
+        assert_eq!(codec_correction(("h264", "aac"), ("h264", "mp2")), Some(("h264".into(), "mp2".into())),
+            "MP2 audio is declared as libpf's MP3");
     }
 }
 
@@ -1030,6 +1031,33 @@ fn runtime_failure(
 /// in `detail`. `Player.repair` (see `tv::sandbox`) can actually attempt the Homebrew
 /// Channel service call that patches the jail profile, so the remedy text points at that confirmed
 /// in-app repair rather than at a bare reinstall.
+/// A live channel whose video no Load can declare: the codec, and the server-side fix.
+fn unsupported_video_shape(codec: &str) -> ErrorShape {
+    let name = match codec {
+        "mpeg2video" => "MPEG-2",
+        "mpeg1video" => "MPEG-1",
+        other => other,
+    };
+    ErrorShape {
+        kind: FailureKind::MediaSource,
+        caption: plx_platform::i18n::msg::widgets_failure_open_c(),
+        panel: plx_platform::i18n::msg::dispatcharr_live_unsupported_video(),
+        readout: plx_platform::i18n::msg::dispatcharr_live_unsupported_video(),
+        detail: std::borrow::Cow::Owned(plx_platform::i18n::msg::dispatcharr_live_unsupported_help(name)),
+        no_pass: false,
+    }
+}
+
+#[cfg(test)]
+mod unsupported_video_tests {
+    #[test]
+    fn an_mpeg2_channel_names_its_format_and_the_fix() {
+        let e = super::unsupported_video_shape("mpeg2video");
+        assert_eq!(e.readout, plx_platform::i18n::msg::dispatcharr_live_unsupported_video());
+        assert!(e.detail.contains("MPEG-2") && e.detail.contains("H.264"), "{}", e.detail);
+    }
+}
+
 fn jail_error_shape() -> ErrorShape {
     ErrorShape {
         kind: FailureKind::JailMissingRtkmem,
@@ -1199,6 +1227,12 @@ pub fn error_now(ps: &crate::route::PlaybackSession) -> ErrorShape {
     // signal below can be the real explanation for a playback failure.
     if ps.jail_load_blocked {
         return jail_error_shape();
+    }
+    // A live channel in a video format the TV's pipeline does not take: say which, and the fix.
+    if crate::route::is_live(ps) {
+        if let Some(codec) = SHARED.unsupported_video.lock().unwrap_or_else(|e| e.into_inner()).clone() {
+            return unsupported_video_shape(&codec);
+        }
     }
     let demux_failed = SHARED
         .demux_failed
@@ -1485,6 +1519,7 @@ impl Diag {
             2 => "AC3 PLUS",
             3 => "AAC",
             4 => "DTS",
+            5 => "MP3",
             _ => "NONE (needAudio:false)",
         }
     }

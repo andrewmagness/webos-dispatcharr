@@ -228,5 +228,16 @@
   "dispatcharr.setup.found": {
     "value": "Found on your network · not encrypted",
     "description": "Note under an address the TV found on its own network (always plain HTTP, so not encrypted)"
+  },
+  "dispatcharr.live.unsupported_video": {
+    "value": "This channel's video format can't play on this TV",
+    "description": "Failure reason when a live channel's stream is in a video codec the TV's playback pipeline does not take (e.g. MPEG-2)"
+  },
+  "dispatcharr.live.unsupported_help": {
+    "value": "The channel sends {codec} video. In Dispatcharr, give it a stream profile that converts to H.264.",
+    "args": {
+      "codec": "str"
+    },
+    "description": "Under the unsupported-video reason: which codec, and the fix on the server"
   }
 }

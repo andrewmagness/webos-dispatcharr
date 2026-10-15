@@ -52,5 +52,7 @@
   "dispatcharr.setup.resume_note": "Si está activado, la app se abre reproduciendo el último canal que viste. ATRÁS va a la Guía.",
   "dispatcharr.live.up_next": "A continuación · {time}",
   "dispatcharr.setup.searching": "Buscando Dispatcharr en tu red…",
-  "dispatcharr.setup.found": "Encontrado en tu red · sin cifrar"
+  "dispatcharr.setup.found": "Encontrado en tu red · sin cifrar",
+  "dispatcharr.live.unsupported_video": "El formato de vídeo de este canal no se puede reproducir en este televisor",
+  "dispatcharr.live.unsupported_help": "El canal envía vídeo {codec}. En Dispatcharr, asígnale un perfil de transmisión que lo convierta a H.264."
 }

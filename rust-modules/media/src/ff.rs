@@ -8729,6 +8729,7 @@ pub fn demux(
                         "ff: no framing for video codec {cname} (codec_id={}); refusing the stream",
                         (*vcp).codec_id
                     ));
+                    *SHARED.unsupported_video.lock().unwrap_or_else(|e| e.into_inner()) = Some(cname.to_string());
                     SHARED.demux_failed.store(true, Ordering::Release);
                     avformat_close_input(&mut fmt);
                     free_avio(avio);

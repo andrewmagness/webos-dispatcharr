@@ -599,6 +599,9 @@ pub struct Shared {
     /// before the demuxer starts): a 503 at its open is the server's stream slot still being freed
     /// by the channel just left, and is retried (`ff::live_busy_retry`).
     pub live_source: AtomicBool,
+    /// The codecs the demuxer found in the stream it opened, `(video, audio)` in FFmpeg's spelling
+    /// (audio empty when there is none) — what a live channel's declaration is corrected to.
+    pub stream_codecs: Mutex<Option<(String, String)>>,
     /// WHY the demuxer found nothing to feed, when the answer is "the stream itself": the server
     /// delivered audio streams and no video stream. Issue #22's whole shape — a transcode target
     /// the server cannot honour makes PMS drop the video track, and `ff: no video stream` alone
@@ -1008,6 +1011,7 @@ impl Shared {
             sub_bitmaps: Mutex::new(Vec::new()),
             file_size: AtomicI64::new(0),
             live_source: AtomicBool::new(false),
+            stream_codecs: Mutex::new(None),
             video_w: AtomicI32::new(0),
             video_h: AtomicI32::new(0),
             video_raster: AtomicU64::new(0),
@@ -1639,6 +1643,7 @@ impl Shared {
         *self.track_names.lock().unwrap() = TrackNames::new();
         self.file_size.store(0, Ordering::Relaxed);
         self.live_source.store(false, Ordering::Relaxed);
+        *self.stream_codecs.lock().unwrap_or_else(|e| e.into_inner()) = None;
         self.video_w.store(0, Ordering::Relaxed);
         self.video_h.store(0, Ordering::Relaxed);
         self.video_raster.store(0, Ordering::Release);

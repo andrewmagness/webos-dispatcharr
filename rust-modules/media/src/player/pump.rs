@@ -1861,7 +1861,34 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
                 pos / 1_000_000_000,
                 dur / 1_000_000_000
             ));
+        } else if drained_without_duration(dur, SHARED.pres_fed.load(Relaxed), eng.max_fed_video_pts, EOS_TAIL_NS) {
+            // A stream with no duration — a live channel whose connection or upstream dropped —
+            // ends when what was fed has been shown. Without this it froze on its last frame
+            // forever, because the test above needs a duration to reach.
+            SHARED.ended.store(true, Relaxed);
+            super::log(&format!("EOS reached: no duration, presented to {}s → ended", pos / 1_000_000_000));
         }
+    }
+}
+
+/// Whether a stream with no duration (`dur <= 0`), its producer at EOF, has presented
+/// (`pres_fed`) to within `tail` of the last video it was fed (`max_fed`).
+fn drained_without_duration(dur: i64, pres_fed: i64, max_fed: i64, tail: i64) -> bool {
+    dur <= 0 && pres_fed != super::engine::PRES_NONE && max_fed > 0 && pres_fed >= max_fed - tail
+}
+
+#[cfg(test)]
+mod drained_tests {
+    use super::drained_without_duration;
+    const S: i64 = 1_000_000_000;
+
+    #[test]
+    fn a_live_stream_ends_once_what_was_fed_has_been_shown() {
+        assert!(!drained_without_duration(0, 3 * S, 6 * S, S), "two seconds still buffered");
+        assert!(drained_without_duration(0, 5 * S + 1, 6 * S, S));
+        assert!(!drained_without_duration(0, super::super::engine::PRES_NONE, 6 * S, S), "nothing shown yet");
+        assert!(!drained_without_duration(0, 0, 0, S), "nothing fed");
+        assert!(!drained_without_duration(90 * S, 89 * S, 89 * S, S), "a file ends by its duration");
     }
 }
 

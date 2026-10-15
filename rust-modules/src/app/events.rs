@@ -229,6 +229,9 @@ pub(crate) fn remote_token_key(tok: &str) -> Option<(c_uint, c_uint)> {
         "pagedown" => (SDLK_PAGEDOWN, 0),
         "chup" => (0, WCODE_CH_UP_KEY),
         "chdown" => (0, WCODE_CH_DOWN_KEY),
+        // webOS 6's Magic Remote spelling of the same two keys (`ui::consts::WCODE_CH_UP_WEBOS6`).
+        "chup6" => (0, plx_ui::consts::WCODE_CH_UP_WEBOS6),
+        "chdown6" => (0, plx_ui::consts::WCODE_CH_DOWN_WEBOS6),
         "play" => (0, WCODE_PLAY),
         "pause" => (0, WCODE_PAUSE),
         "stop" => (0, WCODE_STOP),

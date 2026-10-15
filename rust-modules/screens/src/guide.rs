@@ -636,7 +636,7 @@ impl GuideScreen {
         let (row, _) = split(elem)?;
         let listing = self.listing.as_ref()?;
         listing.lineup.channels.get(row).filter(|c| c.tunable())?;
-        Some(PlayIntent::Live(LiveTune { lineup: Arc::clone(&listing.lineup), index: row, previous: None, at: 0 }))
+        Some(PlayIntent::Live(LiveTune { lineup: Arc::clone(&listing.lineup), index: row, previous: None, at: 0, codecs: None }))
     }
 
     // ── drawing ──────────────────────────────────────────────────────────────────────────────

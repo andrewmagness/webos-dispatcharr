@@ -179,14 +179,6 @@
     },
     "description": "A programme's episode number when the listing gives no season"
   },
-  "dispatcharr.live.next": {
-    "value": "Next {time} · {title}",
-    "args": {
-      "time": "str",
-      "title": "str"
-    },
-    "description": "Live TV banner: the programme after the one on now. {time} is its start, a clock time in the viewer's format"
-  },
   "dispatcharr.live.no_channel": {
     "value": "No channel {number}",
     "args": {
@@ -221,5 +213,12 @@
   "dispatcharr.setup.resume_note": {
     "value": "When on, the app opens playing the channel you watched last. BACK goes to the Guide.",
     "description": "Under the start-on-the-last-channel switch: what it does"
+  },
+  "dispatcharr.live.up_next": {
+    "value": "Up next · {time}",
+    "args": {
+      "time": "str"
+    },
+    "description": "Live TV banner, right-hand column heading over the next programme's title. {time} is its start, a clock time in the viewer's format"
   }
 }

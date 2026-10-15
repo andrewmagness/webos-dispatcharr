@@ -767,7 +767,7 @@ fn parse_sinkmax(spec: &str) -> Option<SinkEnvelope> {
 /// LG's buffer-feed vocabulary. libpf CustomPipeline::parseOptionStringSpi accepts DTS;
 /// getAudioCaps selects audio/x-dts and setAdecSinkInfo_ES configures dts-seamless (issue #221).
 /// Unsupported formats must never be mislabeled as AC3: that can stall the audio master clock.
-fn audio_payload_codec(codec: &str) -> Option<(&'static str, u8)> {
+pub(crate) fn audio_payload_codec(codec: &str) -> Option<(&'static str, u8)> {
     match codec {
         "ac3" => Some(("AC3", 1)),
         "eac3" => Some(("AC3 PLUS", 2)),

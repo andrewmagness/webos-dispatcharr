@@ -545,6 +545,49 @@ pub fn duration_ns() -> i64 {
 pub fn seek_pending() -> i64 {
     TX.seek_to_ns.load(Relaxed)
 }
+/// **The codecs a failed live channel should be declared with**, when that is why it failed: the
+/// demuxer refused the stream because it is not what the Load declared, and what it found is
+/// something a Load can declare. `None` otherwise (still starting, playing, failed for another
+/// reason, or a codec no Load can name, which the failure read-out reports).
+pub fn live_codec_correction(ps: &crate::route::PlaybackSession) -> Option<(String, String)> {
+    if !crate::route::is_live(ps) || !SHARED.demux_failed.load(Relaxed) {
+        return None;
+    }
+    let found = SHARED.stream_codecs.lock().unwrap_or_else(|e| e.into_inner()).clone()?;
+    codec_correction(
+        (&crate::route::stream_vcodec(ps), &crate::route::stream_acodec(ps)),
+        (&found.0, &found.1),
+    )
+}
+
+/// [`live_codec_correction`]'s decision: the found pair, when it differs from the declared one
+/// and a Load can declare it.
+fn codec_correction(declared: (&str, &str), found: (&str, &str)) -> Option<(String, String)> {
+    let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+    if same(declared.0, found.0) && same(declared.1, found.1) {
+        return None;
+    }
+    engine::LoadVideo::of_stream(found.0)?;
+    if !found.1.is_empty() {
+        engine::audio_payload_codec(found.1)?;
+    }
+    Some((found.0.to_ascii_lowercase(), found.1.to_ascii_lowercase()))
+}
+
+#[cfg(test)]
+mod codec_correction_tests {
+    use super::codec_correction;
+
+    #[test]
+    fn a_failover_stream_in_ac3_is_redeclared_and_an_undeclarable_one_is_not() {
+        assert_eq!(codec_correction(("h264", "aac"), ("h264", "ac3")), Some(("h264".into(), "ac3".into())));
+        assert_eq!(codec_correction(("h264", "aac"), ("hevc", "eac3")), Some(("hevc".into(), "eac3".into())));
+        assert_eq!(codec_correction(("h264", "aac"), ("h264", "aac")), None, "nothing to correct");
+        assert_eq!(codec_correction(("h264", "aac"), ("mpeg2video", "aac")), None, "no Load names MPEG-2 video");
+        assert_eq!(codec_correction(("h264", "aac"), ("h264", "mp2")), None, "nor MP2 audio");
+    }
+}
+
 /// true once the pipeline has drained to true end-of-stream (see pump's EOS check). app.rs polls
 /// this to tear the player down at the credits.
 pub fn ended() -> bool {

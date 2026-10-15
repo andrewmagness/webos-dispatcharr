@@ -87,10 +87,79 @@ fn apply_prefs(op: PrefsOp) {
     }
 }
 
-/// A live tune landed on channel `uuid`: it is the one the next launch starts on.
+/// The codecs each channel's stream turned out to carry this run, by UUID: a channel corrected once
+/// (`player::live_codec_correction`) is declared right the next time it is tuned.
+static CODECS: std::sync::Mutex<Option<std::collections::HashMap<String, (String, String)>>> =
+    std::sync::Mutex::new(None);
+
+pub(super) fn remember_codecs(uuid: &str, codecs: (String, String)) {
+    let mut map = CODECS.lock().unwrap_or_else(|e| e.into_inner());
+    map.get_or_insert_with(Default::default).insert(uuid.to_owned(), codecs);
+}
+
+/// `tune` with the codecs its channel was found to carry, when it has none of its own.
+pub(super) fn with_known_codecs(mut tune: plx_media::route::LiveTune) -> plx_media::route::LiveTune {
+    if tune.codecs.is_none() {
+        if let Some(uuid) = tune.channel().map(|c| c.uuid.clone()) {
+            let map = CODECS.lock().unwrap_or_else(|e| e.into_inner());
+            tune.codecs = map.as_ref().and_then(|m| m.get(&uuid).cloned());
+        }
+    }
+    tune
+}
+
+/// The channel last watched this run, by UUID: what recall returns to from a tune the Guide made.
+static WATCHED: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// A live tune landed on channel `uuid`: it is the one the next launch starts on, and the one a
+/// later tune's recall goes back to.
 pub(super) fn remember_last(uuid: &str) {
     if !uuid.is_empty() {
+        *WATCHED.lock().unwrap_or_else(|e| e.into_inner()) = Some(uuid.to_owned());
         update_prefs(PrefsOp::Last(uuid.to_owned()));
+    }
+}
+
+/// `tune` with somewhere for recall to go: a tune from the Guide starts with no previous channel,
+/// so the channel watched before it (this run) is its previous one, when the lineup has it.
+pub(super) fn with_previous(mut tune: plx_media::route::LiveTune) -> plx_media::route::LiveTune {
+    if tune.previous.is_some() {
+        return tune;
+    }
+    let watched = WATCHED.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    tune.previous = recall_index(&tune, watched.as_deref());
+    tune
+}
+
+/// [`with_previous`]'s decision: the row of `watched` in the lineup, unless it is the channel being
+/// tuned or cannot be tuned.
+fn recall_index(tune: &plx_media::route::LiveTune, watched: Option<&str>) -> Option<usize> {
+    let watched = watched?;
+    let i = tune.lineup.channels.iter().position(|c| c.uuid == watched && c.tunable())?;
+    (i != tune.index).then_some(i)
+}
+
+#[cfg(test)]
+mod recall_tests {
+    use super::recall_index;
+    use plx_media::route::{LiveChannel, LiveLineup, LiveTune};
+
+    fn tune(index: usize) -> LiveTune {
+        let channels = (0..3)
+            .map(|i| LiveChannel { id: i, uuid: format!("u-{i}"), number: i.to_string(), name: String::new(),
+                url: if i == 2 { String::new() } else { "u".into() }, logo: None, programmes: Vec::new() })
+            .collect();
+        let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
+        LiveTune { lineup, index, previous: None, at: 0, codecs: None }
+    }
+
+    #[test]
+    fn a_guide_tune_recalls_the_channel_watched_before_it() {
+        assert_eq!(recall_index(&tune(0), Some("u-1")), Some(1));
+        assert_eq!(recall_index(&tune(1), Some("u-1")), None, "not the channel being tuned");
+        assert_eq!(recall_index(&tune(0), Some("u-2")), None, "nor one with no stream");
+        assert_eq!(recall_index(&tune(0), Some("gone")), None, "nor one the lineup lost");
+        assert_eq!(recall_index(&tune(0), None), None, "nothing watched yet");
     }
 }
 

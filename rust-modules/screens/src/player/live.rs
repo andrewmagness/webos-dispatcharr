@@ -3,7 +3,9 @@
 //! every decision takes the tune and the frame's millisecond, so the host suite grades it.
 //!
 //! The remote, Magic Remote first (the owner's, 2026-10-14):
-//! - CH▲/CH▼ (and UP/DOWN on the D-pad) change channel through the lineup the Guide handed over.
+//! - CH▲/CH▼ change channel through the lineup the Guide handed over. Only the channel keys: the
+//!   owner's call (2026-10-15), so a D-pad press meant for the banner never changes channel. UP and
+//!   DOWN show the banner.
 //! - The number keys type a channel number. It is tuned the moment no longer channel number starts
 //!   with what is typed (`5` at once; `1` waits while there is an `11`), else [`TYPED_COMMIT_MS`]
 //!   after the last digit, or at once on OK. The lineup decides how long a number can be, so no
@@ -62,8 +64,7 @@ pub fn press_of(key: Key, sym: c_uint, wcode: c_uint) -> Option<LivePress> {
         return Some(LivePress::Zap(-dir));
     }
     match key {
-        Key::Up => Some(LivePress::Zap(1)),
-        Key::Down => Some(LivePress::Zap(-1)),
+        Key::Up | Key::Down => Some(LivePress::Wake),
         Key::Ok => Some(LivePress::Ok),
         Key::Left { .. } | Key::Right { .. } | Key::Play | Key::Pause | Key::PlayPause => Some(LivePress::Swallow),
         _ => None,
@@ -242,7 +243,7 @@ mod tests {
             })
             .collect();
         let lineup = LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() };
-        LiveTune { lineup: Arc::new(lineup), index, previous: None, at: 1_000 }
+        LiveTune { lineup: Arc::new(lineup), index, previous: None, at: 1_000, codecs: None }
     }
 
     fn tuned_to(a: LiveAction) -> Option<usize> {
@@ -257,8 +258,10 @@ mod tests {
         assert_eq!(press_of(Key::Other, b'7' as c_uint, 0), Some(LivePress::Digit(7)));
         assert_eq!(press_of(Key::Other, 0, consts::WCODE_CH_UP_KEY), Some(LivePress::Zap(1)), "CH▲ goes up");
         assert_eq!(press_of(Key::Other, 0, consts::WCODE_CH_DOWN_KEY), Some(LivePress::Zap(-1)));
-        assert_eq!(press_of(Key::Up, 0, 0), Some(LivePress::Zap(1)));
-        assert_eq!(press_of(Key::Down, 0, 0), Some(LivePress::Zap(-1)));
+        assert_eq!(press_of(Key::Other, 0, consts::WCODE_CH_UP_WEBOS6), Some(LivePress::Zap(1)), "webOS 6's CH▲");
+        assert_eq!(press_of(Key::Other, 0, consts::WCODE_CH_DOWN_WEBOS6), Some(LivePress::Zap(-1)));
+        assert_eq!(press_of(Key::Up, 0, 0), Some(LivePress::Wake), "the D-pad does not change channel");
+        assert_eq!(press_of(Key::Down, 0, 0), Some(LivePress::Wake));
         assert_eq!(press_of(Key::Ok, 0, 0), Some(LivePress::Ok));
         assert_eq!(press_of(Key::Pause, 0, 0), Some(LivePress::Swallow), "no pausing live TV");
         assert_eq!(press_of(Key::Left { alt: false }, 0, 0), Some(LivePress::Swallow), "nothing to seek in");

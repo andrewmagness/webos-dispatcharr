@@ -175,11 +175,62 @@ pub(crate) fn retry_failed_playback(
     }
 }
 
+/// **How often a live channel may be reconnected on its own.** A channel's stream ending is not
+/// the end of the programme: the connection dropped, or the server restarted its upstream, and the
+/// player tunes the same channel again. A channel that keeps ending (its source is down) would
+/// loop forever, so at most [`ReconnectBudget::MAX`] reconnects are allowed in any
+/// [`ReconnectBudget::WINDOW_MS`]; past that the playback ends as a film does.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ReconnectBudget {
+    /// The ticks of the reconnects still inside the window, oldest first.
+    recent: std::collections::VecDeque<u32>,
+}
+
+impl ReconnectBudget {
+    pub(crate) const MAX: usize = 3;
+    pub(crate) const WINDOW_MS: u32 = 60_000;
+
+    /// Spend one reconnect at tick `now`, if the window has one left.
+    pub(crate) fn allow(&mut self, now: u32) -> bool {
+        while self.recent.front().is_some_and(|&t| now.wrapping_sub(t) >= Self::WINDOW_MS) {
+            self.recent.pop_front();
+        }
+        if self.recent.len() >= Self::MAX {
+            return false;
+        }
+        self.recent.push_back(now);
+        true
+    }
+}
+
+#[cfg(test)]
+mod reconnect_budget_tests {
+    use super::ReconnectBudget;
+
+    #[test]
+    fn a_few_reconnects_a_minute_and_no_more() {
+        let mut b = ReconnectBudget::default();
+        assert!(b.allow(0) && b.allow(1_000) && b.allow(2_000));
+        assert!(!b.allow(3_000), "a fourth inside the minute: the source is down");
+        assert!(b.allow(60_000), "the first has aged out");
+        assert!(!b.allow(60_500));
+    }
+
+    #[test]
+    fn the_window_survives_the_tick_wrap() {
+        let mut b = ReconnectBudget::default();
+        let t = u32::MAX - 500;
+        assert!(b.allow(t) && b.allow(t.wrapping_add(100)) && b.allow(t.wrapping_add(200)));
+        assert!(!b.allow(t.wrapping_add(1_000)));
+        assert!(b.allow(t.wrapping_add(ReconnectBudget::WINDOW_MS)));
+    }
+}
+
 /// **Change channel while watching** (`PlayerReq::Tune`): stop the stream being watched, which also
 /// frees the server's stream slot before the next one is asked for, then tune and start the new
 /// channel on the player page that is already up. The page's return target is untouched, so BACK
 /// still goes to the Guide.
-fn tune_channel(
+pub(super) fn tune_channel(
     ps: &mut plx_media::route::PlaybackSession,
     pa: &mut plx_media::player::adapter::PlayerAdapter,
     tune: plx_media::route::LiveTune,
@@ -188,6 +239,7 @@ fn tune_channel(
 ) {
     plx_media::player::stop_bufferfeed(ps, pa);
     let uuid = tune.channel().map(|c| c.uuid.clone()).unwrap_or_default();
+    let tune = super::dispatcharr::with_known_codecs(tune);
     if plx_media::route::request_live(ps, tune, plx_dispatcharr::dispatcharr::api::unix_now()) {
         super::dispatcharr::remember_last(&uuid);
         start_playback(ps, pa, 0, Origin::Here, HUD_LINGER_MS, None, pages, bridge);
@@ -582,6 +634,13 @@ pub(crate) fn player_requests(
     for req in reqs {
         match req {
             PlayerReq::Tune(tune) => tune_channel(ps, pa, tune, pages, bridge),
+            // A live channel has no server request to resolve again: *Try again* tunes it again.
+            PlayerReq::RetryPlayback if plx_media::route::live_tune(ps).is_some() => {
+                if let Some(tune) = plx_media::route::live_tune(ps).cloned() {
+                    log("live: try again");
+                    tune_channel(ps, pa, tune, pages, bridge);
+                }
+            }
             PlayerReq::RetryPlayback => {
                 retry_failed_playback(ps, pa, bridge.metadata_mut(), None, AttemptOrigin::UserRetry);
             }

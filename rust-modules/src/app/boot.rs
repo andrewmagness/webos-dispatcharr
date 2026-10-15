@@ -1606,6 +1606,7 @@ pub(crate) unsafe fn construct(
         player,
         adapters,
         repause_at,
+        live_reconnect: super::playback::ReconnectBudget::default(),
         ok_armed,
         last_route_reported,
         ptr,

@@ -27,9 +27,9 @@ watching:
 
 | Remote | What it does |
 |---|---|
-| CH▲ / CH▼, or UP / DOWN | the next or previous channel in the list you came from |
+| CH▲ / CH▼ | the next or previous channel in the list you came from |
 | number keys (the Magic Remote's 123) | that channel, as soon as the number can only mean one |
-| OK | show or hide the banner: what's on now, its progress, and what's next |
+| OK, or UP / DOWN | show the banner: what's on now and its progress, with what's up next on the right (OK again hides it) |
 | hold OK | back to the channel you watched before |
 | BACK | the Guide |
 
@@ -47,7 +47,7 @@ Early and under active development. Nothing here has been released.
 | M2 — live MPEG-TS playback on the television | done — H.264/AAC channels play on the TV's hardware decoder |
 | M3 — the programme guide | done — grid, logos, OK to tune |
 | M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, hold-OK recall, favourites, start on the last channel |
-| M5 — codec coverage, error handling, packaging and release | not started |
+| M5 — codec coverage, error handling, packaging and release | in progress — dropped streams reconnect, a busy server is retried, a channel's real audio/video codecs are detected and declared |
 
 Development targets a webOS 6 set. Features are verified in the desktop simulator against a mock
 Dispatcharr server (`tests/mock_dispatcharr.py`), and on the television against a real Dispatcharr

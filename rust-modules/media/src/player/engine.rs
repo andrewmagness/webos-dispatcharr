@@ -773,6 +773,11 @@ pub(crate) fn audio_payload_codec(codec: &str) -> Option<(&'static str, u8)> {
         "eac3" => Some(("AC3 PLUS", 2)),
         "aac" => Some(("AAC", 3)),
         "dts" => Some(("DTS", 4)),
+        // MPEG-1 audio — broadcast MP2 (Layer II) and MP3 — is libpf's `"MP3"`, the audio/mpeg
+        // family (its audio codec table: MP3 AC3 AAC WMA DTS "AC3 PLUS" "HE AAC"; strings of the
+        // dev set's `libpf-1.0.so.1.0.0`). Device-measured 2026-10-15: an H.264 + MP2 stream
+        // declared `"MP3"` got both decoders and presented 60 fps under audioSync.
+        "mp2" | "mp3" => Some(("MP3", 5)),
         _ => None,
     }
 }

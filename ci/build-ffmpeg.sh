@@ -145,7 +145,9 @@ fi
 # function of this list. Each line maps to real code:
 #   demuxers   matroska/mov/mpegts are the containers PMS direct-plays or transcodes to;
 #              h264/hevc are the raw Annex-B paths (/tmp/sample.h264 and the dev triggers).
-#   parsers    needed by avformat_find_stream_info to fill AVCodecParameters.
+#   parsers    needed by avformat_find_stream_info to fill AVCodecParameters. mpegvideo and
+#              mpegaudio are live TV's: without them an MPEG-2 channel's video has no size and
+#              its MP2 audio reads as MP3 (measured 2026-10-15), so the Load names the wrong codec.
 #   bsf        AVCC -> Annex-B for mp4-family video, which the Starfish pipeline requires.
 #   decoders   SUBTITLES ONLY. Video and audio are decoded by the TV's hardware via Starfish;
 #              FFmpeg here never touches a video frame.
@@ -205,7 +207,7 @@ set -- "$@" \
   --disable-autodetect \
   --enable-zlib \
   --enable-demuxer=matroska,mov,mpegts,h264,hevc \
-  --enable-parser=h264,hevc,aac,ac3,dvdsub,dvbsub \
+  --enable-parser=h264,hevc,aac,ac3,mpegvideo,mpegaudio,dvdsub,dvbsub \
   --enable-bsf=h264_mp4toannexb,hevc_mp4toannexb,extract_extradata \
   --enable-decoder=pgssub,dvdsub,dvbsub,ass,srt,subrip,text,mov_text,webvtt \
   --enable-protocol=file

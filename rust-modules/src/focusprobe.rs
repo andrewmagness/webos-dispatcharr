@@ -88,8 +88,8 @@ pub(crate) enum Screen {
         elem: i32,
     },
     /// The Dispatcharr guide (`screens::guide`). Its cursor is the engine's, raw, as
-    /// [`Screen::Setup`]'s: a cell is `row << 12 | slot`, the header's *Account* `u32::MAX`, the
-    /// failed read-out's action `u32::MAX - 1`.
+    /// [`Screen::Setup`]'s: a cell is `row << 12 | slot`, the header's *Account* `0xFFFE_FFFF`
+    /// (just below the tab strip's range), the failed read-out's action `0xFFFE_FFFE`.
     Guide {
         /// The focused element, or `-1` with nothing focused (the page still loading).
         elem: i64,

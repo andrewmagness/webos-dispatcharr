@@ -430,3 +430,35 @@ fn the_detail_line_reads_times_episode_and_episode_title() {
     assert!(line.ends_with("The One"), "{line}");
     assert_eq!(meta_line(&slot, None), format!("{start} – {end}"));
 }
+
+/// The page acts on `ScreenEvent::Activate`, which the dispatcher sends on OK only for a `Bare`
+/// element; a `Control` element's OK arms a press that ends in `PressCommit` instead, and the page
+/// would never hear it. That is how *Account* once did nothing on the television.
+#[test]
+fn every_element_the_page_activates_is_one_ok_activates_directly() {
+    let m = FixtureMeasure;
+    let (ready, _) = landed();
+    let mut failed = GuideScreen::new(EntryId(1), InstanceId(1));
+    let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut failed, ScreenEvent::Mount, None)) else { panic!() };
+    reply.send(GuideOutcome::Failed(Error::Unreachable)).unwrap();
+    step_at(&mut failed, tick(16), None, 16);
+    for screen in [&ready, &failed] {
+        let mut groups = Vec::new();
+        <GuideScreen as Focusable<GuideHost>>::groups(screen, &cx(&m, None, 0), &mut groups);
+        assert!(groups.len() >= 2);
+        for g in groups {
+            assert_eq!(g.elem, ElemKind::Bare, "group {:?}", g.id);
+        }
+    }
+}
+
+/// Elements at or above `STRIP_BASE` belong to the shared tab strip (`PageWithStrip`): the page is
+/// never asked about them, so OK on one finds no element to activate. *Account* once sat at
+/// `u32::MAX`, inside that range, and did nothing on the television.
+#[test]
+fn every_element_of_the_page_lies_below_the_strips_range() {
+    let strip = plx_ui::dispatch::STRIP_BASE;
+    assert!(ACCOUNT < strip, "{ACCOUNT:#x}");
+    assert!(RETRY < strip, "{RETRY:#x}");
+    assert!(cell(MAX_ROWS - 1, MAX_SLOTS - 1) < RETRY.min(ACCOUNT));
+}

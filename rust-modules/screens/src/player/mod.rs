@@ -2835,7 +2835,7 @@ mod repair_confirmation_tests {
             .collect();
         let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
         let mut ps = plx_media::route::PlaybackSession::IDLE;
-        assert!(plx_media::route::request_live(&mut ps, LiveTune { lineup, index: 0, previous: None, at: 0 }, 1_000));
+        assert!(plx_media::route::request_live(&mut ps, LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None }, 1_000));
         ps
     }
 

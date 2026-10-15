@@ -3862,6 +3862,16 @@ enum MediaOpenFail {
     Failed,
 }
 
+/// Whether a stream's audio (`actual`, FFmpeg's name; empty for none) differs from the Load's
+/// declaration (`declared`, `engine::audio_payload_codec`'s code; 0 = no audio declared). Only
+/// when audio is fed at all.
+fn audio_mismatch(declared: u8, actual: &str, feeding_audio: bool) -> bool {
+    if !feeding_audio || declared == 0 || actual.is_empty() {
+        return false;
+    }
+    crate::player::engine::audio_payload_codec(actual).map_or(true, |(_, code)| code != declared)
+}
+
 /// How long to wait between a live channel's busy opens, and how many to make: long enough for a
 /// one-stream IPTV source to free the slot the channel just left. Measured on a real server
 /// (2026-10-14): zero to two 503s, each answered at once, before the next channel opened.
@@ -8771,6 +8781,33 @@ pub fn demux(
                     (*vcp).color_space,
                     SHARED.duration_ns.load(Ordering::Relaxed)
                 ));
+
+                // What the stream IS, for a live channel's declaration to be corrected to. And a live
+                // channel's audio must be what the Load declared: a channel's failover streams can
+                // differ (AAC on one, AC-3 5.1 on the next, measured on a real server 2026-10-15),
+                // and AC-3 fed to an AAC decoder plays nothing. Refused, naming both, so the
+                // application re-tunes with the stream's own codecs.
+                let audio_name = if ai >= 0 {
+                    std::ffi::CStr::from_ptr(avcodec_get_name((*stream_codecpar(*streams.add(ai as usize))).codec_id))
+                        .to_string_lossy()
+                        .into_owned()
+                } else {
+                    String::new()
+                };
+                *SHARED.stream_codecs.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Some((cname.to_string(), audio_name.clone()));
+                let declared_audio = SHARED.dg_load_a.load(Ordering::Relaxed);
+                if SHARED.live_source.load(Ordering::Acquire)
+                    && audio_mismatch(declared_audio, &audio_name, FEED_AUDIO.load(Ordering::Relaxed))
+                {
+                    crate::player::log(&format!(
+                        "ff: the Load declared audio code {declared_audio} but the stream's audio is {audio_name}; refusing the stream"
+                    ));
+                    SHARED.demux_failed.store(true, Ordering::Release);
+                    avformat_close_input(&mut fmt);
+                    free_avio(avio);
+                    break;
+                }
 
                 // Client-rendered subtitles (direct-play only): enumerate subtitle streams in FILE
                 // order so their 0-based position maps 1:1 to the track menu's desired_sub_idx (which

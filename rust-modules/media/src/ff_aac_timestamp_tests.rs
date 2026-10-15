@@ -165,3 +165,16 @@ fn only_a_live_channels_busy_open_is_retried_and_not_forever() {
     assert!(!live_busy_retry(true, 404, 0), "a missing channel is not busy");
     assert!(!live_busy_retry(true, 0, 0), "nor is a server that never answered");
 }
+
+/// A live channel's failover stream may carry AC-3 where the Load declared AAC; that is refused so
+/// the application re-tunes with the stream's own codecs.
+#[test]
+fn audio_that_is_not_what_the_load_declared_is_a_mismatch() {
+    assert!(!audio_mismatch(3, "aac", true), "AAC declared, AAC found");
+    assert!(audio_mismatch(3, "ac3", true), "AAC declared, AC-3 found");
+    assert!(audio_mismatch(1, "aac", true));
+    assert!(audio_mismatch(3, "mp2", true), "a codec the Load cannot name is never what it declared");
+    assert!(!audio_mismatch(3, "ac3", false), "not feeding audio: nothing to mismatch");
+    assert!(!audio_mismatch(0, "ac3", true), "no audio declared");
+    assert!(!audio_mismatch(3, "", true), "no audio stream");
+}

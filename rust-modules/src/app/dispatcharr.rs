@@ -87,6 +87,27 @@ fn apply_prefs(op: PrefsOp) {
     }
 }
 
+/// The codecs each channel's stream turned out to carry this run, by UUID: a channel corrected once
+/// (`player::live_codec_correction`) is declared right the next time it is tuned.
+static CODECS: std::sync::Mutex<Option<std::collections::HashMap<String, (String, String)>>> =
+    std::sync::Mutex::new(None);
+
+pub(super) fn remember_codecs(uuid: &str, codecs: (String, String)) {
+    let mut map = CODECS.lock().unwrap_or_else(|e| e.into_inner());
+    map.get_or_insert_with(Default::default).insert(uuid.to_owned(), codecs);
+}
+
+/// `tune` with the codecs its channel was found to carry, when it has none of its own.
+pub(super) fn with_known_codecs(mut tune: plx_media::route::LiveTune) -> plx_media::route::LiveTune {
+    if tune.codecs.is_none() {
+        if let Some(uuid) = tune.channel().map(|c| c.uuid.clone()) {
+            let map = CODECS.lock().unwrap_or_else(|e| e.into_inner());
+            tune.codecs = map.as_ref().and_then(|m| m.get(&uuid).cloned());
+        }
+    }
+    tune
+}
+
 /// A live tune landed on channel `uuid`: it is the one the next launch starts on.
 pub(super) fn remember_last(uuid: &str) {
     if !uuid.is_empty() {

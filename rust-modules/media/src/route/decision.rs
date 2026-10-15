@@ -749,7 +749,7 @@ mod live_url_tests {
             programmes: vec![super::super::LiveProgramme { start: 0, end: 100, title: format!("P{i}") }],
         }).collect();
         let lineup = super::super::LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() };
-        super::super::LiveTune { lineup: std::sync::Arc::new(lineup), index, previous: None, at: 0 }
+        super::super::LiveTune { lineup: std::sync::Arc::new(lineup), index, previous: None, at: 0, codecs: None }
     }
 
     #[test]
@@ -7479,7 +7479,7 @@ pub fn request_live(ps: &mut PlaybackSession, mut tune: super::LiveTune, now: i6
         crate::player::log("live: a route transition still owns the player; refusing the tune");
         return false;
     }
-    let (vcodec, acodec) = (tune.lineup.vcodec.clone(), tune.lineup.acodec.clone());
+    let (vcodec, acodec) = tune.codecs.clone().unwrap_or_else(|| (tune.lineup.vcodec.clone(), tune.lineup.acodec.clone()));
     if !set_stream_declaration(ps, &vcodec, &acodec, 0.0, plx_data::metadata::Dovi::NONE, false) {
         return false;
     }

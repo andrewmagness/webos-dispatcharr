@@ -239,6 +239,7 @@ pub(super) fn tune_channel(
 ) {
     plx_media::player::stop_bufferfeed(ps, pa);
     let uuid = tune.channel().map(|c| c.uuid.clone()).unwrap_or_default();
+    let tune = super::dispatcharr::with_known_codecs(tune);
     if plx_media::route::request_live(ps, tune, plx_dispatcharr::dispatcharr::api::unix_now()) {
         super::dispatcharr::remember_last(&uuid);
         start_playback(ps, pa, 0, Origin::Here, HUD_LINGER_MS, None, pages, bridge);

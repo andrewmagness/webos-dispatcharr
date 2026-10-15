@@ -109,6 +109,9 @@ pub struct LiveTune {
     /// player reads the time of day from this and its own frame clock, so a recorded session
     /// replays without asking the system clock.
     pub at: i64,
+    /// The codecs to declare for this channel instead of the lineup's, `(video, audio)` in FFmpeg's
+    /// spelling: what its stream turned out to carry (`player::live_codec_correction`).
+    pub codecs: Option<(String, String)>,
 }
 
 impl LiveTune {
@@ -118,7 +121,7 @@ impl LiveTune {
 
     /// The same lineup tuned to `index`, remembering this channel as the previous one.
     pub fn to(&self, index: usize) -> LiveTune {
-        LiveTune { lineup: Arc::clone(&self.lineup), index, previous: Some(self.index), at: 0 }
+        LiveTune { lineup: Arc::clone(&self.lineup), index, previous: Some(self.index), at: 0, codecs: None }
     }
 }
 
@@ -173,7 +176,7 @@ mod tests {
 
     #[test]
     fn a_tune_remembers_where_it_came_from() {
-        let t = LiveTune { lineup: Arc::new(lineup(vec![ch(1, "1", "u"), ch(2, "2", "u")])), index: 0, previous: None, at: 7 };
+        let t = LiveTune { lineup: Arc::new(lineup(vec![ch(1, "1", "u"), ch(2, "2", "u")])), index: 0, previous: None, at: 7, codecs: None };
         let u = t.to(1);
         assert_eq!((u.index, u.previous, u.at), (1, Some(0), 0), "a new tune is stamped when it is made");
         assert!(Arc::ptr_eq(&t.lineup, &u.lineup), "the lineup is shared, not copied");

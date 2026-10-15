@@ -242,7 +242,7 @@ mod tests {
             })
             .collect();
         let lineup = LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() };
-        LiveTune { lineup: Arc::new(lineup), index, previous: None, at: 1_000 }
+        LiveTune { lineup: Arc::new(lineup), index, previous: None, at: 1_000, codecs: None }
     }
 
     fn tuned_to(a: LiveAction) -> Option<usize> {

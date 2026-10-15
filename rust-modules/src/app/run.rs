@@ -1595,6 +1595,24 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
         // show has another episode queued and the Next episode preference is not Off, else leave
         // the player (back to the detail page or home, whichever is behind), instead of freezing
         // on the last frame.
+        // A live channel refused because its stream is not what was declared (a failover stream
+        // in AC-3 where the lineup says AAC): tune it again declaring what it carries, once, and
+        // remember that for the channel.
+        if playback_may_run(app) && super::bridge::player(&app.pages).is_some() {
+            if let Some(found) = plx_media::player::live_codec_correction(&app.player.session) {
+                if let Some(mut tune) = plx_media::route::live_tune(&app.player.session).cloned() {
+                    if tune.codecs.as_ref() != Some(&found) {
+                        log(&format!("live: the stream is {}/{}; tuning again declaring that", found.0, found.1));
+                        if let Some(uuid) = tune.channel().map(|c| c.uuid.clone()) {
+                            super::dispatcharr::remember_codecs(&uuid, found.clone());
+                        }
+                        tune.codecs = Some(found);
+                        super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
+                            &mut app.pages, &mut app.bridge);
+                    }
+                }
+            }
+        }
         let live_ended = playback_may_run(app)
             && super::bridge::player(&app.pages).is_some()
             && plx_media::player::ended()

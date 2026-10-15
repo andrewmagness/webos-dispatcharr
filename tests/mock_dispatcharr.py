@@ -15,6 +15,11 @@ What it answers, with the shapes `rust-modules/dispatcharr/src/dispatcharr/model
                                           4-hour dummy blocks keyed by UUID for numberless channels
   GET  /api/channels/logos/<id>/cache/    a generated logo: a PNG in one of three shapes, or an SVG
                                           for every seventh id (no credential, as on the server)
+  GET  /proxy/ts/stream/<uuid>            with --ts FILE: that MPEG-TS for any channel, sent with no
+                                          Content-Length at roughly real time, then closed. A live
+                                          stream that ENDS is what a dropped connection looks like
+                                          to the app, which is what this exists to exercise. 404
+                                          without --ts (no media ships with the repository).
 
 Anything else is a 404 and a line on stderr naming it, so extending it is one branch. The lineup is
 generated from --seed, never the clock: two servers started alike answer byte-identically. The
@@ -162,6 +167,8 @@ class State:
         self.key = args.key or None
         self.channels, self.groups = lineup(args.seed, args.channels, args.groups)
         self.epgdata = epgdata(self.channels)
+        self.ts = args.ts
+        self.ts_rate = args.ts_rate
 
 
 def make_handler(state):
@@ -203,8 +210,31 @@ def make_handler(state):
             self.end_headers()
             self.wfile.write(data)
 
+        def stream_ts(self):
+            """The --ts file, unframed and closed at its end, paced to --ts-rate bytes a second."""
+            import time
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp2t")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+            chunk = 188 * 64
+            with open(state.ts, "rb") as f:
+                while True:
+                    data = f.read(chunk)
+                    if not data:
+                        return
+                    try:
+                        self.wfile.write(data)
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+                    if state.ts_rate > 0:
+                        time.sleep(len(data) / state.ts_rate)
+
         def do_GET(self):
             path = self.path_only()
+            if re.fullmatch(r"/proxy/ts/stream/[0-9a-f-]+", path) and state.ts:
+                return self.stream_ts()
             m = re.fullmatch(r"/api/channels/logos/(\d+)/cache/", path)
             if m:
                 return self.reply_bytes(*logo(int(m.group(1))))
@@ -263,6 +293,9 @@ def parse_args(argv=None):
     p.add_argument("--channels", type=int, default=60)
     p.add_argument("--groups", type=int, default=4)
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--ts", default="", help="an MPEG-TS file to serve as every channel's live stream (none ships)")
+    p.add_argument("--ts-rate", type=int, default=600_000,
+                   help="bytes a second to pace --ts at (about a 4.8 Mb/s channel); 0 = as fast as possible")
     return p.parse_args(argv)
 
 

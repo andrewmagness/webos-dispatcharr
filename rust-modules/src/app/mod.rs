@@ -271,6 +271,8 @@ pub(crate) struct App {
     /// `player::engine::ENGINE` together with the main-thread token that confines it.
     pub(crate) adapters: Adapters,
     repause_at: i64,
+    /// How many times a live channel's ended stream has been reconnected lately.
+    pub(crate) live_reconnect: playback::ReconnectBudget,
     pub(crate) ok_armed: bool,
     last_route_reported: &'static str,
     pub(crate) ptr: Pointer,

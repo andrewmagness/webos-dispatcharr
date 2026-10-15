@@ -1595,7 +1595,22 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
         // show has another episode queued and the Next episode preference is not Off, else leave
         // the player (back to the detail page or home, whichever is behind), instead of freezing
         // on the last frame.
-        if playback_may_run(app) && super::bridge::player(&app.pages).is_some() && plx_media::player::ended() {
+        let live_ended = playback_may_run(app)
+            && super::bridge::player(&app.pages).is_some()
+            && plx_media::player::ended()
+            && plx_media::route::live_tune(&app.player.session).is_some();
+        if live_ended && app.live_reconnect.allow(fr.now) {
+            // A live channel's stream does not end: the connection or the server's upstream
+            // dropped. Tune the same channel again, on the page that is already up.
+            log("live: the stream ended; reconnecting");
+            if let Some(tune) = plx_media::route::live_tune(&app.player.session).cloned() {
+                super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune, &mut app.pages,
+                    &mut app.bridge);
+            }
+        } else if playback_may_run(app) && super::bridge::player(&app.pages).is_some() && plx_media::player::ended() {
+            if live_ended {
+                log("live: the stream keeps ending; giving up");
+            }
             let handed_off_to_up_next = finish_playback(&mut app.player.session,
                 &mut app.adapters.player,
                 &mut app.refresh_hubs_at,
@@ -3149,6 +3164,7 @@ mod lifecycle_regression_tests {
                 }),
             },
             repause_at: -1,
+            live_reconnect: super::playback::ReconnectBudget::default(),
             ok_armed: Default::default(),
             last_route_reported: Default::default(),
             ptr: Pointer::IDLE,

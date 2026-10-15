@@ -467,30 +467,6 @@ impl Store {
 
 static STORE: Mutex<Store> = Mutex::new(Store::new());
 
-/// **Frame dump only: the first art fetch that failed.** A failed fetch (a 404, bytes that do not
-/// decode, a refused connect) leaves its card on a placeholder forever, and a dump holds on a
-/// placeholder, so without this the run would sit to its wall-clock timeout and name a hold
-/// reason instead of the request. The driver reads it after every draw ([`dump_failure`]) and ends
-/// the run naming the key. A transient failure is recorded too: its retry waits on the app clock,
-/// which a dump holds still, so it could never come. Never written outside a dump.
-static DUMP_FAILURE: Mutex<Option<String>> = Mutex::new(None);
-
-fn note_dump_failure(key: &[u8], transient: bool) {
-    let mut g = DUMP_FAILURE.lock().unwrap_or_else(|e| e.into_inner());
-    if g.is_none() {
-        let key = String::from_utf8_lossy(sans_token(key)).into_owned();
-        *g = Some(format!(
-            "an art request failed ({}): {key}",
-            if transient { "transient: no answer or a retryable status" } else { "final: an HTTP error or bytes that do not decode" }
-        ));
-    }
-}
-
-/// The first art-request failure since the dump was armed, if any. See [`DUMP_FAILURE`].
-#[cfg(all(feature = "hostsim", feature = "devtriggers"))]
-pub(crate) fn dump_failure() -> Option<String> {
-    DUMP_FAILURE.lock().unwrap_or_else(|e| e.into_inner()).clone()
-}
 static CV: Condvar = Condvar::new();
 
 fn store() -> MutexGuard<'static, Store> {
@@ -2100,7 +2076,6 @@ fn poster_worker() {
                     trace::decoded(idx, gen);
                     true
                 } else {
-                    if plx_gfx::dump::armed() { note_dump_failure(key_bytes(s), transient); }
                     if transient && cache_gen == plx_platform::imgcache::generation() { park_retry(s); }
                     else { s.state = P_FAILED; }
                     trace::lost(idx, gen, "failed");
@@ -3365,21 +3340,6 @@ mod tests {
         assert!(evict_cooldown_due_in(false, Some(1_000), 1_000), "the deadline itself has cleared");
     }
 
-    #[test]
-    fn a_frame_dump_has_no_eviction_cooldown_and_names_the_first_failed_request() {
-        assert!(!evict_cooldown_due_in(false, Some(1_000), 999));
-        assert!(evict_cooldown_due_in(true, Some(1_000), 999), "a frozen clock would never clear it");
-        let mut g = DUMP_FAILURE.lock().unwrap_or_else(|e| e.into_inner());
-        *g = None;
-        drop(g);
-        note_dump_failure(b"/photo/:/transcode?url=%2Flibrary%2Fmetadata%2F9%2Fthumb&X-Plex-Token=SECRET", false);
-        note_dump_failure(b"/second&X-Plex-Token=SECRET", true);
-        let g = DUMP_FAILURE.lock().unwrap_or_else(|e| e.into_inner());
-        let why = g.as_deref().expect("the first failure is kept");
-        assert!(why.contains("final") && why.contains("metadata%2F9%2Fthumb") && !why.contains("SECRET"), "{why}");
-        assert!(!why.contains("/second"), "only the first is kept");
-    }
-
     /// A second half of the same PR #182 P1: [`evict_cooldown_due_only_after_its_own_deadline`]
     /// and [`a_key_evicted_and_reevicted_in_rapid_succession_does_not_rearm_without_bound`] bound
     /// how OFTEN a DRAW may re-arm an evicted key; this proves a `Touch::Warm` probe of the same
@@ -3461,13 +3421,13 @@ mod tests {
             slot.evict_cooldown_until = Some(250); // evict_backoff(1)
         }
 
-        crate::app::clock::set_replay(100); // before the deadline
+        crate::app::clock::set_for_test(100); // before the deadline
         let (hit, warm) = lookup(sid, &path, Touch::Warm);
         assert_eq!(hit, None);
         assert_eq!(warm, Warm::Known);
         assert_eq!(store().slots[0].state, P_EVICTED, "a warm probe stays dormant before expiry");
 
-        crate::app::clock::set_replay(250); // exactly at the deadline
+        crate::app::clock::set_for_test(250); // exactly at the deadline
         let (hit, warm) = lookup(sid, &path, Touch::Warm);
         assert_eq!(hit, None);
         assert_eq!(warm, Warm::Known);
@@ -3505,7 +3465,7 @@ mod tests {
         }
         let (_, rearmed0) = residency_counts_for_test();
 
-        crate::app::clock::set_replay(249);
+        crate::app::clock::set_for_test(249);
         let (hit, _) = lookup(sid, &path, Touch::Draw);
         assert_eq!(hit, None);
         assert_eq!(
@@ -3516,7 +3476,7 @@ mod tests {
         let (_, rearmed1) = residency_counts_for_test();
         assert_eq!(rearmed1, rearmed0, "a refused rearm must not count");
 
-        crate::app::clock::set_replay(250);
+        crate::app::clock::set_for_test(250);
         let (hit, _) = lookup(sid, &path, Touch::Draw);
         assert_eq!(hit, None, "a freshly rearmed slot has no pixels yet");
         assert_eq!(store().slots[0].state, P_WANT, "the deadline itself rearms it");
@@ -3539,7 +3499,7 @@ mod tests {
         let (_fresh, sid, _) = one_server();
         let path = key_for(sid, "/library/metadata/42/thumb", 2, 2, 0);
         let mut now: u32 = 0;
-        crate::app::clock::set_replay(now);
+        crate::app::clock::set_for_test(now);
         {
             let mut g = store();
             g.slots = [Pslot::ZERO; PT_CAP];
@@ -3579,7 +3539,7 @@ mod tests {
                 "the escalation schedule must reach {wait}ms and cap there"
             );
 
-            crate::app::clock::set_replay(now.wrapping_add(wait) - 1);
+            crate::app::clock::set_for_test(now.wrapping_add(wait) - 1);
             let (hit, _) = lookup(sid, &path, Touch::Draw);
             assert_eq!(hit, None);
             assert_eq!(
@@ -3589,7 +3549,7 @@ mod tests {
             );
 
             now = now.wrapping_add(wait);
-            crate::app::clock::set_replay(now);
+            crate::app::clock::set_for_test(now);
             let (hit, _) = lookup(sid, &path, Touch::Draw);
             assert_eq!(hit, None);
             assert_eq!(store().slots[0].state, P_WANT, "the deadline itself rearms it");
@@ -3610,7 +3570,7 @@ mod tests {
 
         let (_fresh, sid, _) = one_server();
         let path = key_for(sid, "/library/metadata/42/thumb", 2, 2, 0);
-        crate::app::clock::set_replay(0);
+        crate::app::clock::set_for_test(0);
         {
             let mut g = store();
             g.slots = [Pslot::ZERO; PT_CAP];
@@ -3626,7 +3586,7 @@ mod tests {
         }
 
         // The window's own edge - not one millisecond less - counts as settled.
-        crate::app::clock::set_replay(EVICT_THRASH_WINDOW_MS);
+        crate::app::clock::set_for_test(EVICT_THRASH_WINDOW_MS);
         SOURCE.unresident(PosterKey(0), false);
         {
             let g = store();

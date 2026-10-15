@@ -23,38 +23,16 @@ use plx_screens::registry::AppArg;
 /// a route renamed here without its scenes following would otherwise fail on the device as
 /// "never entered this screen", which reads exactly like a total regression.
 pub(crate) fn route_word(route: &AppArg) -> &'static str {
-    use plx_screens::registry::ContentArg;
     match route {
         // The Server page is Setup's screen in its other mode, and answers its word.
         AppArg::Setup | AppArg::Server => "setup",
         AppArg::Guide => "guide",
-        AppArg::Login => "login",
-        AppArg::Profiles => "profiles",
-        AppArg::Onboard => "onboard",
-        AppArg::Library => "library",
-        AppArg::Content(ContentArg::Detail { .. }) => "detail",
-        // The filmography sheet answers `word::PERSON` too (`FilmographyScreen::name`): the test
-        // manifest intentionally records that opaque modal as `route=person`.
-        AppArg::Content(ContentArg::Person { .. } | ContentArg::Filmography { .. }) => "person",
-        AppArg::Content(ContentArg::Collection(_)) => "collection",
-        AppArg::Search => "search",
         AppArg::Player => "player",
-        AppArg::Home => "home",
-        // Not pages: a surface's word is ` overlay=`, and none of these reaches the page stack's
-        // top. The arm is written out rather than swept into a `_` so a new PAGE variant is a
-        // compile error here — the failure this table exists to prevent is a word the app cannot
-        // print, which reads on the television as "0 post-warmup samples".
-        AppArg::Settings(_)
-        | AppArg::FirstRunConsent(_)
-        | AppArg::LibraryMenu(_)
-        | AppArg::AccountMenu
-        | AppArg::ItemMenu(_)
-        | AppArg::PlayerOverlay(_)
-        | AppArg::AltSources(_)
-        | AppArg::TracksPanel(_)
-        | AppArg::AboutPanel
-        | AppArg::PersonBio
-        | AppArg::CollectionAbout => "",
+        // Not a page: a surface's word is ` overlay=`, and it never reaches the page stack's top.
+        // The arm is written out rather than swept into a `_` so a new PAGE variant is a compile
+        // error here — the failure this table exists to prevent is a word the app cannot print,
+        // which reads on the television as "0 post-warmup samples".
+        AppArg::PlayerOverlay(_) => "",
     }
 }
 /// **Every PAGE argument, one per heartbeat word** — the domain [`route_word`] is applied over to DERIVE the
@@ -70,26 +48,8 @@ pub(crate) fn route_word(route: &AppArg) -> &'static str {
 /// holds one and asks about it. Its two readers are this module's word derivation and
 /// `app::bridge`'s argument tests, which used to keep a second copy of the same list.
 #[cfg(test)]
-pub(crate) fn every_route() -> [AppArg; 13] {
-    use plx_screens::registry::ContentArg;
-    let sid = plx_plex::plex::ServerId::UNSET;
-    [
-        AppArg::Setup,
-        AppArg::Guide,
-        AppArg::Server,
-        AppArg::Login,
-        AppArg::Profiles,
-        AppArg::Onboard,
-        AppArg::Home,
-        AppArg::Library,
-        AppArg::Content(ContentArg::Detail { sid, rk: String::new() }),
-        AppArg::Content(ContentArg::Person {
-            sid, key: String::new(), guid: String::new(), name: String::new(), thumb: String::new(),
-        }),
-        AppArg::Content(ContentArg::Collection(plx_plex::plex::collections::CollectionRef::by_tag(sid, 0, 1, ""))),
-        AppArg::Search,
-        AppArg::Player,
-    ]
+pub(crate) fn every_route() -> [AppArg; 4] {
+    [AppArg::Setup, AppArg::Guide, AppArg::Server, AppArg::Player]
 }
 
 /// The heartbeat's ` overlay=` WORD, or `None` when nothing is over the page.
@@ -165,46 +125,12 @@ mod heartbeat_word_tests {
             .clone()
     }
 
-    /// The Settings family's INNER pages, which are not `AppArg` variants and so cannot come off
-    /// the mounter: `RouteSurface::top_word` answers with whichever page of the family's own stack
-    /// is on top, and the family is presented rooted at `Root` (or, for the dev boot targets, at
-    /// one of these). They are the registry's own constants rather than string literals, so a
-    /// screen renamed there renames the alphabet entry with it.
-    ///
-    /// **`ONBOARD` is one screen wearing two hats** (§6.2 "Onboard ×2"): the SAME `Screen` impl is
-    /// mounted once as a page of the app's outer stack (first run, so `route=onboard`) and once as
-    /// a page of the family's INNER stack (`SettingsPage::Favourites`, so ` overlay=onboard`).
-    /// Before it had its own word, the settings-mounted instance answered `word::SETTINGS` and the
-    /// `fps:settings-home` scene printed a heartbeat BYTE-IDENTICAL to `settings-root` — the
-    /// harness could not tell "opened the Home-sources editor" from "opened Settings and did
-    /// nothing", so a trigger that silently failed to reach Favourites still produced a scene that
-    /// passed, measuring the wrong screen.
-    const FAMILY_INNER: [&str; 6] = [
-        plx_screens::registry::word::PRIVACY,
-        plx_screens::registry::word::LEGAL,
-        plx_screens::registry::word::ONBOARD,
-        plx_screens::registry::word::PLAYBACK,
-        plx_screens::registry::word::AUDIO,
-        plx_screens::registry::word::PICKER,
-    ];
-
     /// **Every caller holds `plx_base::testlock::serial()` for its whole body**, because deriving
-    /// this alphabet is not a read: [`overlay_words`] goes through
-    /// `bridge::every_surface_word`, which mounts each surface by running real
-    /// `bridge::frame`s — and a frame pumps every store. `browse`'s pump ends in `sync_roster`,
-    /// which calls `browse::reset()` whenever the section table holds a source the live registry
-    /// does not; every `browse` fixture in the suite (`seed_two_source_table_for_test` and its
-    /// kin) seeds exactly such a table, with `ServerId::UNSET` sources. Unguarded, these three
-    /// tests therefore EMPTIED another module's seeded table from a second thread, and the
-    /// failure surfaced over there — `app::chrome`'s
-    /// `four_libraries_on_two_servers_publish_two_type_destinations` losing both library
-    /// destinations, `app::bridge`'s shelf-hold case seeing zero shelves — at a rate low enough
-    /// to read as flakiness. The frame trunk (`bridge::frame_with_results`) asserts the lock now
-    /// rather than merely documenting it.
+    /// this alphabet is not a read: [`overlay_words`] goes through `bridge::every_surface_word`,
+    /// which mounts each surface by running real `bridge::frame`s, and the frame trunk asserts the
+    /// lock.
     fn overlay_alphabet() -> Vec<&'static str> {
-        let mut words = overlay_words();
-        words.extend(FAMILY_INNER);
-        words
+        overlay_words()
     }
 
     #[test]
@@ -257,22 +183,10 @@ mod heartbeat_word_tests {
                 "{w:?} is not a heartbeat token"
             );
         }
-        // ONE word is in both alphabets, and it names one screen mounted on two stacks. Any other
-        // overlap is a route and a surface that would be indistinguishable in a `route=` field.
+        // No word is in both alphabets: an overlap is a route and a surface that would be
+        // indistinguishable in a `route=` field.
         let both: Vec<&str> = overlays.iter().copied().filter(|w| routes.contains(w)).collect();
-        assert_eq!(both, [plx_screens::registry::word::ONBOARD]);
-        // …and the two menus that became surfaces in phase 10 are on the overlay side ONLY. Both
-        // MOVED between the tables in the commits that deleted their routes, and each moved with
-        // its `manifest.json` scene's re-key (`home-acct-glass`, `item-menu`); a word left behind
-        // in the route alphabet would have let a scene keep selecting on a `route=` the app can no
-        // longer print, which fails on the television as "never entered this screen".
-        for w in [
-            plx_screens::registry::word::ACCOUNT,
-            plx_screens::registry::word::ITEM_MENU,
-        ] {
-            assert!(overlays.contains(&w), "{w:?} is a surface's own name");
-            assert!(!routes.contains(&w), "{w:?} has no `route_word` arm any more");
-        }
+        assert!(both.is_empty(), "{both:?} is both a route and a surface word");
 
         // An EMPTY tree, so `overlay_word`'s second half is what answers: with no surface up the
         // container says nothing and the ROUTE decides, which is exactly the state every BARE
@@ -280,15 +194,15 @@ mod heartbeat_word_tests {
         // `overlay_words` rather than derived.
         let empty = plx_ui::dispatch::Dispatcher::<super::bridge::AppHost>::new();
         assert_eq!(overlay_word(&empty, &AppArg::Player), Some(NO_OVERLAY));
-        assert_eq!(overlay_word(&empty, &AppArg::Home), None);
+        assert_eq!(overlay_word(&empty, &AppArg::Guide), None);
         assert_eq!(super::overlay_suffix(&empty, &AppArg::Player), " overlay=none");
-        assert_eq!(super::overlay_suffix(&empty, &AppArg::Home), "");
+        assert_eq!(super::overlay_suffix(&empty, &AppArg::Guide), "");
         assert!(overlays.contains(&NO_OVERLAY));
         assert!(!routes.contains(&NO_OVERLAY));
 
         // The player's panels are `OverlayKind::word` through `Screen::name`, so they arrive
         // in the derived alphabet with everything else — asserted here because it is the one place
-        // a reader can see that the panel words and the family words come from ONE source now.
+        // a reader can see that the panel words come from the mounter.
         use plx_screens::player::overlay::OverlayKind;
         for kind in OverlayKind::ALL {
             assert!(
@@ -307,59 +221,20 @@ mod heartbeat_word_tests {
     /// device question, not a host one. What this pins instead is the direction a host CAN see:
     /// every scene naming an overlay names one the mounter produces, and every scene's route is a
     /// route that exists.
+    /// **A word the app can print but no scene uses is fine; the reverse is not** — and the
+    /// derivation is what makes the reverse impossible to write by accident: every scene naming an
+    /// overlay names one the mounter produces, and every scene's route is a route that exists.
     #[test]
     fn the_manifest_uses_a_subset_of_the_derived_alphabets() {
         let _guard = plx_base::testlock::serial();
         let routes = route_words();
         let overlays = overlay_alphabet();
-        let mut used_overlays = 0;
         for s in scenes() {
             assert!(routes.contains(&s["route"].as_str().expect("a route word")));
             if let Some(ov) = s.get("overlay").and_then(|o| o.as_str()) {
                 assert!(overlays.contains(&ov));
-                used_overlays += 1;
             }
         }
-        assert!(
-            used_overlays >= 2,
-            "the two menus' scenes select by `overlay=` since phase 10 — if this reaches zero, \
-             the re-keys were reverted and every surface scene is measuring its host page"
-        );
-    }
-
-    /// **The pollution these three tests used to cause, stated as a fact instead of a comment.**
-    ///
-    /// Deriving the alphabet is a DESTRUCTIVE operation on `browse`: `every_surface_word` mounts
-    /// each surface by running real `bridge::frame`s, a frame pumps every store, and `browse`'s
-    /// pump reaches `sync_roster`, which treats a source the live registry does not hold as an
-    /// identity boundary and calls `browse::reset()`. Every `browse` fixture in the suite seeds
-    /// exactly such a table (`ServerId::UNSET` sources), so this wipes it.
-    ///
-    /// That is correct behaviour for `sync_roster` and it is why the derivation may only run
-    /// under `testlock::serial()`. Watched red before the fix in the only way this class can be:
-    /// the wipe landed on ANOTHER thread's test — `app::chrome`'s
-    /// `four_libraries_on_two_servers_publish_two_type_destinations` came back with only Home and
-    /// Search in the strip, about one full-suite run in six. Here the same chain is on one
-    /// thread, under the guard, and is therefore deterministic.
-    #[test]
-    fn deriving_the_surface_alphabet_cannot_mutate_an_unrelated_browse_owner() {
-        let _guard = plx_base::testlock::serial();
-        let stores = plx_data::stores::Stores::default();
-        stores.browse.borrow_mut().seed_two_source_table_for_test();
-        let mut directory = plx_data::stores::browse::DirectorySnapshot::default();
-        stores.capture_browse(&mut directory);
-        assert_eq!(
-            directory.view().section_count(),
-            4,
-            "the fixture the browse-backed tests across the suite seed"
-        );
-        let _ = overlay_alphabet();
-        stores.capture_browse(&mut directory);
-        assert_eq!(
-            directory.view().section_count(),
-            4,
-            "real frames own their BrowseStore and cannot wipe an unrelated fixture"
-        );
     }
 
     /// **Pins the focusprobe's player-overlay word to THIS module's `overlay_word`, not a second

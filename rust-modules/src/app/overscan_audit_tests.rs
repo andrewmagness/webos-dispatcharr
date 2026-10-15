@@ -2,14 +2,12 @@
 //! screen and panel in the app.
 //!
 //! It was `ui::consts`' own test, and it cannot stay there: it asks the shared chrome (`ui`), the
-//! player and track panels (`appkit`), the account menu and the Search layout (`screens`) and the
-//! stats read-out (`app::diagnostics`) for the rects they lay out, so it is a whole-app test and
+//! player and track panels (`appkit`) and the stats read-out (`app::diagnostics`) for the rects
+//! they lay out, so it is a whole-app test and
 //! belongs to the layer that owns all of those (docs/module-layers.md, step L13). The safe-area
 //! tokens it grades against are still `ui::consts`'.
 
-use plx_ui::consts::{
-    inside_safe, CARD_DY, CARD_H, CARD_W, GRID_TOP_Y, MARGIN_X, MARGIN_Y, SAFE, SCR_H, TITLE_DY,
-};
+use plx_ui::consts::{inside_safe, SAFE};
 use plx_ui::Rect;
 
 /// **NO REQUIRED CONTENT ENTERS THE OVERSCAN EXCLUSION ZONE, ON EITHER AXIS.**
@@ -70,58 +68,10 @@ fn no_required_content_enters_the_safe_area_exclusion_zone() {
     probe("player_hud", &plx_appkit::player_hud::overscan_rects);
 
     // ---- the panels, each at the widest/tallest state its own clamp admits ---------------
-    probe("account_menu", &plx_screens::account_menu::overscan_rects);
     probe("track_menu", &plx_appkit::track_menu::overscan_rects);
     probe("more_menu", &plx_appkit::more_menu::overscan_rects);
     probe("stats", &crate::app::diagnostics::overscan_rects);
     drop(probe);
-
-    // ---- the screens whose outermost geometry is already public here --------------------
-    // Home: the hero's text column and its action row start at the margin; the grid view's
-    // first shelf heading is the highest ink the page draws under the bar.
-    r.push((
-        "home hero text column",
-        Rect::new(MARGIN_X, 380.0, plx_ui::landing_hero::COL_W, 400.0),
-    ));
-    r.push((
-        "home first shelf heading (grid view)",
-        Rect::new(MARGIN_X, GRID_TOP_Y - TITLE_DY, 400.0, TITLE_DY),
-    ));
-    r.push((
-        "home first shelf card (grid view)",
-        Rect::new(MARGIN_X, GRID_TOP_Y + CARD_DY, CARD_W, CARD_H),
-    ));
-    // …and the focused card's block at the BOTTOM of its reveal: card + the 96px label band,
-    // which is what the owned Home's and `library`'s reveal rules keep clear of the edge.
-    r.push((
-        "home focused card block, revealed",
-        Rect::new(
-            MARGIN_X,
-            SCR_H - MARGIN_Y - CARD_H - 96.0,
-            CARD_W,
-            CARD_H + 96.0,
-        ),
-    ));
-
-    // Search: the bare query line, and the scope line below it.
-    r.push(("search field", plx_screens::search::layout::FIELD));
-    r.push((
-        "search first shelf heading",
-        Rect::new(MARGIN_X, plx_screens::search::layout::CONTENT_TOP, 400.0, 40.0),
-    ));
-
-    // Person: the portrait at the margin, and the air the reveal keeps under a shelf.
-    r.push(("person portrait", Rect::new(MARGIN_X, 96.0, 320.0, 320.0)));
-    r.push((
-        "person shelf block, revealed",
-        Rect::new(MARGIN_X, SCR_H - MARGIN_Y - CARD_H, CARD_W, CARD_H),
-    ));
-
-    // Onboarding + login: both centre or hang off the same margin.
-    r.push((
-        "onboard copy column",
-        Rect::new(MARGIN_X, 150.0, plx_ui::landing_hero::COL_W, 500.0),
-    ));
 
     for (name, rect) in r {
         assert!(

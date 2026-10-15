@@ -8,8 +8,7 @@
 //! `stores` it names, and not in the UI library (docs/module-layers.md, step L13).
 
 use super::AppHost;
-use plx_screens::registry::{AppFx, LibraryReq};
-use plx_data::stores::browse::{BrowseCmd, LibraryWork, SectionAddress};
+use plx_screens::registry::{AppFx, LoopReq};
 use plx_data::stores::{StoreCmd, StoreId, StoreWork};
 use plx_ui::dispatch::{CxParts, Dispatcher, FrameReport, NoTap, Rig, Split};
 use plx_ui::fixture::{FixtureArg, FixtureMeasure};
@@ -96,7 +95,7 @@ impl Rig<ProbeHost> for ProbeRig {
     fn timer(&mut self, _: MachineId, _: TimerId, _: &CxParts<u32>, _: &mut Effects<'_, ProbeHost>) {}
     fn app_return(&mut self, _: MachineId, ret: ReturnState<u32, Memory>) { self.current_return = ret.memory; }
     fn app_fx(&mut self, _: MachineId, fx: AppFx, _: &CxParts<u32>, _: &mut Effects<'_, ProbeHost>) {
-        self.executed.push((matches!(fx, AppFx::Library(LibraryReq::Account)), self.current_return.0));
+        self.executed.push((matches!(fx, AppFx::Loop(LoopReq::DispatcharrAccount)), self.current_return.0));
     }
     fn log(&mut self, _: &str) {}
     fn prepare(&mut self, _: &mut Budget, _: &mut Present) {}
@@ -114,14 +113,13 @@ fn booted() -> (Dispatcher<ProbeHost>, ProbeRig) {
     (d, rig)
 }
 fn housekeeping() -> Vec<AppFx> {
-    let target = SectionAddress { epoch: 0, sid: plx_plex::plex::ServerId::from_raw(0), section: 1 };
     vec![
-        AppFx::Store(StoreId::Browse, StoreCmd::Browse(BrowseCmd::Addressed {
-            target, work: LibraryWork::Want { lo: 0, hi: 24, focus: None },
-        })),
-        AppFx::Store(StoreId::Browse, StoreCmd::Browse(BrowseCmd::Addressed { target, work: LibraryWork::Letters })),
-        AppFx::Library(LibraryReq::PublishShelves { target, hidden_page: false, at_head: false }),
-        AppFx::StoreWork(StoreWork::Browse),
+        AppFx::Store(StoreId::SubtitleSearch, StoreCmd::SubtitleSearch(
+            plx_data::subsearch::SubSearchCmd::SetLanguage("en".into()))),
+        AppFx::Store(StoreId::Metadata, StoreCmd::Metadata(
+            plx_data::stores::metadata::MetadataCmd::SetNowPlaying(None))),
+        AppFx::StoreWork(StoreWork::SubtitleSearch),
+        AppFx::StoreWork(StoreWork::SubtitleSearch),
     ]
 }
 fn enqueue(d: &mut Dispatcher<ProbeHost>, fx: AppFx, absorb: bool) {
@@ -152,10 +150,10 @@ fn interleaved_housekeeping_keeps_navigation_bookmarks_at_emission_time_across_c
         let (mut d, mut rig) = booted();
         rig.probe.value.set(11);
         enqueue(&mut d, housekeeping().remove(0), absorb);
-        enqueue(&mut d, AppFx::Library(LibraryReq::Account), absorb);
+        enqueue(&mut d, AppFx::Loop(LoopReq::DispatcharrAccount), absorb);
         rig.probe.value.set(22);
         enqueue(&mut d, housekeeping().remove(2), absorb);
-        enqueue(&mut d, AppFx::Library(LibraryReq::Account), absorb);
+        enqueue(&mut d, AppFx::Loop(LoopReq::DispatcharrAccount), absorb);
         enqueue(&mut d, housekeeping().remove(3), absorb);
         rig.probe.value.set(99);
         for _ in 0..5 { drain(&mut d, &mut rig, 1); }

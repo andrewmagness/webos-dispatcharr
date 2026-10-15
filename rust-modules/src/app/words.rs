@@ -105,25 +105,12 @@ fn overlay_words() -> Vec<&'static str> {
     words
 }
 
-/// The heartbeat word table versus `tests/manifest.json`. Every fps scene selects its samples by
-/// a `route` word and an optional `overlay` word; a word the app cannot print makes that scene
-/// fail on the television as "only 0 post-warmup samples — scene never entered this screen",
-/// which is indistinguishable from a real regression. This is the host-side half of that gate,
-/// and it is what lets the route-name source move (from this `match` to `Screen::name` later)
-/// without the fps tier silently disarming.
+/// The heartbeat word tables: derived from the routes and the mounted surfaces, and kept apart.
+/// (They were also graded against `tests/manifest.json`'s fps scenes; those scenes are the Plex
+/// client's and no longer reachable, so that half left with the Plex pages.)
 #[cfg(test)]
 mod heartbeat_word_tests {
     use super::{every_route, overlay_word, overlay_words, route_words, AppArg, NO_OVERLAY};
-
-    const MANIFEST: &str = include_str!("../../../tests/manifest.json");
-
-    fn scenes() -> Vec<serde_json::Value> {
-        let v: serde_json::Value = serde_json::from_str(MANIFEST).expect("manifest.json parses");
-        v["fps_scenes"]
-            .as_array()
-            .expect("fps_scenes is an array")
-            .clone()
-    }
 
     /// **Every caller holds `plx_base::testlock::serial()` for its whole body**, because deriving
     /// this alphabet is not a read: [`overlay_words`] goes through `bridge::every_surface_word`,
@@ -133,26 +120,6 @@ mod heartbeat_word_tests {
         overlay_words()
     }
 
-    #[test]
-    fn every_manifest_route_word_is_one_the_heartbeat_prints() {
-        let _guard = plx_base::testlock::serial();
-        let routes = route_words();
-        let overlays = overlay_alphabet();
-        for s in scenes() {
-            let name = s["name"].as_str().unwrap_or("?");
-            let route = s["route"].as_str().expect("scene has a route word");
-            assert!(
-                routes.contains(&route),
-                "scene {name}: route word {route:?} is not in the heartbeat table {routes:?}"
-            );
-            if let Some(ov) = s.get("overlay").and_then(|o| o.as_str()) {
-                assert!(
-                    overlays.contains(&ov),
-                    "scene {name}: overlay word {ov:?} is not in the table {overlays:?}"
-                );
-            }
-        }
-    }
 
     /// **The two tables are DERIVED from the two sources, and this is what says the derivation is
     /// the whole of them** (restructure phase 10 item 4).
@@ -213,29 +180,6 @@ mod heartbeat_word_tests {
         }
     }
 
-    /// **A word the app can print but no scene uses is fine; the reverse is not** — and the
-    /// derivation is what makes the reverse impossible to write by accident.
-    ///
-    /// The one thing a derived table cannot catch on its own is a manifest scene keyed on a word
-    /// that IS in the alphabet but names a surface the scene's triggers never open. That is a
-    /// device question, not a host one. What this pins instead is the direction a host CAN see:
-    /// every scene naming an overlay names one the mounter produces, and every scene's route is a
-    /// route that exists.
-    /// **A word the app can print but no scene uses is fine; the reverse is not** — and the
-    /// derivation is what makes the reverse impossible to write by accident: every scene naming an
-    /// overlay names one the mounter produces, and every scene's route is a route that exists.
-    #[test]
-    fn the_manifest_uses_a_subset_of_the_derived_alphabets() {
-        let _guard = plx_base::testlock::serial();
-        let routes = route_words();
-        let overlays = overlay_alphabet();
-        for s in scenes() {
-            assert!(routes.contains(&s["route"].as_str().expect("a route word")));
-            if let Some(ov) = s.get("overlay").and_then(|o| o.as_str()) {
-                assert!(overlays.contains(&ov));
-            }
-        }
-    }
 
     /// **Pins the focusprobe's player-overlay word to THIS module's `overlay_word`, not a second
     /// hand-written copy.** `app/run.rs`'s `probe_screen` closure (the focus fingerprint's

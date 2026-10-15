@@ -325,7 +325,6 @@ LAYER_SRCS = ('rust-modules/platform/src', 'rust-modules/gfx/src', 'rust-modules
 # a boundary naming one of its constants would pass unread.
 CONST_SRCS = (*LAYER_SRCS, 'rust-modules/base/src', 'rust-modules/machine/src', 'rust-modules/net/src',
               'rust-modules/plex/src', 'rust-modules/telemetry/src', 'rust-modules/data/src',
-              'rust-modules/session/src',
               'rust-modules/media/src',
               'rust-modules/appkit/src',
               'rust-modules/screens/src')
@@ -359,8 +358,6 @@ def source_paths(root: Path):
     yield root / LAYER_SRCS[1] / 'overdraw.rs'
     # `PlaybackQuality::label` was `route/decision.rs`'s (listed above) until the plex split.
     yield root / 'rust-modules/plex/src/plex/session.rs'
-    # `auth/owner.rs` (the session owner's read-outs) moved with the session split.
-    yield root / 'rust-modules/session/src/auth/owner.rs'
 
 
 def const_table(root: Path) -> dict[str, str]:

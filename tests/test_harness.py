@@ -4680,7 +4680,6 @@ class DepGates(unittest.TestCase):
         "rust-modules/plex/src",
         "rust-modules/telemetry/src",
         "rust-modules/data/src",
-        "rust-modules/session/src",
         "rust-modules/media/src",
         "rust-modules/appkit/src",
         "rust-modules/screens/src",
@@ -4690,7 +4689,6 @@ class DepGates(unittest.TestCase):
         "rust-modules/plex/Cargo.toml",
         "rust-modules/telemetry/Cargo.toml",
         "rust-modules/data/Cargo.toml",
-        "rust-modules/session/Cargo.toml",
         "rust-modules/media/Cargo.toml",
         "rust-modules/appkit/Cargo.toml",
         "rust-modules/appkit/build.rs",
@@ -4757,7 +4755,7 @@ class DepGates(unittest.TestCase):
         is missing from the output and that input's subtest fails by name. Run one file at a
         time this was 17 of the 73 `ci/check-deps.sh` runs in this class (about a quarter of
         the module's CPU)."""
-        inputs = ("rust-modules/Cargo.toml", "rust-modules/build.rs", "rust-modules/net/Cargo.toml", "rust-modules/plex/Cargo.toml", "rust-modules/telemetry/Cargo.toml", "rust-modules/data/Cargo.toml", "rust-modules/session/Cargo.toml", "rust-modules/media/Cargo.toml", "rust-modules/appkit/Cargo.toml", "rust-modules/appkit/build.rs", "rust-modules/screens/Cargo.toml", "rust-modules/screens/build.rs", "rust-modules/platform/Cargo.toml",
+        inputs = ("rust-modules/Cargo.toml", "rust-modules/build.rs", "rust-modules/net/Cargo.toml", "rust-modules/plex/Cargo.toml", "rust-modules/telemetry/Cargo.toml", "rust-modules/data/Cargo.toml", "rust-modules/media/Cargo.toml", "rust-modules/appkit/Cargo.toml", "rust-modules/appkit/build.rs", "rust-modules/screens/Cargo.toml", "rust-modules/screens/build.rs", "rust-modules/platform/Cargo.toml",
                   "rust-modules/platform/build.rs", "rust-modules/gfx/Cargo.toml",
                   "rust-modules/gfx/build.rs", "rust-modules/ui/Cargo.toml", "rust-modules/ui/build.rs",
                   "rust-modules/storage/Cargo.toml",

@@ -159,7 +159,8 @@ pub(super) fn request_play_intent(
             // A channel has no library item behind it: nothing describes it to the Info card.
             meta.run(plx_data::stores::metadata::MetadataCmd::SetNowPlaying(None));
             let uuid = tune.channel().map(|c| c.uuid.clone()).unwrap_or_default();
-            let ok = plx_media::route::request_live(session, super::dispatcharr::with_known_codecs(tune.clone()),
+            let tune = super::dispatcharr::with_previous(super::dispatcharr::with_known_codecs(tune.clone()));
+            let ok = plx_media::route::request_live(session, tune,
                 plx_dispatcharr::dispatcharr::api::unix_now());
             if ok {
                 super::dispatcharr::remember_last(&uuid);

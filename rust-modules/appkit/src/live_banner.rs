@@ -1,6 +1,7 @@
 //! **The live-TV banner** — what the player shows over a channel instead of a transport: the
-//! channel's number, logo and name, what is on now with how far through it is, and what comes
-//! next. Shown for a few seconds after every tune and whenever OK asks for it.
+//! channel's number, logo and name and what is on now with how far through it is, and in a column
+//! on the right what is up next (the owner's ask, 2026-10-15). Shown for a few seconds after every
+//! tune and whenever OK asks for it.
 //!
 //! Plus the typed-number read-out in the top corner, while digits are being entered on the remote.
 //!
@@ -22,6 +23,8 @@ pub const LOGO_H: f32 = 112.0;
 /// The progress rail: as thick as the playbar's, and long enough to read a fraction at a glance.
 const BAR_W: f32 = 480.0;
 const BAR_H: f32 = 6.0;
+/// The up-next column's width, at the banner's right edge.
+pub const NEXT_W: f32 = 560.0;
 
 /// How far through `p` instant `now` is, 0..=1.
 pub fn progress(p: &LiveProgramme, now: i64) -> f32 {
@@ -51,10 +54,7 @@ pub fn draw(p: Painter, channel: &LiveChannel, now: i64, measure: &dyn plx_machi
     let caption = theme::size::CAPTION;
     let (head_h, title_h, body_h, caption_h) =
         (measure.line_h(head), measure.line_h(title), measure.line_h(body), measure.line_h(caption));
-    let block_h = head_h
-        + theme::space::XS
-        + if on.is_some() { title_h + theme::space::XS + body_h } else { 0.0 }
-        + if next.is_some() { theme::space::XS + caption_h } else { 0.0 };
+    let block_h = head_h + theme::space::XS + if on.is_some() { title_h + theme::space::XS + body_h } else { 0.0 };
     let top = SCR_H - MARGIN_Y - theme::space::LG - block_h;
 
     if let Some(url) = channel.logo.as_deref() {
@@ -65,7 +65,8 @@ pub fn draw(p: Painter, channel: &LiveChannel, now: i64, measure: &dyn plx_machi
         }
     }
     let x = MARGIN_X + LOGO_W + theme::space::LG;
-    let w = SCR_W - MARGIN_X - x;
+    let next_x = SCR_W - MARGIN_X - NEXT_W;
+    let w = if next.is_some() { next_x - theme::space::LG - x } else { SCR_W - MARGIN_X - x }.max(0.0);
     let mut y = top;
 
     // The number, then the name.
@@ -95,16 +96,18 @@ pub fn draw(p: Painter, channel: &LiveChannel, now: i64, measure: &dyn plx_machi
         let tx = x + BAR_W + theme::space::MD;
         let t = measure.fit_line(&times, (x + w - tx).max(0.0), body, false);
         Label::new(t.as_ptr(), body, theme::TEXT_SECONDARY).draw(p, Rect::new(tx, y, (x + w - tx).max(0.0), body_h));
-        y += body_h;
     }
 
-    // What comes next.
+    // Up next, in its own column on the right, level with what is on now.
     if let Some(next) = next {
-        y += theme::space::XS;
-        // Alphabetical arguments: `time`, then `title`.
-        let line = msg::dispatcharr_live_next(&i18n::wall_time(next.start), &next.title);
-        let t = measure.fit_line(&line, w, caption, false);
-        Label::new(t.as_ptr(), caption, theme::TEXT_SECONDARY).draw(p, Rect::new(x, y, w, caption_h));
+        let y = top + head_h + theme::space::XS;
+        // `time` is the only argument.
+        let heading = msg::dispatcharr_live_up_next(&i18n::wall_time(next.start));
+        let t = measure.fit_line(&heading, NEXT_W, caption, true);
+        Label::new(t.as_ptr(), caption, theme::TEXT_SECONDARY).bold().draw(p, Rect::new(next_x, y, NEXT_W, caption_h));
+        let title_y = y + caption_h + theme::space::XS;
+        let t = measure.fit_line(&next.title, NEXT_W, body, true);
+        Label::new(t.as_ptr(), body, theme::TEXT_PRIMARY).bold().draw(p, Rect::new(next_x, title_y, NEXT_W, body_h));
     }
 }
 

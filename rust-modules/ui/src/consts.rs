@@ -234,6 +234,13 @@ pub const WCODE_EXIT: c_uint = 505;
 /// retired pair.
 pub const WCODE_CH_UP_KEY: c_uint = 300;
 pub const WCODE_CH_DOWN_KEY: c_uint = 301;
+/// **The Magic Remote's CH▲/CH▼ on webOS 6** — scancodes **480/481**, from evdev 293/294 in that
+/// television's own SDL table (`libSDL2-2.0.so.0`, the evdev→scancode array at file offset
+/// `0xaef78`, read 2026-10-15; 482 beside them is BACK, `WCODE_BACK`). Measured on the dev set: the
+/// owner's CH presses arrived as `scancode=480 sym=0` and reached no arm, because only 300/301
+/// were known. Both pairs are the rocker; which one a set sends is its firmware's choice.
+pub const WCODE_CH_UP_WEBOS6: c_uint = 480;
+pub const WCODE_CH_DOWN_WEBOS6: c_uint = 481;
 
 /// OK/confirm press — RETURN, keypad ENTER, or the remote's SELECT. The ONE OK predicate
 /// (app.rs + the login/profiles screens all route through it).
@@ -425,10 +432,10 @@ mod canonical_input_tests {
 /// [`is_bound`] is the predicate that answers that question.
 #[inline]
 pub fn page_dir(sym: c_uint, wcode: c_uint) -> Option<c_int> {
-    if sym == SDLK_PAGEUP || wcode == WCODE_CH_UP_KEY {
+    if sym == SDLK_PAGEUP || wcode == WCODE_CH_UP_KEY || wcode == WCODE_CH_UP_WEBOS6 {
         return Some(-1);
     }
-    if sym == SDLK_PAGEDOWN || wcode == WCODE_CH_DOWN_KEY {
+    if sym == SDLK_PAGEDOWN || wcode == WCODE_CH_DOWN_KEY || wcode == WCODE_CH_DOWN_WEBOS6 {
         return Some(1);
     }
     None
@@ -527,6 +534,8 @@ mod tests {
         assert_eq!(page_dir(SDLK_PAGEUP, 0), Some(-1));
         assert_eq!(page_dir(SDLK_PAGEDOWN, 0), Some(1));
         assert_eq!(page_dir(0, WCODE_CH_UP_KEY), Some(-1)); // evdev 402/403, the real rocker
+        assert_eq!(page_dir(0, WCODE_CH_UP_WEBOS6), Some(-1), "webOS 6's CH▲ (evdev 293)");
+        assert_eq!(page_dir(0, WCODE_CH_DOWN_WEBOS6), Some(1), "webOS 6's CH▼ (evdev 294)");
         assert_eq!(page_dir(0, WCODE_CH_DOWN_KEY), Some(1));
         assert_eq!(page_dir(SDLK_UP, 0), None, "the D-pad is not the pager");
         assert_eq!(page_dir(0, WCODE_FASTFORWARD), None);

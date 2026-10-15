@@ -43,7 +43,6 @@
   "dispatcharr.guide.time_range": "{start} – {end}",
   "dispatcharr.guide.season_episode": "С{season} Э{episode}",
   "dispatcharr.guide.episode": "Серыя {episode}",
-  "dispatcharr.live.next": "Далей {time} · {title}",
   "dispatcharr.live.no_channel": "Няма канала {number}",
   "dispatcharr.guide.favourites": "Абранае",
   "dispatcharr.guide.all_channels": "Усе каналы",
@@ -51,5 +50,6 @@
   "dispatcharr.guide.no_favourites_reason": "Утрымлівайце OK на канале, каб дадаць яго ў абранае.",
   "dispatcharr.setup.resume_on": "Пачынаць з апошняга канала: Так",
   "dispatcharr.setup.resume_off": "Пачынаць з апошняга канала: Не",
-  "dispatcharr.setup.resume_note": "Калі ўключана, праграма адкрываецца на апошнім праглядзеным канале. НАЗАД вядзе ў Тэлегід."
+  "dispatcharr.setup.resume_note": "Калі ўключана, праграма адкрываецца на апошнім праглядзеным канале. НАЗАД вядзе ў Тэлегід.",
+  "dispatcharr.live.up_next": "Далей · {time}"
 }

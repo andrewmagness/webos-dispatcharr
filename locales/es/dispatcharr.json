@@ -42,7 +42,6 @@
   "dispatcharr.guide.time_range": "{start} – {end}",
   "dispatcharr.guide.season_episode": "T{season} E{episode}",
   "dispatcharr.guide.episode": "Episodio {episode}",
-  "dispatcharr.live.next": "A continuación {time} · {title}",
   "dispatcharr.live.no_channel": "No hay canal {number}",
   "dispatcharr.guide.favourites": "Favoritos",
   "dispatcharr.guide.all_channels": "Todos los canales",
@@ -50,5 +49,6 @@
   "dispatcharr.guide.no_favourites_reason": "Mantén pulsado OK en un canal para añadirlo a tus favoritos.",
   "dispatcharr.setup.resume_on": "Empezar en el último canal: Sí",
   "dispatcharr.setup.resume_off": "Empezar en el último canal: No",
-  "dispatcharr.setup.resume_note": "Si está activado, la app se abre reproduciendo el último canal que viste. ATRÁS va a la Guía."
+  "dispatcharr.setup.resume_note": "Si está activado, la app se abre reproduciendo el último canal que viste. ATRÁS va a la Guía.",
+  "dispatcharr.live.up_next": "A continuación · {time}"
 }

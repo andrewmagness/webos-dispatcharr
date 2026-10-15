@@ -175,6 +175,13 @@ fi
 if [ -n "$HOST" ]; then
   # No --arch/--cpu/--target-os: configure detects this Mac, which is the point.
   set -- --prefix=/plx
+  # An x86 Linux host without nasm (the build box has none) would fail configure outright. The
+  # component list is demuxers, parsers and subtitle decoders, none of which has an x86 kernel
+  # worth the dependency, so build without hand-written assembly there. A Mac is arm64, where
+  # FFmpeg's assembly is inline and needs no nasm, so its flags are unchanged.
+  if ! command -v nasm >/dev/null 2>&1; then
+    set -- "$@" --disable-x86asm
+  fi
 else
   # `--build-id=sha1` gives each shared object the same stable identity the app binary carries
   # (ci/check-elf.sh), which is what pairs a crash frame inside it with the symbols

@@ -60,7 +60,7 @@ PACKAGE_ID = "com.magness.dispatcharrtv.nightly"
 MANIFEST_NAME = f"{PACKAGE_ID}.manifest.json"
 #: Homebrew Channel shows this where there is no room for the long description (and falls back to
 #: it when a package has no `fullDescriptionUrl`); the listing's limit is 80 characters.
-SHORT_DESCRIPTION = "Daily build of Dispatcharr TV from main. Untested on a TV; installs beside stable."
+SHORT_DESCRIPTION = "Daily Dispatcharr TV build from main. Untested on a TV; installs beside stable."
 
 
 def _release_line_content() -> "str | None":

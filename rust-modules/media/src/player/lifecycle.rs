@@ -3,9 +3,8 @@
 //! `ForegroundLifecycle` is a tested `State + Event -> Effects` machine, and the transport helpers
 //! (`paused`, `viewer_paused`, `set_transport_paused`, ...) are the one door every surface reaches
 //! the player's pause through. All of it describes the PLAYER's transport and its resume after an
-//! OS suspend, and the player machine ([`super::machine::Player`]), the detail page's trailer
-//! transport ([`super::preview::transport`]) and the claim hold ([`super::claim_hold`]) all name
-//! it, so it lives here rather than in `app::lifecycle` (a layer above the player). The loop's
+//! OS suspend, and the player machine ([`super::machine::Player`]) and the claim hold
+//! ([`super::claim_hold`]) both name it, so it lives here rather than in `app::lifecycle` (a layer above the player). The loop's
 //! adapter for it, `PlayerForegroundActuator`, needs `app` state and stays in `app::lifecycle`,
 //! which re-exports everything below so app code spells the names it always did.
 //!
@@ -32,10 +31,7 @@ pub fn set_paused(v: bool) {
 /// `Some(false)` its PAUSE, and `None` the single PLAYPAUSE toggle — which is the only one of the
 /// three that needs the current state at all.
 ///
-/// One function rather than a `match` per caller: the player's `PlayerReq::Transport` and the
-/// detail page's full-trailer transport (`player::preview::transport`) answer the same key ladder,
-/// and two hand-spelled copies of a three-arm match is exactly how a PLAY key ends up toggling on
-/// one surface and resuming on the other.
+/// The player's `PlayerReq::Transport` answers the key ladder through this one function.
 pub fn transport_target(play: Option<bool>, paused: bool) -> bool {
     match play {
         Some(true) => false,

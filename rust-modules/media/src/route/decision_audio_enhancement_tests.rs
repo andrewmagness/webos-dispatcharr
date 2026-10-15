@@ -3984,7 +3984,6 @@ fn admit_side_reader(ps: &mut PlaybackSession) {
         acodec: "truehd".into(),
         title: String::new(),
         ctx: String::new(),
-        preview: false,
     });
 }
 

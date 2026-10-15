@@ -555,28 +555,6 @@ fn open_failure_action(
     }
 }
 
-/// A preview is direct-play only. A failed original open must not become an HLS transcode, and
-/// it must not land on the player error read-out. On the host seam with no clock sink, `sf_load`
-/// returns 0 because there is no video path. That is not an admitted Starfish failure, so it
-/// must not open the preview breaker.
-fn finish_preview_open_failure(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-) {
-    // Already retired, and its Load has not returned yet: `preview::after_pump` finishes it.
-    // The failure flag stays set until then, so this arm is reached every frame in between.
-    if crate::player::preview::abandoning() {
-        return;
-    }
-    let seam_absent = cfg!(feature = "hostsim") && !plx_base::devtrig::flag("clocksink");
-    if seam_absent {
-        crate::player::preview::note_admission_refused();
-    } else {
-        crate::player::preview::note_failed(601);
-    }
-    crate::player::preview::retire(ps, pa, "open failed");
-}
-
 /// What the pump's failure branches got from [`recover_failed_source_route`].
 enum SourceRecovery {
     /// A flight owns the replacement route; [`land_recovery_flight`] reloads onto it, or fails the
@@ -1095,19 +1073,12 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // `sf_load == 0` may leave no callable object, so this must precede the sf_ready wait below;
     // otherwise the pump returns Connecting forever and never consumes the explicit failure.
     if SHARED.load_failed.load(Acquire) {
-        if crate::route::preview_request(ps) {
-            finish_preview_open_failure(ps, pa);
-            return;
-        }
         fail_or_wait_for_recovery(ps, eng);
         return;
     }
     // wait for the media-thread ctor
     if unsafe { super::sink().ready(mt) } == 0 {
-        // Same `!eng.preview_abandon` reasoning as the loadCompleted arms below: an abandoned
-        // trailer-preview Load must not drive the D.1.4 deferral logging/budget clock just
-        // because this earlier ctor-wait poll happens to run first.
-        if eng.stage == Stage::Loading && !eng.preview_abandon {
+        if eng.stage == Stage::Loading {
             native_load_gate_ready(eng.native_epoch);
         }
         set_state(PlaybackState::Connecting);
@@ -1144,18 +1115,10 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // flag. Acquire is the matching hand-off; `error_now` can then report the transaction cause
     // instead of racing it into the generic producer bucket.
     if SHARED.demux_io_failed.load(Acquire) {
-        if crate::route::preview_request(ps) {
-            finish_preview_open_failure(ps, pa);
-            return;
-        }
         fail_or_wait_for_recovery(ps, eng);
         return;
     }
     if SHARED.demux_failed.load(Acquire) && SHARED.frames.load(Relaxed) == 0 {
-        if crate::route::preview_request(ps) {
-            finish_preview_open_failure(ps, pa);
-            return;
-        }
         fail_or_wait_for_recovery(ps, eng);
         return;
     }
@@ -1613,13 +1576,9 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // Starfish call, and on v0.6.0 it was the FIRST thing this arm did while `sf_load` was still
     // executing (synchronously) on the load thread. See `src/starfish.c`'s `g_load_returned` for
     // the matching seam-side half; `threads::load_thread` flips the Rust side right after the
-    // real, blocking `sf_load` call returns. Gated on `!eng.preview_abandon` too, same as the
-    // completion arm below: an abandoned trailer-preview Load must not drive any of this — no
-    // deferral logging, no budget clock, nothing that reacts to it as if it were live. That is
-    // why the guard is checked BEFORE `native_load_gate_ready` is even called: the helper is
-    // where the deferral logging and D.1.4 budget/telemetry actually live (see its own doc).
+    // real, blocking `sf_load` call returns. The helper is where the deferral logging and D.1.4
+    // budget/telemetry live (see its own doc).
     if eng.stage == Stage::Loading
-        && !eng.preview_abandon
         && native_load_gate_ready(eng.native_epoch)
         && (SHARED.load_completed.load(Relaxed) || unsafe { super::sink().is_load_completed(mt) } != 0)
     {
@@ -1691,7 +1650,6 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             }
         }
     } else if eng.stage == Stage::Loading
-        && !eng.preview_abandon
         && SHARED.native_load_returned(eng.native_epoch)
     {
         // Load HAS returned here (the first arm's `native_load_gate_ready` failed) and
@@ -1699,10 +1657,7 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         // half of issue #74 D.1's budget, and the one `load-returned-log-is-conditional-on-
         // loadcompleted-and-unbounded-after` found unbounded: on v0.6.0 and unchanged until now,
         // a Load that returns ok=1 and then never signals `loadCompleted` left the player parked
-        // in Connecting forever, with no counterpart to the D.1.4 timeout above. Gated on
-        // `!eng.preview_abandon` too: an abandoned trailer-preview Load has nobody watching a
-        // failure read-out for, and must not publish `load_failed`/`load_timed_out` either.
-        // Budget it from
+        // in Connecting forever, with no counterpart to the D.1.4 timeout above. Budget it from
         // the moment Load RETURNED, not from when it was ISSUED — `native_load_elapsed` (used
         // above) never resets, so a Load that used most of its own budget getting here would
         // otherwise leave this second wait almost none of its own.

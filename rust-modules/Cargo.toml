@@ -326,7 +326,7 @@ plx_telemetry = { path = "telemetry", features = ["test-support"] }
 # Likewise the data layer's seeding and fixture seams (`pms::seed_for_test`, `metadata::set_current_for_test`, ...).
 plx_data = { path = "data", features = ["test-support"] }
 # Likewise the session layer's test fixtures (`auth::test_support`, `auth::owner::scenarios`, ...).
-# Likewise the media layer's seams (`player::preview`, `player::restore_state_for_test`, ...).
+# Likewise the media layer's seams (`player::restore_state_for_test`, ...).
 plx_media = { path = "media", features = ["test-support"] }
 # Likewise the appkit layer's seams (`player_hud::SkipIntervalGuard`, the `overscan_rects` audits, ...).
 plx_appkit = { path = "appkit", features = ["test-support"] }

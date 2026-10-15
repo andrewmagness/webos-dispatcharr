@@ -45,6 +45,7 @@
   "dispatcharr.live.no_channel": "No hay canal {number}",
   "dispatcharr.guide.favourites": "Favoritos",
   "dispatcharr.guide.all_channels": "Todos los canales",
+  "dispatcharr.guide.all_groups": "Todos los grupos",
   "dispatcharr.guide.no_favourites": "Aún no hay favoritos",
   "dispatcharr.guide.no_favourites_reason": "Mantén pulsado OK en un canal para añadirlo a tus favoritos.",
   "dispatcharr.setup.resume_on": "Empezar en el último canal: Sí",

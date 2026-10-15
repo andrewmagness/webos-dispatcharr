@@ -132,7 +132,7 @@ fn landed() -> (GuideScreen, u32) {
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), resume: None, guide, fetched_at: NOW }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, groups: Vec::new(), logos, streams, favourites: Vec::new(), resume: None, guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(1000), None, 1000);
     let seat = reseated_on(&out).expect("a landing seats the cursor");
     step(&mut screen, ScreenEvent::FocusMoved { from: None, to: FocusKey { entry: EntryId(1), elem: seat }, by: By::Restore }, Some(seat));
@@ -331,7 +331,7 @@ fn a_stale_window_is_fetched_again_and_the_landing_keeps_the_channel_and_the_tim
     let fetched = NOW + Window::MAX_AGE;
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), resume: None, guide, fetched_at: fetched }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, groups: Vec::new(), logos, streams, favourites: Vec::new(), resume: None, guide, fetched_at: fetched }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(later + 16), Some(c), later + 16);
     let seat = reseated_on(&out).expect("a refetch re-seats");
     let (row, _) = split(seat).unwrap();
@@ -385,7 +385,7 @@ fn a_failed_refetch_keeps_the_guide_on_screen() {
 fn an_account_with_no_channels_says_so_and_seats_on_account() {
     let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
     let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
-    reply.send(GuideOutcome::Loaded { channels: Vec::new(), logos: Vec::new(), streams: Vec::new(), favourites: Vec::new(), resume: None,
+    reply.send(GuideOutcome::Loaded { channels: Vec::new(), groups: Vec::new(), logos: Vec::new(), streams: Vec::new(), favourites: Vec::new(), resume: None,
         guide: Guide::build(&[], &[], [], Window::around(NOW)),
         fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
@@ -443,7 +443,7 @@ fn a_channel_with_no_stream_url_does_not_tune() {
     let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
-    reply.send(GuideOutcome::Loaded { channels, logos, streams: Vec::new(), favourites: Vec::new(), resume: None, guide, fetched_at: NOW }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, groups: Vec::new(), logos, streams: Vec::new(), favourites: Vec::new(), resume: None, guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     let seat = reseated_on(&out).unwrap();
     let out = step(&mut screen, ScreenEvent::Activate(seat), Some(seat));
@@ -536,7 +536,7 @@ fn landed_with(favourites: &[&str]) -> (GuideScreen, u32) {
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
     let favourites = favourites.iter().map(|f| (*f).to_owned()).collect();
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites, resume: None, guide, fetched_at: NOW }).unwrap();
+    reply.send(GuideOutcome::Loaded { channels, groups: Vec::new(), logos, streams, favourites, resume: None, guide, fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     (screen, reseated_on(&out).expect("a landing seats the cursor"))
 }
@@ -612,6 +612,123 @@ fn the_switch_sits_left_of_account_and_left_right_walk_between_them() {
     assert_eq!(split(FAVOURITES), None, "the switch is not a cell");
 }
 
+// ── channel groups ───────────────────────────────────────────────────────────────────────────
+
+/// `lineup()` with channels 1-4 in group 10 ("News"), 5-7 in group 20 ("Sport") and the rest in
+/// none, against a server that also lists an empty group 30; `favourites` marked.
+fn landed_grouped(favourites: &[&str]) -> GuideScreen {
+    let mut screen = GuideScreen::new(EntryId(1), InstanceId(1));
+    let Some(DispatcharrCmd::Guide { reply }) = command(step(&mut screen, ScreenEvent::Mount, None)) else { panic!() };
+    let (mut channels, guide) = lineup();
+    for c in &mut channels {
+        c.channel_group_id = match c.id {
+            1..=4 => Some(10),
+            5..=7 => Some(20),
+            _ => None,
+        };
+    }
+    let group = |id, name: &str| Group { id, name: name.into(), channel_count: None };
+    let groups = vec![group(30, "Empty"), group(10, "News"), group(20, "Sport")];
+    let logos = vec![None; channels.len()];
+    let streams = streams(&channels);
+    let favourites = favourites.iter().map(|f| f.to_string()).collect();
+    reply.send(GuideOutcome::Loaded { channels, groups, logos, streams, favourites, resume: None, guide, fetched_at: NOW })
+        .unwrap();
+    step_at(&mut screen, tick(16), None, 16);
+    screen
+}
+
+fn rows_of(screen: &GuideScreen) -> Vec<i64> {
+    screen.listing.as_ref().map_or_else(Vec::new, |l| l.channels.iter().map(|c| c.id).collect())
+}
+
+#[test]
+fn the_group_switch_steps_through_the_groups_that_have_channels_and_back_to_all() {
+    let mut screen = landed_grouped(&[]);
+    assert_eq!(screen.source.as_ref().unwrap().groups.iter().map(|g| g.id).collect::<Vec<_>>(), vec![10, 20],
+        "a group with no channels in the lineup is not offered");
+    assert_eq!(screen.group_label().to_str().unwrap(), msg::dispatcharr_guide_all_groups());
+    let out = step(&mut screen, ScreenEvent::Activate(GROUP), Some(GROUP));
+    assert!(reseated_on(&out).is_none(), "focus stays on the switch");
+    assert_eq!(rows_of(&screen), vec![1, 2, 3, 4]);
+    assert_eq!(screen.group_label().to_str().unwrap(), "News");
+    assert_eq!(screen.listing.as_ref().unwrap().lineup.channels.len(), 4, "CH up/down stays inside the group");
+    step(&mut screen, ScreenEvent::Activate(GROUP), Some(GROUP));
+    assert_eq!(rows_of(&screen), vec![5, 6, 7]);
+    step(&mut screen, ScreenEvent::Activate(GROUP), Some(GROUP));
+    assert_eq!(rows_of(&screen).len(), 10, "after the last group, every channel again");
+    assert_eq!(screen.state.group, None);
+}
+
+#[test]
+fn the_group_and_favourites_switches_combine() {
+    let mut screen = landed_grouped(&["u-2", "u-6"]);
+    step(&mut screen, ScreenEvent::Activate(FAVOURITES), Some(FAVOURITES));
+    step(&mut screen, ScreenEvent::Activate(GROUP), Some(GROUP));
+    assert_eq!(rows_of(&screen), vec![2], "favourites in News");
+    step(&mut screen, ScreenEvent::Activate(GROUP), Some(GROUP));
+    assert_eq!(rows_of(&screen), vec![6], "favourites in Sport");
+}
+
+#[test]
+fn the_group_switch_sits_left_of_the_favourites_and_only_when_there_is_a_choice() {
+    let screen = landed_grouped(&[]);
+    let m = FixtureMeasure;
+    let c = cx(&m, Some(GROUP), 0);
+    assert!(screen.group_rect(&m).x + screen.group_rect(&m).w < screen.favourites_rect(&m).x);
+    let moved = |step| match step {
+        Step::Move(k) => Some(k.elem),
+        _ => None,
+    };
+    assert_eq!(moved(Focusable::neighbour(&screen, screen.key(FAVOURITES), Dir::Left, &c)), Some(GROUP));
+    assert_eq!(moved(Focusable::neighbour(&screen, screen.key(GROUP), Dir::Right, &c)), Some(FAVOURITES));
+    assert_eq!(Focusable::group_of(&screen, &GROUP, &c), Some(HEADER));
+    assert_eq!(split(GROUP), None, "the switch is not a cell");
+
+    let (plain, _) = landed();
+    assert!(!plain.has_groups(), "a server without groups offers no switch");
+    assert_eq!(Focusable::group_of(&plain, &GROUP, &c), None);
+    assert!(!matches!(Focusable::neighbour(&plain, plain.key(FAVOURITES), Dir::Left, &c), Step::Move(k) if k.elem == GROUP));
+}
+
+#[test]
+fn a_long_group_name_does_not_push_the_header_off_the_page() {
+    let mut screen = landed_grouped(&[]);
+    screen.source.as_mut().unwrap().groups[0].name = "A very long channel group name indeed, far too long for any pill".into();
+    step(&mut screen, ScreenEvent::Activate(GROUP), Some(GROUP));
+    let m = FixtureMeasure;
+    assert!(screen.group_rect(&m).w <= GROUP_MAX_W);
+}
+
+#[test]
+fn a_refetch_that_no_longer_lists_the_chosen_group_shows_every_channel() {
+    let mut screen = landed_grouped(&[]);
+    step(&mut screen, ScreenEvent::Activate(GROUP), Some(GROUP));
+    assert_eq!(screen.group, Some(10));
+    // The answer to the next refetch: the server has stopped listing any group.
+    let (reply, rx) = mpsc::channel();
+    screen.pending = Some(rx);
+    let (channels, guide) = lineup();
+    let logos = vec![None; channels.len()];
+    let streams = streams(&channels);
+    reply.send(GuideOutcome::Loaded { channels, groups: Vec::new(), logos, streams, favourites: Vec::new(), resume: None,
+        guide, fetched_at: NOW }).unwrap();
+    step_at(&mut screen, tick(32), Some(GROUP), 32);
+    assert_eq!(screen.group, None);
+    assert_eq!(rows_of(&screen).len(), 10);
+}
+
+#[test]
+fn next_group_wraps_through_every_group() {
+    let g = |id| Group { id, name: String::new(), channel_count: None };
+    let groups = [g(1), g(2)];
+    assert_eq!(next_group(&groups, None), Some(1));
+    assert_eq!(next_group(&groups, Some(1)), Some(2));
+    assert_eq!(next_group(&groups, Some(2)), None);
+    assert_eq!(next_group(&groups, Some(9)), None, "a group no longer listed");
+    assert_eq!(next_group(&[], None), None);
+}
+
 // ── resume on launch ─────────────────────────────────────────────────────────────────────────
 
 #[test]
@@ -621,7 +738,7 @@ fn a_landing_with_a_channel_to_resume_tunes_it_and_seats_on_its_row() {
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), resume: Some("u-4".into()), guide,
+    reply.send(GuideOutcome::Loaded { channels, groups: Vec::new(), logos, streams, favourites: Vec::new(), resume: Some("u-4".into()), guide,
         fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     assert_eq!(tuned(&out).map(|t| t.index), Some(3), "channel 4 starts playing");
@@ -635,7 +752,7 @@ fn a_channel_to_resume_the_lineup_no_longer_has_tunes_nothing() {
     let (channels, guide) = lineup();
     let logos = vec![None; channels.len()];
     let streams = streams(&channels);
-    reply.send(GuideOutcome::Loaded { channels, logos, streams, favourites: Vec::new(), resume: Some("gone".into()), guide,
+    reply.send(GuideOutcome::Loaded { channels, groups: Vec::new(), logos, streams, favourites: Vec::new(), resume: Some("gone".into()), guide,
         fetched_at: NOW }).unwrap();
     let (_, out, _) = step_at(&mut screen, tick(16), None, 16);
     assert!(tuned(&out).is_none());

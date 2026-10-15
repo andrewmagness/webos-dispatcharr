@@ -273,9 +273,14 @@ fn guide(reply: &Sender<GuideOutcome>) {
             ));
             let logos = channels.iter().map(|c| c.logo_id.map(|id| account.logo_url(id))).collect();
             let streams = channels.iter().map(|c| account.stream_url(c)).collect();
+            // The groups only filter the guide: one that cannot be read costs the switch, not the guide.
+            let groups = account.groups().unwrap_or_else(|e| {
+                plx_base::eventlog::log(&format!("dispatcharr: groups failed: {e}"));
+                Vec::new()
+            });
             let p = prefs::load(&account.server.base());
             let resume = resume_for(&p);
-            answer(reply, GuideOutcome::Loaded { channels, logos, streams, favourites: p.favourites, resume, guide, fetched_at });
+            answer(reply, GuideOutcome::Loaded { channels, groups, logos, streams, favourites: p.favourites, resume, guide, fetched_at });
         }
         Err(e) => {
             plx_base::eventlog::log(&format!("dispatcharr: guide failed: {e}"));

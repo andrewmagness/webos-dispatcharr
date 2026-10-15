@@ -13,7 +13,7 @@
 //! (the claim table, the enhancement step, the plans and the PMS attempts) stay here.
 
 use plx_plex::plex::ServerId;
-use plx_plex::plex::session::{QualityPref, SubtitleOffsetEntry};
+use plx_plex::plex::session::SubtitleOffsetEntry;
 use plx_data::pms::PmsMovie;
 use std::os::raw::c_char;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -1396,17 +1396,6 @@ fn begin_user_contract_boundary() -> UserEditGuard {
         None
     };
     UserEditGuard { serial }
-}
-
-/// Publish a quality preference into the desired half of the route reducer before any Session
-/// projection changes. The applied half moves only when PMS/native commits the matching action.
-fn begin_user_quality_boundary(quality: Quality) -> UserEditGuard {
-    let guard = begin_user_contract_boundary();
-    PLAYER_CONTROL
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .desired_quality = quality;
-    guard
 }
 
 fn merge_user_route_intent(
@@ -4839,9 +4828,6 @@ pub struct OriginalRollback {
 }
 
 impl OriginalRollback {
-    pub fn without_deferred(offset_ns: i64) -> Self {
-        Self { offset_ns }
-    }
 }
 
 fn snapshot_route(ps: &PlaybackSession, encoder: String, offset_secs: i64) -> PendingOriginal {
@@ -5566,24 +5552,8 @@ pub fn source_vcodec(ps: &PlaybackSession) -> String {
     ps.src_vcodec.clone()
 }
 
-/// **Can the pixels of this playback's source reach the panel untouched?** See
-/// [`PlaybackSession::cur_source_decodable`]. `false` is the state in which the quality ladder's
-/// "Original" row is a promise the pipeline cannot keep.
-///
-/// Deliberately NOT `is_transcoding()`: that says what is happening now, and a fixed rung makes it
-/// true of any source. This says what is POSSIBLE, which is the question a picker is asked.
-pub fn source_decodable(ps: &PlaybackSession) -> bool {
-    ps.cur_source_decodable
-}
 pub fn source_acodec(ps: &PlaybackSession) -> String {
     ps.src_acodec.clone()
-}
-/// pointers into the module-owned HUD buffers (valid for the whole frame draw_text uses them)
-pub fn title_cptr(ps: &PlaybackSession) -> *const c_char {
-    ps.title.as_ptr()
-}
-pub fn ctxline_cptr(ps: &PlaybackSession) -> *const c_char {
-    ps.ctxline.as_ptr()
 }
 struct ScrobbleWork {
     client: Option<&'static plx_plex::plex::Client>,
@@ -5923,13 +5893,6 @@ impl Drop for TimelineStopCompletion {
 /// SDL thread.
 pub fn drain_scrobble() {
     SCROBBLE_JOIN.drain();
-}
-
-/// Whether the last [`scrobble_stop`] has finished posting (see [`ScrobbleJoin::settled`]): true
-/// once the server holds the resume point the stop reported, so a re-read of the item sees it.
-/// Non-blocking, unlike [`drain_scrobble`].
-pub fn scrobble_settled() -> bool {
-    SCROBBLE_JOIN.settled()
 }
 
 /// Seek within a LIVE TRANSCODE by restarting it at a time offset — a transcode has no byte-Cues,
@@ -6374,161 +6337,12 @@ use plx_base::cbuf::set as set_c; // shared fixed-C-buffer write (the session's 
 
 // ---- the QUALITY ceiling: what the USER has asked this playback to come in under -------------
 
-/// The playback-quality ladder: **Auto, Original, and a few fixed rungs**, and every rung is a ROUTING POLICY
-/// before it is a parameter.
-///
-/// # Why this is not a bitrate field on [`plx_plex::plex::TranscodeSpec`]
-///
-/// That is the shape this began as, and it does nothing for the one file it exists for.
-/// [`build_stream`] picks direct play → remux → re-encode BEFORE any spec is built, and only the
-/// re-encode branch's query has ever carried `maxVideoBitrate`: direct play streams the file's own
-/// bytes with no encoder anywhere to read a cap, and a remux copies the codecs and deliberately
-/// sends no cap at all (a cap is exactly what would force the re-encode it exists to avoid). So a
-/// 30 Mbit/s source on a 4 Mbit/s link — the case the whole feature is about — direct-plays
-/// straight past a number set on the spec, and the user who picked "4 Mbps" sees no change
-/// whatsoever. `plex::params`' own doc argued this out for a LINK ceiling long before there was a
-/// user-chosen one, and the argument transfers unchanged.
-///
-/// So a rung is spent the way [`plx_plex::plex::link_policy`] spends the relay tier: **deny the two
-/// flavors that ship the file at its own rate, leaving the one flavor whose whole point is that
-/// the server picks the rate** ([`quality_policy`]). Only then does the rung's number reach the
-/// wire, as [`plx_plex::plex::Ceiling`] on the re-encode query.
-///
-/// # The ladder, and why these rungs
-///
-/// A standard descending ladder, each rung pairing a rate with the frame that rate can actually
-/// carry — a rung that halves the rate and keeps 4K asks the server for something it cannot make
-/// look like anything.
-///
-/// **A rung is a CONTENT rate; the checklist's legs are LINK rates, and the two are not the same
-/// number.** LG's #43 CASE1 exercises 512 Kbps / 1 Mbps / 7 Mbps / 17.5 Mbps, and the useful
-/// question is which rung a user on each leg would pick — the one comfortably *below* it, since
-/// the leg has to carry the stream plus everything else on the line:
-///
-/// | link leg | the rung that fits |
-/// |---|---|
-/// | 17.5 Mbit/s | `1080p · 8 Mbps` (`P1080High`'s 20 does NOT fit — it is the rung for an uncapped LAN) |
-/// | 7 Mbit/s | `720p · 4 Mbps` |
-/// | 1 Mbit/s | `480p · 720 kbps` |
-/// | 512 Kbit/s | **nothing** — it is below this ladder's floor, and no rung here pretends otherwise |
-///
-/// That last row is the honest one and it is why this table exists: three of these rungs carried a
-/// comment claiming to sit "under" a leg they are numerically above, which would have sent the
-/// next person tuning them to trust a false justification.
-///
-/// **Original is the migration-safe default and must stay a pure no-op**, which is what the
-/// regression test at the foot of this file pins: with `Original` selected, every routing
-/// decision and every query byte is what it was before this type existed. Auto is a distinct
-/// persisted mode, offered and restored only behind [`auto_quality_ready`]; its top state is an
-/// unmodified Original on Local or a measured direct Remote, with fixed-session HLS as the
-/// constrained-link path.
-/// What the menu may offer in this build. Original and fixed ceilings are established playback
-/// paths; Auto joins them only when [`auto_quality_ready`] says the adaptive path is complete.
-pub fn available_quality_ladder() -> &'static [Quality] {
-    quality_ladder_for(auto_quality_ready())
-}
-
 pub fn forced_direct_play(ps: &PlaybackSession) -> bool {
     ps.direct_play_mode == DirectPlayMode::Forced
 }
 
 pub fn audio_track_direct_plays(ps: &PlaybackSession, codec: &str, channels: i64) -> bool {
     audio_direct_plays(ps.direct_play_mode, codec, channels)
-}
-
-/// **Would the server convert this track's audio if it played?** The track menu's "converted by
-/// your server" mark: a track the TV cannot decode (`audio_direct_plays`, the same capability
-/// answer the planner and the profile use) plays through the server's remux or re-encode with its
-/// audio converted. Not under Forced Direct Play, where an unplayable track is refused instead of
-/// converted, so nothing is converted there. Reads the process-wide mode, like
-/// [`playback_preview`]: the menu's track form is built from the metadata view alone (it keeps no
-/// session), so it cannot read the `direct_play_mode` the session captured and
-/// `commit_audio_selection` uses; the two agree unless the setting changes mid-playback.
-pub fn audio_converted_by_server(codec: &str, channels: i64) -> bool {
-    let mode = direct_play_mode();
-    mode != DirectPlayMode::Forced && !audio_direct_plays(mode, codec, channels)
-}
-
-/// Select a rung. MAIN THREAD (it writes the session).
-///
-/// It binds every FUTURE resolve, and it also re-decides the playback already on screen — because
-/// the ladder's only entry point is the player's own `…` menu, so a rung that bound nothing until
-/// the next play would be a control that visibly does nothing everywhere it can be reached.
-///
-/// **The re-decision is the same one [`build_stream`] made**, re-asked with the new rung against
-/// the numbers that resolve measured ([`PlaybackSession::cur_src`]) — not a blanket reload:
-///
-/// * Nothing playing, or the rung is the one already in force → the preference, and nothing else.
-/// * The new rung still ADMITS this source and it is direct-playing → nothing to do. Picking
-///   "1080p · 20 Mbps" while direct-playing a 5 Mbit/s file must not start an encoder.
-/// * Otherwise the flavour on the wire is no longer the one this rung allows, so the session's
-///   ceiling moves and the pump is asked for a fresh transcode at the current position. That is
-///   `request_transcode_refresh` — the identical path a subtitle-burn change already takes
-///   (`commit_subtitle_selection`), gated in `player::pump` on a session that is actually
-///   `Playing`, so it is inert during a pre-roll.
-///
-/// This is a USER-initiated switch, and it is not the adaptive one: nothing here measures a link
-/// or changes a rung on its own. `PlaybackSession::cur_ceiling`'s doc has the other half — a SEEK still
-/// rebuilds from the stored ceiling, so only an explicit pick can move it mid-film.
-fn persist_quality_choice(q: Quality) -> Quality {
-    let q = supported_quality(q);
-    crate::player::report::note_quality_selected_for(playback_trace_generation(), q);
-    // The picker's checkmark moves on the door's own `invalidate`, and on nothing else — a settled
-    // popover presents no frames, so without it the row would still read as the old rung until the
-    // next keypress. The persist is the door's FIFO read-modify-write under the session lock, so it
-    // cannot overwrite a roster refresh, a profile switch, or another profile's recents.
-    choose::<QualityPref>(q, How::Optimistic(None));
-    q
-}
-
-/// Persist a quality choice made from the terminal failure screen, without trying to mutate the
-/// dead live route.  The caller starts a fresh resolve immediately; [`ResolveEnv`] will consume
-/// this preference there.
-pub fn set_quality_for_retry(q: Quality) {
-    let _ = persist_quality_choice(q);
-}
-
-pub fn set_quality(ps: &mut PlaybackSession, q: Quality) {
-    if forced_direct_play(ps) {
-        let _ = persist_quality_choice(q);
-        return;
-    }
-
-    let q = supported_quality(q);
-    let unchanged = q == quality();
-    // Hold the explicit user-staging phase across persistence, Session projection changes and
-    // pending-action publication. Re-selecting the current row remains a true no-op.
-    let _edit = (!unchanged).then(|| begin_user_quality_boundary(q));
-    let q = persist_quality_choice(q);
-    if unchanged {
-        return;
-    }
-    if original_recovery_pending() {
-        // The current Load has not produced a frame yet. Mutating its declaration or publishing
-        // another encoder now would invalidate PendingOriginal's exact rollback identities. The
-        // picker is already truthful because the preference was persisted above; the latest pick
-        // is applied immediately after this handoff commits or rolls back.
-        if q == Quality::Original {
-            // Adopt the already-running automatic candidate. There is no reason to black-screen
-            // through a second identical Load; first-frame confirmation transfers ownership to
-            // this manual contract and revokes the Auto watchdog ticket.
-            { let s = &mut *ps; s.cur_auto_original_watched = false };
-            let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(pending) = control.pending_original.as_mut() {
-                pending.adopted_by_user = true;
-                pending.deferred_quality = None;
-                pending.candidate_projection.auto_original_watched = false;
-            }
-        } else {
-            let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(pending) = control.pending_original.as_mut() {
-                pending.deferred_quality = Some(q);
-            }
-        }
-        crate::player::log("quality: deferred until pending Original handoff is resolved");
-        return;
-    }
-    apply_quality_choice(ps, q);
 }
 
 fn apply_quality_choice(ps: &mut PlaybackSession, q: Quality) {
@@ -7152,81 +6966,6 @@ impl ResolveEnv {
     }
 }
 
-pub fn playback_preview(d: &plx_data::metadata::Detail) -> Option<Preview> {
-    playback_preview_with_capability(d, None)
-}
-
-fn playback_preview_with_capability(
-    d: &plx_data::metadata::Detail,
-    capability: Option<plx_platform::devcaps::dv::DvCapability>,
-) -> Option<Preview> {
-    // A SHOW's container carries no file of its own, so the page answers for the episode its Play
-    // button would start — the one the hero is already about. Its frame size and audio list are
-    // the show Detail's, which `fetch_item_streams` backfilled from that same episode.
-    let (part, vcodec) = match d.on_deck.as_ref().filter(|_| d.part.is_empty()) {
-        Some(ep) => (ep.part.as_str(), ep.vcodec.as_str()),
-        None => (d.part.as_str(), d.vcodec.as_str()),
-    };
-    let presentation = match capability {
-        Some(capability) => d.dovi.presentation(
-            !plx_data::metadata::dv_withheld(),
-            capability,
-            vcodec.eq_ignore_ascii_case("hevc"),
-        ),
-        None => d.dovi.presentation_now(vcodec.eq_ignore_ascii_case("hevc")),
-    };
-    let mode = direct_play_mode();
-    if mode == DirectPlayMode::Forced {
-        return (!part.is_empty() && part_is_streamable(part)
-            && video_feed_supported(vcodec, presentation, plx_platform::devcaps::caps())
-            && d.audio.iter().any(|a| audio_direct_plays(mode, &a.codec, a.channels)))
-            .then_some(Preview::DirectPlay);
-    }
-    let p = playback_preview_with_audio(
-        part,
-        vcodec,
-        d.width,
-        d.height,
-        presentation,
-        &d.audio,
-        AudioPreviewInputs {
-            default_acodec: &d.acodec,
-            sub_selected: pick_dp_subtitle(&d.subs).is_some(),
-            quality: quality(),
-            dv_declared: false, // filled from `presentation` by the preview itself
-            local_link: plx_plex::plex::client_for(d.sid)
-                .is_some_and(|c| c.link() == Some(plx_plex::plex::probe::Location::Local)),
-            part_kbps: d.bitrate,
-        },
-    )?;
-    // The user's quality ceiling is the LAST gate `build_stream` applies, so it is the last one
-    // here too — and it can only ever downgrade, never promote. Without this the facts row would
-    // promise "Direct Play" for a source the rung is about to send to an encoder, which is the
-    // exact mismatch this preview's doc says it exists to avoid. `d.bitrate`/`width`/`height` are
-    // `Media[0]`'s, i.e. the same numbers `ResolveEnv` hands the resolve.
-    let location = plx_plex::plex::client_for(d.sid).and_then(|client| client.link());
-    // A detail page has not downloaded the file yet, so it reports what can preserve the source,
-    // not a fictitious failed bandwidth result. Remote Auto is measured at Play. Relay remains a
-    // conversion because its independent link policy refuses both original-rate flavors.
-    let policy = direct_play_policy(mode, flavors_allowed(
-        plx_plex::plex::link_policy(location),
-        quality_policy(quality(), true, d.bitrate, d.width, d.height),
-    ));
-    Some(match p {
-        Preview::DirectPlay if !policy.direct_play && policy.remux && mode == DirectPlayMode::Disabled => Preview::Remux,
-        Preview::DirectPlay if !policy.direct_play => Preview::Converts,
-        Preview::Remux | Preview::OriginalAudioConverted if !policy.remux => Preview::Converts,
-        _ => p,
-    })
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn playback_preview_with_capability_for_test(
-    d: &plx_data::metadata::Detail,
-    capability: plx_platform::devcaps::dv::DvCapability,
-) -> Option<Preview> {
-    playback_preview_with_capability(d, Some(capability))
-}
 
 static PLAY_GEN: AtomicU32 = AtomicU32::new(0);
 static PLAY_BUSY: AtomicBool = AtomicBool::new(false);
@@ -7331,21 +7070,6 @@ pub fn playback_trace_generation() -> u32 {
 /// `player::state()`, not this, whether a start is still owed.
 pub fn play_pending() -> bool {
     PLAY_BUSY.load(Ordering::SeqCst)
-}
-
-/// Attach the UI's resume point to the resolve currently in flight.
-///
-/// `request_play_*` is issued immediately before `app::start_playback`, so the latter knows the
-/// position one call later than the former knows the generation.  Tagging here closes that seam:
-/// a cancelled or superseded landing cannot consume a bare process-global resume value.
-pub fn arm_play_resume(ps: &mut PlaybackSession, resume_ns: i64) -> bool {
-    if resume_ns <= 0 || !play_pending() {
-        return false;
-    }
-    let gen = PLAY_GEN.load(Ordering::SeqCst);
-    *PLAY_RESUME.lock().unwrap_or_else(|e| e.into_inner()) = Some((gen, resume_ns));
-    { let s = &mut *ps; s.requested_resume_ns = resume_ns };
-    true
 }
 
 /// The server an item on a browsing surface came from. MAIN THREAD.
@@ -7682,21 +7406,6 @@ pub fn persist_subtitle_offset(ps: &PlaybackSession, offset_ms: i64) {
     });
 }
 
-/// Start a fresh resolve for the item whose terminal error is still on screen.
-///
-/// The caller owns Engine teardown; this module owns the immutable request descriptor, track
-/// selection and generation-bound resume point.  Returning `false` is honest for URL/dev-trigger
-/// playback, which never entered the Plex request funnel and therefore has no item to resolve.
-pub fn can_retry_current_play(ps: &PlaybackSession) -> bool {
-    ps.request.is_some()
-}
-
-/// Resume target not yet proven by a presented frame.  A refused retry keeps this so the next
-/// quality choice can try again at the same point.
-pub fn unpresented_resume_ns(ps: &PlaybackSession) -> i64 {
-    ps.requested_resume_ns.max(0)
-}
-
 /// The replacement has shown a frame; from now on the live playhead, including a later backward
 /// seek, is the only truthful retry position.
 pub fn confirm_resume_presented(ps: &mut PlaybackSession) {
@@ -7716,17 +7425,6 @@ fn current_retry_context(ps: &PlaybackSession, resume_ns: i64) -> RetryContext {
         sub_offset_ms: crate::player::subtitle_offset_ms(),
         direct_play_mode: ps.direct_play_mode,
         suppress_enhancement: false,
-    }
-}
-
-/// The context a START-FAILURE rescue resolves under: [`current_retry_context`], plus the
-/// enhancement suppressed when the failed route carried one. Kept apart from the in-flight
-/// contract-change re-resolve (which also builds a `RetryContext`), because that one is not a
-/// failure and must keep the viewer's enhancement.
-fn rescue_retry_context(ps: &PlaybackSession, resume_ns: i64) -> RetryContext {
-    RetryContext {
-        suppress_enhancement: ps.cur_contract.audio.any(),
-        ..current_retry_context(ps, resume_ns)
     }
 }
 
@@ -7751,39 +7449,6 @@ fn apply_retry_enhancement(env: &mut ResolveEnv, retry: RetryContext) {
     if retry.suppress_enhancement {
         env.audio_enhancements = plx_plex::plex::AudioEnhancements::NONE;
     }
-}
-
-/// `direct_play` replaces the failed attempt's Direct Play mode for this resolve (the failure
-/// read-out's *Switch to Auto and play*); `None` keeps it. `origin` is why the viewer asked: a
-/// Retry press is `user_retry`, a quality pick on the failure screen is `quality_change`. The new
-/// attempt is the NEXT open of the same session, so its ordinal continues the failed one's.
-pub fn retry_current_play(
-    ps: &mut PlaybackSession,
-    meta: &mut plx_data::stores::metadata::MetadataStore,
-    resume_ns: i64,
-    direct_play: Option<DirectPlayMode>,
-    origin: crate::player::report::AttemptOrigin,
-) -> bool {
-    let Some(request) = ps.request.clone() else {
-        crate::player::log("playback retry: no Plex request descriptor");
-        return false;
-    };
-    crate::player::log(&format!(
-        "playback retry: resolving item again at quality {:?}",
-        quality(),
-    ));
-    let retry = retry_context_with(ps, resume_ns, direct_play);
-    request_play_inner(ps, meta, request, Some(retry), None, true, origin)
-}
-
-/// [`rescue_retry_context`] with the failed attempt's Direct Play mode optionally replaced — the
-/// one place a retry can resolve under a different mode than the attempt it repeats.
-fn retry_context_with(ps: &PlaybackSession, resume_ns: i64, direct_play: Option<DirectPlayMode>) -> RetryContext {
-    let mut retry = rescue_retry_context(ps, resume_ns);
-    if let Some(mode) = direct_play {
-        retry.direct_play_mode = mode;
-    }
-    retry
 }
 
 /// ASYNC twins of `play_movie` / `play_episode`: identical HUD strings and inputs. On `true`, the
@@ -7834,33 +7499,6 @@ pub fn item_sid(sid: ServerId) -> ServerId {
     }
 }
 
-/// Start the queued next episode. Takes the descriptor BY VALUE, and that is load-bearing rather
-/// than stylistic: [`up_next`] hands out a `&'static`, `request_play` clears `up_next` as its
-/// first act, and a `&UpNext` argument would therefore be pointing at a dropped `String` by the
-/// time this reads it — an aliasing bug the borrow checker cannot see through a `'static`. Callers
-/// clone (`route::up_next().cloned()`); the signature is what forces them to.
-///
-/// The HUD strings mirror the episode layout `draw_hud` uses once `now_playing` lands, so the
-/// pre-roll doesn't change shape underneath the user when it does. `ctx` is the context line, the
-/// episode kicker (`ui::fmt::episode_kicker(u.season, u.index, &u.ep_title)`): the caller formats it
-/// before handing `u` over, because `route` sits below `ui`.
-pub fn request_play_up_next(ps: &mut PlaybackSession, meta: &mut plx_data::stores::metadata::MetadataStore, u: UpNext, ctx: &str) -> bool {
-    let title = if u.show_title.is_empty() {
-        &u.ep_title
-    } else {
-        &u.show_title
-    };
-    // The successor comes out of the PlayQueue of the item now playing, so its server is that
-    // item's — [`cur_sid`], not whatever surface is behind the player. Falls back to the browsing
-    // surface only if nothing is playing, which the Up Next control cannot actually reach.
-    let sid = if cur_sid(ps).is_set() {
-        cur_sid(ps)
-    } else {
-        surface_sid()
-    };
-    request_play(ps, meta, sid, &u.rk, &u.part, &u.vcodec, &u.acodec, title, ctx)
-}
-
 /// Supersede an in-flight resolve (BACK during a load). The landing is dropped by generation.
 pub fn cancel_play(ps: &mut PlaybackSession) {
     PLAY_GEN.fetch_add(1, Ordering::SeqCst);
@@ -7883,12 +7521,6 @@ pub fn cancel_play(ps: &mut PlaybackSession) {
 /// warms is `ui`'s and `route` sits below `ui`. Unset, the landing warms nothing — which is also
 /// what the host suite gets, where [`pump_play`] never calls it.
 static UP_NEXT_STILL_WARM: std::sync::OnceLock<fn(ServerId, &str)> = std::sync::OnceLock::new();
-
-/// Register the Up Next still prefetch ([`UP_NEXT_STILL_WARM`]). Called once, before the loop;
-/// a second registration is ignored.
-pub fn install_up_next_still_warm(warm: fn(ServerId, &str)) {
-    let _ = UP_NEXT_STILL_WARM.set(warm);
-}
 
 /// MAIN THREAD, once a frame. Returns the generation-owned resume point when a playable fresh plan
 /// was installed. `Some(0)` means start from the beginning; `None` means no playable landing. A
@@ -8880,14 +8512,6 @@ fn subtitle_effect_of(ps: &PlaybackSession) -> SubtitleEffect {
     }
 }
 
-/// The subtitle effect the Audio tab's NOTE reads (M7) — the same fact
-/// [`menu_enhancement_availability`] folded into its `Offered`/`Disabled` answer, exposed
-/// separately because the note's WORDING needs to tell "no subtitle" apart from "an unaffected
-/// sidecar" even though both share the same [`EnhancementRoute::Remux`].
-pub fn live_subtitle_effect(ps: &PlaybackSession) -> SubtitleEffect {
-    subtitle_effect_of(ps)
-}
-
 /// **Who draws the subtitle on screen right now** — the one route fact the Subtitles menu reads
 /// (Style and Timing apply only to a subtitle the app draws) and the one the player draws by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8904,10 +8528,6 @@ pub enum SubtitlePresenter {
 }
 
 impl SubtitlePresenter {
-    /// Does the app draw this subtitle itself (so Style and Timing apply)?
-    pub fn client_draws(self) -> bool {
-        matches!(self, Self::Client | Self::ClientOverRemux)
-    }
 }
 
 /// Why the server is the one drawing the subtitle — worded for the viewer.
@@ -9660,21 +9280,6 @@ pub fn honour_displaced_pick(ps: &mut PlaybackSession, displaced_pick: bool, arm
             == crate::player::SHARED.desired_audio_idx.load(std::sync::atomic::Ordering::Relaxed)),
         "the displaced pick is honoured before a direct reload",
     );
-}
-
-/// **Menu display truth.** While a user action is queued or in flight the rows show what the
-/// preference is asking of the live route; once settled they show what the server APPLIED. A
-/// claim-time rejection therefore shows what actually plays, and pressing the row again retries.
-pub fn displayed_audio_enhancements(ps: &PlaybackSession) -> plx_plex::plex::AudioEnhancements {
-    let in_flight = {
-        let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        control.pending_user.is_some() || control.phase != ControlPhase::Stable
-    };
-    if in_flight {
-        want_live(ps)
-    } else {
-        ps.cur_contract.audio
-    }
 }
 
 /// **The Audio tab's one question, answered once.** `Hidden` only for the one case that stays

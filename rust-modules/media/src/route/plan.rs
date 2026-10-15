@@ -27,13 +27,11 @@ pub struct RouteLease {
     pub(super) encoder: String,
 }
 
-
 impl RouteLease {
     pub fn encoder(&self) -> &str {
         &self.encoder
     }
 }
-
 
 /// Everything a media worker must still own before it may publish a route-affecting result.
 /// `route` rejects same-id ABA, `engine_epoch` rejects a worker from an earlier Load,
@@ -49,13 +47,11 @@ pub struct WorkerTicket {
     pub(super) applied_revision: u64,
 }
 
-
 impl WorkerTicket {
     pub fn encoder(&self) -> &str {
         self.route.encoder()
     }
 }
-
 
 /// Identity of one physical `sf_load` attempt inside a prepared route transaction. Attempts are
 /// never reused: a late result from A cannot settle retry B even though both open the same URL.
@@ -64,7 +60,6 @@ pub struct RouteStartAttempt {
     pub(super) serial: u64,
     pub(super) attempt: u64,
 }
-
 
 impl RouteStartAttempt {
     #[cfg(all(any(test, feature = "test-support"), feature = "hostsim"))]
@@ -76,7 +71,6 @@ impl RouteStartAttempt {
     }
 }
 
-
 pub(super) fn next_route_epoch(epoch: u64) -> u64 {
     let next = epoch.wrapping_add(1);
     if next == 0 {
@@ -86,14 +80,12 @@ pub(super) fn next_route_epoch(epoch: u64) -> u64 {
     }
 }
 
-
 pub(super) fn lease_of(active: &ActiveEncoderState) -> RouteLease {
     RouteLease {
         epoch: active.epoch,
         encoder: active.id.clone(),
     }
 }
-
 
 pub(super) fn next_generation(value: u64) -> u64 {
     let next = value.wrapping_add(1);
@@ -104,7 +96,6 @@ pub(super) fn next_generation(value: u64) -> u64 {
     }
 }
 
-
 pub(super) fn worker_ticket_of(control: &PlayerControl) -> WorkerTicket {
     WorkerTicket {
         route: lease_of(&control.active),
@@ -114,11 +105,9 @@ pub(super) fn worker_ticket_of(control: &PlayerControl) -> WorkerTicket {
     }
 }
 
-
 pub(super) fn ticket_is_current(control: &PlayerControl, ticket: &WorkerTicket) -> bool {
     ticket == &worker_ticket_of(control)
 }
-
 
 pub(super) fn automatic_ticket(intent: &AutomaticRouteIntent) -> &WorkerTicket {
     match intent {
@@ -127,11 +116,9 @@ pub(super) fn automatic_ticket(intent: &AutomaticRouteIntent) -> &WorkerTicket {
     }
 }
 
-
 pub(super) fn next_encoder_generation() -> u64 {
     ENCODER_GENERATION.fetch_add(1, Ordering::Relaxed) + 1
 }
-
 
 /// The audio track a route has decided to carry, frozen at the moment of decision (issue #266's
 /// vocabulary). Used as `Option<CarriedAudio>` everywhere: `None` means "server default, facts
@@ -296,7 +283,6 @@ impl AutoOriginalCandidate {
     }
 }
 
-
 pub(super) fn source_probe_sample_outcome(
     sample: crate::curlio::ThroughputSample,
 ) -> crate::player::report::TraceOutcome {
@@ -310,7 +296,6 @@ pub(super) fn source_probe_sample_outcome(
         crate::player::report::TraceOutcome::Inconclusive
     }
 }
-
 
 /// **Why [`HlsAbrControl::prime`] would not register a candidate encoder**, in the one distinction
 /// the caller's backoff turns on. It maps straight onto `crate::abr::RejectCause` and is a
@@ -336,7 +321,6 @@ pub enum PrimeRefusal {
     Rung,
 }
 
-
 pub(super) fn classify_prime_decision(
     session_active: bool,
     outcome: plx_plex::plex::JsonDeadlineOutcome,
@@ -354,7 +338,6 @@ pub(super) fn classify_prime_decision(
         plx_plex::plex::JsonDeadlineOutcome::Deadline => Err(PrimeRefusal::Deadline),
     }
 }
-
 
 /// This playback's universal-transcoder spec, rebuilt from the module state (rk + session are
 /// borrowed from the caller's locals; audio/subtitle ride the CURRENT selection) — so every
@@ -412,9 +395,7 @@ pub(super) fn transcode_spec_carrying_burn<'a>(
     }
 }
 
-
 pub use plx_plex::plex::session::{PlaybackQuality as Quality, DeckPress, DirectPlayMode, NextEpisodeMode, SkipInterval, SubtitleSize, SubtitlePosition};
-
 
 /// The ladder IN ORDER, best first. The ONE place row order lives, so the picker's index mapping
 /// cannot drift from what was drawn (`appkit::more_menu`'s rule, and its bug).
@@ -428,7 +409,6 @@ pub const QUALITY_LADDER: [Quality; 7] = [
     Quality::P480,
 ];
 
-
 /// The explicit support/readiness gate for automatic playback. The measured PMS contract,
 /// segmented demux, per-encoder wire identity, prime/commit transaction and single-Load LG
 /// resolution gate are all present. Keeping this named (instead of deleting it after launch)
@@ -437,16 +417,6 @@ pub const fn auto_quality_ready() -> bool {
     true
 }
 
-
-pub(super) fn quality_ladder_for(auto_ready: bool) -> &'static [Quality] {
-    if auto_ready {
-        &QUALITY_LADDER
-    } else {
-        &QUALITY_LADDER[1..]
-    }
-}
-
-
 pub(super) fn supported_quality(q: Quality) -> Quality {
     if q == Quality::Auto && !auto_quality_ready() {
         Quality::Original
@@ -454,7 +424,6 @@ pub(super) fn supported_quality(q: Quality) -> Quality {
         q
     }
 }
-
 
 /// **What the user's chosen ceiling allows a plan to ask for** — the same two flags
 /// [`plx_plex::plex::link_policy`] returns, deliberately, so [`build_stream`] can compose the two by
@@ -506,11 +475,9 @@ pub(super) fn quality_policy(
     }
 }
 
-
 pub(super) fn auto_uses_hls(q: Quality, auto_original: bool) -> bool {
     q == Quality::Auto && !auto_original
 }
-
 
 /// The shared source plan owns both the finite object and its conservation deadline. Keep this
 /// narrow wrapper for the route tests and for converting Plex's signed bitrate into ABR units.
@@ -520,7 +487,6 @@ pub(super) fn remote_probe_plan(source_kbps: i64) -> Option<crate::abr::SourcePr
         crate::abr::PROBE_BUDGET_MS,
     )
 }
-
 
 #[cfg(test)]
 pub(super) fn remote_probe_target_bytes(source_kbps: i64) -> Option<usize> {
@@ -835,7 +801,6 @@ pub(super) fn classify_outcome(
     }
 }
 
-
 /// Read the transcoder's OUTPUT codecs from a /decision response and store them as the stream
 /// codecs the Load payload is built from. The decision's Part.Stream[].codec is the codec each
 /// lane will actually ARRIVE in (it equals the source codec only when that lane is copied).
@@ -866,12 +831,10 @@ pub(super) fn decision_codecs(mc: &plx_plex::plex::MediaContainer) -> Option<(St
     }
 }
 
-
 /// `generalDecisionCode` 2000 — "Neither direct play nor conversion is available." The server has
 /// adjudicated the whole request and can serve NEITHER lane; there is nothing left for the client
 /// to try, which is what makes it a stop rather than another fallback.
 pub(super) const DECISION_UNPLAYABLE: i64 = 2000;
-
 
 /// The two verdict NUMBERS of a `/decision` body — `generalDecisionCode` and `transcodeDecisionCode`
 /// — kept as the integers PMS sent (`None` = the body carried none; never a defaulted 0).
@@ -979,7 +942,6 @@ pub(super) fn refusal(mc: &plx_plex::plex::MediaContainer) -> Option<String> {
     Some(text.trim().to_string())
 }
 
-
 /// Fresh opaque session id per playback. Reads the kernel UUID (the TV is Linux); falls
 /// back to a ratingKey + monotonic-counter token if that read fails.
 pub(super) fn new_sess(rk: &str) -> String {
@@ -993,7 +955,6 @@ pub(super) fn new_sess(rk: &str) -> String {
     static CTR: AtomicU64 = AtomicU64::new(1);
     format!("dispatcharrtv-{rk}-{}", CTR.fetch_add(1, Ordering::Relaxed))
 }
-
 
 /// The episode queued after the one now playing — everything the Up Next control draws AND
 /// everything [`request_play`] needs to start it, so playing it costs no PMS round trip either.
@@ -1014,7 +975,6 @@ pub struct UpNext {
     pub dur_ms: i64,
     pub resume_ms: i64,
 }
-
 
 /// Build the Up Next descriptor from a queue row. Episodes only: `continuous=1` on a movie
 /// returns just the movie itself (verified live — total count 1), and "up next" is a show idea.
@@ -1038,7 +998,6 @@ pub(super) fn up_next_of(r: &plx_plex::plex::QueueRow) -> Option<UpNext> {
         resume_ms: r.resume_ms,
     })
 }
-
 
 /// Every piece of [`Session`] the resolve used to READ, captured on the main thread and passed by
 /// value.
@@ -1108,7 +1067,6 @@ pub struct ResolveEnv {
     pub(super) dv_capability: Option<plx_platform::devcaps::dv::DvCapability>,
 }
 
-
 /// Does the loaded detail describe the leaf `rk` is about to play?
 ///
 /// **Its own ratingKey, OR its on-deck episode's** — and the second half is not an optimisation.
@@ -1134,7 +1092,6 @@ pub(super) fn detail_describes(d: &plx_data::metadata::Detail, sid: ServerId, rk
             .as_ref()
             .is_some_and(|ep| plx_plex::plex::same_item((d.sid, &ep.rk), (sid, rk)))
 }
-
 
 /// The source rate to judge against a ceiling, in kbps: **the VIDEO stream's own**, falling back
 /// to the whole-file figure.
@@ -1181,7 +1138,6 @@ pub(super) fn resolve_src_kbps(
         0
     }
 }
-
 
 /// Everything `resolve` DECIDES, as owned data. No `static mut`, no `SHARED`, no ACB/Starfish —
 /// so it is `Send` and the resolve can run on a worker. `apply_plan` (main thread) is the ONLY
@@ -1288,7 +1244,6 @@ pub struct Plan {
     /// that same PlayQueue's whole returned window, projected on the worker (see `queue`)
     pub queue: Vec<plx_plex::plex::QueueRow>,
 }
-
 
 /// Pick the stream URL for an item: direct-play only what the pipeline decodes natively (H264/
 /// HEVC + a direct-playable audio track); else ask the server to remux or transcode into
@@ -2261,7 +2216,6 @@ pub(super) fn build_stream(off: &plx_base::task::OffFrame, rk: &str, part: &str,
     plan
 }
 
-
 /// The direct-play plan: the pipeline decodes the SOURCE codecs natively, so the Load payload uses
 /// them (h264/hevc + the chosen audio track's codec). If a specific track was picked (aidx >= 0),
 /// tell the demuxer to feed that stream — by CONTAINER ordinal, not the list position
@@ -2352,7 +2306,6 @@ fn fill_direct_plan(
     // SESS (not a token= fallback), keeping the timeline correlation consistent.
     plan.url = client.direct_play_url(part, session).to_url();
 }
-
 
 /// The Plex language preferences an audio pick honours, most specific first: the SHOW's
 /// `audioLanguage` (its Advanced dialog, #160), then the active profile's enabled
@@ -2507,7 +2460,6 @@ fn audio_intents<'a>(
         .map(AudioIntent::Language);
     session.into_iter().chain(selection).chain(langs).chain(std::iter::once(AudioIntent::FileDefault)).collect()
 }
-
 
 /// Pick the audio track to DIRECT-PLAY from the playing item's track store
 /// (metadata::playing(), loaded by build_stream), returning (list_idx, codec, stream_id):
@@ -2797,7 +2749,6 @@ fn reference_default(tracks: &[plx_data::metadata::Stream], default_acodec: &str
     })
 }
 
-
 /// Whether the client can render this embedded subtitle codec.
 fn embedded_subtitle_renderable(codec: &str) -> bool {
     // Advertised bitmap/ASS/text codecs plus ff::sub_kind's raw UTF-8 packet formats.
@@ -2883,7 +2834,6 @@ fn mde_subtitle_id_of(subs: &[plx_data::metadata::Stream], pick: Option<(i64, i3
         })
         .unwrap_or(0)
 }
-
 
 /// Account subtitle defaults; each explicit show field overrides its inherited counterpart.
 /// PMS per-part selection always wins. Automatic picks stay embedded/client-rendered: selecting
@@ -3042,7 +2992,6 @@ pub(super) fn video_direct_plays(
     codec_ok && row_ok && src_w <= bw as i64 && src_h <= bh as i64 && dv.refusal().is_none()
 }
 
-
 /// The detail page's "how this plays" answer, BEFORE anything is played — the same FOUR gates
 /// `build_stream` will apply (codec+resolution via [`video_direct_plays`], container via
 /// [`part_is_streamable`], whether the planner's intended audio track needs converting
@@ -3184,7 +3133,6 @@ pub fn playback_preview_with_audio(
     })
 }
 
-
 /// True when the part's container is one the buffer-feed demuxer streams over HTTP: MKV, or
 /// MP4/M4V since the AVIO became seekable (see the `streamable` note at the decision site — the
 /// old mkv-only gate was measured obsolete on-device 2026-08-11). Other containers (mov/avi/…)
@@ -3196,7 +3144,6 @@ pub(super) fn part_is_streamable(part_key: &str) -> bool {
     let name = name.split('?').next().unwrap_or(name);
     name.ends_with(".mkv") || name.ends_with(".mp4") || name.ends_with(".m4v")
 }
-
 
 /// Extract the numeric Part id from a Plex part key (/library/parts/{id}/…/file.mkv).
 pub(super) fn part_id_of(part_key: &str) -> i64 {
@@ -3241,7 +3188,6 @@ pub(super) fn abandoned_plan_resources(plan: &Plan) -> Option<AbandonedPlanResou
         })
     }
 }
-
 
 pub(super) fn take_resume_for(pending: &mut Option<(u32, i64)>, gen: u32) -> i64 {
     match pending.take() {

@@ -88,14 +88,6 @@ pub fn set_transport_paused(
     }
 }
 
-/// Resume if a seek landed while paused — the twin of `commit_seek`, which is the
-/// stay-paused variant. Written out four separate times in `app::playback` before it had a name.
-pub fn resume_if_paused(pa: &mut crate::player::adapter::PlayerAdapter) {
-    if viewer_paused() {
-        set_transport_paused(pa, false);
-    }
-}
-
 /// The only two inputs which may claim an OS-suspended playback session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ForegroundInput {
@@ -260,17 +252,6 @@ impl<Attempt: Copy + PartialEq> ForegroundLifecycle<Attempt> {
         ) {
             self.state = ForegroundState::Idle;
         }
-    }
-
-    /// Retire a parked foreground owner when a distinct playback request has already been
-    /// accepted. `Prepared` remains untouched for the same session's Play-key retry; that path
-    /// claims the lifecycle directly and never owns a fresh route resolve.
-    pub fn replace_with_new_playback(&mut self) -> bool {
-        if !self.awaiting_load() {
-            return false;
-        }
-        self.state = ForegroundState::Idle;
-        true
     }
 
     pub fn claim(&mut self, input: ForegroundInput) -> ForegroundClaimResult {

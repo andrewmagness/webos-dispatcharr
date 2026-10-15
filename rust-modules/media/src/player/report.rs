@@ -420,15 +420,6 @@ pub fn note_seek_for(generation: u32) {
     push_trace_for(generation, TraceEvent::SeekRequested);
 }
 
-pub fn note_quality_selected_for(generation: u32, q: crate::route::Quality) {
-    push_trace_for(
-        generation,
-        TraceEvent::QualitySelected {
-            selected: selected_quality_class(q),
-        },
-    );
-}
-
 pub fn note_delivery_requested_for(
     generation: u32,
     delivery: DeliveryClass,

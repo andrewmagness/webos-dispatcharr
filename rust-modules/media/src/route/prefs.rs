@@ -30,7 +30,7 @@
 use super::plan::{supported_quality, Quality, QUALITY_LADDER};
 use plx_plex::plex::session::{
     persist_pref, AudioEnhancementsPref, DeckPress, DeckPressPref, DirectPlayMode, DirectPlayModePref,
-    NextEpisodeMode, NextEpisodeModePref, Preferences, QualityPref, Setting, SkipInterval,
+    NextEpisodeMode, NextEpisodeModePref, QualityPref, Setting, SkipInterval,
     SkipIntervalPref, SubtitlePosition, SubtitlePositionPref, SubtitleSize, SubtitleSizePref, SubtitleTone,
     SubtitleTonePref,
 };
@@ -254,10 +254,6 @@ pub trait LiveSetting: Setting {
     fn after_saved(_v: Self::Value) {}
     /// The setting's name in the one failure line.
     fn log_label() -> &'static str;
-    /// A value a caller of [`restore_all`] forces over the record's (the dev quality override).
-    fn overridden(_ov: &Overrides) -> Option<Self::Value> {
-        None
-    }
 }
 
 /// A plain row: the marker, its cell, and its label. Anything a row does beyond that (clamp,
@@ -299,75 +295,10 @@ live_setting!(QualityPref, QUALITY, "playback quality",
     fn normalize(q: Quality) -> Quality {
         supported_quality(q)
     }
-    fn overridden(ov: &Overrides) -> Option<Quality> {
-        ov.quality
-    }
 );
 
-/// A live row as data, so a test (and [`restore_all`]) can walk them all.
-#[derive(Clone, Copy)]
-pub struct LiveRow {
-    pub key: &'static str,
-    /// Always `S::LIVE`; carried so the tie test compares the same `{key: live}` map on both sides.
-    pub live: bool,
-    restore: fn(&Preferences, &Overrides),
-}
-
-impl LiveRow {
-    pub const fn of<S: LiveSetting>() -> LiveRow {
-        LiveRow { key: S::KEY, live: S::LIVE, restore: restore_row::<S> }
-    }
-}
-
-/// Every setting plex declares LIVE, once. `prefs_tests::t_live_*` holds this to
-/// `plex::session::prefs::DESCRIPTORS` in both directions, by key.
-pub const LIVE_ROWS: &[LiveRow] = &[
-    LiveRow::of::<QualityPref>(),
-    LiveRow::of::<DirectPlayModePref>(),
-    LiveRow::of::<SubtitleTonePref>(),
-    LiveRow::of::<SubtitleSizePref>(),
-    LiveRow::of::<SubtitlePositionPref>(),
-    LiveRow::of::<NextEpisodeModePref>(),
-    LiveRow::of::<SkipIntervalPref>(),
-    LiveRow::of::<DeckPressPref>(),
-    LiveRow::of::<AudioEnhancementsPref>(),
-];
 
 // ---- restore --------------------------------------------------------------------------------
-
-/// What a caller of [`restore_all`] forces over the record. Each caller computes it exactly as it
-/// did when it spelled the list out: boot passes none when the harness is controlled and the dev
-/// quality override otherwise; the credentials handoff passes the override.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Overrides {
-    pub quality: Option<Quality>,
-}
-
-fn restore_row<S: LiveSetting>(prefs: &Preferences, ov: &Overrides) {
-    restore_live::<S>(S::overridden(ov).unwrap_or_else(|| S::get(prefs)));
-}
-
-fn restore_live<S: LiveSetting>(v: S::Value) {
-    S::publish(S::normalize(v));
-}
-
-/// **Put every live cell where the record says, and reseed the memory mirrors from it**, without
-/// writing anything back. The one restore: boot, the credentials handoff after a sign-in, and a
-/// profile switch all call it. A legacy session's missing quality resolves to Original but stays
-/// missing on disk until the user makes an explicit choice, so a future Auto-ready build still
-/// cannot reinterpret that old install.
-///
-/// The mirrors are reseeded only when the tenure or the account stamp they were seeded under has
-/// moved ([`MemoryMirror::reseed`]); a restore that changes neither leaves them alone, because the
-/// mirror is AHEAD of the file by exactly the writes still queued.
-pub fn restore_all(record: &Session, ov: Overrides) {
-    for row in LIVE_ROWS {
-        (row.restore)(&record.prefs, &ov);
-    }
-    for row in MEMORY_ROWS {
-        (row.reseed)(record);
-    }
-}
 
 // ---- the memory door ------------------------------------------------------------------------
 
@@ -427,24 +358,6 @@ impl<E: MemoryEntry> MemoryMirror<E> {
     }
 }
 
-/// A mirror as data, so [`restore_all`] can walk them all.
-#[derive(Clone, Copy)]
-pub struct MemoryRow {
-    reseed: fn(&Session),
-}
-
-impl MemoryRow {
-    pub const fn of<E: MemoryTenant>() -> MemoryRow {
-        MemoryRow { reseed: reseed_mirror::<E> }
-    }
-}
-
-fn reseed_mirror<E: MemoryTenant>(record: &Session) {
-    E::mirror().reseed(record);
-}
-
-/// Every tenant of the memory door, once.
-pub const MEMORY_ROWS: &[MemoryRow] = &[MemoryRow::of::<SubtitleOffsetEntry>()];
 
 static SUBTITLE_OFFSETS: MemoryMirror<SubtitleOffsetEntry> = MemoryMirror::new();
 
@@ -635,51 +548,20 @@ pub fn publishes_for_test<S: LiveSetting>() -> u32 {
 // ---- the getters and thin wrappers ----------------------------------------------------------
 
 pub fn direct_play_mode() -> DirectPlayMode { DirectPlayModePref::live() }
-pub fn restore_direct_play_mode(mode: DirectPlayMode) { restore_live::<DirectPlayModePref>(mode) }
-/// Blocking persistence seam; Settings dispatches it through [`choose`].
-pub fn set_direct_play_mode(mode: DirectPlayMode) -> bool { confirm::<DirectPlayModePref>(mode) }
 
 pub fn next_episode_mode() -> NextEpisodeMode { NextEpisodeModePref::live() }
-pub fn restore_next_episode_mode(mode: NextEpisodeMode) { restore_live::<NextEpisodeModePref>(mode) }
-/// Blocking persistence seam. The live value changes only once the write is durable, so a failed
-/// save claims nothing.
-pub fn set_next_episode_mode(mode: NextEpisodeMode) -> bool { confirm::<NextEpisodeModePref>(mode) }
 
 pub fn skip_interval() -> SkipInterval { SkipIntervalPref::live() }
-pub fn restore_skip_interval(interval: SkipInterval) { restore_live::<SkipIntervalPref>(interval) }
-/// Blocking persistence seam, as [`set_next_episode_mode`].
-pub fn set_skip_interval(interval: SkipInterval) -> bool { confirm::<SkipIntervalPref>(interval) }
 
 pub fn deck_press() -> DeckPress { DeckPressPref::live() }
-pub fn restore_deck_press(mode: DeckPress) { restore_live::<DeckPressPref>(mode) }
-/// Blocking persistence seam, as [`set_next_episode_mode`].
-pub fn set_deck_press(mode: DeckPress) -> bool { confirm::<DeckPressPref>(mode) }
 
 pub fn subtitle_size() -> SubtitleSize { SubtitleSizePref::live() }
-pub fn restore_subtitle_size(size: SubtitleSize) { restore_live::<SubtitleSizePref>(size) }
-/// **Pick a caption size: one optimistic operation, on the main thread** (see [`How::Optimistic`]).
-/// `reply` (Settings) learns whether the write was durable.
-pub fn select_subtitle_size(size: SubtitleSize, reply: Option<Sender<bool>>) {
-    choose::<SubtitleSizePref>(size, How::Optimistic(reply));
-}
 
 pub fn subtitle_position() -> SubtitlePosition { SubtitlePositionPref::live() }
-pub fn restore_subtitle_position(position: SubtitlePosition) { restore_live::<SubtitlePositionPref>(position) }
-/// [`select_subtitle_size`] for the caption's vertical placement.
-pub fn select_subtitle_position(position: SubtitlePosition, reply: Option<Sender<bool>>) {
-    choose::<SubtitlePositionPref>(position, How::Optimistic(reply));
-}
 
 /// The selected ceiling. Safe from any thread; the resolve worker gets a COPY through
 /// `ResolveEnv` rather than reading this, per that struct's own rule.
 pub fn quality() -> Quality { QualityPref::live() }
-/// Restore the persisted preference without writing it back. The distinction matters for legacy
-/// sessions: their missing field resolves to Original but remains missing until the user makes an
-/// explicit choice, so a future Auto-ready build still cannot reinterpret that old install.
-pub fn restore_quality(q: Quality) { restore_live::<QualityPref>(q) }
-/// Settings' default quality: blocking, clamped to a rung this build offers BEFORE it is written,
-/// published only once durable.
-pub fn set_default_quality(q: Quality) -> bool { confirm::<QualityPref>(q) }
 
 #[cfg(test)]
 #[path = "prefs_tests.rs"]

@@ -299,13 +299,6 @@ pub fn audio_switching() -> bool {
     }
 }
 
-/// The read-out beside the spinner for `st`: [`PlaybackState::caption`], except that a load which
-/// is an audio-track switch says so ("Switching audio…") instead of "Buffering…". Any other
-/// rebuild (a seek's reload, a quality or subtitle change) keeps the plain caption.
-pub fn busy_caption(st: PlaybackState) -> &'static std::ffi::CStr {
-    busy_caption_with(st, audio_switching())
-}
-
 /// [`busy_caption`] with the audio-switch fact given — the pure choice, host-testable.
 pub fn busy_caption_with(st: PlaybackState, audio_switch: bool) -> &'static std::ffi::CStr {
     if audio_switch && st == PlaybackState::Buffering {
@@ -1805,13 +1798,6 @@ pub const SUBTITLE_OFFSET_LATEST_MS: i64 = 60_000;
 /// The earliest a SIDECAR goes. Its whole file is in memory (`sidecar`), so an advance is exactly
 /// as servable as a delay.
 pub const SUBTITLE_OFFSET_EARLIEST_SIDECAR_MS: i64 = -60_000;
-/// The Timing capsule's step (plan `subtitle-menu-capsule` §4), read by `appkit::timing_capsule` on
-/// every LEFT/RIGHT `Down`; the Subtitles menu's own Timing row no longer steps anything itself,
-/// it only opens the capsule (`appkit::track_menu::TrackOk::OpenTiming`).
-pub const SUBTITLE_OFFSET_STEP_MS: i64 = 100;
-/// The capsule's step once a held direction has admitted 8 repeats (`appkit::timing_capsule::key`) —
-/// a faster walk across the wide sidecar range without losing the 100 ms precision near 0.
-pub const SUBTITLE_OFFSET_FAST_STEP_MS: i64 = 500;
 
 /// **The offset range for the selected subtitle, in milliseconds (`(earliest, latest)`)** — the
 /// ONE rule the Timing rows (their clamp and their limit dimming, `appkit::track_menu`) and the
@@ -1850,40 +1836,11 @@ pub fn audio_enhancements() -> plx_plex::plex::AudioEnhancements {
     AUDIO_ENHANCEMENTS.get()
 }
 
-/// Restore the persisted preference without writing it back — what `route::restore_all` does for
-/// boot, the credentials handoff and a profile switch.
-pub fn restore_audio_enhancements(a: plx_plex::plex::AudioEnhancements) {
-    AUDIO_ENHANCEMENTS.set(a);
-}
-
 /// Select a preference on the main thread and retain its persistence for the shared storage
 /// worker, exactly as [`set_subtitle_tone`] does: both go through `route::choose` with
 /// `How::Optimistic`.
 pub fn set_audio_enhancements(a: plx_plex::plex::AudioEnhancements) {
     crate::route::choose::<plx_plex::plex::session::AudioEnhancementsPref>(a, crate::route::How::Optimistic(None));
-}
-
-/// **The Audio tab's toggle rows land here** (issue #266): persist the preference, then bring the
-/// playing route in line with it. The reconcile itself defers behind a pending Original trial, so
-/// a toggle during one applies to whichever route that trial settles on.
-pub fn request_audio_enhancement(ps: &mut crate::route::PlaybackSession, a: plx_plex::plex::AudioEnhancements) {
-    set_audio_enhancements(a);
-    crate::route::reconcile_enhancement(ps, false);
-    // the rows' checkmarks move on this — see `route::choose`
-    plx_machine::idle::invalidate();
-}
-
-/// Restore the persisted preference without writing it back (what `route::restore_all` does for
-/// boot, the credentials handoff and a profile switch).
-pub fn restore_subtitle_tone(tone: plx_plex::plex::session::SubtitleTone) {
-    SUBTITLE_TONE.set(tone);
-}
-
-/// Select a tone on the main thread and retain its persistence work for the shared worker
-/// (`route::choose`, `How::Optimistic`). Takes effect on the next drawn frame — the draws read the
-/// cell — so there is nothing to reload and no cue store to touch.
-pub fn set_subtitle_tone(tone: plx_plex::plex::session::SubtitleTone) {
-    crate::route::choose::<plx_plex::plex::session::SubtitleTonePref>(tone, crate::route::How::Optimistic(None));
 }
 
 /// Set the timing offset (ms) on the main thread, clamped to the range; like the tone it takes
@@ -1969,10 +1926,6 @@ pub fn push_subtitle_cue(
         ));
     }
     push_subtitle_text(track, start_ns, end_ns, text);
-}
-/// the selected track's subtitle text active at `now_ns`, or None (also None when off).
-pub fn active_subtitle(now_ns: i64) -> Option<String> {
-    active_subtitle_span(now_ns).map(|(text, _, _)| text)
 }
 
 /// [`active_subtitle`] with the cue's `(start_ns, end_ns)` in the subtitle clock (the clock
@@ -3481,7 +3434,6 @@ mod tests {
             palette: Box::new([[0u8; 4]; 256]),
         }
     }
-
 
     /// A rect whose share of the store's byte budget is about `bytes`, whatever a rect's pixels
     /// cost in the store's representation (measured, not assumed).

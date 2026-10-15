@@ -89,10 +89,17 @@ const SAND_100: [f32; 4] = rgb8(0xe9, 0xe6, 0xe0);
 // an authored key light would use — bright near one corner, dark at its opposite — while every
 // corner still clears 3:1 against `TEXT_TERTIARY` and 7:1 against `TEXT_PRIMARY`, the same floors
 // `AmbientWash::keyed` holds a real hero to.
-const ATMOS_CHARCOAL: [f32; 4] = rgb8(0x18, 0x18, 0x1a);
-const ATMOS_WARM_GREY: [f32; 4] = rgb8(0x4a, 0x46, 0x40);
-const ATMOS_UMBER: [f32; 4] = rgb8(0x5e, 0x3e, 0x24);
-const ATMOS_ASH: [f32; 4] = rgb8(0x42, 0x42, 0x4a);
+//
+// The stops are Dispatcharr TV's own (its splash, `pkg/splash.png`: a #060606 ground under a
+// #26c6b2 teal mark), replacing the warm graphite-and-umber light inherited from PlxNative: a
+// teal-lit key corner, a deep-teal fill, a cool slate and a near-black, at the luminances the
+// floors above were measured for.
+const ATMOS_CHARCOAL: [f32; 4] = rgb8(0x12, 0x17, 0x17);
+const ATMOS_TEAL_MIST: [f32; 4] = rgb8(0x2c, 0x4e, 0x4a);
+const ATMOS_DEEP_TEAL: [f32; 4] = rgb8(0x12, 0x4e, 0x47);
+const ATMOS_SLATE: [f32; 4] = rgb8(0x34, 0x44, 0x47);
+/// The brand teal of the app's mark (`pkg/splash.png`).
+const BRAND_TEAL: [f32; 4] = rgb8(0x26, 0xc6, 0xb2);
 
 // Semantic — amber / red / green: state and verdict, never decoration.
 const AMBER_300: [f32; 4] = rgb8(0xfa, 0xb8, 0x2e);
@@ -798,15 +805,14 @@ pub const RAIL_FILL: [f32; 4] = with_a(WHITE, 0.95);
 /// so retuning a focus colour can never silently restyle a page background.
 pub const WASH_WARM: [f32; 4] = SAND_100;
 /// Frozen ambient envelope for a route that intentionally appears before Home has fetched any
-/// artwork (Shared Sources).  It is a DESIGN-SYSTEM fallback, not a screen colour: the graphite
-/// and amber stops create the low-frequency wallpaper light of an UltraBlur envelope without
+/// artwork (Shared Sources).  It is a DESIGN-SYSTEM fallback, not a screen colour: the brand's
+/// teal and slate stops create the low-frequency wallpaper light of an UltraBlur envelope without
 /// pretending there is a poster behind a pre-Home screen.  Once real artwork exists,
 /// [`crate::route_screen::RouteGround`] uses that instead.
 pub const ROUTE_GROUND_FALLBACK: [[f32; 4]; 4] =
-    [ATMOS_WARM_GREY, ATMOS_CHARCOAL, ATMOS_UMBER, ATMOS_ASH];
-/// A favourite channel's star (the Guide's rows and its favourites switch). The amber of a mark
-/// that is a fact about the item, like [`RESUME_FILL`], on the same palette stop.
-pub const FAVOURITE_MARK: [f32; 4] = AMBER_300;
+    [ATMOS_TEAL_MIST, ATMOS_CHARCOAL, ATMOS_DEEP_TEAL, ATMOS_SLATE];
+/// A favourite channel's star (the Guide's rows and its favourites switch): the brand teal.
+pub const FAVOURITE_MARK: [f32; 4] = BRAND_TEAL;
 /// Warm amber Continue-Watching progress fill (Plex-specific; no player equivalent). `#fab82e`.
 pub const RESUME_FILL: [f32; 4] = with_a(AMBER_300, 0.95);
 /// Plex's own "Plex Pass" gold, `#e5a00d` — a BRAND REFERENCE, not a palette member

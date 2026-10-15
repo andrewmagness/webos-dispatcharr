@@ -1,4 +1,4 @@
-//! plx_machine: the deterministic state-machine runtime of the PlxNative application core.
+//! plx_machine: the deterministic state-machine runtime of the Dispatcharr TV application core.
 //!
 //! Machines and effects (`machine`), the present gate (`present`), the whole-frame idle/wake gate
 //! (`idle`), the landing schedule and its record/replay gate (`landing`, `landgate`) and the

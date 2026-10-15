@@ -1,8 +1,8 @@
-# Help translate PlxNative
+# Help translate Dispatcharr TV
 
-PlxNative's interface is available in English, Spanish, French and Belarusian (official Cyrillic
+Dispatcharr TV's interface is available in English, Spanish, French and Belarusian (official Cyrillic
 orthography). Help improve a translation or contribute another language through a pull request
-at https://github.com/GLinnik21/plx-native.
+at https://github.com/andrewmagness/webos-dispatcharr.
 
 ## Translate a message
 

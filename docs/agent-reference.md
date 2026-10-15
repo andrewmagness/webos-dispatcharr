@@ -312,36 +312,6 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
     the failing message says the same. Run it locally with
     `python3 ci/check-build-budgets.py --graph --src rust-modules/src` plus one `--src` per layer crate,
     as `ci.yml` spells it (add `--binary <path>` to grade a stripped binary); `ci/test_build_budgets.py` covers pass, fail, warn and the json schema.
-  - *Live chart.* https://plxnative.com/ci/ (`site/ci/index.html`, noindex, not linked from the
-    landing page) is the working instrument for what a developer waits on: a "now" block (each
-    metric's 7-day median, its change against the previous 7 days and 30 days ago: worse ones first,
-    then the waits, the local loop and the longest jobs; a job under a minute, a part of a whole and a
-    healthy no-op build are behind a disclosure), the slowest CI jobs and the slowest local steps
-    right now (two lists: the benchmark runner is not comparable with CI), any regression of the last week with the commits in it, and the
-    time series behind them. It reads three files from the orphan `ci-metrics` branch
-    (raw.githubusercontent.com): `ci-history.json` (runs), `build-history.json` (the daily
-    benchmark, written by the benchmark workflow) and `ci-summary.json` (derived: `tools/ci-summary.py`
-    computes the "now" rows with their order and selection, the two slowest lists and the regressions as pure functions, so a later
-    alerting job can reuse them; per-class thresholds and the noise they were chosen from are in its
-    docstring). Nothing names a job: every series is derived from the rows, so a job added or removed
-    shows as a new or ended line and a missing job in one run is a gap, not a zero.
-    `.github/workflows/ci-metrics.yml` runs `tools/ci-history.py` and `tools/ci-summary.py` after
-    every finished CI / Simulator CI / Nightly run that is a push to `main` or a pull request (one
-    short ubuntu job, `concurrency`-collapsed, `actions: read` + `contents: write`; it checks out
-    only three tool files (the collector, the summary and the reader it imports) and never runs pull-request code, so a fork's pull request is recorded too,
-    with `pr: null`). Rows carry `event` (absent = a push to main), the PR number, `conclusion`,
-    `attempt`, `wall` (created to last update, for a re-run: what the developer waited) and the green
-    jobs (`failed` names the others); the nightly is recorded for pull requests only; cancelled runs
-    get no row and are counted per day in `cancelled`. Per-run rows are kept 90 days, then folded
-    into one `daily` entry per workflow, event and day. The runs listing's `status=success` filter is
-    stale, so the tool filters `conclusion` and `event` itself, and the listing can repeat or skip a
-    run across pages, so an occasional gap is closed with `gh workflow run ci-metrics.yml -f
-    full=true` (which also fills the `cancelled` days an incremental pass leaves empty, backfills a
-    branch that does not exist yet and finds old red runs). `python3 tools/ci-history.py --in
-    <ci-history.json> --dry-run [--full]` prints how many rows a real run would add and writes
-    nothing. `tools/test_ci_history.py` and `tools/test_ci_summary.py`, in `check-python`, use a fake
-    `gh` and synthetic series. To look at local data files, serve `site/` with the files beside the
-    page and open `/ci/?data=ci-history.json` (a same-origin relative path only).
 - `make build-bench [ARGS='--runs 5 --json out.json']` / `make build-bench-quick` — the repeatable
   local **build benchmark** (`tools/build-bench.py`), so a build-affecting change pastes a
   before/after table instead of an ad-hoc scratch-script number. It prints a Markdown table (median /
@@ -398,8 +368,8 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   changed. The benchmark now restores the file's original mtime, so only the first build of a run is
   an untimed warm-up. One record per day is appended to `build-history.json` on the `ci-metrics`
   branch (the same branch as `ci-history.json`, pushed with a retry because `ci-metrics.yml` writes it
-  too) and summarised into `ci-summary.json` beside it; the page at plxnative.com/ci/ reads those
-  files. The numbers are for the trend of one runner type (3 vCPUs of a shared Apple M1 virtual
+  too) and summarised into `ci-summary.json` beside it (the upstream project charted these on a web page;
+  this one has none yet). The numbers are for the trend of one runner type (3 vCPUs of a shared Apple M1 virtual
   machine; the record names it and the page prints that next to the charts), not the absolute time on
   a dev Mac. **Failures are loud and cost only their own rows.** A build that failed, or a leg that
   left no document, records nothing. A red `make check` makes the `gate` job, and so the run, red (no
@@ -513,7 +483,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   television: `stable` (`com.magness.dispatcharrtv` — the app users install, the id in every release,
   manifest and channel listing), `debug` (`com.magness.dispatcharrtv.debug` — the day-to-day developer
   build beside it, with its own launcher tile, its own sign-in and its own runtime root), and
-  `nightly` (`com.magness.dispatcharrtv.nightly` — a third install beside both, tile "PlxNative Nightly",
+  `nightly` (`com.magness.dispatcharrtv.nightly` — a third install beside both, tile "Dispatcharr TV Nightly",
   own sign-in, own runtime root, but ALWAYS a `RELEASE=1` build — `release-guard` refuses one
   without it, with no `ALLOW_DEV_ON_STABLE`-shaped hatch, because nightly ships no dev-trigger
   surface ever).
@@ -1994,7 +1964,7 @@ path. Never run only this one before a release. `tests/README.md` has the tier t
   **`tv-session` skill** drives all of this (clear → arm → launch → assert) and owns the
   screen-to-trigger recipes. **`/tmp/dispatcharrtv-storepolicy`** gives a developer build the STORE's
   credential policy (`CredentialPolicy::HttpsOnly`, `plex/origin.rs`) for the whole launch: every
-  `devtriggers` build otherwise lets a token ride plaintext, so the PLX-NATIVE-10 "Connect without
+  `devtriggers` build otherwise lets a token ride plaintext, so the upstream Sentry issue 10 "Connect without
   encryption?" flow — reachable only when plaintext needs a consented grant — cannot be reached in
   the sim or on the TV without it. It only tightens, and a store build has no trigger to read. The
   end-to-end reproduction against `tests/mock_pms.py --plaintext-only-lan` is in the mock's
@@ -2214,7 +2184,7 @@ path. Never run only this one before a release. `tests/README.md` has the tier t
   theirs (`app/bridge.rs`'s `back_at_the_first_consent_stage_is_the_root_press_and_leaves_the_question_up`
   pins both halves). BACK is no longer a quit anywhere — the remote's EXIT key
   still is, and `closeByAppId` is still how `make kill`, `tests/run.py` and `tools/tv-session.sh`
-  close the app — so the `/tmp/dispatcharrtv-noexitconfirm` bypass went with the "Exit PlxNative?"
+  close the app — so the `/tmp/dispatcharrtv-noexitconfirm` bypass went with the "Exit Dispatcharr TV?"
   alert it existed for (both retired 2026-09-03). Text
   entry is the **television's own keyboard**, raised by plain `SDL_StartTextInput` — the backend is
   in LG's Wayland driver, not the webOS extension API, which is why `SDL_webOS.h` looks like it has

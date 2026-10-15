@@ -3,8 +3,8 @@ name = "plx_base"
 version = "0.0.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-description = "PlxNative base layer: the event log, file locations, spawn discipline, dlopen seam and frame instruments every other layer builds on."
-repository = "https://github.com/GLinnik21/plx-native"
+description = "Dispatcharr TV base layer: the event log, file locations, spawn discipline, dlopen seam and frame instruments every other layer builds on."
+repository = "https://github.com/andrewmagness/webos-dispatcharr"
 publish = false
 
 [lib]

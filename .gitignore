@@ -146,7 +146,7 @@ pkg/lab.json
 # Homebrew dylibs, which are neither ours to commit nor meaningful outside the machine that
 # assembled them. ci/mkmacapp.py rebuilds all three in about a minute.
 pkg/DispatcharrTV.app/
-pkg/PlxNative-*.zip
+pkg/Dispatcharr TV-*.zip
 pkg/DispatcharrTV-README.md
 
 # Generated test media (tests/fixtures/make_fixtures.py, `make fixtures`). The default output

@@ -92,7 +92,7 @@ def stage_storage_service(repo: Path, data: Path, app: dict) -> Path:
     shutil.copyfile(executable, target / "dispatcharrtv-storage")
     (target / "dispatcharrtv-storage").chmod(0o755)
     (target / "services.json").write_text(json.dumps({
-        "id": service_id, "description": "PlxNative private storage",
+        "id": service_id, "description": "Dispatcharr TV private storage",
         "engine": "native", "executable": "dispatcharrtv-storage",
         "services": [{"name": service_id, "commands": []}],
     }, indent=4) + "\n")
@@ -131,7 +131,7 @@ def storage_archive_errors(blob: bytes, app_id: str) -> list[str]:
                     continue
                 metadata = json.load(tf.extractfile(member))
                 if name.endswith("services.json"):
-                    if metadata != {"id": service_id, "description": "PlxNative private storage", "engine": "native", "executable": "dispatcharrtv-storage", "services": [{"name": service_id, "commands": []}]}:
+                    if metadata != {"id": service_id, "description": "Dispatcharr TV private storage", "engine": "native", "executable": "dispatcharrtv-storage", "services": [{"name": service_id, "commands": []}]}:
                         errors.append("service identity/activation-only metadata differs")
                 else:
                     if metadata.get("id") != app_id or metadata.get("requiredPermissions") != STORAGE_PERMISSIONS:
@@ -218,9 +218,9 @@ def stage_resources(repo: Path, data: Path, app: dict) -> list:
     the version and the id in a file `ci/bump-version.py` has never heard of.
 
     THE FLAVOUR SUFFIX IS REAPPLIED HERE, and it is the whole reason this is a transform rather than
-    a copy. `flavor.appinfo_for` renames a flavoured install's tile `PlxNative debug` precisely so
+    a copy. `flavor.appinfo_for` renames a flavoured install's tile `Dispatcharr TV debug` precisely so
     two tiles are not a coin flip; a localized descriptor carrying the bare tracked title would
-    override that back to `PlxNative` the moment the set was switched to Korean — restoring the
+    override that back to `Dispatcharr TV` the moment the set was switched to Korean — restoring the
     ambiguity in exactly the locale nobody developing this app is looking at.
 
     The suffix is read off the transform's OUTPUT rather than re-derived from `flavor.FLAVORS`,

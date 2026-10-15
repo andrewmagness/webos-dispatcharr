@@ -928,21 +928,21 @@ Byte-range serving works, so seek-by-range is available to the player.
 | `Part[].size`, `Part[].duration` | | progress math, buffering hints |
 
 Auto first tries to avoid an encoder entirely. Local uses Original immediately. On a direct Remote,
-PlxNative samples a bounded prefix of the actual Part and admits direct play or a codec-preserving
+Dispatcharr TV samples a bounded prefix of the actual Part and admits direct play or a codec-preserving
 remux when a completed response delivers at least as fast as the source consumes. There is no
 fixed bitrate-headroom multiplier: short-term VBR risk is observed later in the playable-buffer
 derivative rather than guessed from the whole-file average. An incomplete response or HTTP/
 transport failure means capacity is unknown, not zero; Relay and an unknown result begin on HLS
 (`/video/:/transcode/universal/start.m3u8`). The official Chromium/webOS client's “Checking
 connection speed” uses the same physical object—an ordinary uncapped raw Part GET before
-`player.open()`, not a dedicated PMS speed-test endpoint. PlxNative bounds that read to one finite
+`player.open()`, not a dedicated PMS speed-test endpoint. Dispatcharr TV bounds that read to one finite
 Range response and gives it the playback's durable logical resource identity so the winning route
 can reuse it. The progressive path continues measuring successful body-read time and normalized A/V buffer time, so
 a later bandwidth collapse can replace Original with HLS at the current position — decided on a
 starvation horizon in seconds (`T_starve = B·R/(R−C)`) rather than on a window count, and the
 conservative estimate, not the last window's raw rate, selects the replacement rung directly however
 far down the ladder it is. The
-measured PMS exposes one fixed rendition per encoder session, so PlxNative performs HLS adaptation
+measured PMS exposes one fixed rendition per encoder session, so Dispatcharr TV performs HLS adaptation
 by priming a separately named encoder and committing only after complete candidate media is
 decodable and its direction-specific conservation/reserve transaction passes. Conservative body
 delivery and reserve refill order experiments; the candidate's complete end-to-end acquisition

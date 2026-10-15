@@ -41,9 +41,9 @@ So: two ids, two installs, two tiles.
 | install dir | `…/applications/com.magness.dispatcharrtv` | `…/applications/com.magness.dispatcharrtv.debug` |
 | runtime root | `/tmp` | `/tmp/com.magness.dispatcharrtv.debug` |
 | session file | `/media/developer/com.magness.dispatcharrtv-auth.json` | `/media/developer/com.magness.dispatcharrtv.debug-auth.json` |
-| launcher title | `PlxNative` | `PlxNative debug` |
+| launcher title | `Dispatcharr TV` | `Dispatcharr TV debug` |
 | launcher artwork | `pkg/icon.png` | `pkg/dev/icon.png` (amber DEV bar; nightly: `pkg/nightly/`, grey NIGHTLY bar) |
-| plex.tv device name | `PlxNative (LG TV)` | `PlxNative debug (LG TV)` |
+| plex.tv device name | `Dispatcharr TV (LG TV)` | `Dispatcharr TV debug (LG TV)` |
 
 **`FLAVOR ?= debug`, in the tracked Makefile.** The asymmetry is deliberate and it is the whole
 safety argument: every command in this repo's muscle memory is spelled `make deploy` / `make run` /
@@ -211,11 +211,11 @@ inside a bullet already claiming to be separate. It is written out in full below
   what could not see this).
 - **The plex.tv identity.** The client identifier is minted per session file, so each install is its
   own authorized device; and `plex::identity::device_name()` appends the flavour, so the account's
-  device list reads `PlxNative (LG TV)` and `PlxNative debug (LG TV)` rather than two entries
+  device list reads `Dispatcharr TV (LG TV)` and `Dispatcharr TV debug (LG TV)` rather than two entries
   spelled identically — where revoking "the one on the TV" is a coin flip. The shipped name is
   unchanged, deliberately: it is already in every existing user's device list, and a rename there
   reads as a new, unknown device.
-- **The launcher tile** — its own `title` (`PlxNative debug`) and its own badged artwork from
+- **The launcher tile** — its own `title` (`Dispatcharr TV debug`) and its own badged artwork from
   `pkg/dev/` (`docs/distribution.md` §10.3).
 - **The capture listener's TCP port.** 8910 for the shipped install, 8911 for a flavoured one
   (`capture::default_port`, and `make -s print-appport` is the same rule for the shell;
@@ -261,7 +261,7 @@ inside a bullet already claiming to be separate. It is written out in full below
   the two fonts — which is small but is not nothing on a partition nobody here has measured (§6.5).
 - **`pkg/splash.png`, deliberately.** Both flavours ship the same 1.5 MB image. A second copy would
   exist to label two seconds of a boot you *just chose from the launcher*, having already read the
-  tile that says `PlxNative debug` under artwork with an amber DEV bar on it. It is the one place
+  tile that says `Dispatcharr TV debug` under artwork with an amber DEV bar on it. It is the one place
   the flavour is knowingly not carried through, and it is recorded here so nobody re-derives it as
   an oversight.
 - **`requiredMemory: 160`.** SAM's memory budget is claimed once per *registered* app, so two

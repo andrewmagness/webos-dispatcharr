@@ -353,8 +353,8 @@ jobs:
         # that proves the object is usable.
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG || 'gleb-linnik' }}
-          SENTRY_PROJECT: ${{ inputs.telemetry == 'production' && (vars.SENTRY_PROJECT || 'plx-native') || (vars.SENTRY_PROJECT_DEV || 'plx-native-dev') }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ inputs.telemetry == 'production' && (vars.SENTRY_PROJECT || 'dispatcharr-tv') || (vars.SENTRY_PROJECT_DEV || 'dispatcharr-tv-dev') }}
           TELEMETRY: ${{ inputs.telemetry }}
           UPLOAD: ${{ inputs.upload-debug-files }}
         run: |
@@ -364,7 +364,7 @@ jobs:
               exit 1
             fi
             if [ "$TELEMETRY" = development ]; then
-              [ "$SENTRY_PROJECT" = plx-native-dev ] || { echo "::error::a development-telemetry build's DIFs must upload to plx-native-dev, not $SENTRY_PROJECT."; exit 1; }
+              [ "$SENTRY_PROJECT" = dispatcharr-tv-dev ] || { echo "::error::a development-telemetry build's DIFs must upload to dispatcharr-tv-dev, not $SENTRY_PROJECT."; exit 1; }
             fi
           fi
           # `debug-files check` first: it is the step that says whether Symbolicator can use this

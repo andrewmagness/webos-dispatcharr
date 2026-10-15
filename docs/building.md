@@ -1,4 +1,4 @@
-# Building PlxNative
+# Building Dispatcharr TV
 
 The build, the two installs, the device loop and the test tiers — everything a contributor needs
 that a television owner does not. The

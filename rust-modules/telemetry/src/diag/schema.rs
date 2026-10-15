@@ -715,7 +715,7 @@ pub const EVENT_SPECS: &[EventSpec] = &[
 pub const CONTEXT_SPECS: &[F] = &[
     F {
         key: "app_version",
-        domain: "the PlxNative package version",
+        domain: "the Dispatcharr TV package version",
     },
     F {
         key: "webos_release",

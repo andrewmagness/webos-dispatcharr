@@ -44,7 +44,7 @@ Otherwise (HEVC, AV1 on a set whose codec table lists no AV1 decoder, MP4/AAC/EA
   band, when a deficit persists across windows and the utility comparison agrees, or on a labelled
   emergency guard for a reserve under the floor and falling.
   The replacement rung is the best the conservative estimate sustains — straight there, rather
-  than a walk down the ladder or a drop to the floor. PlxNative then
+  than a walk down the ladder or a drop to the floor. Dispatcharr TV then
   downloads one segment at a time, normalizes timestamps, measures network/production/buffer
   headroom, and transactionally replaces the PMS encoder when another rung is sustainable. HLS is
   not terminal, and recovery waits for neither the top rung nor a fixed probe count: bounded source

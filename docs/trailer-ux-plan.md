@@ -1310,7 +1310,7 @@ Claude Code or Codex; checkbox as you ship.
   - Files: `rust-modules/screens/src/detail/tests.rs`
   - Verify: `make check` — cases 2 and 6 must be written to fail against the uncorrected/unfixed code first, per this repo's reproduce-fail-fix-pass rule
 
-JSONL artifact: `~/.gstack/projects/MrcRjs-plx-native/tasks-eng-review-20260915-144303.jsonl` (6 tasks, for `/autoplan` aggregation).
+JSONL artifact: `~/.gstack/projects/<project>/tasks-eng-review-20260915-144303.jsonl` (6 tasks, for `/autoplan` aggregation).
 
 ### Completion summary
 

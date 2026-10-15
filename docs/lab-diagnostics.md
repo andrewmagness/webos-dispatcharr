@@ -64,7 +64,7 @@ And two constraints that shape everything below:
 ## 2. Topology
 
 ```
-Cloud Test Lab TV  ──HTTPS POST / long poll──▶  lab.plxnative.com:39443
+Cloud Test Lab TV  ──HTTPS POST / long poll──▶  lab.example.com:39443
                    ◀── bounded command response ──┘          (same outbound connection)
                                             │
                                         Keenetic  ──UPnP IGD AddPortMapping (temporary)
@@ -89,7 +89,7 @@ authenticates the receiver to the television. Redirects are disabled.
 
 ```
 POST /v1/diag HTTP/1.1
-Host: lab.plxnative.com:39443
+Host: lab.example.com:39443
 Authorization: Bearer <session secret, 32 random bytes, base64url>
 X-Plx-Session: <session id, 8 hex>
 Content-Type: application/x-ndjson
@@ -230,7 +230,7 @@ poll and starving sign-in or diagnostics.
 
 ## 5. Transport security: pin, don't trust the world
 
-The Mac has no CA-issued certificate and getting one for `lab.plxnative.com` means ACME plumbing,
+The Mac has no CA-issued certificate and getting one for `lab.example.com` means ACME plumbing,
 renewals and a private key on a laptop. The cheaper and *stronger* answer for a two-party private
 channel:
 
@@ -240,7 +240,7 @@ channel:
   `VERIFYHOST=0`. libcurl checks the pin **independently of** VERIFYPEER (documented), and
   `CURLOPT_PINNEDPUBLICKEY` is 7.39+, against the dev set's 7.53.1 — so this reaches every firmware
   the app already claims.
-* No private key ships in PlxNative; the app carries a 32-byte hash. Only that one endpoint's key
+* No private key ships in Dispatcharr TV; the app carries a 32-byte hash. Only that one endpoint's key
   is accepted, which is a narrower trust root than the public CA set.
 
 `net.rs` change: the body of `request` gains an internal `pin: Option<&CStr>` parameter; the
@@ -356,7 +356,7 @@ It refuses to start if a session is already live (one session, by design).
 `status --json` is the agent's poll:
 
 ```json
-{"receiver":"listening","endpoint":"lab.plxnative.com:39443","upnp":"mapped",
+{"receiver":"listening","endpoint":"lab.example.com:39443","upnp":"mapped",
  "dns_matches":true,"tv":"recent upload","uploads":3,"tv_control":"connected",
  "last_poll_age_s":2,"queued":0,"inflight":null,
  "last_upload_age_s":14,"webos":"10.3.1","board":"k8hpp","model":"OLED55C1",
@@ -385,7 +385,7 @@ path; `stop` verifies deletion with `GetSpecificPortMappingEntry`.
 
 **UPnP IGD** is SSDP `M-SEARCH` → device description → `WANIPConnection`/`WANPPPConnection` control
 URL → `AddPortMapping` (1 h lease, renewed while running) / `DeletePortMapping`, plus
-`GetExternalIPAddress` compared against the `lab.plxnative.com` A record — that comparison is the
+`GetExternalIPAddress` compared against the `lab.example.com` A record — that comparison is the
 only cheap check that the path actually exists before a tester spends a lab hour on it.
 
 ---
@@ -462,7 +462,7 @@ not pretending the old filesystem contract exists.
   status=200`, and `dispatcharrtv-lab logs` printed the envelope and 44 records. The toast was
   screenshotted reading *Diagnostics uploaded / 2 KB sent*.
 * The **network path exists**: the Keenetic answers SSDP (`http://<router>:1900/ctl/IPConn`),
-  reports its external address, and `lab.plxnative.com` resolves to exactly that address. Checked
+  reports its external address, and `lab.example.com` resolves to exactly that address. Checked
   by `dispatcharrtv-lab selftest`'s closing note and by `status`'s `dns_matches`.
 
 **Verified ON THE DEV TELEVISION** (LG 49SM9000PLA, webOS 4.10.2), 2026-08-26, under the
@@ -520,7 +520,7 @@ default build. Re-run it after any change here, or give the matrix a LAB leg.
    value: a raw `GetSpecificPortMappingEntry` read back
    `NewInternalPort <the ephemeral local port> / NewInternalClient 203.0.113.7 / NewEnabled 1 /
    NewLeaseDuration 3600 / NewPortMappingDescription dispatcharrtv-lab`.
-2. The router's external address equals what `lab.plxnative.com` resolves to (`status`'s
+2. The router's external address equals what `lab.example.com` resolves to (`status`'s
    `dns_matches: true`).
 3. **A phone on LTE — off the LAN entirely — reached the receiver**, got the expected certificate
    warning (the self-signed cert of §5, which is the thing the app pins) and then the receiver's

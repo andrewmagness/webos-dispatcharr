@@ -2,10 +2,10 @@
 
 ## Scope and evidence
 
-[PR #84](https://github.com/GLinnik21/plx-native/pull/84) proposes clearing borrowed Wayland
+[PR #84](https://github.com/andrewmagness/webos-dispatcharr/pull/84) proposes clearing borrowed Wayland
 handles on background and reacquiring them on DID foreground.
 
-The Sentry issue PLX-NATIVE-K contains one event from `dispatcharrtv@0.6.3` on webOS 4.10.0,
+The upstream Sentry issue K contains one event from `dispatcharrtv@0.6.3` on webOS 4.10.0,
 K5LP. Its exception has one frame, `wl_proxy_marshal`; the saved return address maps into
 `libmali.so.1.0` at offset `0xee83d`, not the app. There are no lifecycle breadcrumbs or
 caller frames establishing that `clear_opaque_region` caused it. The dev TV's Wayland

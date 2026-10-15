@@ -1,4 +1,4 @@
-//! plx_platform: what this television is and keeps, for the PlxNative application core.
+//! plx_platform: what this television is and keeps, for the Dispatcharr TV application core.
 //!
 //! The webOS identity (`webos`), the storage helper's client and its wire protocol (`storage`), the
 //! key stores (`keymanager`), the codec table (`devcaps`), the artwork cache (`imgcache`), the

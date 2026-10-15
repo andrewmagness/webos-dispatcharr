@@ -483,7 +483,7 @@ JPEG = base64.b64decode(
 
 
 def image_jpeg(number):
-    comment = f"PlxNative cache stress tile {number:05d}".encode()
+    comment = f"Dispatcharr TV cache stress tile {number:05d}".encode()
     return JPEG[:2] + b"\xff\xfe" + struct.pack(">H", len(comment) + 2) + comment + JPEG[2:]
 
 

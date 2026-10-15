@@ -6,7 +6,7 @@ Three builds of this app live on one television: `stable` is what users install
 `debug` is the day-to-day developer build beside it (`com.magness.dispatcharrtv.debug`), with its own
 launcher tile, its own sign-in and its own `/tmp` root, and `nightly` (`com.magness.dispatcharrtv.nightly`)
 is a third install beside both — always a `RELEASE=1` build (no dev triggers, ever), with its own
-tile ("PlxNative Nightly"), its own sign-in and its own `/tmp` root, that additionally carries a
+tile ("Dispatcharr TV Nightly"), its own sign-in and its own `/tmp` root, that additionally carries a
 PACKAGE version ahead of the tracked one (see `appinfo_for`'s nightly arm) and a dated REPORTED
 version (`rust-modules/build.rs::emit_version`'s `PLX_CHANNEL=nightly` arm). The Makefile's FLAVOR
 block is the account of why; this file is the part that has to be identical in three places at
@@ -101,10 +101,10 @@ def appinfo_for(flavor: str, nightly_date: "str | None" = None) -> dict:
     if flavor == "stable":
         return a
     a["id"] = app_id(flavor)
-    # The launcher shows this under the tile. Two tiles reading `PlxNative` would be a coin flip
+    # The launcher shows this under the tile. Two tiles reading `Dispatcharr TV` would be a coin flip
     # every time, and the badged icon only helps someone who is looking at the artwork rather than
     # at a list — `dev/listApps` and SAM's own dialogs show the title, not the icon. Nightly's own
-    # title is a product decision ("PlxNative Nightly", capitalised) rather than the bare lowercase
+    # title is a product decision ("Dispatcharr TV Nightly", capitalised) rather than the bare lowercase
     # suffix debug uses, so it is spelled out rather than titlecased generically.
     suffix = "Nightly" if flavor == "nightly" else flavor
     a["title"] = f"{a['title']} {suffix}"

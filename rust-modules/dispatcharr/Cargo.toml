@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "Dispatcharr layer: the typed Dispatcharr REST client (sign-in, API key, channels)."
-repository = "https://github.com/andrewmagness/dispatcharr-webos"
+repository = "https://github.com/andrewmagness/webos-dispatcharr"
 publish = false
 
 [lib]

@@ -2601,7 +2601,7 @@ mod tests {
     /// Unwinding out of an `extern "C"` frame writes the panic line and a `SIGNAL 6`, and the
     /// daemon writes a SIGABRT envelope whose only frame is `__libc_do_syscall`. Letting that
     /// envelope win threw away the one record naming a source location — production had frameless
-    /// SIGABRTs grouped on `__libc_do_syscall` (PLX-NATIVE-W) and not one panic in 90 days.
+    /// SIGABRTs grouped on `__libc_do_syscall` (upstream Sentry issue W) and not one panic in 90 days.
     #[test]
     fn a_panic_is_not_hidden_by_the_native_abort_it_caused() {
         let plan = reconcile(&[panic_report()], &[key(SIGABRT)], "different-current-build");

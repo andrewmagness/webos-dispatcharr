@@ -124,7 +124,7 @@ pub struct Client {
     // What "fixed" was actually protecting is stability ACROSS RUNS, and the persisted UUID gives
     // that too, per install rather than per binary.
     pub(super) client_id: String, // X-Plex-Client-Identifier — stable device id (NEVER per-item)
-    pub(super) product: String,   // "PlxNative"
+    pub(super) product: String,   // "Dispatcharr TV"
     pub(super) version: String,   // "0.1.0"
     pub(super) platform: String,  // "webOS"
     // Token generation, PER SERVER. Bumped by `set_token`; read by caches keyed on a path that

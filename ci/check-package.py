@@ -308,7 +308,7 @@ def _selftest() -> int:
     variables that no Python test can otherwise see. `make check` runs it, beside `flavor.py`'s.
     """
     maintainer_cases = {
-        "Gleb Linnik <support@plxnative.com>": True,
+        "Example Maintainer <maintainer@example.com>": True,
         "Gleb Linnik <GLinnik21@users.noreply.github.com>": True,
         # RFC 5322 permits `+`, but LG's Seller Lounge IPK validator rejects it.
         "Gleb Linnik <23104281+GLinnik21@users.noreply.github.com>": False,
@@ -1690,8 +1690,8 @@ for loc in staged_locales:
     check(set(staged_loc) == LOCALIZED_KEYS,
           f"staged {loc}/appinfo.json carries exactly {sorted(LOCALIZED_KEYS)} (saw {sorted(staged_loc)})")
     # THE flavour assertion, and the only one that can fail for the debug package alone: a localized
-    # descriptor overrides the top-level one, so a tile reading `PlxNative debug` in English and
-    # `PlxNative` in Korean is two installs that cannot be told apart on a Korean set.
+    # descriptor overrides the top-level one, so a tile reading `Dispatcharr TV debug` in English and
+    # `Dispatcharr TV` in Korean is two installs that cannot be told apart on a Korean set.
     check(staged_loc.get("title") == appinfo["title"],
           f'staged {loc}/appinfo.json title == the staged top-level title ({appinfo["title"]!r})')
     if loc in tracked_locales:

@@ -15,7 +15,7 @@ pub use plx_net::net::origin::{plex_direct_literal, split, url_host, Origin, Res
 /// **The build's half of "may a credential ride this origin".** The question itself has ONE
 /// answer, `super::grant::credential_allowed` (or `grant::allowed_under` in a pure function that
 /// receives this value): this policy, OR a live consented plaintext grant for that exact origin
-/// (PLX-NATIVE-10). Every caller that used to carry its own `cfg!(feature = "devtriggers")` (the
+/// (upstream Sentry issue 10). Every caller that used to carry its own `cfg!(feature = "devtriggers")` (the
 /// http guard, the curlio media twin, the probe activation gate) now goes through it, and
 /// [`CredentialPolicy::build`] is the ONLY place the cfg still lives.
 ///
@@ -47,7 +47,7 @@ pub enum CredentialPolicy {
 #[cfg(all(feature = "devtriggers", not(any(test, feature = "test-support"))))]
 plx_base::devtrig::latched_flag!(
     /// `/tmp/dispatcharrtv-storepolicy` — a developer build takes the store's
-    /// [`CredentialPolicy::HttpsOnly`], read once at boot, so the PLX-NATIVE-10 consent flow (which
+    /// [`CredentialPolicy::HttpsOnly`], read once at boot, so the upstream Sentry issue 10 consent flow (which
     /// `AllowPlaintext` never needs) is reachable in the sim and on the TV. Absent from a store
     /// build, and never read by a host test: a stray file on a developer's machine must not change
     /// what the suite grades.

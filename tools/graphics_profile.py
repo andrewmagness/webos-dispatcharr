@@ -1,4 +1,4 @@
-"""Shared parsing and reporting for PlxNative's opt-in three-layer graphics profile."""
+"""Shared parsing and reporting for Dispatcharr TV's opt-in three-layer graphics profile."""
 
 from __future__ import annotations
 

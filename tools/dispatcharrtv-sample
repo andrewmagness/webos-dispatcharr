@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in stack sampling for a live PlxNative process on the rooted TV.
+"""Opt-in stack sampling for a live Dispatcharr TV process on the rooted TV.
 
 The application is unchanged while this command is absent.  The wrapper takes the TV lock,
 temporarily stages the ARM ptrace helper under /tmp, verifies the selected install/PID and binary
@@ -233,7 +233,7 @@ def write_report(bundle: Path, metadata: dict, rows: list[dict], mappings: list[
             out.write(f"{stack} {count}\n")
 
     lines = [
-        "PlxNative live stack sample",
+        "Dispatcharr TV live stack sample",
         f"mode: {metadata['mode']}",
         f"install: {metadata['appid']} [{metadata['flavor']}]",
         f"pid: {metadata['pid']}",
@@ -351,7 +351,7 @@ def lock_reexec(argv: list[str]) -> None:
         return
     os.execv(
         str(LOCK),
-        [str(LOCK), "with", "--why", "opt-in PlxNative live diagnostics", "--",
+        [str(LOCK), "with", "--why", "opt-in Dispatcharr TV live diagnostics", "--",
          sys.executable, str(Path(__file__).resolve()), *argv],
     )
 

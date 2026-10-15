@@ -227,7 +227,7 @@ jobs:
           gh release create "$TAG" \
             "dist/$IPK" dist/rc.sha256 dist/ffmpeg-*.tar.xz dist/build-ffmpeg.sh dist/dispatcharrtv-source-*.tar.gz* \
             --verify-tag \
-            --title "PlxNative $LABEL" \
+            --title "Dispatcharr TV $LABEL" \
             --prerelease \
             --latest=false \
             --notes-file "$RUNNER_TEMP/notes.md"

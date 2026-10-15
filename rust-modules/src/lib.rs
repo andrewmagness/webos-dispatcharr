@@ -1,4 +1,4 @@
-//! PlxNative — an unofficial native Plex client for LG webOS.
+//! Dispatcharr TV — an unofficial native Plex client for LG webOS.
 //! Copyright © 2026 Gleb Linnik. Licensed under GPL-3.0-or-later; see LICENSE at the repository
 //! root, and THIRD-PARTY-NOTICES.md for the components this links or redistributes.
 //! Not affiliated with, endorsed by, or sponsored by Plex GmbH or LG Electronics.

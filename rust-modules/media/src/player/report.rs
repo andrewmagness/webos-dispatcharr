@@ -337,7 +337,7 @@ pub fn rung_quality_class(rung: crate::abr::Rung) -> QualityClass {
 
 /// The delivery of the route this playback INSTALLED. A refused or unresolved plan installs none
 /// (`tsession` stays empty and `cur_contract` describes an attempt that never ran), so reading the
-/// route would label it `Direct` — the tag Sentry PLX-NATIVE-14 showed on every `decision_refused`
+/// route would label it `Direct` — the tag upstream Sentry issue 14 showed on every `decision_refused`
 /// event. No route is `Unknown`.
 fn delivery_class(ps: &crate::route::PlaybackSession) -> DeliveryClass {
     if crate::route::play_refused(ps) || crate::route::play_resolution_failed(ps) {
@@ -607,7 +607,7 @@ fn error_context(ps: &crate::route::PlaybackSession) -> PlaybackErrorContext {
 /// reports is this constant alone.
 const REPORT_PREVIEW_FAILURES: bool = true;
 
-/// **A failed preview, told as what it was (Sentry PLX-NATIVE-15).** A trailer is not a playback
+/// **A failed preview, told as what it was (upstream Sentry issue 15).** A trailer is not a playback
 /// the viewer asked for: it opens in the background on a dwell, never passes [`requested`] (so the
 /// trace has no `Requested` step and no `Presented` one, and the attempt ledger and the funnel's
 /// `started` latch still describe the LAST film), and can only ever open the Original direct route
@@ -1078,7 +1078,7 @@ fn rebuffer_time_class(ms: i64) -> &'static str {
 ///
 /// A refused or unresolved plan installs no route (`tsession` stays empty), and "no encoder
 /// session" is how a direct play is recognised — so this read `direct` for every refusal, the same
-/// false claim [`delivery_class`] made until Sentry PLX-NATIVE-14. The usage funnel's `mode`
+/// false claim [`delivery_class`] made until upstream Sentry issue 14. The usage funnel's `mode`
 /// domain gained `unknown` for it; `diag::schema::MODE` and `PRIVACY.md` carry the value.
 fn mode(ps: &crate::route::PlaybackSession) -> &'static str {
     if crate::route::play_refused(ps) || crate::route::play_resolution_failed(ps) {
@@ -1335,7 +1335,7 @@ mod tests {
         assert_eq!(genuine, 1, "a genuine stall still counts");
     }
 
-    /// PLX-NATIVE-14: a plan the server (or Force Direct Play) REFUSED never installs a route — no
+    /// upstream Sentry issue 14: a plan the server (or Force Direct Play) REFUSED never installs a route — no
     /// URL, no encoder session — so reading the delivery off the installed route made every
     /// `decision_refused` report say `original_direct` / requested `original`, whatever the attempt
     /// actually asked for. A refusal has no delivery and no requested quality; the report must say so.
@@ -1358,7 +1358,7 @@ mod tests {
         }
     }
 
-    /// Sentry PLX-NATIVE-14, the half `delivery: unknown` could not give: WHICH refusal. A server
+    /// upstream Sentry issue 14, the half `delivery: unknown` could not give: WHICH refusal. A server
     /// refusal reports the verdict numbers it was made on, the route the plan ATTEMPTED (recorded
     /// in the contract even though no route was installed), and the source file's codecs — while
     /// `delivery` itself stays `unknown`, because nothing was installed.
@@ -1543,7 +1543,7 @@ mod tests {
         assert_eq!(error_context(&ps).pipeline_error, 0, "the latch does not outlive its session");
     }
 
-    /// **Sentry PLX-NATIVE-V.** A playback that was running, then switched quality to Original, and
+    /// **upstream Sentry issue V.** A playback that was running, then switched quality to Original, and
     /// whose Original open failed used to report the SESSION: `delivery` the old route, `started`
     /// true. The report now also names the attempt that failed: the route it was opening, and
     /// whether that open ever put a picture up. Driven through the real per-frame observer, with
@@ -1637,7 +1637,7 @@ mod tests {
         ps
     }
 
-    /// **Sentry PLX-NATIVE-15.** A detail-page preview never passes [`requested`], so its failure
+    /// **upstream Sentry issue 15.** A detail-page preview never passes [`requested`], so its failure
     /// seals a trace with no `Requested` step; it used to report kind `unspecified`, delivery
     /// `unknown` and the first-open defaults of whatever film played last, and landed in the
     /// playback issues. It now says it is a preview, names the route a preview can only ever open

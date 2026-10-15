@@ -3,8 +3,8 @@ name = "plx_ui"
 version = "0.0.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-description = "PlxNative ui layer: the UI library (theme, widgets, containers, the frame, the focus engine, the recorder), with no application type in it."
-repository = "https://github.com/GLinnik21/plx-native"
+description = "Dispatcharr TV ui layer: the UI library (theme, widgets, containers, the frame, the focus engine, the recorder), with no application type in it."
+repository = "https://github.com/andrewmagness/webos-dispatcharr"
 publish = false
 build = "build.rs"
 

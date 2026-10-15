@@ -40,7 +40,7 @@ class StorageServicePackage(unittest.TestCase):
                 root = Path(tmp)
                 (root / "pkg").mkdir()
                 (root / "pkg/dispatcharrtv-storage").write_bytes(b"\x7fELF\x01\x01" + bytes(12) + b"\x28\x00")
-                app = {"id": app_id, "title": "PlxNative", "vendor": "PlxNative", "version": "0.6.6"}
+                app = {"id": app_id, "title": "Dispatcharr TV", "vendor": "Dispatcharr TV", "version": "0.6.6"}
                 data = root / "data"
                 self.stage_app(data, app)
                 mkipk.stage_storage_service(root, data, app)

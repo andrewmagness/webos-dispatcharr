@@ -1,4 +1,4 @@
-//! plx_gfx: what the PlxNative application core draws with.
+//! plx_gfx: what the Dispatcharr TV application core draws with.
 //!
 //! The GLES2 renderer (`gfx`: the shader programs, the draw primitives, the live-backdrop walk,
 //! the design tokens and the draw-phase instruments), the boot-time EGL probe (`egl`), text

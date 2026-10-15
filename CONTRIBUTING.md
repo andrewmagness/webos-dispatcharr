@@ -1,6 +1,6 @@
 # Contributing
 
-New contributions to PlxNative's own code are offered under GPL-3.0-or-later, without copyright
+New contributions to this project's own code are offered under GPL-3.0-or-later, without copyright
 assignment. Retain existing third-party notices and identify external code, its source revision,
 license and modifications. Do not submit code whose redistribution rights you cannot establish.
 

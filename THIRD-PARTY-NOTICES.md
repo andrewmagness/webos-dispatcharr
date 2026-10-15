@@ -1,8 +1,8 @@
 # Third-party notices
 
-This file accompanies the **PlxNative** application package (`com.magness.dispatcharrtv`), an unofficial
-native Plex client for LG webOS 4.x televisions. PlxNative itself is Copyright (c) 2026 Gleb
-Linnik and is distributed under GPL-3.0-or-later (see `LICENSE`; the brand reservation and the
+This file accompanies the **Dispatcharr TV** application package (`com.magness.dispatcharrtv`), an
+unofficial native live-TV client for Dispatcharr on LG webOS televisions. It is derived from software
+Copyright (c) 2026 Gleb Linnik and contributors, and is distributed under GPL-3.0-or-later (see `LICENSE`; the brand reservation and the
 non-affiliation statements are in `TRADEMARKS.md`, alongside it in both the repository and this
 package).
 
@@ -28,7 +28,7 @@ Two different situations, and the difference matters for what we owe you.
 
 ### 1.1 FFmpeg — **redistributed inside this package**
 
-PlxNative **ships its own build of FFmpeg**. Earlier releases linked against the television's copy;
+Dispatcharr TV **ships its own build of FFmpeg**. Earlier releases linked against the television's copy;
 they no longer do, because the TV's version moves with the firmware (libavformat 55, 57, 58, 59 and
 60 across webOS 2 to 11) and the components compiled into it cannot be determined from outside.
 
@@ -41,9 +41,9 @@ complete copy of that licence is supplied with this package at `licenses/LGPL-2.
 
 **Complete corresponding source.** The exact upstream tarball these were built from —
 `ffmpeg-9.0.tar.xz`, sha256 `7f607a00dd0d28a729d5a4811205812eef01cf6ef6155025febb6f36a9062d52`,
-from <https://ffmpeg.org/releases/> — is attached to every PlxNative release alongside the `.ipk`.
+from <https://ffmpeg.org/releases/> — is attached to every Dispatcharr TV release alongside the `.ipk`.
 The sources are **unmodified**: no patches are applied. The complete configure invocation that
-produced them, including every enabled component, is `ci/build-ffmpeg.sh` in the PlxNative
+produced them, including every enabled component, is `ci/build-ffmpeg.sh` in the Dispatcharr TV
 repository, which is also attached to each release.
 
 **Configuration.** Built with `--disable-everything` plus an explicit component list, **without**
@@ -56,7 +56,7 @@ section 3), which the Matroska demuxer needs to inflate compressed subtitle trac
 **You may modify and replace them.** They are ordinary shared libraries, loaded at run time by
 `dlopen` from the application's own directory; no FFmpeg code is linked into the `plxnative`
 executable. Build your own from the source above and put it in the app directory under the same
-file name, and PlxNative will load yours instead, with no change to the application. The `-plx`
+file name, and Dispatcharr TV will load yours instead, with no change to the application. The `-plx`
 suffix in the file names exists so these cannot be confused with — or accidentally replace — the
 television's own FFmpeg; it denotes nothing about their content, which is stock upstream.
 
@@ -67,7 +67,7 @@ built from a different release will be declined rather than misread.
 
 ### 1.2 Native ASS rendering — redistributed inside this package
 
-`libass-plx.so.0` contains the PlxNative facade and this pinned, statically linked stack.
+`libass-plx.so.0` contains the application's facade and this pinned, statically linked stack.
 The macOS simulator uses the same sources in `libass-plx.0.dylib`; the Linux simulator
 uses `libass-plx-host.so.0`.
 
@@ -87,7 +87,7 @@ the complete per-file notices accompany its source. libass and HarfBuzz copyrigh
 notices are retained in their licence files above.
 
 The exact upstream archives, checksums and licences are recorded in
-`ci/libass-dependencies.json`. Each versioned PlxNative source release contains all
+`ci/libass-dependencies.json`. Each versioned Dispatcharr TV source release contains all
 four archives, the facade (`src/ass.c`, `include/ass.h`), and its complete build
 recipe (`ci/build-libass.sh`, `ci/build-libass.py`). Upstream sources are unmodified.
 The library is built without system font providers or external font-library
@@ -96,14 +96,14 @@ HarfBuzz uses FreeType and its built-in Unicode data, without ICU or platform sh
 
 You may modify and rebuild the complete library, including FriBidi, using the
 matching source release, then replace `libass-plx.so.0` in the app directory. The
-application loads that file by absolute path and checks the PlxNative facade ABI.
+application loads that file by absolute path and checks the application's facade ABI.
 This distribution supplies source for the entire combined library, including the
 GPL-3.0-or-later facade, so recipients can rebuild and relink it. No library in this
 stack is taken from, or installed into, the television's firmware.
 
 ### 1.3 Libraries provided by your television
 
-PlxNative also links dynamically against the following libraries (glibc/GLib are
+Dispatcharr TV also links dynamically against the following libraries (glibc/GLib are
 **LGPL-2.1-or-later**; libcurl is **curl** licensed), which are
 part of your television's own system software and are **not** distributed by us:
 
@@ -114,10 +114,10 @@ part of your television's own system software and are **not** distributed by us:
 | libcurl | 7.x | `libcurl.so.4` or `libcurl.so.5` (whichever the firmware provides) |
 
 libcurl uses the curl license, not LGPL; its distinct grant is listed in section 3.
-For these libraries, PlxNative uses the ordinary shared-library mechanism (LGPL-2.1 §6(b)): no code from
+For these libraries, Dispatcharr TV uses the ordinary shared-library mechanism (LGPL-2.1 §6(b)): no code from
 them is copied into the executable, and the dynamic loader resolves them at run time against the
 television's own `/usr/lib`. To use your own build, install an interface-compatible library under
-the same SONAME. The GPL-3.0-or-later terms under which PlxNative is distributed permit modification of the
+the same SONAME. The GPL-3.0-or-later terms under which Dispatcharr TV is distributed permit modification of the
 application for your own use and reverse engineering for debugging such modifications.
 
 One further disclosure: small fragments of glibc's own startup and compatibility code **are**
@@ -169,7 +169,8 @@ The path data `M5 13l4 4L19 7` on a 24×24 grid is identical to Heroicons v1
 `optimized/outline/check.svg` (confirmed against upstream). *Modified*: stroke width 2 → 3,
 stroke colour set to white.
 
-The remaining icons in the application are original work by the PlxNative author. See section 4
+The remaining icons in the application are original work of the project's authors (Copyright (c) 2026
+Gleb Linnik and contributors). See section 4
 for a trademark note that applies to some of them.
 
 ### 2.3 Fonts
@@ -203,8 +204,8 @@ rename and the family name "Noto Sans CJK KR" is retained. The font also carries
 trademark statement "Source is a trademark of Adobe in the United States and/or other countries."
 
 *Why it ships:* it is the second link of the application's font fallback chain. Inter covers no
-Hangul, Kana or Han, so without this face every Korean, Japanese and Chinese title in a Plex
-library renders as empty boxes. See `rust-modules/gfx/src/text.rs` for the chain and
+Hangul, Kana or Han, so without this face every Korean, Japanese and Chinese channel or programme
+name renders as empty boxes. See `rust-modules/gfx/src/text.rs` for the chain and
 `rust-modules/src/fontcov.rs` for the coverage each face is required to have.
 
 ### 2.4 Rust code statically linked into `plxnative`
@@ -368,14 +369,14 @@ enable it) — verified absent from the binary. `rustc-literal-escaper`, `proc_m
   text is supplied as `licenses/GCC-exception-3.1.txt`. Like the glibc startup objects, these are
   part of the NDK's compiler and C runtime (webosbrew native-toolchain) and are System Libraries
   under GPL section 1.
-- **PlxNative auxv compatibility seam** (`src/compat/getauxval.c`), GPL-3.0-or-later. It supplies a bounded immutable process snapshot for the Rust runtime. Project-local linker guards exclude the old NDK `libglibc_polyfills.a` from every newly built ELF.
+- **The auxv compatibility seam** (`src/compat/getauxval.c`), GPL-3.0-or-later. It supplies a bounded immutable process snapshot for the Rust runtime. Project-local linker guards exclude the old NDK `libglibc_polyfills.a` from every newly built ELF.
 
 ### 2.6 Native crash capture
 
 **Sentry Native 0.16.6** — Copyright (c) 2019 Sentry and individual contributors. Licence:
 **MIT** (`licenses/MIT.txt`). Its client library is statically linked into `plxnative`; the
 out-of-process `sentry-crash` handler is shipped beside it. The handler is built with its HTTP
-transport disabled: it writes a crash envelope for PlxNative's consent-aware sender to deliver on
+transport disabled: it writes a crash envelope for the application's consent-aware sender to deliver on
 the next launch. The source is patched for webOS's glibc 2.12 syscall surface and the 32-bit ARM
 APCS frame layout; the pinned source hash and complete patch are in `ci/build-sentry-native.sh` and
 `vendor/sentry-native/webos-arm32.patch`.
@@ -408,7 +409,7 @@ file only if its target is itself a `*.plex.direct` name that fails the same way
 ## 3. Dynamically linked, not redistributed
 
 The libraries below are part of your television's software. This package contains no copy of
-them; PlxNative loads them at run time. Their upstream terms and the applicable GPL linking basis must be assessed separately; absence
+them; Dispatcharr TV loads them at run time. Their upstream terms and the applicable GPL linking basis must be assessed separately; absence
 of a bundled copy alone does not establish that no obligation applies.
 
 | Library | Version on this build | Licence | Note |
@@ -423,7 +424,7 @@ of a bundled copy alone does not establish that no obligation applies.
 | libwayland-client | 0.3.0 | MIT | Copyright © 2008-2012 Kristian Høgsberg; © 2010-2012 Intel Corporation; © 2011 Benjamin Franzke; © 2012 Collabora, Ltd. The licence of *this LG build specifically* was not read off the device |
 | luna-service2 | 3.21.2 | Apache-2.0 | Licence taken from the webOS OSE upstream project; not read off this LG build |
 | libgcc_s | the television's own | GPL-3.0-or-later WITH GCC-exception-3.1 | Version not determined; its exported symbol versions stop at `GCC_4.7.0`. Exact source and applicable Runtime Library Exception require audit |
-| FreeType | libtool 6.16.0, i.e. release 2.9.0 (inferred from the so-version, not read from the binary) | FTL OR GPL-2.0-or-later | **Not** linked by PlxNative — reached only inside the television's own SDL2_ttf. Credit given voluntarily: *Portions of this software are copyright © The FreeType Project (www.freetype.org). All rights reserved.* |
+| FreeType | libtool 6.16.0, i.e. release 2.9.0 (inferred from the so-version, not read from the binary) | FTL OR GPL-2.0-or-later | **Not** linked by Dispatcharr TV — reached only inside the television's own SDL2_ttf. Credit given voluntarily: *Portions of this software are copyright © The FreeType Project (www.freetype.org). All rights reserved.* |
 
 ---
 
@@ -435,28 +436,15 @@ decline to guess one:
 - `libGLESv2.so.2` — the television's OpenGL ES 2.0 implementation (an LG shim over the ARM Mali
   driver). Proprietary; no published licence located.
 - `libAcbAPI.so.1`, `libplayerAPIs.so.1` (StarfishMediaAPIs), `libpf-1.0.so.1` — LG proprietary
-  media components of webOS. No published licence located. PlxNative uses locally declared
+  media components of webOS. No published licence located. Dispatcharr TV uses locally declared
   interoperability interfaces; the owner has closed the review of their provenance and GPL/platform
   basis, treating them as GPL-3.0 section 1 System Libraries never redistributed with the
   application.
 **Historical NDK archive:** pre-migration builds included `libglibc_polyfills.a`, whose licence was not established. It is excluded from new linker inputs. This does not grant permission for previously distributed copies.
 
-**Non-affiliation.** PlxNative is an independent, unofficial application. It is not affiliated
-with, endorsed by, or sponsored by LG Electronics, Plex GmbH, Fandango Media (Rotten Tomatoes),
-IMDb.com, or The Movie Database. "webOS", "LG", "Plex", "Rotten Tomatoes", "IMDb", "TMDB" and all
-other trademarks are the property of their respective owners. Where those names appear in the
-application, they identify whose review score is being shown and nothing more.
-
-**Third-party brands in the interface (not a licence matter).** Review scores fetched from the
-user's own Plex Media Server are labelled with the name of the service that published them, set
-as ordinary text. No third-party logo, wordmark or brand colour is reproduced: the only glyphs
-beside a score are two original drawings — a tomato and a group of people — that indicate the
-verdict, not the vendor. Nothing here is owed under any licence in this file.
-
-*This paragraph previously described a set of shipped icons depicting the Rotten Tomatoes fruit
-and popcorn marks, and IMDb/TMDB rendered as name-and-brand-colour chips. Those eleven assets were
-removed in favour of the above; the notice is kept accurate rather than deleted, because a stale
-disclosure that over-states what a package contains is its own problem.*
+**Non-affiliation.** Dispatcharr TV is an independent, unofficial application. It is not
+affiliated with, endorsed by, or sponsored by LG Electronics or the Dispatcharr project. "webOS",
+"LG", "Dispatcharr" and all other trademarks are the property of their respective owners.
 
 ---
 
@@ -488,13 +476,13 @@ what differs between them (the copyright statement and the Reserved Font Name) i
 
 No BSD-3-Clause text is required because Apache-2.0 is elected for `moxcms` and `pxfm`. The full GPLv3 text is supplied at the package root as `LICENSE`; `LICENSING.md` states
 the GPL-3.0-or-later election. Also retain `licenses/GCC-exception-3.1.txt` and
-`licenses/PlxNative-historical-MIT.txt`.
+`licenses/historical-MIT.txt`.
 
 ---
 
 ## 6. Deliberately not listed
 
-Two third-party components exist in the PlxNative source repository but are **not** part of this
+Two third-party components exist in this source repository but are **not** part of this
 package, and therefore carry no obligation discharged here: **libjpeg-turbo**
 (`libturbojpeg.so.0`, copied to developer televisions by the development deploy step only) and
 **jsmpeg** (a host-side development tool). Neither is present in the installed application.
@@ -508,7 +496,7 @@ and `ci/check-packaged-elf.py`, which is what proves the old archive is absent f
 **Frank Muller** contributed the server connection port fix in commit
 `11b867a34b54dda5a9c6b99127b9dffdf90a23fd` (`plex/origin.rs`, `plex/probe.rs`) under the
 then-current MIT grant. That original grant and Gleb Linnik notice are preserved in
-`licenses/PlxNative-historical-MIT.txt`; no ownership transfer is claimed.
+`licenses/historical-MIT.txt`; no ownership transfer is claimed.
 
 Source bundles also contain SDL2 Zlib headers, embedded Mesa/Khronos MIT and SGI-B-2.0
 header blocks, Khronos GLES2 MIT/Apache-2.0 headers, and the MIT-licensed jsmpeg tool

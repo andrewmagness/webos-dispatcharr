@@ -27,9 +27,9 @@ watching:
 
 | Remote | What it does |
 |---|---|
-| CH▲ / CH▼, or UP / DOWN | the next or previous channel in the list you came from |
+| CH▲ / CH▼ | the next or previous channel in the list you came from |
 | number keys (the Magic Remote's 123) | that channel, as soon as the number can only mean one |
-| OK | show or hide the banner: what's on now, its progress, and what's next |
+| OK, or UP / DOWN | show the banner: what's on now and its progress, with what's up next on the right (OK again hides it) |
 | hold OK | back to the channel you watched before |
 | BACK | the Guide |
 

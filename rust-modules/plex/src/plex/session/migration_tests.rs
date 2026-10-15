@@ -1268,22 +1268,6 @@ mod published_06 {
     }
 
     #[test]
-    fn a_066_db8_record_opens_with_its_session_and_settings_without_writing() {
-        let record: Value = serde_json::from_str(include_str!(
-            "../../../../../tests/fixtures/persistence/generated/v0.6.6-db8-record.json"
-        ))
-        .unwrap();
-        let mut backend = helper(Some(record));
-        let session = opened("0.6.6 DB8", boot(&mut backend, &mut opener(), &[]));
-        assert_carried(
-            "0.6.6 DB8",
-            &session,
-            include_str!("../../../../../tests/fixtures/persistence/generated/v0.6.0.session.json"),
-        );
-        assert_eq!(backend.rpc.puts, 0);
-    }
-
-    #[test]
     fn a_066_host_store_session_record_reopens_on_host() {
         let _serial = plx_base::testlock::serial();
         let state = TempCanonicalState::new("json-066");

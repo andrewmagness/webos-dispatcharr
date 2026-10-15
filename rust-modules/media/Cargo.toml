@@ -32,8 +32,8 @@ hostsim = ["dep:plx_gfx", "plx_base/hostsim", "plx_machine/hostsim", "plx_platfo
 # Two `cfg_attr(not(feature = "lab-diagnostics"), allow(dead_code))` in `player`; the Cloud Lab bridge
 # that reads those items is the application crate's.
 lab-diagnostics = []
-# The `cfg(test)` seams other crates' tests use (`player::preview::reset_for_test`,
-# `player::restore_state_for_test`, `player::swap_state_for_test`, ...) plus the test-mode arms
+# The `cfg(test)` seams other crates' tests use (`player::restore_state_for_test`,
+# `player::swap_state_for_test`, ...) plus the test-mode arms
 # `cfg(test)` alone cannot give a dependent (the stand-in sink, the stepped feed clock, the asset
 # directory, the settled route start). Enabled from the dependents' `[dev-dependencies]`; never in a
 # shipped build.

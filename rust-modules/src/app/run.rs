@@ -692,11 +692,6 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
         // Revoke our borrowed SDL proxies before another frame can use them while backgrounded.
         // SDL owns their lifetime; foreground must query its current window again.
         release_borrowed_window(plx_platform::tv::window::release);
-        // A trailer preview is not parked: the OS taking the screen ends it, like any other way
-        // off its page (`content::halt_preview_off_its_page`). A Load that has not returned is
-        // left Abandoning, and a preview session is never parked for the foreground reload —
-        // that reload would bring the trailer back as ordinary playback.
-        super::content::halt_preview_now(&mut app.player.session, &mut app.adapters.player);
         // A second background while the foreground restore waits on its flight (the resume's rebuild,
         // an Original rollback): drop the flight — its landing is discarded and only the replacement
         // it registered is stopped — and park the session back where the first suspend left it.
@@ -711,8 +706,7 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
         }
         // Playback owns its resolve and Engine before the queued Player page mounts. Page
         // presence only governs the screen-local cleanup below, never resource suspension.
-        if !plx_media::route::preview_request(&app.player.session)
-            && (plx_media::route::play_pending()
+        if (plx_media::route::play_pending()
                 || app.adapters.player.is_live()
                 || plx_media::route::has_url(&app.player.session))
             && !app.player.lifecycle.awaiting_load()
@@ -1258,13 +1252,6 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             if is_started() {
                 plx_media::player::pump(&mut app.player.session, &mut app.adapters.player, fr.now);
             }
-            // Outside `is_started`: a refused preview landing or a stale machine has no engine,
-            // and is exactly what must still be settled back to Idle.
-            plx_media::player::preview::after_pump(
-                &mut app.player.session,
-                &mut app.adapters.player,
-                fr.now,
-            );
         }
         // **The ONE place the Player machine is asked whether the hardware video plane is bound**
         // (spec §9), immediately after the pump that advances the ACB bind transaction and BEFORE
@@ -1377,7 +1364,6 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             && plx_media::player::ended()
             && super::content::off_route_orphan(
                 app.adapters.player.is_live(),
-                plx_media::route::is_preview(&app.player.session),
                 super::bridge::player(&app.pages).is_some(),
             )
         {
@@ -1530,19 +1516,6 @@ pub(crate) unsafe fn update(app: &mut App, fr: &mut Frame) {
                 }
                 if let Some(r) = plx_media::route::pump_play(&mut app.player.session, app.bridge.metadata_mut()) {
                     plx_machine::idle::invalidate();
-                    // A preview landing nobody is waiting for any more (the page halted it while
-                    // the resolve was in flight) must not start an engine: nothing would track
-                    // it, so nothing would stop it at its end or hand the engine to a later Play.
-                    if plx_media::route::is_preview(&app.player.session)
-                        && !plx_media::player::preview::expects_landing()
-                    {
-                        if let Some(transaction) = plx_media::route::pending_route_start() {
-                            let _ = plx_media::route::reject_route_start_preparation(transaction);
-                        }
-                        plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
-                        plx_media::route::clear_preview(&mut app.player.session);
-                        return;
-                    }
                     // A transcode with a saved position rebuilds at that offset on a worker (`begin_resume`):
                     // the play stays pending, the spinner stays up, and the drain at the top of this landing
                     // starts the Load when the flight lands.
@@ -1579,15 +1552,12 @@ fn finish_landed_play(app: &mut App, resume_prepared: bool) {
     // every transport key and the EOS teardown are route-gated — so repair the
     // invariant here rather than trust that no path can violate it. The one that
     // could is cancelled above; this is the backstop, and it is the cheaper half.
-    // A preview is the exception: the detail page stays mounted, and an off-route
-    // engine is the feature, not a violation.
     if resume_prepared {
         let started = plx_media::player::start_bufferfeed(
             &mut app.player.session,
             &mut app.adapters.player,
         );
-        let preview = plx_media::route::is_preview(&app.player.session);
-        if started && !matches!(app.route(), AppArg::Player) && !preview {
+        if started && !matches!(app.route(), AppArg::Player) {
             log("pump_play: engine started off-route → restoring AppArg::Player");
             // The page is being taken off screen by a LANDING, not by a navigation. It
             // carried a `forward_leave(app.route())` teardown here until phase 12; every
@@ -1596,22 +1566,6 @@ fn finish_landed_play(app: &mut App, resume_prepared: bool) {
             // Search's keyboard (`SearchScreen::step`), which is the case this line was
             // written for.
             super::bridge::show_page(&mut app.pages, AppArg::Player);
-        }
-        if preview {
-            // A host Load of 0 with the clock sink off is "no video path", not an
-            // admitted slot. Counting it spends the cycle and the later failure
-            // opens the breaker, so every later title is skipped.
-            let seam_absent = cfg!(feature = "hostsim") && !plx_base::devtrig::flag("clocksink");
-            if started && !seam_absent {
-                plx_media::player::preview::note_admitted();
-            } else if plx_media::route::url(&app.player.session).is_empty() {
-                plx_media::player::preview::note_refused_direct(
-                    plx_media::route::cur_sid(&app.player.session),
-                    &plx_media::route::cur_rk(&app.player.session),
-                );
-            } else {
-                plx_media::player::preview::note_admission_refused();
-            }
         }
     }
 }
@@ -1698,13 +1652,7 @@ pub(crate) unsafe fn draw(app: &mut App, fr: &mut Frame) -> (i32, i32, i32, i32)
                         // Open the shared popover frame FIRST: it takes this frame's page damage
                         // and decides whether the frozen-host snapshot still describes the page. Route-agnostic by construction —
                         // see `ui::popover::host::begin_frame`.
-                        // A bound preview owns the plane the same way the player branch does: there
-                        // is no framebuffer to snapshot. Skip the door instead of tripping the
-                        // debug assertion. A popover from this page halts the preview first, so
-                        // this frame only skips while the picture is the intended ground.
-                        if !(app.player.video_plane_bound && plx_media::route::is_preview(&app.player.session)) {
-                            plx_base::diag::spans::span("host", || plx_ui::popover::host::begin_frame(fr.underlay_moving));
-                        }
+                        plx_base::diag::spans::span("host", || plx_ui::popover::host::begin_frame(fr.underlay_moving));
                         use plx_ui::frame::backdrop::Z;
                         let layers = app.pages.backdrop_layers(plx_ui::nav::page_alpha());
                         app.glass.sources.borrow_mut().begin(layers);

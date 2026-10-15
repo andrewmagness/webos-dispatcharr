@@ -40,9 +40,6 @@ struct PlaybackRequest {
     acodec: String,
     title: String,
     ctx: String,
-    /// Background hero preview. No PlayQueue, no timeline, no scrobble, resume at 0, and the
-    /// caller must not push the player route.
-    preview: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -406,14 +403,6 @@ pub struct PlaybackSession {
     /// have to be carried by a dozen functions that have no other use for it — which is how the
     /// second clock read this replaces got there in the first place.
     now_ms: u32,
-    /// This session is a hero preview. Skips watch-state writes and must not be repaired onto
-    /// the player route.
-    preview: bool,
-    /// This session was RESOLVED for a hero preview. Installed with `preview` by [`apply_plan`]
-    /// and, unlike it, never cleared by the preview machinery: `preview` tracks whether the
-    /// machine still owns the engine, this says what the session may write. See
-    /// [`preview_request`].
-    resolved_as_preview: bool,
 }
 
 /// What the server actually did with a requested Plex Pass audio enhancement (issue #266) — as
@@ -498,8 +487,6 @@ impl PlaybackSession {
         up_next: None,
         queue: Vec::new(),
         now_ms: 0,
-        preview: false,
-        resolved_as_preview: false,
     };
 }
 
@@ -575,8 +562,6 @@ impl PlaybackSession {
             up_next,
             now_ms,
             queue: _,
-            preview: _,
-            resolved_as_preview,
         } = self;
         PlaybackSession {
             direct_play_mode: *direct_play_mode,
@@ -633,9 +618,6 @@ impl PlaybackSession {
             up_next: up_next.clone(),
             now_ms: *now_ms,
             queue: Vec::new(),
-            // A screen copy is not the live preview. The loop reads the real session.
-            preview: false,
-            resolved_as_preview: *resolved_as_preview,
         }
     }
 }
@@ -5235,13 +5217,6 @@ pub fn refuse_by_server_for_test(
     ps.src_vcodec = src_vcodec.to_owned();
     ps.src_acodec = src_acodec.to_owned();
 }
-/// Test-only: leave `ps` as [`apply_plan`] leaves a session RESOLVED for a hero preview, after the
-/// preview machinery has retired it (`preview` cleared, `resolved_as_preview` kept).
-#[cfg(any(test, feature = "test-support"))]
-pub fn resolve_as_preview_for_test(ps: &mut PlaybackSession) {
-    ps.preview = false;
-    ps.resolved_as_preview = true;
-}
 /// Test-only: install a live transcode route (`encoder` session, optional remux, optional
 /// fixed-HLS delivery) the way a successful [`apply_plan`] leaves it.
 #[cfg(any(test, feature = "test-support"))]
@@ -5689,9 +5664,6 @@ pub fn scrobble_stop(
     final_report: Option<(String, i64, i64)>,
     report_th: Option<std::thread::JoinHandle<()>>,
 ) {
-    if preview_request(ps) {
-        return;
-    }
     let (logical_session, pq, pqi) = (sess(ps), pq_id(ps), pq_item_id(ps));
     let (aud, sub) = (cur_audio_sid(ps), cur_sub_sid(ps)); // the selection this playback reported under
     let tsession = take_active_encoder();
@@ -7144,17 +7116,6 @@ pub(super) fn resolve_playqueue(
 }
 
 impl ResolveEnv {
-    /// Mark this resolve as a hero preview. A preview is direct play or nothing
-    /// (`preview::accepts_direct_play`) and an enhancement is a remux by definition, so a preview
-    /// never asks for one — without this, a Plex Pass viewer's opt-in would turn every trailer
-    /// preview into a refused remux.
-    pub(super) fn set_preview(&mut self, preview: bool) {
-        self.preview = preview;
-        if preview {
-            self.audio_enhancements = plx_plex::plex::AudioEnhancements::NONE;
-        }
-    }
-
     /// MAIN THREAD ONLY.
     /// `sid` arrives BY VALUE from the caller, which is the whole point: the item being played
     /// carries the server it came from (`PmsMovie`/`UpNext`/`Detail` all hold one now), so a play
@@ -7183,7 +7144,6 @@ impl ResolveEnv {
             direct_play_mode: direct_play_mode(),
             src_kbps: resolve_src_kbps(meta.current(), sid, rk),
             omit_queue_continuous: false,
-            preview: false,
             audio_enhancements: crate::player::audio_enhancements(),
             pass: plx_plex::plex::serverinfo::subscription_of(sid),
             #[cfg(any(test, feature = "test-support"))]
@@ -7373,29 +7333,6 @@ pub fn play_pending() -> bool {
     PLAY_BUSY.load(Ordering::SeqCst)
 }
 
-/// This session is a hero preview. The route backstop must not steal it onto the player.
-pub fn is_preview(ps: &PlaybackSession) -> bool {
-    ps.preview
-}
-
-pub fn clear_preview(ps: &mut PlaybackSession) {
-    ps.preview = false;
-}
-
-/// Was the installed session resolved for a hero preview? Unlike [`is_preview`], which the
-/// preview machinery clears as it retires the session, this is fixed at landing and only the next
-/// landing, or the next FILM request (`request_play_inner`), replaces it — so no teardown
-/// bookkeeping can turn a trailer into a playback, and a film that never lands is never told as one.
-///
-/// **The one gate on every account write a session makes**: the timeline lease
-/// ([`begin_timeline_reporting`]) and the stop scrobble ([`scrobble_stop`]) both ask it, as do the
-/// pump's failure arms before any Original→HLS rescue. Read from the INSTALLED session rather
-/// than from `request`: a preview requested while a film's engine is still live replaces
-/// `request` at the press, and that film's final stop must still be reported.
-pub fn preview_request(ps: &PlaybackSession) -> bool {
-    ps.preview || ps.resolved_as_preview
-}
-
 /// Attach the UI's resume point to the resolve currently in flight.
 ///
 /// `request_play_*` is issued immediately before `app::start_playback`, so the latter knows the
@@ -7453,7 +7390,6 @@ pub fn request_play(
             acodec: acodec.to_owned(),
             title: title.to_owned(),
             ctx: ctx.to_owned(),
-            preview: false,
         },
         None,
         None,
@@ -7491,7 +7427,6 @@ pub fn request_live(ps: &mut PlaybackSession, mut tune: super::LiveTune, now: i6
         s.requested_resume_ns = 0;
         s.play_verdict = None;
         s.resolve_failed = false;
-        s.preview = false;
         // SAFETY: as in `request_play_inner`, the lengths are the arrays' own.
         unsafe {
             set_c(s.title.as_mut_ptr(), s.title.len(), &title);
@@ -7518,40 +7453,6 @@ fn route_transition_owns_player() -> bool {
             | ControlPhase::Applying(_)
             | ControlPhase::Completing(_)
             | ControlPhase::OriginalTrial(_)
-    )
-}
-
-/// Same resolve door as [`request_play`], flagged as a preview. Does not push a route. Resume is
-/// zero. The caller keeps the detail page mounted.
-pub fn request_preview(
-    ps: &mut PlaybackSession,
-    meta: &mut plx_data::stores::metadata::MetadataStore,
-    sid: ServerId,
-    rk: &str,
-    part: &str,
-    vcodec: &str,
-    acodec: &str,
-    title: &str,
-) -> bool {
-    request_play_inner(
-        ps,
-        meta,
-        PlaybackRequest {
-            sid,
-            rk: rk.to_owned(),
-            part: part.to_owned(),
-            vcodec: vcodec.to_owned(),
-            acodec: acodec.to_owned(),
-            title: title.to_owned(),
-            ctx: plx_data::metadata::TRAILER_CONTEXT.to_owned(),
-            preview: true,
-        },
-        None,
-        None,
-        false,
-        // A preview mints no attempt (`requested` is not called), so the ledger never reads this;
-        // it names the cause truthfully for whoever reads the request.
-        crate::player::report::AttemptOrigin::Preview,
     )
 }
 
@@ -7587,13 +7488,8 @@ fn request_play_inner(
     // would have produced a `playback.failed` with no `playback.requested` before it: a funnel that
     // under-counts exactly the failure it exists to measure. It is after the empty-request guard
     // above, so a press that resolves to nothing is not an attempt.
-    let trace_generation = if request.preview {
-        // No attempt, but a failure latch of its own, reset here as `requested` resets the film's.
-        crate::player::report::preview_requested();
-        0
-    } else {
-        trace_generation.unwrap_or_else(|| crate::player::report::requested(ps, sid, origin))
-    };
+    let trace_generation =
+        trace_generation.unwrap_or_else(|| crate::player::report::requested(ps, sid, origin));
     // The fields a play REQUEST owns, as against the ones only a landing may install: the HUD
     // strings (published now, so the pre-roll has a title through the whole resolve) and the five
     // the OUTGOING item leaves behind. Everything else — url, session ids, codecs — stays as it is
@@ -7603,11 +7499,7 @@ fn request_play_inner(
         s.request = Some(request.clone());
         s.live = false;
         s.tune = None;
-        s.requested_resume_ns = if request.preview {
-            0
-        } else {
-            retry.map_or(0, |r| r.resume_ns.max(0))
-        };
+        s.requested_resume_ns = retry.map_or(0, |r| r.resume_ns.max(0));
         // SAFETY: `s.title`/`s.ctxline` are exactly the fixed C buffers `set_c` is given the length
         // of, taken from the arrays themselves so the two can never disagree.
         unsafe {
@@ -7632,22 +7524,11 @@ fn request_play_inner(
         s.jail_load_blocked = false;
         s.native_start_refused = false;
         s.resolve_failed = false;
-        // A film request retires the previous trailer's mark: `resolved_as_preview` is otherwise
-        // replaced only by a LANDING, so a film whose resolve never lands (a refused worker spawn)
-        // would report its failure as that trailer's — its origin, fingerprint and flags. The
-        // trailer's engine is already gone: a Play is held until the preview machine releases it
-        // (`content::hold_feature`), so no preview write gate (`scrobble_stop`,
-        // `begin_timeline_reporting`) is still waiting on the mark. A preview request keeps it.
-        if !request.preview {
-            s.resolved_as_preview = false;
-        }
     } };
     // …and the outgoing item's track/marker/chapter store, for exactly the reason above: it stays
     // the PREVIOUS leaf's until this resolve lands. See `metadata::retire_playing_item`.
-    if !request.preview {
-        meta.run(plx_data::stores::metadata::MetadataCmd::RetirePlayingItem);
-        reset_track_selection(request.sid, &request.rk, retry);
-    }
+    meta.run(plx_data::stores::metadata::MetadataCmd::RetirePlayingItem);
+    reset_track_selection(request.sid, &request.rk, retry);
     // Capture the reducer revision BEFORE projecting the environment. Both happen on the main
     // thread, so a later quality/track edit necessarily advances this revision after the snapshot
     // and makes the landing stale instead of installing an old plan beneath a new checkmark.
@@ -7655,7 +7536,6 @@ fn request_play_inner(
     // captured HERE, on the main thread, and moved into the worker — see ResolveEnv
     let mut env = ResolveEnv::snapshot(ps, meta.view(), sid, rk);
     env.omit_queue_continuous = plx_data::metadata::context_omits_queue_continuous(ctx);
-    env.set_preview(request.preview);
     if let Some(retry) = retry {
         apply_retry(&mut env, retry);
     }
@@ -8071,13 +7951,7 @@ pub fn pump_play(ps: &mut PlaybackSession, meta: &mut plx_data::stores::metadata
         let mut resume = PLAY_RESUME.lock().unwrap_or_else(|e| e.into_inner());
         take_resume_for(&mut resume, gen)
     };
-    // A preview's trace_generation is the placeholder 0 (request_play_inner never asked
-    // report::requested() for a real one), so it must not overwrite the funnel's active
-    // generation here — doing so would misattribute whatever telemetry a genuinely active,
-    // non-preview resolve/trace is still using this counter for.
-    if !is_preview(ps) {
-        ACTIVE_TRACE_GENERATION.store(trace_generation, Ordering::SeqCst);
-    }
+    ACTIVE_TRACE_GENERATION.store(trace_generation, Ordering::SeqCst);
     let _start = apply_plan(ps, meta, plan, &rk);
     if let Some(resources) = refused_resources {
         retire_plan_resources(resources);
@@ -8176,7 +8050,6 @@ fn apply_plan(ps: &mut PlaybackSession, meta: &mut plx_data::stores::metadata::M
         // playable one has a known selection of its own.
         let carried_selection = if selection_known { None } else { s.carried_selection };
         let now_ms = s.now_ms;
-        let preview = request.as_ref().is_some_and(|r| r.preview);
         *s = PlaybackSession {
             direct_play_mode: plan.direct_play_mode,
             jail_load_blocked: false,
@@ -8253,8 +8126,6 @@ fn apply_plan(ps: &mut PlaybackSession, meta: &mut plx_data::stores::metadata::M
             // The frame tick is the MACHINE's, not the plan's: a landing replaces the session's
             // contents and must not rewind the stamp `Player::set_now` wrote this iteration.
             now_ms,
-            preview,
-            resolved_as_preview: preview,
         };
     } };
     if let (plx_plex::plex::TranscodeDelivery::FixedHls { .. }, Some(rung)) = (
@@ -9132,11 +9003,11 @@ pub struct SideReaderTarget {
 }
 
 /// The side reader's inputs for this playback, or `None` unless the live route is a plain remux of
-/// a real (non-preview) playback on which the app draws an embedded track
+/// a real playback on which the app draws an embedded track
 /// ([`SubtitlePresenter::ClientOverRemux`], not a sidecar — the app fetches that itself), or the
 /// dev trigger is armed with no subtitle selected in the route.
 pub fn side_reader_target(ps: &PlaybackSession) -> Option<SideReaderTarget> {
-    if ps.preview || live_family(ps) != RouteFamily::Remux {
+    if live_family(ps) != RouteFamily::Remux {
         return None;
     }
     let ordinal = if ps.cur_sub_sid == 0 {
@@ -10208,10 +10079,6 @@ pub fn commit_subtitle_selection(
 /// remains in `PlayerControl`, so a later in-place ABR commit changes the wire session and this
 /// projection under one lock without touching main-thread-only `Session`.
 pub fn begin_timeline_reporting(ps: &PlaybackSession) -> Option<TimelineLease> {
-    // A trailer never writes watch state, whatever became of its preview flag.
-    if preview_request(ps) {
-        return None;
-    }
     let projection = TimelineProjection {
         sid: cur_sid(ps),
         rating_key: cur_rk(ps),

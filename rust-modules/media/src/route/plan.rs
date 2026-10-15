@@ -1094,12 +1094,10 @@ pub struct ResolveEnv {
     pub src_kbps: i64,
     /// Trailer sessions omit `continuous=1` so EOS cannot Up-Next into a sibling extra.
     pub omit_queue_continuous: bool,
-    /// Hero preview. Skip the PlayQueue entirely, and refuse anything that is not a direct play.
-    pub preview: bool,
     /// The viewer's Plex Pass audio-DSP preference (`player::audio_enhancements`), captured at the
     /// request like the quality: the worker must not read the atomic the main thread moves. Only
-    /// ever reaches the wire through [`desired_audio`]. A preview and a start-failure retry
-    /// capture `NONE` (`request_play_inner`).
+    /// ever reaches the wire through [`desired_audio`]. A start-failure retry
+    /// captures `NONE` (`request_play_inner`).
     pub audio_enhancements: plx_plex::plex::AudioEnhancements,
     /// `serverinfo::subscription_of(sid)` at the request — for the OFFERING of the enhancement only
     /// (I1/I8), never a flavour or profile input.
@@ -1345,7 +1343,7 @@ pub(super) fn build_stream(off: &plx_base::task::OffFrame, rk: &str, part: &str,
     // a PlayQueue so the server tracks this as a real player with a playQueueItemID.
     let session = new_sess(rk);
     plan.sess = session.clone();
-    if !rk.is_empty() && !env.preview {
+    if !rk.is_empty() {
         let q = resolve_playqueue(
             client,
             rk,
@@ -1878,22 +1876,13 @@ pub(super) fn build_stream(off: &plx_base::task::OffFrame, rk: &str, part: &str,
     let mut remux_probed = false;
     // Issue #266: the remote remux probe asked the enhancement first and the server said no.
     let mut probe_refused_enhancement = false;
-    // A preview that is already not direct-playable (MDE denied Original, or the extra carries
-    // no Part) is refused unconditionally below by `preview::accepts_direct_play` regardless of
-    // what Auto's bandwidth probe would decide — `adaptive` cannot rescue a `directplay=false`
-    // preview. Skipping the probe here (and, on the remux leg, the `put_selection` PUT that
-    // would otherwise register a transcode this preview can never play) is the only branch worth
-    // guarding: it is the one place this function does live network I/O before that refusal
-    // check, and a preview is exactly the request most likely to hit a non-direct-playable item.
-    let preview_already_refused = env.preview && (!directplay || part.is_empty());
     let decision = match (playback_quality, link_kind) {
         (Quality::Auto, Some(link)) => {
             // The probe is the only expensive input, so it is only taken where it can change the
             // answer: a direct Remote with a feasible Original. Local needs no proof and Relay
             // cannot be talked into carrying a remux.
             let probe = (link == crate::abr::LinkKind::Remote
-                && original_feasible
-                && !preview_already_refused)
+                && original_feasible)
                 .then(|| {
                     if directplay {
                         measure_remote_original(
@@ -1978,9 +1967,7 @@ pub(super) fn build_stream(off: &plx_base::task::OffFrame, rk: &str, part: &str,
     plan.transport_kbps = source_transport_kbps;
     // See `Session::cur_auto_original_watched`: Auto running Original is the whole condition, and
     // the link's tier is not part of it.
-    // A preview is direct-play or nothing: an Original→HLS rescue would turn a trailer into a
-    // transcode, so its Original is never watched.
-    plan.auto_original_watched = playback_quality == Quality::Auto && auto_original && !env.preview;
+    plan.auto_original_watched = playback_quality == Quality::Auto && auto_original;
     if playback_quality != Quality::Auto && !tentative_quality.direct_play {
         crate::player::log(&format!(
             "route: quality ceiling {:?} — source {}kbps {src_w}x{src_h}; denying direct play + remux, re-encoding",
@@ -2071,11 +2058,6 @@ pub(super) fn build_stream(off: &plx_base::task::OffFrame, rk: &str, part: &str,
         // The subtitle burned in IS the session's subtitle: the menu checkmark, the timeline and
         // every later rebuild (a seek, a track pick) read it back from the plan.
         plan.sub_sid = burn_sub_sid;
-    }
-    if env.preview && !crate::player::preview::accepts_direct_play(directplay, !part.is_empty(), adaptive) {
-        crate::player::log("preview: refused — not a direct play");
-        plan.url.clear();
-        return plan;
     }
     if (directplay || rk.is_empty()) && !part.is_empty() {
         // direct-play: the pipeline decodes the SOURCE codecs natively, so the Load payload uses

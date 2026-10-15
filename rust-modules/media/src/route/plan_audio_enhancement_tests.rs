@@ -570,7 +570,6 @@ fn cold_start_plan_lands_as_client_over_remux_with_a_reader_target() {
         acodec: "truehd".into(),
         title: String::new(),
         ctx: String::new(),
-        preview: false,
     });
     assert_eq!(subtitle_presenter(&ps), SubtitlePresenter::ClientOverRemux);
     assert!(!subtitles_burned(&ps));
@@ -674,20 +673,6 @@ fn forced_direct_play_no_params() {
     let _g = fresh_registry(&mut ps);
     let r = resolve(&mut ps, MDE_DIRECTPLAY, EnhMode::Honor("ac3"), 0, MKV, "ac3", ac3_item, |env, _| {
         env.direct_play_mode = DirectPlayMode::Forced;
-    });
-    assert_direct_no_params(&r);
-    plx_plex::plex::reset_servers_for_test();
-}
-
-/// A hero preview is direct play or nothing, so marking the env as a preview must drop the
-/// opt-in — otherwise the enhanced remux is what the preview gate then refuses.
-#[test]
-#[cfg(feature = "devtriggers")]
-fn preview_never_carries_params() {
-    let mut ps = PlaybackSession::IDLE;
-    let _g = fresh_registry(&mut ps);
-    let r = resolve(&mut ps, MDE_DIRECTPLAY, EnhMode::Honor("ac3"), 0, MKV, "ac3", ac3_item, |env, _| {
-        env.set_preview(true);
     });
     assert_direct_no_params(&r);
     plx_plex::plex::reset_servers_for_test();

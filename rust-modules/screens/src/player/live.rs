@@ -4,8 +4,10 @@
 //!
 //! The remote, Magic Remote first (the owner's, 2026-10-14):
 //! - CH▲/CH▼ (and UP/DOWN on the D-pad) change channel through the lineup the Guide handed over.
-//! - The number keys type a channel number. It is tuned [`TYPED_COMMIT_MS`] after the last digit,
-//!   at once on OK, or at [`MAX_DIGITS`]. A number no channel carries says so for a moment.
+//! - The number keys type a channel number. It is tuned the moment no longer channel number starts
+//!   with what is typed (`5` at once; `1` waits while there is an `11`), else [`TYPED_COMMIT_MS`]
+//!   after the last digit, or at once on OK. The lineup decides how long a number can be, so no
+//!   channel is out of reach. A number no channel carries says so for a moment.
 //! - OK shows the banner (channel, now/next, progress), or hides it if it is up. Every tune shows
 //!   it for [`BANNER_MS`]. A tap acts on its RELEASE, because the same key held is recall.
 //! - Holding OK for [`HOLD_MS`] recalls the channel watched before this one (the owner's choice,
@@ -25,8 +27,6 @@ pub const BANNER_MS: u32 = 5_000;
 pub const TYPED_COMMIT_MS: u32 = 2_000;
 /// How long a number that matched nothing is shown.
 pub const MISSING_MS: u32 = 2_500;
-/// The longest number typed before it is tuned without waiting.
-pub const MAX_DIGITS: usize = 4;
 /// How long OK must be held to recall the last channel.
 pub const HOLD_MS: u32 = 600;
 /// An OK still down this long with no repeat and no release lost its key-up: forget it.
@@ -68,6 +68,14 @@ pub fn press_of(key: Key, sym: c_uint, wcode: c_uint) -> Option<LivePress> {
         Key::Left { .. } | Key::Right { .. } | Key::Play | Key::Pause | Key::PlayPause => Some(LivePress::Swallow),
         _ => None,
     }
+}
+
+/// Whether more digits could still make `typed` a tunable channel's number.
+fn could_continue(tune: &LiveTune, typed: &str) -> bool {
+    tune.lineup
+        .channels
+        .iter()
+        .any(|c| c.tunable() && c.number.len() > typed.len() && c.number.starts_with(typed))
 }
 
 /// `now` is before `until`, across the tick counter's wrap.
@@ -135,7 +143,7 @@ impl LiveControls {
                 self.missing.clear();
                 self.typed.push(char::from(b'0' + d));
                 self.typed_at = now;
-                if self.typed.len() >= MAX_DIGITS {
+                if !could_continue(tune, &self.typed) {
                     return self.commit(tune, now);
                 }
                 LiveAction::None
@@ -220,7 +228,7 @@ mod tests {
     use std::sync::Arc;
 
     fn tune(index: usize) -> LiveTune {
-        let channels = ["2", "4", "5", "11"]
+        let channels = ["1", "4", "5", "11"]
             .iter()
             .enumerate()
             .map(|(i, n)| LiveChannel {
@@ -339,31 +347,51 @@ mod tests {
     }
 
     #[test]
-    fn a_typed_number_tunes_after_the_pause_or_at_once_on_ok() {
+    fn a_number_only_one_channel_can_be_tunes_at_once() {
         let mut c = LiveControls::default();
         let t = tune(0);
         c.tick(Some(&t), 0);
-        c.key(&t, LivePress::Digit(1), 100);
-        c.key(&t, LivePress::Digit(1), 900);
-        assert_eq!(c.tick(Some(&t), 900 + TYPED_COMMIT_MS - 1), LiveAction::None, "still typing");
-        assert_eq!(tuned_to(c.tick(Some(&t), 900 + TYPED_COMMIT_MS)), Some(3), "11 after the pause");
-        c.key(&t, LivePress::Digit(5), 5_000);
-        assert_eq!(tuned_to(c.key(&t, LivePress::Ok, 5_100)), Some(2), "5 at once on OK");
+        assert_eq!(tuned_to(c.key(&t, LivePress::Digit(5), 100)), Some(2), "nothing longer starts with 5");
+        c.key(&t, LivePress::Digit(1), 200);
+        assert_eq!(tuned_to(c.key(&t, LivePress::Digit(1), 300)), Some(3), "11 is as long as it gets");
+    }
+
+    #[test]
+    fn a_number_that_could_go_on_waits_for_the_pause_or_ok() {
+        let mut c = LiveControls::default();
+        let t = tune(1);
+        c.tick(Some(&t), 0);
+        assert_eq!(c.key(&t, LivePress::Digit(1), 100), LiveAction::None, "1 could still be 11");
+        assert_eq!(c.tick(Some(&t), 100 + TYPED_COMMIT_MS - 1), LiveAction::None, "still typing");
+        assert_eq!(tuned_to(c.tick(Some(&t), 100 + TYPED_COMMIT_MS)), Some(0), "1 after the pause");
+        c.key(&t, LivePress::Digit(1), 5_000);
+        assert_eq!(tuned_to(c.key(&t, LivePress::Ok, 5_100)), Some(0), "1 at once on OK");
+    }
+
+    #[test]
+    fn a_number_as_long_as_the_lineup_allows_is_reachable() {
+        let mut c = LiveControls::default();
+        let mut t = tune(0);
+        let mut lineup = (*t.lineup).clone();
+        lineup.channels[3].number = "10001".into();
+        t.lineup = Arc::new(lineup);
+        c.tick(Some(&t), 0);
+        for d in [1, 0, 0, 0] {
+            assert_eq!(c.key(&t, LivePress::Digit(d), 10), LiveAction::None);
+        }
+        assert_eq!(tuned_to(c.key(&t, LivePress::Digit(1), 20)), Some(3), "five digits, no cap");
     }
 
     #[test]
     fn a_number_no_channel_has_says_so_and_the_one_playing_just_shows_the_banner() {
         let mut c = LiveControls::default();
-        let t = tune(0);
+        let t = tune(1);
         c.tick(Some(&t), 0);
-        for d in [9, 9, 9, 9] {
-            c.key(&t, LivePress::Digit(d), 6_000);
-        }
-        assert!(c.typed.is_empty(), "four digits commit without waiting");
-        assert!(c.missing_visible(6_000) && c.missing == "9999");
+        assert_eq!(c.key(&t, LivePress::Digit(9), 6_000), LiveAction::None);
+        assert!(c.typed.is_empty(), "no channel starts with 9: settled at once");
+        assert!(c.missing_visible(6_000) && c.missing == "9");
         assert!(!c.missing_visible(6_000 + MISSING_MS));
-        c.key(&t, LivePress::Digit(2), 10_000);
-        assert_eq!(c.key(&t, LivePress::Ok, 10_100), LiveAction::None, "2 is already playing");
-        assert!(c.banner_visible(10_100));
+        assert_eq!(c.key(&t, LivePress::Digit(4), 10_000), LiveAction::None, "4 is already playing");
+        assert!(c.banner_visible(10_000));
     }
 }

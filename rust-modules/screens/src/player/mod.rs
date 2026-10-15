@@ -2850,11 +2850,12 @@ mod repair_confirmation_tests {
         let mut page = PlayerScreen::new(EntryId(1));
         let reqs = deliver(&mut page, &ps, None, key_event(0, consts::WCODE_CH_UP_KEY));
         assert_eq!(reqs, vec![PlayerReq::Tune(here.to(1))]);
-        assert!(deliver(&mut page, &ps, None, key_event(b'3' as u32, 0)).is_empty(), "a digit waits");
+        assert_eq!(deliver(&mut page, &ps, None, key_event(b'3' as u32, 0)), vec![PlayerReq::Tune(here.to(2))],
+            "3 can only mean channel 3");
         let ok = |edge| ScreenEvent::Input(InputEvent { kind: InputKind::Key { key: plx_machine::machine::Key::Ok, sym: 0,
             wcode: 0, edge, at_edge: false }, at: Tick::default(), source: Source::Sdl });
         assert!(deliver(&mut page, &ps, None, ok(Edge::Down)).is_empty(), "OK's press waits: it may be a hold");
-        assert_eq!(deliver(&mut page, &ps, None, ok(Edge::Up)), vec![PlayerReq::Tune(here.to(2))], "its release tunes the number");
+        assert!(deliver(&mut page, &ps, None, ok(Edge::Up)).is_empty(), "its release only toggles the banner");
         assert!(deliver(&mut page, &ps, None, key_event(0, consts::WCODE_PAUSE)).is_empty(), "no pausing live TV");
         assert!(!page.hud_up(&ps, 0), "live TV has no transport");
         assert_eq!(deliver(&mut page, &ps, None, key_event(0, consts::WCODE_BACK)), vec![PlayerReq::Exit]);

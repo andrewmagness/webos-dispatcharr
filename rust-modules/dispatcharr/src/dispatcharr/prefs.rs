@@ -16,8 +16,10 @@ use serde::{Deserialize, Serialize};
 
 const FORMAT: &str = "dispatcharr-prefs";
 const VERSION: u32 = 1;
-/// A few hundred favourites at most; anything larger is not this file.
-const MAX_FAVOURITES: usize = 2_000;
+/// The largest file read: a guard against reading something that is not this file into memory,
+/// not a limit on favourites. A UUID favourite costs about 45 bytes, so this holds every channel of
+/// any lineup a server could list hundreds of times over.
+const MAX_PREFS_FILE: u64 = 8 * 1024 * 1024;
 
 static IO: Mutex<()> = Mutex::new(());
 
@@ -63,7 +65,7 @@ struct Stored {
 /// another server, or the file is not one this build reads.
 pub fn load(server: &str) -> Prefs {
     for (path, _) in candidates() {
-        match super::account::read_owned(&path) {
+        match super::account::read_owned_up_to(&path, MAX_PREFS_FILE) {
             Ok(None) => continue,
             Ok(Some(bytes)) => return parse(&bytes, server).unwrap_or_default(),
             Err(()) => return Prefs::default(),
@@ -106,7 +108,6 @@ fn parse(bytes: &[u8], server: &str) -> Option<Prefs> {
     let mut favourites = stored.favourites;
     favourites.retain(|f| !f.is_empty());
     favourites.dedup();
-    favourites.truncate(MAX_FAVOURITES);
     Some(Prefs { favourites, last: stored.last.filter(|l| !l.is_empty()) })
 }
 

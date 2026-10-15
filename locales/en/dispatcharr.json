@@ -194,6 +194,10 @@
     "value": "All channels",
     "description": "Guide header switch, while only favourites are shown: show every channel again"
   },
+  "dispatcharr.guide.all_groups": {
+    "value": "All groups",
+    "description": "Guide header switch, while every channel group is shown; OK steps to the first group (the switch then shows that group's name)"
+  },
   "dispatcharr.guide.no_favourites": {
     "value": "No favourites yet",
     "description": "Guide verdict when only favourites are shown and there are none"

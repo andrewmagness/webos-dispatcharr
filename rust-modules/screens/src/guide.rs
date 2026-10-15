@@ -1,7 +1,7 @@
 //! **The Guide — what is on, channel by channel.** The app's home once a Dispatcharr account is
-//! stored: a header (the page's name, the time, *Account*), the focused programme's details, and
-//! the grid — every channel a row, its programmes laid against a two-hour time axis
-//! ([`plx_ui::time_grid`]), with a marker at the current time.
+//! stored: a header (the page's name, the time, the group and favourites switches, *Account*), the
+//! focused programme's details, and the grid — every channel a row, its programmes laid against a
+//! two-hour time axis ([`plx_ui::time_grid`]), with a marker at the current time.
 //!
 //! **The lattice.** Each channel's row is its lane ([`Guide::lane`]): the fetched window tiled end
 //! to end, so every instant falls in exactly one cell and the stretches the server lists nothing
@@ -29,7 +29,7 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
 
 use plx_dispatcharr::dispatcharr::guide::{slot_at, Guide, Slot, Window};
-use plx_dispatcharr::dispatcharr::models::{Channel, Programme};
+use plx_dispatcharr::dispatcharr::models::{Channel, Group, Programme};
 use plx_dispatcharr::dispatcharr::Error;
 use plx_media::route::{LiveChannel, LiveLineup, LiveProgramme, LiveTune};
 use plx_machine::machine::{
@@ -58,15 +58,19 @@ use super::registry::{word, AppFx, AppLike, ContentReq, DispatcharrCmd, GuideOut
 const ACCOUNT: u32 = plx_ui::dispatch::STRIP_BASE - 1;
 /// A failed read-out's action (*Try again*, or *Sign in again* for a refused key).
 const RETRY: u32 = plx_ui::dispatch::STRIP_BASE - 2;
-/// The header's favourites switch: every channel, or only the favourites. The lowest reserved
-/// element: everything below it is a cell.
+/// The header's favourites switch: every channel, or only the favourites.
 const FAVOURITES: u32 = plx_ui::dispatch::STRIP_BASE - 3;
+/// The header's group switch: every group, or one channel group; OK steps to the next. The lowest
+/// reserved element: everything below it is a cell.
+const GROUP: u32 = plx_ui::dispatch::STRIP_BASE - 4;
 /// A cell's element: its row above these bits, its slot in them. A lane is capped at
 /// `1 << SLOT_BITS` cells — a 13-hour window of one-minute programmes is 780.
 const SLOT_BITS: u32 = 12;
 const MAX_SLOTS: usize = 1 << SLOT_BITS;
+/// The widest the group switch grows: a long group name is cut, not the header's other controls.
+const GROUP_MAX_W: f32 = 420.0;
 /// Rows that fit beside the reserved elements above.
-const MAX_ROWS: usize = ((FAVOURITES >> SLOT_BITS) - 1) as usize;
+const MAX_ROWS: usize = ((GROUP >> SLOT_BITS) - 1) as usize;
 
 /// The grid. `GroupId(0)` is the container's own fresh-mount target (`stack.rs::fresh`).
 const GRID: GroupId = GroupId(0);
@@ -79,13 +83,13 @@ fn cell(row: usize, slot: usize) -> u32 {
 
 /// A cell element's `(row, slot)`; `None` for the reserved elements.
 fn split(elem: u32) -> Option<(usize, usize)> {
-    (elem < FAVOURITES).then(|| ((elem >> SLOT_BITS) as usize, (elem & (MAX_SLOTS as u32 - 1)) as usize))
+    (elem < GROUP).then(|| ((elem >> SLOT_BITS) as usize, (elem & (MAX_SLOTS as u32 - 1)) as usize))
 }
 
 /// The recorded shape of [`GuideScreen`]'s logical state (`registry::SCREEN_SHAPES`). Instants are
 /// written as their `u64` bit patterns.
 pub const SHAPE: &str = "GuideScreen{phase:u8,rows:u64,window:Option<(u64,u64)>,anchor:u64,view_start:u64,\
-    view_top:f32,pending:bool,failure:Option<u8>,favourites:u64,only_favourites:bool}";
+    view_top:f32,pending:bool,failure:Option<u8>,favourites:u64,only_favourites:bool,group:Option<u64>}";
 
 mod layout {
     use plx_ui::consts::{MARGIN_X, MARGIN_Y, SCR_H, SCR_W};
@@ -139,10 +143,13 @@ impl Phase {
     }
 }
 
-/// Everything the last fetch brought, whatever the page is showing of it: the favourites switch
-/// filters this into a [`Listing`] without asking the server again.
+/// Everything the last fetch brought, whatever the page is showing of it: the favourites and group
+/// switches filter this into a [`Listing`] without asking the server again.
 struct Source {
     channels: Vec<Channel>,
+    /// The channel groups that hold at least one of `channels`, in the server's order: what the
+    /// group switch steps through.
+    groups: Vec<Group>,
     logos: Vec<Option<String>>,
     streams: Vec<String>,
     guide: Guide,
@@ -267,6 +274,7 @@ struct GuideState {
     failure: Option<u8>,
     favourites: usize,
     only_favourites: bool,
+    group: Option<i64>,
 }
 
 impl LogicalState for GuideState {
@@ -280,6 +288,9 @@ impl LogicalState for GuideState {
             c.u8(d);
         });
         c.u64(self.favourites as u64).bool(self.only_favourites);
+        c.option(self.group, |c, g| {
+            c.u64(g as u64);
+        });
     }
     fn probe(&self, out: &mut String) {
         out.push_str(&format!("guide phase={} rows={} pending={}", self.phase, self.rows, self.pending));
@@ -296,6 +307,8 @@ pub struct GuideScreen {
     favourites: Vec<String>,
     /// The page shows only the favourites.
     only_favourites: bool,
+    /// The page shows only this channel group's channels.
+    group: Option<i64>,
     pending: Option<Receiver<GuideOutcome>>,
     clock: Option<WallClock>,
     /// The latest tick's wall-clock second (0 until the first answer).
@@ -330,6 +343,7 @@ impl GuideScreen {
             listing: None,
             favourites: Vec::new(),
             only_favourites: false,
+            group: None,
             pending: None,
             clock: None,
             now: 0,
@@ -345,7 +359,7 @@ impl GuideScreen {
             ground: RouteGround::new(),
             state: GuideState {
                 phase: 0, rows: 0, window: None, anchor: 0, view_start: 0.0, view_top: 0.0, pending: false,
-                failure: None, favourites: 0, only_favourites: false,
+                failure: None, favourites: 0, only_favourites: false, group: None,
             },
         };
         screen.sync_state();
@@ -371,6 +385,7 @@ impl GuideScreen {
             },
             favourites: self.favourites.len(),
             only_favourites: self.only_favourites,
+            group: self.group,
         };
     }
 
@@ -444,14 +459,20 @@ impl GuideScreen {
                     self.reseat(RETRY, fx);
                 }
             }
-            GuideOutcome::Loaded { channels, logos, streams, favourites, resume, guide, fetched_at } => {
+            GuideOutcome::Loaded { channels, groups, logos, streams, favourites, resume, guide, fetched_at } => {
                 self.clock = Some(WallClock { unix: fetched_at, ms });
                 self.now = fetched_at;
                 self.drawn_now = fetched_at;
                 self.favourites = favourites;
                 // The channel to start on (the last one watched, on the run's first guide).
                 let resume = resume.and_then(|uuid| channels.iter().find(|c| c.uuid == uuid).map(|c| c.id));
-                self.source = Some(Source { channels, logos, streams, guide, fetched_at });
+                let groups: Vec<Group> =
+                    groups.into_iter().filter(|g| channels.iter().any(|c| c.channel_group_id == Some(g.id))).collect();
+                // A group the server no longer lists (or that has lost its channels) shows everything.
+                if self.group.is_some_and(|id| !groups.iter().any(|g| g.id == id)) {
+                    self.group = None;
+                }
+                self.source = Some(Source { channels, groups, logos, streams, guide, fetched_at });
                 // The channel and the time under the cursor, before the old listing goes; or the
                 // channel being resumed, so BACK out of it lands on its row.
                 let carry = resume.map(|id| (id, fetched_at)).or(self.carry.take());
@@ -464,13 +485,14 @@ impl GuideScreen {
         }
     }
 
-    /// Rebuild what the page shows from the last fetch, the favourites and the switch, and say
+    /// Rebuild what the page shows from the last fetch, the favourites and the switches, and say
     /// where focus goes: back onto a cell (the carried channel, else row `row` or the last one),
     /// or nowhere new.
     fn relist<H: AppLike>(&mut self, refocus: Refocus, fx: &mut Effects<'_, H>) {
         let Some(src) = &self.source else { return };
         let keep: Vec<usize> = (0..src.channels.len())
             .filter(|&i| !self.only_favourites || self.favourites.contains(&src.channels[i].uuid))
+            .filter(|&i| self.group.is_none() || src.channels[i].channel_group_id == self.group)
             .collect();
         let listing = Listing::new(
             keep.iter().map(|&i| src.channels[i].clone()).collect(),
@@ -490,7 +512,14 @@ impl GuideScreen {
             self.listing = None;
             self.phase = Phase::Empty;
             if !matches!(refocus, Refocus::Keep) {
-                self.reseat(if self.only_favourites { FAVOURITES } else { ACCOUNT }, fx);
+                let switch = if self.only_favourites {
+                    FAVOURITES
+                } else if self.group.is_some() {
+                    GROUP
+                } else {
+                    ACCOUNT
+                };
+                self.reseat(switch, fx);
             }
             return;
         }
@@ -538,6 +567,15 @@ impl GuideScreen {
     fn toggle_only_favourites<H: AppLike>(&mut self, fx: &mut Effects<'_, H>) {
         self.only_favourites = !self.only_favourites;
         // A different list under the grid: its view starts over at the top.
+        self.listing = None;
+        self.relist(Refocus::Keep, fx);
+    }
+
+    /// The group switch: every group, then each group in the server's order, then every group
+    /// again. Focus stays on the switch.
+    fn next_group<H: AppLike>(&mut self, fx: &mut Effects<'_, H>) {
+        let Some(src) = &self.source else { return };
+        self.group = next_group(&src.groups, self.group);
         self.listing = None;
         self.relist(Refocus::Keep, fx);
     }
@@ -611,6 +649,7 @@ impl GuideScreen {
         match elem {
             ACCOUNT => fx.push(Fx::App(AppFx::Loop(LoopReq::DispatcharrAccount))),
             FAVOURITES => self.toggle_only_favourites(fx),
+            GROUP => self.next_group(fx),
             RETRY => match &self.phase {
                 Phase::Failed(Error::Unauthorized) => fx.push(Fx::App(AppFx::Loop(LoopReq::DispatcharrSetup))),
                 Phase::Failed(_) => {
@@ -656,6 +695,28 @@ impl GuideScreen {
         let account = Self::account_rect(measure);
         let w = Button::pill_w_measured(self.favourites_label(), theme::size::BODY, !self.only_favourites, false, measure);
         Rect::new(account.x - theme::space::MD - w, account.y, w, layout::HEADER_H)
+    }
+
+    /// Whether the header shows the group switch: there is more than one group to choose from.
+    fn has_groups(&self) -> bool {
+        self.source.as_ref().is_some_and(|s| s.groups.len() > 1 || (s.groups.len() == 1 && self.group.is_some()))
+    }
+
+    /// The group switch's words: the group shown, or that every group is.
+    fn group_label(&self) -> CString {
+        let name = self.group.and_then(|id| self.source.as_ref()?.groups.iter().find(|g| g.id == id));
+        match name {
+            Some(g) => CString::new(g.name.replace('\0', "")).unwrap_or_default(),
+            None => msg::dispatcharr_guide_all_groups_c().to_owned(),
+        }
+    }
+
+    /// The group switch, left of the favourites switch.
+    fn group_rect(&self, measure: &dyn plx_machine::machine::Measure) -> Rect {
+        let favourites = self.favourites_rect(measure);
+        let label = self.group_label();
+        let w = Button::pill_w_measured(&label, theme::size::BODY, false, false, measure).min(GROUP_MAX_W);
+        Rect::new(favourites.x - theme::space::MD - w, favourites.y, w, layout::HEADER_H)
     }
 
     fn retry_label(&self) -> &'static std::ffi::CStr {
@@ -718,11 +779,21 @@ impl GuideScreen {
             .draw(p, Rect::new(h.x, h.y, h.w * 0.5, h.h));
         let account = Self::account_rect(f.measure);
         let switch = self.favourites_rect(f.measure);
+        let group = self.has_groups().then(|| self.group_rect(f.measure));
         if self.clock.is_some() {
             let time = CString::new(i18n::wall_time(self.now)).unwrap_or_default();
             let w = f.measure.width(&time, theme::size::BODY, false);
+            let left = group.unwrap_or(switch).x;
             Label::new(time.as_ptr(), theme::size::BODY, theme::TEXT_SECONDARY)
-                .draw(p, Rect::new(switch.x - theme::space::LG - w, h.y, w, h.h));
+                .draw(p, Rect::new(left - theme::space::LG - w, h.y, w, h.h));
+        }
+        if let Some(rect) = group {
+            // A server's group name can outrun the pill's cap: it is cut to fit with an ellipsis.
+            let label = self.group_label();
+            let air = Button::pill_w_measured(c"", theme::size::BODY, false, false, f.measure);
+            let fitted = f.measure.fit_line(label.to_str().unwrap_or_default(), rect.w - air, theme::size::BODY, true);
+            Button::new(fitted.as_ptr(), theme::size::BODY, rect).focused(focus == Some(GROUP)).draw(&Env::inert(), p);
+            self.stop(f, p, GROUP, rect);
         }
         if self.source.is_some() {
             let mut button = Button::new(self.favourites_label().as_ptr(), theme::size::BODY, switch)
@@ -877,6 +948,15 @@ fn failure_disc(e: &Error) -> u8 {
 }
 
 /// The reason under a failed guide's verdict: what happened, in terms of what to do about it.
+/// The group after `current` in `groups`: the first after every group, every group after the last
+/// (or after one no longer listed).
+fn next_group(groups: &[Group], current: Option<i64>) -> Option<i64> {
+    match current {
+        None => groups.first().map(|g| g.id),
+        Some(id) => groups.iter().position(|g| g.id == id).and_then(|i| groups.get(i + 1)).map(|g| g.id),
+    }
+}
+
 fn failure_reason(e: &Error) -> Cow<'static, str> {
     match e {
         Error::Unauthorized | Error::Forbidden => msg::dispatcharr_guide_refused().into(),
@@ -895,6 +975,7 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
         let account = Self::account_rect(cx.measure);
         let switch = self.favourites_rect(cx.measure);
         let switched = self.source.is_some();
+        let left = if self.has_groups() { self.group_rect(cx.measure).x } else { switch.x };
         out.push(GroupSpec {
             id: HEADER,
             kind: GroupKind::Row { wrap: false },
@@ -902,11 +983,11 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
             reachable: AxisMask::BOTH,
             edge: [EdgeRule::Stop, EdgeRule::Geometric, EdgeRule::Stop, EdgeRule::Stop],
             extent: if switched {
-                Rect::new(switch.x, account.y, account.x + account.w - switch.x, account.h)
+                Rect::new(left, account.y, account.x + account.w - left, account.h)
             } else {
                 account
             },
-            len: if switched { 2 } else { 1 },
+            len: 1 + usize::from(switched) + usize::from(self.has_groups()),
             // `Bare`: OK on a `Control` arms a press that ends in `PressCommit`, which this page does
             // not handle; it acts on `Activate`, which OK sends a `Bare` element directly.
             elem: ElemKind::Bare,
@@ -949,6 +1030,7 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
         match *key {
             ACCOUNT => Some(HEADER),
             FAVOURITES => self.source.is_some().then_some(HEADER),
+            GROUP => self.has_groups().then_some(HEADER),
             RETRY => matches!(self.phase, Phase::Failed(_)).then_some(STATUS),
             elem => {
                 let (row, slot) = split(elem)?;
@@ -961,6 +1043,8 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
     fn neighbour(&self, key: FocusKey<u32>, dir: Dir, _cx: &Cx<'_, H>) -> Step<u32> {
         match (key.elem, dir) {
             (FAVOURITES, Dir::Right) => return Step::Move(self.key(ACCOUNT)),
+            (FAVOURITES, Dir::Left) if self.has_groups() => return Step::Move(self.key(GROUP)),
+            (GROUP, Dir::Right) => return Step::Move(self.key(FAVOURITES)),
             (ACCOUNT, Dir::Left) if self.source.is_some() => return Step::Move(self.key(FAVOURITES)),
             _ => {}
         }
@@ -980,6 +1064,7 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
         let rect = match *key {
             ACCOUNT => Self::account_rect(cx.measure),
             FAVOURITES => self.favourites_rect(cx.measure),
+            GROUP => self.group_rect(cx.measure),
             RETRY => self.retry_rect(cx.measure)?,
             elem => {
                 let (row, slot) = split(elem)?;

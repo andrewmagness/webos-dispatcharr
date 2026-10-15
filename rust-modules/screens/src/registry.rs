@@ -107,6 +107,9 @@ pub enum GuideOutcome {
     /// app's first guide of a run, when the viewer has not turned that off.
     Loaded {
         channels: Vec<plx_dispatcharr::dispatcharr::models::Channel>,
+        /// The server's channel groups (empty when they could not be read: the Guide then offers
+        /// no group switch).
+        groups: Vec<plx_dispatcharr::dispatcharr::models::Group>,
         logos: Vec<Option<String>>,
         streams: Vec<String>,
         favourites: Vec<String>,
@@ -2338,7 +2341,9 @@ pub const SCREEN_SHAPES: &[&str] = &[
 // previous pin was 0x99ec_fc56_b8d6_cda6.
 // Setup discovery: `screens::setup::SHAPE` gains the network search (`discovery:u8`); the previous
 // pin was 0x5914_3011_5c1f_8596.
-const SCREEN_SHAPES_PIN: u64 = 0xe3ee_b698_fe70_769c;
+// Guide channel groups: `screens::guide::SHAPE` gains the group switch (`group:Option<u64>`); the
+// previous pin was 0xe3ee_b698_fe70_769c.
+const SCREEN_SHAPES_PIN: u64 = 0x72fb_3258_bff6_7e57;
 
 #[cfg(test)]
 mod arg_tests {

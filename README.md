@@ -14,16 +14,17 @@ the server — channels, EPG, stream proxying — so this app aims to be the liv
 
 - **Setup on the TV.** The TV finds your Dispatcharr on the network and fills in its address; you
   enter your username and password once, and the TV keeps an API key, never your password.
-- **A real guide.** Every channel against time, with what's on now and next, logos, favourites and
-  the coloured remote keys.
+- **A real guide.** Every channel against time, with what's on now and next, logos, favourites,
+  your Dispatcharr channel groups and the coloured remote keys.
 - **Live playback that feels like a TV.** Channel up/down, number entry, last-channel recall and a
   now/next banner, played through LG's native media pipeline.
 
 ## Using it
 
 On the **Guide**, OK on any programme plays its channel; **hold OK** on a channel to make it a
-favourite (a star marks it), and the **Favourites** switch at the top shows only those. While
-watching:
+favourite (a star marks it), and the **Favourites** switch at the top shows only those. The
+**All groups** switch beside it steps through your Dispatcharr channel groups, one per press, then
+back to all of them; the two combine (your favourites in one group). While watching:
 
 | Remote | What it does |
 |---|---|

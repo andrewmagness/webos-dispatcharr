@@ -50,5 +50,7 @@
   "dispatcharr.setup.resume_on": "Démarrer sur la dernière chaîne : Oui",
   "dispatcharr.setup.resume_off": "Démarrer sur la dernière chaîne : Non",
   "dispatcharr.setup.resume_note": "Si activé, l'app s'ouvre sur la dernière chaîne regardée. RETOUR mène au Guide.",
-  "dispatcharr.live.up_next": "Ensuite · {time}"
+  "dispatcharr.live.up_next": "Ensuite · {time}",
+  "dispatcharr.setup.searching": "Recherche de Dispatcharr sur votre réseau…",
+  "dispatcharr.setup.found": "Trouvé sur votre réseau · non chiffré"
 }

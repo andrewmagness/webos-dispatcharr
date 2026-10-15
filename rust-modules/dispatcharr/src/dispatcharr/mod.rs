@@ -27,6 +27,7 @@
 pub mod account; // the server and API key a sign-in leaves behind, in a 0600 file
 pub mod api; // channels/groups reads with the API key
 pub mod auth; // sign-in: version probe, JWT, existing-or-new API key
+pub mod discover; // finding a Dispatcharr on the local network: a private-subnet scan of its web port
 pub mod client; // the one request door: URL, auth header, body, status → Error
 pub mod error; // what went wrong, in the terms a Setup screen explains to a person
 pub mod guide; // programmes per channel: the tvg_id mapping and the rolling window

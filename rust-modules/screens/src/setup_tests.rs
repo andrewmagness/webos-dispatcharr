@@ -419,3 +419,45 @@ fn the_setup_labels_fit_in_every_language() {
     }
     assert!(out.is_empty(), "setup text that does not fit:\n  {}", out.join("\n  "));
 }
+
+// ── finding the server on the network ───────────────────────────────────────────────────────
+
+/// A boot page on the form, and the reply its network search answers on.
+fn searching_form() -> (SetupScreen, std::sync::mpsc::Sender<Vec<String>>) {
+    let mut screen = SetupScreen::new(EntryId(1), InstanceId(1), Mode::Entry);
+    let (_, out) = step(&mut screen, ScreenEvent::Mount, None);
+    let Some(DispatcharrCmd::Load { reply, .. }) = command(out) else { panic!() };
+    reply.send(SetupOutcome::SignedOut).unwrap();
+    let (_, out) = step(&mut screen, tick(16_000), None);
+    let Some(DispatcharrCmd::Discover { reply }) = command(out) else { panic!("an empty form looks for a server") };
+    (screen, reply)
+}
+
+#[test]
+fn a_server_found_on_the_network_fills_in_the_address() {
+    let (mut screen, reply) = searching_form();
+    assert_eq!(screen.discovery.disc(), 1, "searching");
+    reply.send(vec!["http://192.0.2.10:9191".into(), "http://192.0.2.11:9191".into()]).unwrap();
+    step(&mut screen, tick(16_000), None);
+    assert_eq!(screen.fields[0].text(), "http://192.0.2.10:9191", "the first one found");
+    assert!(matches!(&screen.discovery, Discovery::Found(a) if a == "http://192.0.2.10:9191"));
+}
+
+#[test]
+fn an_address_typed_before_the_search_answers_is_kept() {
+    let (mut screen, reply) = searching_form();
+    type_into(&mut screen, ADDRESS, "192.0.2.99:9191");
+    reply.send(vec!["http://192.0.2.10:9191".into()]).unwrap();
+    step(&mut screen, tick(16_000), Some(ADDRESS));
+    assert_eq!(screen.fields[0].text(), "192.0.2.99:9191");
+    assert_eq!(screen.discovery.disc(), 3);
+}
+
+#[test]
+fn a_search_that_finds_nothing_leaves_the_form_as_it_was() {
+    let (mut screen, reply) = searching_form();
+    reply.send(Vec::new()).unwrap();
+    step(&mut screen, tick(16_000), None);
+    assert!(screen.fields[0].text().is_empty());
+    assert_eq!(screen.discovery.disc(), 3);
+}

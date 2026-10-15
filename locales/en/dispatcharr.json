@@ -220,5 +220,13 @@
       "time": "str"
     },
     "description": "Live TV banner, right-hand column heading over the next programme's title. {time} is its start, a clock time in the viewer's format"
+  },
+  "dispatcharr.setup.searching": {
+    "value": "Looking for Dispatcharr on your network…",
+    "description": "Note under the address field while the TV searches its network for a Dispatcharr server"
+  },
+  "dispatcharr.setup.found": {
+    "value": "Found on your network · not encrypted",
+    "description": "Note under an address the TV found on its own network (always plain HTTP, so not encrypted)"
   }
 }

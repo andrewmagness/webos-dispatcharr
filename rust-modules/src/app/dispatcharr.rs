@@ -4,7 +4,7 @@
 //!
 //! The event log gets one `dispatcharr:` line per outcome and never the password or the key.
 
-use plx_dispatcharr::dispatcharr::{account, api, auth, prefs, Server};
+use plx_dispatcharr::dispatcharr::{account, api, auth, discover, prefs, Server};
 use plx_screens::registry::{DispatcharrCmd, GuideOutcome, SetupOutcome};
 use std::sync::mpsc::Sender;
 
@@ -30,6 +30,13 @@ pub(super) fn execute(command: DispatcharrCmd) {
         }
         DispatcharrCmd::SaveFavourites { favourites } => update_prefs(PrefsOp::Favourites(favourites)),
         DispatcharrCmd::SetResume { on } => update_prefs(PrefsOp::Resume(on)),
+        DispatcharrCmd::Discover { reply } => {
+            plx_base::task::spawn_small("dispatcharr discover", move || {
+                let found = discover::scan();
+                plx_base::eventlog::log(&format!("dispatcharr: discovered {} server(s)", found.len()));
+                answer(&reply, found.into_iter().map(|f| f.address).collect());
+            });
+        }
     }
 }
 

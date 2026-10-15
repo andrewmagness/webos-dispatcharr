@@ -80,7 +80,7 @@ const BLINK_US: u32 = 530_000;
 /// is recorded as its length and caret only: a replay must never carry it.
 pub const SHAPE: &str = "SetupScreen{mode:u8,phase:u8,editing:Option<u32>,address:{text:str,caret:u64},\
     username:{text:str,caret:u64},password:{len:u64,caret:u64},blink_us:u32,failure:Option<u8>,\
-    pending:bool,lineup:u8,saved:u8,resume:u8}";
+    pending:bool,lineup:u8,saved:u8,resume:u8,discovery:u8}";
 
 /// Where the page is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -251,6 +251,8 @@ struct SetupState {
     saved: u8,
     /// 0 not connected, 1 off, 2 on.
     resume: u8,
+    /// [`Discovery::disc`].
+    discovery: u8,
 }
 
 impl LogicalState for SetupState {
@@ -266,13 +268,35 @@ impl LogicalState for SetupState {
         c.option(self.failure, |c, d| {
             c.u8(d);
         });
-        c.bool(self.pending).u8(self.lineup).u8(self.saved).u8(self.resume);
+        c.bool(self.pending).u8(self.lineup).u8(self.saved).u8(self.resume).u8(self.discovery);
     }
     fn probe(&self, out: &mut String) {
         out.push_str(&format!(
             "setup phase={:?} editing={:?} failure={:?} pending={}",
             self.phase, self.editing, self.failure, self.pending
         ));
+    }
+}
+
+/// Where the form's network search is.
+enum Discovery {
+    /// Not asked (an address was there already, or the page is not the form).
+    Idle,
+    Searching(Receiver<Vec<String>>),
+    /// The address it filled in.
+    Found(String),
+    /// It found nothing, or the address was typed before it answered.
+    Done,
+}
+
+impl Discovery {
+    fn disc(&self) -> u8 {
+        match self {
+            Discovery::Idle => 0,
+            Discovery::Searching(_) => 1,
+            Discovery::Found(_) => 2,
+            Discovery::Done => 3,
+        }
     }
 }
 
@@ -293,6 +317,8 @@ pub struct SetupScreen {
     connected: Option<Connected>,
     /// Whether the address as typed is plain HTTP (the note under it).
     plaintext: bool,
+    /// The search for a Dispatcharr on the TV's own network, which fills in the address.
+    discovery: Discovery,
     spin_ms: f32,
     ground: RouteGround,
     state: SetupState,
@@ -315,13 +341,14 @@ impl SetupScreen {
             pending: None,
             connected: None,
             plaintext: false,
+            discovery: Discovery::Idle,
             spin_ms: 0.0,
             ground: RouteGround::new(),
             state: SetupState {
                 mode,
                 phase: Phase::Loading, editing: None, address: (String::new(), 0),
                 username: (String::new(), 0), password: (0, 0), blink_us: 0, failure: None,
-                pending: false, lineup: 0, saved: 0, resume: 0,
+                pending: false, lineup: 0, saved: 0, resume: 0, discovery: 0,
             },
         };
         screen.sync_state();
@@ -351,6 +378,7 @@ impl SetupScreen {
                 Some(Saved::UntilReboot) => 2,
             },
             resume: self.connected.as_ref().map_or(0, |c| 1 + u8::from(c.resume)),
+            discovery: self.discovery.disc(),
         };
     }
 
@@ -512,6 +540,12 @@ impl SetupScreen {
                 }
                 self.phase = Phase::Form;
                 self.reseat(if self.fields[0].text().is_empty() { ADDRESS } else { PASSWORD }, fx);
+                // Nothing to sign in to yet: look for a server on the TV's own network.
+                if self.fields[0].text().is_empty() && matches!(self.discovery, Discovery::Idle) {
+                    let (reply, rx) = mpsc::channel();
+                    self.discovery = Discovery::Searching(rx);
+                    fx.push(Fx::App(AppFx::Dispatcharr(DispatcharrCmd::Discover { reply })));
+                }
             }
             SetupOutcome::Connected { record, saved, resume_on_launch } => {
                 let server = record.account.server.base();
@@ -565,6 +599,7 @@ impl SetupScreen {
 
     fn tick<H: AppLike>(&mut self, t: Tick, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) {
         self.poll(fx);
+        self.poll_discovery(fx);
         if self.phase == Phase::Working {
             self.spin_ms += t.dt_us as f32 / 1000.0;
         }
@@ -577,6 +612,27 @@ impl SetupScreen {
             let target = if self.editing == Some(i) || focus == Some(i as u32) { 1.0 } else { 0.0 };
             plx_machine::motion::spring(&mut hot.pos, &mut hot.vel, target, plx_ui::consts::K_SCALE, t, &mut present);
         }
+    }
+
+    /// The network search's answer: the first server found fills in the address, unless one was
+    /// typed meanwhile.
+    fn poll_discovery<H: AppLike>(&mut self, fx: &mut Effects<'_, H>) {
+        let Discovery::Searching(rx) = &self.discovery else { return };
+        let found = match rx.try_recv() {
+            Ok(found) => found,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => Vec::new(),
+        };
+        self.discovery = match found.into_iter().next() {
+            Some(address) if self.fields[0].text().is_empty() && self.editing != Some(0) => {
+                let len = address.len();
+                self.fields[0] = TextBuffer::new(address.clone(), len);
+                self.plaintext = address_is_plaintext(&address);
+                Discovery::Found(address)
+            }
+            _ => Discovery::Done,
+        };
+        fx.invalidate(Provenance::Input);
     }
 
     fn draw_form<H: AppLike>(&mut self, f: &mut DrawFrame<'_, '_, H>, p: Painter, focus: Option<u32>) {
@@ -600,9 +656,15 @@ impl SetupScreen {
                 caret_on: self.blink_us < BLINK_US,
             });
         }
-        if self.plaintext {
-            Label::new(msg::dispatcharr_setup_plaintext_c().as_ptr(), theme::size::CAPTION, theme::TEXT_TERTIARY)
-                .draw(p, layout::note());
+        let found = matches!(&self.discovery, Discovery::Found(a) if a.as_str() == self.fields[0].text());
+        let note = match &self.discovery {
+            Discovery::Searching(_) if self.fields[0].text().is_empty() => Some(msg::dispatcharr_setup_searching_c()),
+            _ if found => Some(msg::dispatcharr_setup_found_c()),
+            _ if self.plaintext => Some(msg::dispatcharr_setup_plaintext_c()),
+            _ => None,
+        };
+        if let Some(note) = note {
+            Label::new(note.as_ptr(), theme::size::CAPTION, theme::TEXT_TERTIARY).draw(p, layout::note());
         }
         if let Some(rect) = self.rect(SIGN_IN, f.measure) {
             Button::new(msg::dispatcharr_setup_sign_in_c().as_ptr(), theme::size::BODY, rect)

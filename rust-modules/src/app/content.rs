@@ -82,7 +82,7 @@ pub(crate) fn content_requests(app: &mut App, _fr: &Frame) {
         // A delayed effect cannot act for an instance that has already been covered.
         if app.pages.nav.input_owner() != Some(InputOwner::Entry(entry)) { continue; }
         match request {
-            ContentReq::Play { play, resume_ns } => {
+            ContentReq::Play { play } => {
                 let mounted = bridge::player(&app.pages).is_some();
                 clear_engine_for_play(&mut app.player.session, &mut app.adapters.player, mounted);
                 // The PAGE decided what to play; the LOOP performs the request, because starting
@@ -91,7 +91,7 @@ pub(crate) fn content_requests(app: &mut App, _fr: &Frame) {
                 if !request_play_intent(&mut app.player.session, app.bridge.metadata_mut(), &play) { continue; }
                 // The page's own `ReturnState` rides the push, so BACK out of the playback finds
                 // the spot the Play was pressed from.
-                start_playback(&mut app.player.session, &mut app.adapters.player, resume_ns,
+                start_playback(&mut app.player.session, &mut app.adapters.player,
                     super::playback::Origin::Here,
                     Some(ret), &mut app.pages, &mut app.bridge);
             }

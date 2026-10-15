@@ -479,7 +479,7 @@ impl GuideScreen {
                 self.relist(Refocus::Cell { carry, row: 0 }, fx);
                 let row = resume.and_then(|id| self.listing.as_ref()?.channels.iter().position(|c| c.id == id));
                 if let Some(play) = row.and_then(|row| self.tune(cell(row, 0))) {
-                    fx.push(Fx::App(AppFx::Content(ContentReq::Play { play, resume_ns: 0 })));
+                    fx.push(Fx::App(AppFx::Content(ContentReq::Play { play })));
                 }
             }
         }
@@ -662,7 +662,7 @@ impl GuideScreen {
             // OK on any programme tunes its channel.
             elem => {
                 if let Some(play) = self.tune(elem) {
-                    fx.push(Fx::App(AppFx::Content(ContentReq::Play { play, resume_ns: 0 })));
+                    fx.push(Fx::App(AppFx::Content(ContentReq::Play { play })));
                 }
             }
         }

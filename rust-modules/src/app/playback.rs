@@ -20,7 +20,6 @@
 //! through a `PlayerReq`.
 
 use super::*;
-use plx_media::player::report::AttemptOrigin;
 // The list is what the LOOP still spells, and phase 12 (PX-PLAYER) is why it is short: the scrub
 // gesture's constants and its two pure policies (`scrub_press`, `failed_key_action`) are read by
 // `screens::player` alone now, so re-exporting them here would be this module claiming a
@@ -87,48 +86,6 @@ pub(crate) fn is_started() -> bool {
 // exists inside the run loop's body is a decision no host test can reach. The loop still owns every
 // VALUE — `route` is a local, the trail is a local.
 
-
-/// Replace a terminal attempt with a new resolve of the same Plex item.
-///
-/// This is a REAL stop followed by a new request, not an Engine reload: it covers the pre-flight
-/// refusal which never created an Engine, retires a failed server transcode when there was one,
-/// and gives telemetry two honest attempts.  The descriptor lives in `route`; the app owns only
-/// the current playhead and the Engine lifecycle.
-///
-/// `direct_play` overrides the Direct Play mode the retry resolves under; `None` keeps the failed
-/// attempt's own (a retry is the SAME request). `origin` is why the viewer asked — a Retry press
-/// or a quality pick on the failure screen — and rides to the error report of the attempt this
-/// starts, which is the next open of the same session.
-pub(crate) fn retry_failed_playback(
-    ps: &mut plx_media::route::PlaybackSession,
-    pa: &mut plx_media::player::adapter::PlayerAdapter,
-    meta: &mut plx_data::stores::metadata::MetadataStore,
-    direct_play: Option<plx_plex::plex::session::DirectPlayMode>,
-    origin: AttemptOrigin,
-) -> bool {
-    // URL/dev-trigger playback has no Plex descriptor.  Check BEFORE teardown: extinguishing its
-    // Error Engine and only then discovering it cannot be rebuilt would replace an actionable
-    // read-out with an idle black frame.
-    if !plx_media::route::can_retry_current_play(ps) {
-        log("playback retry: current source has no reusable Plex request");
-        return false;
-    }
-    // A terminal error can race a seek whose requested target has not landed.  Resume what the
-    // viewer asked for, not the last frame the dying Engine happened to publish.  If an earlier
-    // retry was refused before presenting anything, retain its target too: the stopped Engine now
-    // reports zero and must not send a second quality attempt back to the beginning.
-    let resume_ns = intended_pos(ps)
-        .max(plx_media::route::unpresented_resume_ns(ps))
-        .max(0);
-    plx_media::player::stop_bufferfeed(ps, pa);
-    if plx_media::route::retry_current_play(ps, meta, resume_ns, direct_play, origin) {
-        plx_machine::idle::invalidate();
-        true
-    } else {
-        log("playback retry: current source cannot be resolved again");
-        false
-    }
-}
 
 /// **How often a live channel may be reconnected on its own.** A channel's stream ending is not
 /// the end of the programme: the connection dropped, or the server restarted its upstream, and the
@@ -198,29 +155,10 @@ pub(super) fn tune_channel(
     let tune = super::dispatcharr::with_known_codecs(tune);
     if plx_media::route::request_live(ps, tune, plx_dispatcharr::dispatcharr::api::unix_now()) {
         super::dispatcharr::remember_last(&uuid);
-        start_playback(ps, pa, 0, Origin::Here, None, pages, bridge);
+        start_playback(ps, pa, Origin::Here, None, pages, bridge);
     } else {
         log("live: the channel change was refused");
     }
-}
-
-/// **The failure read-out's fix for Force Direct Play** — `FailureAction::PlayAutomatically`.
-///
-/// A PERSISTENT switch, deliberately, not a one-shot: Force is what made this play fail, and it
-/// would make the next unsupported file fail the same way. The preference moves to Auto now (the
-/// in-memory value every later resolve reads) and is saved on the storage worker behind it, both
-/// by the one write door (`route::choose`, `How::Optimistic`): the frame may not block on storage,
-/// the cell is published ONCE, and a failed save is logged by the door while the pick stands for
-/// this session. The retry resolves under Auto explicitly rather than inheriting the failed
-/// attempt's Force, which a plain retry keeps on purpose.
-pub(crate) fn play_automatically(
-    ps: &mut plx_media::route::PlaybackSession,
-    pa: &mut plx_media::player::adapter::PlayerAdapter,
-    meta: &mut plx_data::stores::metadata::MetadataStore,
-) -> bool {
-    use plx_plex::plex::session::{DirectPlayMode, DirectPlayModePref};
-    plx_media::route::choose::<DirectPlayModePref>(DirectPlayMode::Auto, plx_media::route::How::Optimistic(None));
-    retry_failed_playback(ps, pa, meta, Some(DirectPlayMode::Auto), AttemptOrigin::UserRetry)
 }
 
 /// **Where a session that is STARTING returns to** — the whole of what `app::nav::Origin` was,
@@ -293,20 +231,19 @@ pub(crate) fn enter_player(
 pub(crate) fn start_playback(
     ps: &mut plx_media::route::PlaybackSession,
     pa: &mut plx_media::player::adapter::PlayerAdapter,
-    resume_ns: i64,
     from: Origin,
     ret: Option<plx_ui::screen::ReturnState<u32, plx_screens::registry::PageMemory>>,
     pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
     bridge: &mut super::bridge::Bridge,
 ) -> bool {
-    start_playback_with(ps, pa, resume_ns, from, ret, pages, bridge, &mut LivePlaybackResources)
+    start_playback_with(ps, pa, from, ret, pages, bridge, &mut LivePlaybackResources)
 }
 
 /// Resource effects below launch policy. Implementations receive no navigation, origin, or
 /// return state: acceptance cannot invent where a session returns to.
 pub(super) trait PlaybackResources {
     fn prepare_start(&mut self, ps: &mut plx_media::route::PlaybackSession,
-        pa: &mut plx_media::player::adapter::PlayerAdapter, resume_ns: i64) -> bool;
+        pa: &mut plx_media::player::adapter::PlayerAdapter) -> bool;
 }
 
 
@@ -314,47 +251,8 @@ pub(super) struct LivePlaybackResources;
 
 impl PlaybackResources for LivePlaybackResources {
     fn prepare_start(&mut self, ps: &mut plx_media::route::PlaybackSession,
-        pa: &mut plx_media::player::adapter::PlayerAdapter, resume_ns: i64) -> bool {
-        // A resolve in flight means the route statics are NOT installed yet. Applying the
-        // resume now would read a stale/empty TSESSION, so `begin_resume` would take its
-        // DIRECT-PLAY branch and arm_seek() a transcode — and pump.rs's feed gate requires
-        // `seek_to_ns < 0`, so that stray armed seek blocks feeding forever: no frames, no
-        // ACB bind, timeline frozen at the resume point. (Exactly what broke
-        // transcode_av1_no_dp_audio. Direct-play never noticed because arm_seek is what the
-        // correct branch does anyway. That item is a transcode only where the codec table lists
-        // no AV1 decoder, which the dev set does not; on a set that does, it direct-streams video.)
-        // Defer it to `pump_play`, after apply_plan.
-        let pending = plx_media::route::play_pending();
-        // A transcode's rebuild at the saved position is a flight (`begin_resume`): the Load is
-        // started by the run loop's drain when it lands, so a pending resume enters the player and
-        // starts nothing here.
-        let resume = if pending || resume_ns <= 0 {
-            plx_media::player::ResumeStart::Settled(plx_media::player::ResumeOutcome::Prepared)
-        } else {
-            plx_media::player::begin_resume(ps, resume_ns)
-        };
-        let resume_prepared = matches!(
-            resume,
-            plx_media::player::ResumeStart::Settled(plx_media::player::ResumeOutcome::Prepared)
-        );
-        if !resume_prepared && !matches!(resume, plx_media::player::ResumeStart::Pending) {
-            if let Some(transaction) = plx_media::route::pending_route_start() {
-                let _ = plx_media::route::reject_route_start_preparation(transaction);
-            }
-        }
-        // Flip to the player NOW so the HUD draws its Resolving state this frame; `pump_play`
-        // below starts the engine when the plan lands. With nothing pending this is the old
-        // synchronous behaviour, byte for byte.
-        if pending {
-            plx_media::route::arm_play_resume(ps, resume_ns);
-            true
-        } else if matches!(resume, plx_media::player::ResumeStart::Pending) {
-            true
-        } else if resume_prepared {
-            plx_media::player::start_bufferfeed(ps, pa)
-        } else {
-            false
-        }
+        pa: &mut plx_media::player::adapter::PlayerAdapter) -> bool {
+        plx_media::player::start_bufferfeed(ps, pa)
     }
 }
 
@@ -363,14 +261,13 @@ impl PlaybackResources for LivePlaybackResources {
 pub(super) fn start_playback_with<R: PlaybackResources>(
     ps: &mut plx_media::route::PlaybackSession,
     pa: &mut plx_media::player::adapter::PlayerAdapter,
-    resume_ns: i64,
     from: Origin,
     ret: Option<plx_ui::screen::ReturnState<u32, plx_screens::registry::PageMemory>>,
     pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
     bridge: &mut super::bridge::Bridge,
     resources: &mut R,
 ) -> bool {
-    let entering = resources.prepare_start(ps, pa, resume_ns);
+    let entering = resources.prepare_start(ps, pa);
     if entering {
         enter_player(pages, bridge, from, ret);
     }
@@ -406,18 +303,12 @@ pub(crate) fn player_requests(
     for req in reqs {
         match req {
             PlayerReq::Tune(tune) => tune_channel(ps, pa, tune, pages, bridge),
-            // A live channel has no server request to resolve again: *Try again* tunes it again.
-            PlayerReq::RetryPlayback if plx_media::route::live_tune(ps).is_some() => {
+            // *Try again* tunes the channel again.
+            PlayerReq::RetryPlayback => {
                 if let Some(tune) = plx_media::route::live_tune(ps).cloned() {
                     log("live: try again");
                     tune_channel(ps, pa, tune, pages, bridge);
                 }
-            }
-            PlayerReq::RetryPlayback => {
-                retry_failed_playback(ps, pa, bridge.metadata_mut(), None, AttemptOrigin::UserRetry);
-            }
-            PlayerReq::PlayAutomatically => {
-                play_automatically(ps, pa, bridge.metadata_mut());
             }
             PlayerReq::RepairSandbox => {
                 if ps.jail_load_blocked {
@@ -625,38 +516,6 @@ pub(crate) unsafe fn key_play(
 // the ordinary continuous scrub grows out of it as the repeats arrive. `ScrubPress` and
 // `screens::player::input`'s own `a_hidden_hud_spends_the_press_on_itself` are where both are
 // pinned.)
-
-/// Run a play-plan landing and then observe the derived player state in the same frame. This tiny
-/// seam is explicit because a refused `/decision` publishes `Error` inside the landing, after the
-/// loop's ordinary report tick; BACK on the next frame can otherwise erase the only observation.
-pub(crate) fn land_play_then_observe<S: ?Sized>(
-    state: &mut S,
-    land: impl FnOnce(&mut S),
-    observe: impl FnOnce(&S),
-) {
-    land(state);
-    observe(state);
-}
-
-
-#[cfg(test)]
-mod play_landing_order_tests {
-    use super::land_play_then_observe;
-    use std::cell::RefCell;
-
-    #[test]
-    fn the_landing_seam_runs_publication_before_observation() {
-        let order = RefCell::new(Vec::new());
-        // The seam lends a state to both halves (the loop lends it `App`); what is pinned here is
-        // the ORDER, so the state is a unit.
-        land_play_then_observe(
-            &mut (),
-            |_| order.borrow_mut().push("landing"),
-            |_| order.borrow_mut().push("observation"),
-        );
-        assert_eq!(*order.borrow(), ["landing", "observation"]);
-    }
-}
 
 /// **Where playback returns to.**
 ///

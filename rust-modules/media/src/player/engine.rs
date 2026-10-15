@@ -5492,7 +5492,7 @@ mod load_in_flight_tests {
         assert_eq!(shape.kind, crate::player::FailureKind::LoadTimeout);
         let actions = crate::player::failure_actions(
             shape.kind,
-            crate::player::FailureContext { forced: false, can_retry: true, repair_idle: true, live: false },
+            crate::player::FailureContext { repair_idle: true },
         );
         assert!(
             actions.contains(&crate::player::FailureAction::TryAgain),

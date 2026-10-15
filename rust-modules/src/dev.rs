@@ -52,7 +52,6 @@
 
 pub(crate) mod scenarios;
 
-
 /// **Turn on the TELEVISION'S OWN GStreamer logging** — `/tmp/dispatcharrtv-gstlog`.
 ///
 /// This is the only instrument that can see inside LG's Dolby Vision chain. That chain is
@@ -343,107 +342,6 @@ pub(crate) fn softfloat_probe() {
 #[cfg(not(feature = "devtriggers"))]
 pub(crate) fn softfloat_probe() {}
 
-/// A test-only playback policy override from `dispatcharrtv-quality`.
-///
-/// The server matrix grades established direct-play/remux/transcode routes. It must not silently
-/// become an Auto-HLS matrix because the television happened to persist that user preference in
-/// an earlier run. This is deliberately an in-memory boot override: writing the session would
-/// make a test change the owner's real preference. Unknown and empty values fail closed by
-/// producing no override.
-pub(crate) fn playback_quality_override() -> Option<plx_plex::plex::session::PlaybackQuality> {
-    let value = plx_base::devtrig::read("quality")?;
-    parse_playback_quality(&value)
-}
-
-/// The inverse of [`parse_playback_quality`], and it lives here so the two cannot drift.
-///
-/// The log line a test greps must carry the SAME string the trigger accepts. `Quality::label()`
-/// is display text ("1080p \u{b7} 8 Mbps") and would make a case state its rung twice, in two
-/// spellings, with nothing keeping them in step — which is the shape that rots.
-pub(crate) fn quality_wire_name(q: plx_plex::plex::session::PlaybackQuality) -> &'static str {
-    use plx_plex::plex::session::PlaybackQuality as Q;
-    match q {
-        Q::Auto => "auto",
-        Q::Original => "original",
-        Q::P1080High => "1080p_20_mbps",
-        Q::P1080 => "1080p_8_mbps",
-        Q::P720 => "720p_4_mbps",
-        Q::P720Low => "720p_2_mbps",
-        Q::P480 => "480p_720_kbps",
-    }
-}
-
-fn parse_playback_quality(value: &str) -> Option<plx_plex::plex::session::PlaybackQuality> {
-    use plx_plex::plex::session::PlaybackQuality;
-    match value {
-        "auto" => Some(PlaybackQuality::Auto),
-        "original" => Some(PlaybackQuality::Original),
-        "1080p_20_mbps" => Some(PlaybackQuality::P1080High),
-        "1080p_8_mbps" => Some(PlaybackQuality::P1080),
-        "720p_4_mbps" => Some(PlaybackQuality::P720),
-        "720p_2_mbps" => Some(PlaybackQuality::P720Low),
-        "480p_720_kbps" => Some(PlaybackQuality::P480),
-        _ => None,
-    }
-}
-
-/// **Switch the playback quality MID-PLAYBACK** — `dispatcharrtv-qualityswitch=[gap=<ms>,]<q>[,<q>…]`.
-///
-/// The one thing [`playback_quality_override`] above cannot do. That is a BOOT override: it decides
-/// what the playback starts as and is read once. What a person actually does at the television is
-/// start something, watch it, and then change the quality while it plays — which re-asks the
-/// routing question against a stream already on screen, reloads if the answer moved, and (on the
-/// way out of Auto) tears down a running ABR controller. None of that is reachable from a boot
-/// value, and none of it was reachable from a test at all.
-///
-/// Same vocabulary as `dispatcharrtv-quality`, deliberately — one spelling of a rung across both
-/// triggers, so a case cannot name a quality one of them accepts and the other silently ignores.
-/// Same grammar as `dispatcharrtv-autoseek`: an optional leading `gap=<ms>` then comma-separated steps
-/// fired one per gap. There is no default gap and none is invented: with a single step no cadence
-/// exists to state, and a case wanting several states its own, in the manifest, where a reader can
-/// see it beside the assertions it enables.
-///
-/// **This writes the stored preference, and that is not incidental.** `route::set_quality` persists
-/// through `plex::session::update`, because a person picking a rung means it. A test therefore
-/// leaves the value behind — on the `debug` flavour's own session, never the install you watch
-/// with, and `tests/run.py` writes `dispatcharrtv-quality` on every server case, so the next boot
-/// overrides whatever this left. Both halves are load-bearing; neither alone would make it safe.
-fn parse_quality_switch_script(
-    raw: &str,
-) -> Option<(u32, Vec<plx_plex::plex::session::PlaybackQuality>)> {
-    let mut steps: Vec<&str> = raw
-        .split(',')
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .collect();
-    let mut gap_ms = None;
-    if let Some(g) = steps.first().and_then(|f| f.strip_prefix("gap=")) {
-        gap_ms = Some(g.parse().ok()?);
-        steps.remove(0);
-    }
-    // A sequence needs an authored cadence. Without one, several valid rungs would all fire on
-    // successive render loops: technically ordered, but not the mid-playback interactions the
-    // trigger claims to reproduce.
-    if steps.len() > 1 && gap_ms.is_none() {
-        return None;
-    }
-    // Fail the WHOLE script when one rung is unparseable. Running a valid subset would still
-    // change playback to a sequence nobody requested, merely without inventing a default rung.
-    let qs: Vec<_> = steps
-        .iter()
-        .map(|t| parse_playback_quality(t))
-        .collect::<Option<Vec<_>>>()?;
-    if qs.is_empty() {
-        None
-    } else {
-        Some((gap_ms.unwrap_or(0), qs))
-    }
-}
-
-pub(crate) fn quality_switch_script() -> Option<(u32, Vec<plx_plex::plex::session::PlaybackQuality>)> {
-    parse_quality_switch_script(&plx_base::devtrig::read("qualityswitch")?)
-}
-
 /// One synchronized user Pause, optionally followed by Resume —
 /// `dispatcharrtv-autopause=[delay=<ms>,][at=<ms>,][hold=<ms>]`.
 ///
@@ -546,27 +444,6 @@ mod tests {
         assert_eq!(lines, [format!("dispatcharr: sign-in to {} failed: unauthorized (401)", server.base())]);
     }
 
-    #[test]
-    fn quality_trigger_accepts_only_persisted_policy_spellings() {
-        use plx_plex::plex::session::PlaybackQuality;
-
-        assert_eq!(
-            super::parse_playback_quality("auto"),
-            Some(PlaybackQuality::Auto)
-        );
-        assert_eq!(
-            super::parse_playback_quality("original"),
-            Some(PlaybackQuality::Original)
-        );
-        assert_eq!(
-            super::parse_playback_quality("720p_4_mbps"),
-            Some(PlaybackQuality::P720)
-        );
-        for invalid in ["", "Auto", "720p", "unlimited"] {
-            assert_eq!(super::parse_playback_quality(invalid), None, "{invalid}");
-        }
-    }
-
     /// A DIRECTORY whose name matches the trigger prefix must not read as an armed trigger.
     ///
     /// The failure it prevents is silent and permanent: `any_trigger_present` suppresses the boot
@@ -578,72 +455,6 @@ mod tests {
     // test cannot exist in that build at all rather than just skip at runtime.
 
     // ---- dispatcharrtv-playurl (the pipeline test tier's one trigger) ----
-
-    /// **One vocabulary for a rung, in both directions.** `dispatcharrtv-quality` and
-    /// `dispatcharrtv-qualityswitch` accept these strings and `quality: switch → …` prints them, so a
-    /// case states its rung once and asserts on the same word. A one-way table would let the log
-    /// drift from what the trigger accepts and the drift would show up as a case that arms
-    /// correctly and then matches nothing — indistinguishable from the feature not working.
-    #[test]
-    fn every_quality_wire_name_parses_back_to_itself() {
-        use plx_plex::plex::session::PlaybackQuality as Q;
-        for q in [
-            Q::Auto,
-            Q::Original,
-            Q::P1080High,
-            Q::P1080,
-            Q::P720,
-            Q::P720Low,
-            Q::P480,
-        ] {
-            let name = super::quality_wire_name(q);
-            assert_eq!(
-                super::parse_playback_quality(name),
-                Some(q),
-                "{name} does not round-trip"
-            );
-        }
-    }
-
-    /// The script grammar, including the two ways it must FAIL CLOSED. A typo that resolved to a
-    /// default would switch the playback to something the case never asked for — the same hazard
-    /// `dispatcharrtv-abrpin` documents for its own value.
-    #[test]
-    fn a_quality_script_fails_closed_and_never_substitutes() {
-        use plx_plex::plex::session::PlaybackQuality as Q;
-        let parse = super::parse_quality_switch_script;
-        assert_eq!(
-            parse("720p_4_mbps"),
-            Some((0, vec![Q::P720])),
-            "one step needs no cadence"
-        );
-        assert_eq!(
-            parse("gap=9000,1080p_8_mbps,auto"),
-            Some((9_000, vec![Q::P1080, Q::Auto])),
-            "a leading gap is consumed, not treated as a rung",
-        );
-        assert_eq!(
-            parse("gap=9000,nonsense"),
-            None,
-            "a typo must arm NOTHING, not a default"
-        );
-        assert_eq!(
-            parse("gap=oops,auto"),
-            None,
-            "an invalid cadence must not become zero"
-        );
-        assert_eq!(
-            parse("720p_4_mbps,auto"),
-            None,
-            "a multi-step script must state its cadence",
-        );
-        assert_eq!(parse(""), None);
-        assert_eq!(
-            parse("nonsense,auto"),
-            None,
-            "one invalid rung must not leave a valid subset running",
-        );
-    }
 
     #[test]
     fn a_pause_script_preserves_the_legacy_hold_and_fails_closed() {

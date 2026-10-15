@@ -724,9 +724,6 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
             app.ptr.button_down = false;
             close_player_overlays(&mut app.pages);
             plx_media::player::suspend_bufferfeed(&mut app.player.session, &mut app.adapters.player);
-            // Also retire the resolve generation: its worker may finish after backgrounding,
-            // including before the accepted start's Player page has ever mounted.
-            plx_media::route::cancel_play(&mut app.player.session);
             // **The PAGE STACK is deliberately not touched**, which is the whole of what a park
             // is: the OS is taking the screen away, not the user navigating, and the foreground
             // arm below reloads straight back into the player. It USED to write
@@ -1494,80 +1491,6 @@ pub(crate) unsafe fn update(app: &mut App, fr: &mut Frame) {
         crate::lab::update(fr.now);
         #[cfg(feature = "threadcheck")]
         plx_ui::runtime_warning::update(false);
-        // Async play resolve: install the worker's plan and start the engine. Permission comes
-        // from the window/playback lifecycle, independently of which screen is mounted.
-        // A fresh accepted resolve owns a different playback from any parked foreground retry.
-        // Retire that old owner at this transaction boundary; a same-session Prepared retry does
-        // not set play_pending and remains owned by drive_foreground.
-        if app.window_activity.allow_present(true) && plx_media::route::play_pending() {
-            app.player.lifecycle.replace_with_new_playback();
-        }
-        land_play_then_observe(
-            app,
-            |app| {
-                if !playback_may_run(app) {
-                    return;
-                }
-                // A cold resume's rebuild landed (`player::land_resume`): the Load the pending play
-                // was holding for starts now.
-                if let Some(outcome) = plx_media::player::land_resume(&mut app.player.session) {
-                    plx_machine::idle::invalidate();
-                    finish_landed_play(app, matches!(outcome, plx_media::player::ResumeOutcome::Prepared));
-                }
-                if let Some(r) = plx_media::route::pump_play(&mut app.player.session, app.bridge.metadata_mut()) {
-                    plx_machine::idle::invalidate();
-                    // A transcode with a saved position rebuilds at that offset on a worker (`begin_resume`):
-                    // the play stays pending, the spinner stays up, and the drain at the top of this landing
-                    // starts the Load when the flight lands.
-                    match if r <= 0 {
-                        plx_media::player::ResumeStart::Settled(plx_media::player::ResumeOutcome::Prepared)
-                    } else {
-                        plx_media::player::begin_resume(&mut app.player.session, r)
-                    } {
-                        plx_media::player::ResumeStart::Pending => {}
-                        plx_media::player::ResumeStart::Settled(outcome) => finish_landed_play(
-                            app,
-                            matches!(outcome, plx_media::player::ResumeOutcome::Prepared),
-                        ),
-                    }
-                }
-            },
-            // `pump_play` can install a refused `/decision` after the earlier report
-            // observation but before this frame draws the Error screen. Observe again at that
-            // exact publication boundary; latches make a healthy/no-change frame idempotent.
-            |app| plx_media::player::report::tick(&app.player.session),
-        );
-}
-
-/// What a landed play does once its resume is settled: the Load, and the off-route backstop. Reached
-/// from the frame that lands a plan whose resume settled on the spot, and from the frame that lands
-/// a cold resume's flight (`player::land_resume`) — the same step, taken after the rebuild landed.
-fn finish_landed_play(app: &mut App, resume_prepared: bool) {
-    if !resume_prepared {
-        if let Some(transaction) = plx_media::route::pending_route_start() {
-            let _ = plx_media::route::reject_route_start_preparation(transaction);
-        }
-    }
-    // A live engine with the route anywhere but Player is unrecoverable BY THE USER —
-    // every transport key and the EOS teardown are route-gated — so repair the
-    // invariant here rather than trust that no path can violate it. The one that
-    // could is cancelled above; this is the backstop, and it is the cheaper half.
-    if resume_prepared {
-        let started = plx_media::player::start_bufferfeed(
-            &mut app.player.session,
-            &mut app.adapters.player,
-        );
-        if started && !matches!(app.route(), AppArg::Player) {
-            log("pump_play: engine started off-route → restoring AppArg::Player");
-            // The page is being taken off screen by a LANDING, not by a navigation. It
-            // carried a `forward_leave(app.route())` teardown here until phase 12; every
-            // arm of that table was `None` and the pages it named are owned screens that
-            // drop what they loaded on the container's own `Unmount` — including
-            // Search's keyboard (`SearchScreen::step`), which is the case this line was
-            // written for.
-            super::bridge::show_page(&mut app.pages, AppArg::Player);
-        }
-    }
 }
 
 /// The draw phase, entered only on a presenting frame: `clear_opaque_region` at entry, the
@@ -2020,11 +1943,6 @@ pub(crate) unsafe fn shutdown(
     if is_started() {
         plx_media::player::stop_bufferfeed(ps, pa);
     }
-    // The stop scrobble is posted off-thread now, and this process is about to die with any
-    // worker still running — so THIS is the one place its result has to be waited for, or the
-    // resume point the user just earned is silently dropped. Same cost the old inline call
-    // paid, except now it is paid once at exit instead of on every BACK out of a movie.
-    plx_media::route::drain_scrobble();
     crate::capture::shutdown();
     crate::app::adapters::poster::shutdown();
     SDL_Quit();

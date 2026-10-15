@@ -2,7 +2,7 @@
 //!
 //! LG Cloud Test Lab accepts an `.ipk` and gives the tester a picture plus a virtual remote, but
 //! exposes no inbound socket. The useful direction is therefore the same one diagnostics already
-//! proved: the app opens pinned HTTPS to `lab.plxnative.com`. A long poll waits there until the
+//! proved: the app opens pinned HTTPS to `lab.example.com`. A long poll waits there until the
 //! host queues a command, then the SDL thread dispatches it through the same synthetic-input seam
 //! as the development FIFO and the next poll acknowledges it.
 //!

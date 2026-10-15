@@ -1214,7 +1214,7 @@ mod tests {
     }
 
     /// **A failed detail-page preview is its own Sentry issue.** A trailer is not a playback the
-    /// viewer asked for, so its failures must not pile into the playback groups (PLX-NATIVE-15).
+    /// viewer asked for, so its failures must not pile into the playback groups (upstream Sentry issue 15).
     /// The fingerprint carries `preview` for that origin alone; every other origin keeps the
     /// `["playback-error", code]` shape byte for byte, for every failure kind.
     #[test]

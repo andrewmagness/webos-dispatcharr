@@ -1,37 +1,39 @@
-# PlxNative Privacy Policy
+# Dispatcharr TV Privacy Policy
 
-Applies to PlxNative 0.6.0. Last updated 4 September 2026.
+Applies to Dispatcharr TV 0.1.0. Last updated 15 October 2026. Parts of this policy still describe the
+Plex client this app was derived from and are being rewritten as that code is removed.
 
-## Who is responsible for PlxNative data
+## Who is responsible for Dispatcharr TV data
 
-Gleb Linnik is responsible only for data PlxNative stores locally and for optional reports you
-choose to share. Contact: `support@plxnative.com`.
+The maintainer of this repository is responsible only for data Dispatcharr TV stores locally and for
+optional reports you choose to share. Contact: the repository's issue tracker,
+<https://github.com/andrewmagness/webos-dispatcharr/issues> (keep personal data out of a public issue).
 
 ## Plex services
 
-PlxNative is an independent client for Plex. To sign you in, discover servers and provide Plex
+Dispatcharr TV is an independent client for Plex. To sign you in, discover servers and provide Plex
 account features, the app communicates directly with Plex services. Plex processes information
 received by those services under [Plex’s own Privacy
-Policy](https://www.plex.tv/about/privacy-legal/). PlxNative’s developer does not receive that
+Policy](https://www.plex.tv/about/privacy-legal/). Dispatcharr TV’s developer does not receive that
 information.
 
 ## Plex Media Servers
 
-To browse and play media, update watch progress and use server features, PlxNative communicates
+To browse and play media, update watch progress and use server features, Dispatcharr TV communicates
 directly with the Plex Media Servers you select. Those requests are handled by the selected server
-and its operator. PlxNative’s developer does not receive them.
+and its operator. Dispatcharr TV’s developer does not receive them.
 
 ## Data stored on this television
 
-PlxNative has a developer-only input/frame recorder used to reproduce and test bugs. It is not
+Dispatcharr TV has a developer-only input/frame recorder used to reproduce and test bugs. It is not
 part of the app you installed: a release build has the developer-trigger inputs, including the
 recorder, compiled out — there is no code path in a release binary that can open, write or read a
 recording, on this television or off it. The unconditional `dispatcharrtv-*.log` files are create-only
 diagnostics, not trigger inputs. The recorder exists only in development builds used to build and
-test PlxNative itself, is started only by explicitly arming it on that build, and its recordings
+test Dispatcharr TV itself, is started only by explicitly arming it on that build, and its recordings
 never leave the device it was made on.
 
-PlxNative stores your Plex account token and a separate token for each server you use. For every
+Dispatcharr TV stores your Plex account token and a separate token for each server you use. For every
 profile on your account you have switched to on this television, it also keeps that profile's own
 server access token(s), so a later switch still works with no internet, and, for a PIN-protected
 profile, a one-way check computed from that PIN rather than the PIN itself. It also keeps the
@@ -50,7 +52,7 @@ when a fresh check of the server no longer reaches the same address, at a sign-i
 a profile switch unless the new profile reaches that server at the same address, or when the app
 returns from the background).
 It keeps no bookmark of its own for where you stopped watching: playback position is held by your
-Plex Media Server. The Settings screen can sign out and remove PlxNative data from this television.
+Plex Media Server. The Settings screen can sign out and remove Dispatcharr TV data from this television.
 
 Those lifetimes differ. Signing out removes the sign-in, the servers registered with it and their
 tokens, every profile's own cached server access token(s) and PIN check, the cached profile
@@ -65,11 +67,11 @@ its category off or sign out. The event log and the error-output log are emptied
 kept until the television restarts (the television clears its temporary storage then), and the storage
 snapshot is replaced when its bounded status changes. **webOS gives an application no way to run code as it
 is removed**, so the sign-in and the reporting answers can survive an uninstall — use Delete all
-local data before uninstalling if you want nothing of PlxNative left on the television.
+local data before uninstalling if you want nothing of Dispatcharr TV left on the television.
 
 ## Optional crash reports
 
-Crash reporting is off until you choose to share it. If enabled, PlxNative sends technical crash
+Crash reporting is off until you choose to share it. If enabled, Dispatcharr TV sends technical crash
 details to Sentry in Germany. A report may include the signal, code addresses, thread information,
 internal component labels, app and webOS versions, television model and hardware compatibility
 details needed to reproduce and symbolicate the failure.
@@ -88,11 +90,11 @@ They are collected only while crash reporting is enabled and accompany a crash r
 sent as usage events. Disabling crash reports removes the local trace.
 
 When the television's own crash reporter leaves nothing for a crash that was a native fault (a
-signal such as a segmentation fault), PlxNative sends a simpler report built from its own crash
+signal such as a segmentation fault), Dispatcharr TV sends a simpler report built from its own crash
 log instead. It carries the same kernel name and release, webOS and hardware compatibility
 details as a native report (plus the same `probe` fact described for playback-error reports
 below), and the file name (never the folder) and build identifier of each
-library (a library of the television's firmware or one bundled with PlxNative) the faulting
+library (a library of the television's firmware or one bundled with Dispatcharr TV) the faulting
 address and the return address were in, with the library's load address and size. A library that
 has no build identifier (the television's own C library has none) is still named, with its load
 address and size and an all-zero placeholder identifier, as the native report lists it. It carries the
@@ -105,7 +107,7 @@ folder or other file content is sent.
 
 When the crash was a Rust panic rather than a fault, the fallback report is smaller still: the
 source file and line of the panic, a hash of the panic message (the message itself is never sent),
-the app version and build identifier of PlxNative, the `environment` label of the build (`production`
+the app version and build identifier of Dispatcharr TV, the `environment` label of the build (`production`
 or `development`), the time of the panic (read and bounded as above), the same kernel name and release,
 webOS and hardware compatibility details (including the `probe` fact) that the fault fallback report carries, and
 the Crash report ID below. It carries none of the library details above.
@@ -228,7 +230,7 @@ automatically.
 ## Optional product analytics
 
 Product analytics is a separate choice and is off until you choose to share it. If enabled,
-PlxNative sends typed screen and feature events and broad sign-in and playback outcome classes to
+Dispatcharr TV sends typed screen and feature events and broad sign-in and playback outcome classes to
 PostHog in Germany. Reports carry a random Analytics ID created when you turn product analytics on
 and may include the app version, webOS version, television model and SoC, and whether the selected
 server is local, remote or relayed. Turning product analytics off, or signing out, deletes the
@@ -246,7 +248,7 @@ Every product analytics event also carries this bounded compatibility and connec
 
 | property | value |
 |---|---|
-| `app_version` | the PlxNative package version |
+| `app_version` | the Dispatcharr TV package version |
 | `webos_release` | the webOS release reported by nyx |
 | `webos_api` | the webOS API version reported by nyx |
 | `webos_codename` | the webOS firmware family reported by nyx |
@@ -298,8 +300,8 @@ report is sent only when you press Send report; quote the Report ID it showed to
 
 ## Contact and non-affiliation
 
-Privacy questions may be sent to `support@plxnative.com`. Security vulnerabilities may be reported
-privately through GitHub Security Advisories for `GLinnik21/plx-native`.
+Privacy questions may be asked on the repository's issue tracker. Security vulnerabilities may be reported
+privately through GitHub Security Advisories for `andrewmagness/webos-dispatcharr`.
 
-PlxNative is an independent, unofficial application. It is not produced by, endorsed by, or
+Dispatcharr TV is an independent, unofficial application. It is not produced by, endorsed by, or
 affiliated with Plex, Inc. or LG Electronics Inc.

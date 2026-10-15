@@ -3,8 +3,8 @@ name = "plx_data"
 version = "0.0.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-description = "PlxNative data layer: the content stores and the catalog, browse, detail, person, collection, search and view-state modules they own."
-repository = "https://github.com/GLinnik21/plx-native"
+description = "Dispatcharr TV data layer: the content stores and the catalog, browse, detail, person, collection, search and view-state modules they own."
+repository = "https://github.com/andrewmagness/webos-dispatcharr"
 publish = false
 
 [lib]

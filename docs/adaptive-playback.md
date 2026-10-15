@@ -30,7 +30,7 @@ request or identify the best untried rendition.
 No continuously parallel speed-test stream is used. It would consume the same path as playback and
 change the quantity it tries to measure. The de-obfuscated official Chromium/webOS client confirms
 there is no special PMS speed-test endpoint behind its “Checking connection speed” notice: before
-`player.open()` it performs an ordinary raw Part GET and measures source bytes. PlxNative uses the
+`player.open()` it performs an ordinary raw Part GET and measures source bytes. Dispatcharr TV uses the
 same physically uncapped object, but bounds it to one finite Range response. At cold start that
 request runs before playback; at runtime it is serialized between HLS acquisitions, never beside
 one.

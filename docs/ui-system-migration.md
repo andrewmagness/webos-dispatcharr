@@ -47,7 +47,7 @@ behind its own checkpoints. Three carve-outs stay immediate-mode on purpose (§D
 > **This table is the ORIGINAL migration inventory (what each token replaced, at that day's line
 > numbers) — not the current palette.** `theme.rs` is. Several values below were superseded on the
 > device long ago (`SURFACE_APP` `[0.10,0.10,0.115]` → the Apple-TV shelf gray `#2c2c2e`, and with it
-> `CLEAR_RGB`), and the **2026-08-13 palette sync** with the `PlxNative Design System` project
+> `CLEAR_RGB`), and the **2026-08-13 palette sync** with the `upstream design system` project
 > changed five more: `ACCENT` went from the mockup's warm "Snow" `#e9e6e0` to Cool 0 `#f7fafc` and
 > the second control white went away with it (`FILL_PRIMARY`/`INK_ON_PRIMARY` and
 > `ControlStyle::Primary` are **gone** — nothing is filled by rank, only by focus; the cool plate
@@ -202,7 +202,7 @@ Row::new(label).checked(b).detail(s).badge(Badge).chevron(b).dim(b)   // ROW_H=6
 Badge::{ Ad, Forced, Sdh, Cc, Text(String) }
 ```
 The cleanest realized pattern — owns `hl_top`/`hl_bot`/`scroll` springs and a sliding ACCENT
-pill; `track_menu` delegates 100%. **Do not** force it onto the `View` trait for the PlxNative
+pill; `track_menu` delegates 100%. **Do not** force it onto the `View` trait for the Dispatcharr TV
 (reconciling its `update(dt,visible_h)`/`draw(p,frame)` ABI with `View::update(&Env)`/
 `draw(&Env,p)` is churn with zero payoff). Only sweep its literals onto tokens
 (`:220`→`TEXT_PRIMARY`, `:221`→`TEXT_TERTIARY`, `:81`→`SURFACE_PANEL`, `:243`→`HAIRLINE`;
@@ -368,7 +368,7 @@ Option<Home>` (`home.rs:398`). Finish the contract:
   (`scroll: Spring`, pins focus to 2nd slot; callers still cull off-frame cells by index —
   `Painter` has no clip). **Keep** the absolute `section_top()` Y table
   (`TAB_Y..ABOUT_Y`, `detail.rs:37-52/:108-125`) — do **not** build a flow/`VStack`; About's
-  dynamic height doesn't justify a layout engine in a PlxNative, and a naive reflow risks section
+  dynamic height doesn't justify a layout engine in a Dispatcharr TV, and a naive reflow risks section
   collisions. *Checkpoint:* `make` + capture.
 
 **Step 7 — align app.rs routing/input (the convergence — touches shared state, do last).**

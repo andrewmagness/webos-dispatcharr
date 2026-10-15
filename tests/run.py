@@ -6340,7 +6340,7 @@ def run_graphics_profile(scene, cfg, token, phase, output=None):
         sampler.stage()
         # The baseline deliberately closes the SELECTED install. Another installed app and the
         # compositor may still exist, so this is a system floor, not a claim that every active IRQ
-        # in the next leg belongs to PlxNative. Layer two remains global by construction.
+        # in the next leg belongs to Dispatcharr TV. Layer two remains global by construction.
         make(["kill", f"TV={cfg['tv']}"], timeout=40)
         baseline_raw = sampler.capture(3.0)
 
@@ -6416,7 +6416,7 @@ def run_graphics_profile(scene, cfg, token, phase, output=None):
         out.write("\n")
 
     summary = [
-        f"PlxNative three-layer graphics profile: fps:{scene['name']}",
+        f"Dispatcharr TV three-layer graphics profile: fps:{scene['name']}",
         f"install: {APPID} [{FLAVOUR}]  HWCNT phase={phase}  binary profile={cfg.get('arm_profile', 'unknown')}",
         "",
         "Layer 1 — production present pacing (profilers OFF):",

@@ -1,4 +1,4 @@
-# PlxNative for macOS
+# Dispatcharr TV for macOS
 
 A native Plex client, built for LG webOS televisions, running here as a real Mac app. Everything it
 needs is inside the bundle — there is nothing to install.

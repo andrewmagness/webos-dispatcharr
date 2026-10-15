@@ -1,11 +1,11 @@
 # Troubleshooting
 
-Haven't installed PlxNative yet? Start with the [installation guide](install-and-verify.md).
+Haven't installed Dispatcharr TV yet? Start with the [installation guide](install-and-verify.md).
 This page is about what to do when something doesn't work.
 
 ## The app tile does nothing
 
-PlxNative needs **webOS 4.0 or newer** (webOS 3.4.3 has also been tested and works). Older
+Dispatcharr TV needs **webOS 4.0 or newer** (webOS 3.4.3 has also been tested and works). Older
 firmware may not be able to start it at all, so the tile just does nothing when you select it. See [Will it work on my
 television?](../README.md#will-it-work-on-my-television) for the full picture, including sets
 that start but hit a specific known problem.
@@ -14,15 +14,15 @@ that start but hit a specific known problem.
 
 LG Developer Mode expires and removes every app it installed unless you renew the session before
 it lapses. [Renew it in the Developer Mode app](install-and-verify.md#important-developer-mode-expires),
-or reinstall PlxNative if the session already expired. Installing Homebrew Channel through
+or reinstall Dispatcharr TV if the session already expired. Installing Homebrew Channel through
 Developer Mode does not remove that requirement — only a rooted TV with Homebrew Channel has no
 expiry.
 
 ## Sign-in doesn't survive closing the app
 
-This used to happen and is fixed: PlxNative now keeps your sign-in in its own private storage, and
+This used to happen and is fixed: Dispatcharr TV now keeps your sign-in in its own private storage, and
 uses the TV's key manager service where the platform provides one. If you still see it on the
-current release, [open an issue](https://github.com/GLinnik21/plx-native/issues/new/choose)
+current release, [open an issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose)
 with your TV model and webOS platform release. If the sign-in screen shows a failure, also use
 **Details → Send report** and quote the **Report ID** it then shows in your issue, as described in
 [Can't sign in, or no servers are found](#cant-sign-in-or-no-servers-are-found). A report on its
@@ -56,21 +56,21 @@ network addresses.
 
 A report carries no name or account, so I can only find yours by its Report ID. Please quote the
 **Report ID** when you ask for help, either in [Discussions >
-Q&A](https://github.com/GLinnik21/plx-native/discussions/categories/q-a) or in a [GitHub
-issue](https://github.com/GLinnik21/plx-native/issues/new/choose), together with your TV model and
+Q&A](https://github.com/andrewmagness/webos-dispatcharr/discussions/categories/q-a) or in a [GitHub
+issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose), together with your TV model and
 webOS platform release.
 
 ## Playback reports `jail_missing_rtkmem`
 
 This is a specific problem on Realtek **k5lp/k3lp** sets: LG's Developer Mode sandbox on some of
-these sets withholds a device (`/dev/rtkmem`) that native video decoding needs. PlxNative detects
+these sets withholds a device (`/dev/rtkmem`) that native video decoding needs. Dispatcharr TV detects
 this and reports it instead of crashing. See the [Known
 issues](../README.md#known-issues) table for which sets are affected.
 
 On a **rooted TV with Homebrew Channel**, the failure screen offers **Repair**, which asks
 Homebrew Channel's elevated service to patch the sandbox. Read the [full repair procedure and its
 limits](native-video-sandbox.md) before using it: it only runs once per app session, and a timeout
-leaves the outcome unknown until you fully close and reopen PlxNative. **Without root, there is
+leaves the outcome unknown until you fully close and reopen Dispatcharr TV. **Without root, there is
 currently no fix.**
 
 Don't use Repair for a plain black screen, a refused transcode, an unsupported codec, or any
@@ -78,7 +78,7 @@ failure other than `jail_missing_rtkmem` — it addresses that one sandbox probl
 
 ## Collecting logs
 
-PlxNative keeps a few small log files on the TV. When you report a problem, they are what lets
+Dispatcharr TV keeps a few small log files on the TV. When you report a problem, they are what lets
 the problem be found. You can fetch them yourself with [webOS Dev
 Manager](install-and-verify.md#2-connect-your-computer-to-the-tv). On a television that is not
 rooted, Dev Manager should be able to download them, because they are readable by the app's group.
@@ -95,14 +95,14 @@ If you are not sure, attach all three. They are small.
 
 ### Where they are
 
-Where the files are depends on which PlxNative you run. The regular release keeps its logs
-directly in `/tmp/`. PlxNative Nightly keeps its own copies in a folder of its own, so it never
+Where the files are depends on which Dispatcharr TV you run. The regular release keeps its logs
+directly in `/tmp/`. Dispatcharr TV Nightly keeps its own copies in a folder of its own, so it never
 overwrites the regular app's logs.
 
 | Install | Where the log files are |
 | --- | --- |
-| PlxNative (release) | directly in `/tmp/`, for example `/tmp/dispatcharrtv-events.log` |
-| PlxNative Nightly | in the folder `/tmp/com.magness.dispatcharrtv.nightly/` |
+| Dispatcharr TV (release) | directly in `/tmp/`, for example `/tmp/dispatcharrtv-events.log` |
+| Dispatcharr TV Nightly | in the folder `/tmp/com.magness.dispatcharrtv.nightly/` |
 
 The three files have the same names in both places:
 
@@ -112,11 +112,11 @@ The three files have the same names in both places:
 
 ### Fetch them before you reopen the app
 
-The event log and the stderr log start empty **every time PlxNative launches**. If you reproduce
-the problem, close PlxNative and open it again, the log of the failure is gone. So:
+The event log and the stderr log start empty **every time Dispatcharr TV launches**. If you reproduce
+the problem, close Dispatcharr TV and open it again, the log of the failure is gone. So:
 
 1. Reproduce the problem.
-2. Leave the app as it is, or just go back to the launcher. Do not launch PlxNative again yet.
+2. Leave the app as it is, or just go back to the launcher. Do not launch Dispatcharr TV again yet.
 3. Fetch the logs, as below.
 
 The crash log is different: it only grows, so earlier crashes stay in it across relaunches. It is
@@ -125,14 +125,14 @@ cleared when the TV restarts, because `/tmp` is.
 ### Fetching them with Dev Manager
 
 1. Open **webOS Dev Manager** on your computer and select your TV. It must be connected the same
-   way you installed PlxNative.
+   way you installed Dispatcharr TV.
 2. Open the **Files** view. It lists the TV's folders, and its breadcrumb bar at the top starts
    at `/`.
-3. Click `/`, then double-click **tmp**. For PlxNative Nightly, then double-click
+3. Click `/`, then double-click **tmp**. For Dispatcharr TV Nightly, then double-click
    **com.magness.dispatcharrtv.nightly**.
 4. Click a log file to select it, then click the **Download** button in the toolbar and choose
    where to save it on your computer.
-5. Attach the downloaded files to your [GitHub issue](https://github.com/GLinnik21/plx-native/issues/new/choose).
+5. Attach the downloaded files to your [GitHub issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose).
    If a file is large, compress it first.
 
 If a file is missing, the app has not run since the TV last restarted, or you are looking in the
@@ -145,7 +145,7 @@ Logs help most with a few facts beside them:
 
 - your TV model (from the sticker on the back, or Settings, then About This TV) and webOS
   platform release;
-- the PlxNative version, and how you installed it (Dev Manager, Homebrew Channel or nightly);
+- the Dispatcharr TV version, and how you installed it (Dev Manager, Homebrew Channel or nightly);
 - whether the item was Direct Play or a chosen quality;
 - what you did and what happened.
 
@@ -153,10 +153,10 @@ On a playback failure screen, the small line at the bottom adds facts the projec
 example:
 
 ```
-PlxNative 0.8.0 · webOS 9.2.4 · k24 · K24_DVB · BOARD_DV_1ST · playback_interrupted
+Dispatcharr TV 0.8.0 · webOS 9.2.4 · k24 · K24_DVB · BOARD_DV_1ST · playback_interrupted
 ```
 
-It reads: the PlxNative version, the webOS release, then what the TV reports about itself — on
+It reads: the Dispatcharr TV version, the webOS release, then what the TV reports about itself — on
 many sets the first of these is the platform codename (`k24` here) rather than the model on the
 sticker, followed by the chip or board and the hardware revision — and last the failure code. Some
 parts can be missing on some TVs. It does not replace your TV model from the sticker; send both.
@@ -186,7 +186,7 @@ never needed to get help.
 
 ## AV1 and VP9 files don't play
 
-PlxNative direct plays AV1 only on a television whose own codec table lists an AV1 decoder, and
+Dispatcharr TV direct plays AV1 only on a television whose own codec table lists an AV1 decoder, and
 VP9 only on one whose table lists a VP9 decoder, and 10-bit (Profile 2) VP9, HDR10 included, only on a
 webOS 4 television, the one family it has been measured on. On any other set, or for a 10-bit VP9 file
 on a newer webOS, the server has to convert the item, which fails when your server can't transcode or
@@ -198,12 +198,12 @@ the television picked up (webOS 4 family only). That is a handful of models. Bot
 people through the [nightly build](nightly-builds.md) first. If your TV
 decodes AV1 or VP9 and you want to try it:
 
-1. Install **PlxNative Nightly** by adding `https://plxnative.com/nightly/repo.json` to Homebrew
+1. Install **Dispatcharr TV Nightly** by adding `https://andrewmagness.github.io/webos-dispatcharr/nightly/repo.json` to Homebrew
    Channel, as the [nightly builds guide](nightly-builds.md) describes. The newest build is always
-   linked from [plxnative.com/nightly/latest.json](https://plxnative.com/nightly/latest.json).
+   linked from [latest.json](https://andrewmagness.github.io/webos-dispatcharr/nightly/latest.json).
 2. Play the AV1 or VP9 item.
 3. If it still doesn't play, [collect the event log](#collecting-logs) before you reopen the app
-   and attach it to a [GitHub issue](https://github.com/GLinnik21/plx-native/issues/new/choose).
+   and attach it to a [GitHub issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose).
    The log's `devcaps:` line says `av1=true` (or `vp9=true`) when the TV reports that decoder, and
    `av1=false` (`vp9=false`) when it doesn't, which tells us right away whether the TV or the app is
    at fault.
@@ -215,13 +215,13 @@ logs](#collecting-logs) before you reopen the app. Include:
 
 - your TV model (from the sticker on the back, or Settings, then About This TV) and webOS
   platform release;
-- the PlxNative version;
+- the Dispatcharr TV version;
 - whether the item was Direct Play or a chosen quality;
 - what happened after you pressed Play.
 
-Report it in [GitHub Issues](https://github.com/GLinnik21/plx-native/issues/new/choose).
+Report it in [GitHub Issues](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose).
 
 If you're sharing an old event log, know that log redaction has improved across releases — a log
-written by a much older PlxNative version can still show an address that a current release would
+written by a much older Dispatcharr TV version can still show an address that a current release would
 scrub before writing it. Where you can, capture a fresh log on the release you're reporting
 against.

@@ -944,7 +944,7 @@ mod loopback_pms {
         let mut ca_params = CertificateParams::new(Vec::<String>::new()).expect("ca params");
         // Distinct subjects: rcgen defaults both to the same CN, which makes OpenSSL read the leaf
         // as self-signed ("error 18") and refuse to chain it to the CA.
-        ca_params.distinguished_name.push(rcgen::DnType::CommonName, "PlxNative test CA");
+        ca_params.distinguished_name.push(rcgen::DnType::CommonName, "Dispatcharr TV test CA");
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
         let ca = ca_params.self_signed(&ca_key).expect("ca cert");

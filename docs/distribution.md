@@ -58,7 +58,7 @@ equal the manifest `id` (`repogen/lintpkg.py` hard-errors otherwise). Schema is
 `content/schemas/packages/PackageInfo.json`, draft 2020-12, **`additionalProperties: false`**:
 
 ```yaml
-title: PlxNative                       # required, <=30 chars
+title: Dispatcharr TV                       # required, <=30 chars
 shortDescription: Native client for Plex Media Server   # optional, <=80 chars
 iconUri: https://…/icon160.png         # required; https: or data:, must return 200
 detailIconUri: https://…/icon320.png   # optional, 320px convention
@@ -883,7 +883,7 @@ Four obligations attach that we don't currently meet:
 
 Naming: their guidelines list *"Use `for Plex` following the name of your application, provided that
 the name of your application is unique"* under **You may**, and *"Use Plex or derivatives thereof in
-the name of your application"* under **You may not**. `PlxNative` is a vowel-dropped "Plex" and sits
+the name of your application"* under **You may not**. `Dispatcharr TV` is a vowel-dropped "Plex" and sits
 near the "derivatives / misspellings" line — grey, low risk, cheap to eliminate. Precedent is
 reassuring: PlexKodiConnect (1.3k stars, "Plex" literally in the name) and Plezy (3k stars, four app
 stores, listed as *"Plezy for Plex"*) both run unmolested. The one Plex DMCA found (2024-03-11,
@@ -893,7 +893,7 @@ stores, listed as *"Plezy for Plex"*) both run unmolested. The one Plex DMCA fou
 `X-Plex-Device-Name: Plex (LG webOS)`). That is exactly Plex's own first-party pattern (their
 documented sample value is `"Plex for Roku"`), it surfaces in the account's authorized-devices list,
 and LG **has** an official Plex app — so a server owner has no way to tell it isn't Plex's. Also
-note `client.rs` uses a *different* product string (`PlxNative`): the plex.tv-facing and PMS-facing
+note `client.rs` uses a *different* product string (`Dispatcharr TV`): the plex.tv-facing and PMS-facing
 identities disagree. *(Small caution: PMS transcode/direct-play decisions can key off client
 identity, so re-run the player suite after renaming.)*
 
@@ -1281,7 +1281,7 @@ release is deliberately small:
 | release audit | completed and pushed | none |
 
 **It replaces the stable install.** A candidate is the stable id, so on a television it installs
-over PlxNative the way an update does; the debug and nightly installs are separate ids
+over Dispatcharr TV the way an update does; the debug and nightly installs are separate ids
 (`docs/two-installs.md`) and are not the package being installed. That is the point — a candidate
 under its own id would not prove what playback does under the shipped one (item 1 of that document's §6).
 Two consequences the prerelease body states for testers: the Homebrew Channel never offers a
@@ -1405,7 +1405,7 @@ re-fetches every manifest, so expect **~1.5–3 h** plus a ~10 min CDN TTL. The 
 compares versions by **plain string equality** — its `versionHigher()` helper is dead code.
 
 **The nightly channel is a custom repository, not a listing.** The webosbrew catalogue's entry is
-keyed to the stable id, so nightlies are served from `https://plxnative.com/nightly/repo.json`
+keyed to the stable id, so nightlies are served from `https://andrewmagness.github.io/webos-dispatcharr/nightly/repo.json`
 (users add it under Homebrew Channel > Settings > Add repository). `ci/nightly.py repo-json`
 builds it from the newest nightly release: the index, that nightly's manifest with an absolute
 `ipkUrl`, and a description page; `pages.yml` stages it after every published nightly. Because the
@@ -1771,14 +1771,14 @@ each carrying exactly two properties, UTF-8 without BOM:
 
 ```json
 {
-  "title": "PlxNative",
+  "title": "Dispatcharr TV",
   "appDescription": "비공식 네이티브 Plex 클라이언트 - Plex와 제휴 관계가 없습니다"
 }
 ```
 
 Three decisions in that file are deliberate and each has a gate behind it in `ci/check-package.py`:
 
-* **The title is NOT translated.** `PlxNative` is the brand `TRADEMARKS.md` reserves, and LG's own
+* **The title is NOT translated.** `Dispatcharr TV` is the brand `TRADEMARKS.md` reserves, and LG's own
   listing shows it verbatim. Every locale carries the same string.
 * **Exactly two properties.** A third would be `pkg/appinfo.json` duplicated — the version would
   then live in a file `ci/bump-version.py`, the release tag guard and every version assertion in
@@ -1815,9 +1815,9 @@ scp-based dev loop never needed. **Consequence worth stating: the localized desc
 *install*, not a deploy.
 
 **The flavour suffix is reapplied when staging, and that is the non-obvious half.**
-`ci/flavor.py` renames a flavoured install's tile `PlxNative debug` precisely so two tiles on one
+`ci/flavor.py` renames a flavoured install's tile `Dispatcharr TV debug` precisely so two tiles on one
 set are not a coin flip. A localized descriptor carrying the bare tracked title would override that
-back to `PlxNative` the moment the set was switched to Korean — restoring the ambiguity in exactly
+back to `Dispatcharr TV` the moment the set was switched to Korean — restoring the ambiguity in exactly
 the locale nobody developing this app is looking at. `stage_resources` reads the suffix off
 `flavor.appinfo_for`'s **output** rather than re-deriving it, so there is still one place that
 decides what a flavoured title looks like, and it raises rather than guesses if that rule ever
@@ -1852,7 +1852,7 @@ section closed anything at all.
    (`make FLAVOR=debug install` — an *install*, not a deploy: the descriptors are packaged, not
    scp'd), then switch the television to 한국어 in *Settings → General → Language → Menu Language*
    and look at the launcher tile and the app's entry in the app list. The tile title should still
-   read `PlxNative debug` (the brand is not translated, and the flavour suffix must survive); the
+   read `Dispatcharr TV debug` (the brand is not translated, and the flavour suffix must survive); the
    *description*, wherever this firmware surfaces one, should be Korean.
 2. **Does SAM need a restart or a reinstall to notice?** webOS OSE's own documentation warns that
    SAM may cache the contents of `appinfo.json` at boot. If the tile does not change on a live

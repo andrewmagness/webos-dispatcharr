@@ -11,7 +11,7 @@
 > exist, at 233 and 1069 lines. §0's done-criterion 9 (`doc_claim_auditor` clean against §11's
 > prose list) is not yet met.
 
-# PlxNative UI restructure — specification v4
+# Dispatcharr TV UI restructure — specification v4
 
 One owner for every state, event and resource; every rule defined in exactly one section and referenced from everywhere else. Sections are numbered so a rule can be cited as §N.M. This version replaces v3 wholesale; it folds in the owner's review (five mandatory fixes, two focus clarifications, four carried remarks) and the six-angle board review (ownership, determinism/privacy, frame cost, focus/hit engine, migration/gates, library boundary), each finding verified against the tree before adoption.
 

@@ -102,7 +102,7 @@ These are not converted into numbered checklist failures, but they remain explic
   and confirm it remains below `requiredMemory: 160`. The earlier approximately 152 MiB peak predates
   the fully exercised bundled CJK face and is not sufficient evidence for this build;
 - install the packaged IPK — **install, not deploy** — switch the set to Korean, and verify the
-  launcher/listing keeps `PlxNative debug` while using the Korean description. Re-check after reboot
+  launcher/listing keeps `Dispatcharr TV debug` while using the Korean description. Re-check after reboot
   for SAM caching and try the documented region-qualified resource layouts if bare `ko` is ignored.
 
 ## 4. Newly device-passing on 2026-08-24

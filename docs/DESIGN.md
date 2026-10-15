@@ -1,4 +1,4 @@
-# PlxNative design system
+# Dispatcharr TV design system
 
 This is an index, not a specification. Every claim below points at the file that actually enforces
 it, because those files are checked by the compiler, by the lint gate, or by a test, and prose is
@@ -32,7 +32,7 @@ From `ui/CLAUDE.md` rule 1, enforced in `rust-modules/ui/src/theme.rs`:
   hue.
 
 No raw colour literal, anywhere. Need a shade that does not exist? Add a role with a doc line saying
-what job it does. The two layers mirror the external PlxNative Design System project
+what job it does. The two layers mirror the external upstream design system project
 (`tokens/primitives.css` plus `tokens/colors.css`), so a palette decision is one edit in each place.
 
 ## Size is a scale

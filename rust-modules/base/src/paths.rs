@@ -254,7 +254,7 @@ fn macos_bundle_resources(_exe: &Path) -> Option<PathBuf> {
 }
 
 /// Where a **bundled macOS app** keeps everything it writes: `~/Library/Application
-/// Support/PlxNative`.
+/// Support/DispatcharrTV`.
 ///
 /// The default runtime root is `/tmp`, which is right on the television and wrong for a Mac app
 /// somebody was sent: `auth.json` lives in this root (see [`session_candidates`]), and `/tmp` is
@@ -272,7 +272,7 @@ fn macos_app_support() -> Option<PathBuf> {
     if home.is_empty() {
         return None;
     }
-    Some(PathBuf::from(home).join("Library/Application Support/PlxNative"))
+    Some(PathBuf::from(home).join("Library/Application Support/DispatcharrTV"))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -973,7 +973,7 @@ mod tests {
         if !super::ENV_STEERABLE {
             return; // a television build has neither concept
         }
-        let sup = std::path::PathBuf::from("/Users/x/Library/Application Support/PlxNative");
+        let sup = std::path::PathBuf::from("/Users/x/Library/Application Support/DispatcharrTV");
         assert_eq!(
             super::resolve_runtime_dir(None, Some(sup.clone()), super::STABLE_APP_ID),
             sup

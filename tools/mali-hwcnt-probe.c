@@ -1,7 +1,7 @@
 /*
  * Standalone userspace probe for the legacy Midgard r12p0 vinstr reader.
  *
- * This is deliberately not linked into PlxNative.  It proves the kernel ABI and mapping contract
+ * This is deliberately not linked into Dispatcharr TV.  It proves the kernel ABI and mapping contract
  * independently before the in-process Rust sampler is enabled.  No gator module, sysfs write,
  * clock/power-policy change, or privileged kernel operation is involved.
  */

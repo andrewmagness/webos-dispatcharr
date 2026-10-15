@@ -281,7 +281,7 @@ CFLAGS       = --sysroot=$(SYSROOT) -O2 -fno-omit-frame-pointer -funwind-tables 
 # --remap-path-prefix cannot touch — that flag is rustc's, and GCC never sees it. Found on the
 # first release build that ever combined SYMBOLS=1 with ci/check-elf.sh's build-host-identity
 # scan (both existed before; this exact pairing had not): pkg/dispatcharrtv, built with SYMBOLS=1 on
-# CI, carried five `/home/runner/work/plx-native/plx-native/.webos-ndk/…/sysroot/usr/include…`
+# CI, carried five `/home/runner/work/webos-dispatcharr/webos-dispatcharr/.webos-ndk/…/sysroot/usr/include…`
 # strings and the bare checkout root, both from GCC's DWARF, not rustc's. Same broad-then-
 # specific order as RUST_REMAP and the same reasoning: WEBOS_SDK defaults under $(HOME) but is
 # user-overridable to anywhere.
@@ -1072,11 +1072,12 @@ telemetry-local:
 	@set -e; \
 	  dsn=$$(gh variable get PLX_SENTRY_DSN_DEV 2>/dev/null || true); \
 	  key=$$(gh variable get PLX_POSTHOG_KEY_DEV 2>/dev/null || true); \
+	  org=$$(gh variable get SENTRY_ORG 2>/dev/null || true); \
 	  if [ -z "$$dsn$$key" ]; then \
 	    echo "telemetry-local: neither PLX_SENTRY_DSN_DEV nor PLX_POSTHOG_KEY_DEV is set on the repo"; \
 	    exit 1; \
 	  fi; \
-	  python3 -c 'import json,sys; json.dump({"_comment":["Written by `make telemetry-local`. GITIGNORED. DEV credentials only — the production pair lives solely in GitHub repository variables and is injected by the release workflow.","No auth token here: gh cannot read secrets, and sentry-cli runs in CI."],"sentry_dsn_dev":sys.argv[1],"posthog_key_dev":sys.argv[2],"sentry_org":"gleb-linnik","sentry_project":"plx-native-dev","posthog_host":"https://eu.i.posthog.com"}, open("$(TELEMETRY_JSON)","w"), indent=2)' "$$dsn" "$$key"; \
+	  python3 -c 'import json,sys; json.dump({"_comment":["Written by `make telemetry-local`. GITIGNORED. DEV credentials only — the production pair lives solely in GitHub repository variables and is injected by the release workflow.","No auth token here: gh cannot read secrets, and sentry-cli runs in CI."],"sentry_dsn_dev":sys.argv[1],"posthog_key_dev":sys.argv[2],"sentry_org":sys.argv[3],"sentry_project":"dispatcharr-tv-dev","posthog_host":"https://eu.i.posthog.com"}, open("$(TELEMETRY_JSON)","w"), indent=2)' "$$dsn" "$$key" "$$org"; \
 	  chmod 0600 $(TELEMETRY_JSON); \
 	  echo "telemetry-local: wrote $(TELEMETRY_JSON) (dev credentials; environment=development)"
 
@@ -1832,11 +1833,12 @@ symbols-libs: $(SO_SYMBOLS)
 # Validate and upload the exact debug file that matches `pkg/dispatcharrtv`. This is a separate target
 # so a development build used for an on-device crash test gets the same fail-closed pairing as CI.
 # `SENTRY_AUTH_TOKEN` is read only from the process environment and is never echoed or written.
-SENTRY_ORG     ?= gleb-linnik
+# No default organization: this project has none configured yet (the upstream's is not ours).
+SENTRY_ORG     ?= $(call telemetry_val,sentry_org)
 # A local symbol build carries the development DSN, so its DIF belongs beside the events in the
-# development project. Release CI supplies SENTRY_PROJECT=plx-native explicitly; a checkout with
+# development project. Release CI supplies SENTRY_PROJECT=dispatcharr-tv explicitly; a checkout with
 # no telemetry cache keeps that production fallback for deliberate one-off invocations.
-SENTRY_PROJECT ?= $(or $(call telemetry_val,sentry_project),plx-native)
+SENTRY_PROJECT ?= $(or $(call telemetry_val,sentry_project),dispatcharr-tv)
 SENTRY_CLI     ?= npx --yes @sentry/cli@latest
 sentry-symbols: symbols symbols-libs
 	@test -n "$${SENTRY_AUTH_TOKEN:-}" || { \

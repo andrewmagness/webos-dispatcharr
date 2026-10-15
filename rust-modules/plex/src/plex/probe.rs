@@ -1658,7 +1658,7 @@ mod tests {
         );
     }
 
-    /// PLX-NATIVE-10's shape: an owned server on this LAN whose every HTTPS route failed from the
+    /// upstream Sentry issue 10's shape: an owned server on this LAN whose every HTTPS route failed from the
     /// television (the relay included) and whose RFC 1918 plaintext answer verified the machine.
     fn eligible_evidence() -> InsecureEvidence {
         InsecureEvidence {

@@ -1,4 +1,4 @@
-//! plx_media: the media layer of the PlxNative application core.
+//! plx_media: the media layer of the Dispatcharr TV application core.
 //!
 //! Demux (`ff`, the bundled FFmpeg), the HTTPS media plane (`curlio`), the strict HLS parser (`hls`),
 //! the adaptive-bitrate controller (`abr`), the access-unit queues (`aq`), the buffer-feed engine

@@ -266,7 +266,7 @@ existing lines instead.
 
 **"May a credential go to this origin" has ONE answer: `grant::credential_allowed`** (or
 `grant::allowed_under` where a pure function receives the policy). It is the build's
-`CredentialPolicy` OR a live `PlaintextGrant` for that exact origin (PLX-NATIVE-10). Whoever puts a
+`CredentialPolicy` OR a live `PlaintextGrant` for that exact origin (upstream Sentry issue 10). Whoever puts a
 particular SERVER's token on an origin — registry and endpoint admission — asks
 `grant::allowed_for(policy, machine_id, origin)`: a grant admits only the machine it was minted
 for. A remembered (cached) origin asks `grant::remembered_allowed`: the policy alone, never a

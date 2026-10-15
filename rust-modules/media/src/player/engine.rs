@@ -5439,7 +5439,7 @@ mod load_in_flight_tests {
         );
     }
 
-    /// PLX-NATIVE-15: the Auto Original's Load passes its budget, the HLS recovery reloads while
+    /// upstream Sentry issue 15: the Auto Original's Load passes its budget, the HLS recovery reloads while
     /// the Load is still inside `sf_load`, the reload's teardown parks that Load (clearing
     /// `load_timed_out` with the rest of the session) and the start is refused. The failure was
     /// published with no cause, so the report said `unspecified`; the cause is the timeout.

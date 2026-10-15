@@ -1,7 +1,7 @@
 ---
 name: profile-tv
 description: >
-  Diagnose a live PlxNative process that is slow, janky, frozen or consuming unexpected CPU/GPU
+  Diagnose a live Dispatcharr TV process that is slow, janky, frozen or consuming unexpected CPU/GPU
   on the rooted LG TV. Use for stack samples, a missing heartbeat while the PID still exists,
   frame pacing, Mali IRQ activity, HWCNT attribution, or deciding which graphics profiler explains
   a regression. If the process died, use crash-triage instead.
@@ -9,7 +9,7 @@ description: >
 
 # Profile a live app on the TV
 
-This is opt-in developer tooling. None of it runs in PlxNative unless a command or dev trigger was
+This is opt-in developer tooling. None of it runs in Dispatcharr TV unless a command or dev trigger was
 explicitly armed, and the stack/IRQ helpers are temporary root processes that never enter an ipk.
 
 ## First split: dead or alive

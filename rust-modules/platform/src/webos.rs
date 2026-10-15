@@ -270,7 +270,7 @@ fn probe_jail() {
 /// (<https://webostv.developer.lge.com/develop/guides/back-button>, LG vendor documentation — it
 /// describes the WEB runtime's `webOS.platformBack()`, which a native app cannot call, but it is
 /// LG stating what the ROOT press means on this platform). The dev set is 4.10.2, so "launch the
-/// Home launcher" is the behaviour to reproduce, and the app's previous "Exit PlxNative?" question
+/// Home launcher" is the behaviour to reproduce, and the app's previous "Exit Dispatcharr TV?" question
 /// was the webOS 6+ shape applied to a webOS 4 television — and it quit, which even there is only
 /// one of the two answers.
 ///
@@ -1081,7 +1081,7 @@ mod tests {
         assert!(hw.model.is_empty() && hw.board.is_empty() && hw.hw_revision.is_empty());
     }
 
-    /// PLX-NATIVE-15's set: both nyx files yielded nothing, so `model`, `soc` and the webOS release
+    /// upstream Sentry issue 15's set: both nyx files yielded nothing, so `model`, `soc` and the webOS release
     /// were empty strings, indistinguishable from a probe that never ran. The SoC is still
     /// recoverable from the machine name the jail pre-flight already reads.
     #[test]

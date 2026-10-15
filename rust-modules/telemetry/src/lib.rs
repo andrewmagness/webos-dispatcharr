@@ -1,4 +1,4 @@
-//! plx_telemetry: the telemetry layer of the PlxNative application core.
+//! plx_telemetry: the telemetry layer of the Dispatcharr TV application core.
 //!
 //! `telemetry` is consent, the opt-in crash and usage channels (Sentry and PostHog), the spool and
 //! the worker that drains it; `diag` is the typed usage-event schema they carry. It is the

@@ -1,4 +1,4 @@
-# Feeds the live build-time page at https://plxnative.com/ci/ (site/ci/index.html).
+# Records CI run history on the orphan `ci-metrics` branch.
 #
 # After a CI / Simulator CI / Nightly run finishes this appends the new runs, with their per-job
 # seconds, conclusion and attempt, to ci-history.json on the orphan `ci-metrics` branch

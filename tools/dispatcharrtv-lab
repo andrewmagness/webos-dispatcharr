@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dispatcharrtv-lab — receive diagnostic snapshots from PlxNative running in LG Cloud Test Lab.
+"""dispatcharrtv-lab — receive diagnostic snapshots from Dispatcharr TV running in LG Cloud Test Lab.
 
 LG rents us physical televisions and gives us a picture and a virtual remote. It gives us no
 console, no ssh, no stdout and no way to download a file, so a bug reproduced on a k8hpp webOS 10
@@ -22,7 +22,7 @@ transfer with no television and no router in the room.
 
 # The exposed surface, deliberately tiny
 
-For the life of a session `lab.plxnative.com:<port>` is a port on the public internet that reaches
+For the life of a session `lab.example.com:<port>` is a port on the public internet that reaches
 this process. The public surface is two authenticated TV routes: diagnostic upload and a held
 command poll. The only enqueue/status routes are loopback-only, so the session secret in the `.ipk`
 cannot be used by the television (or anybody at its network vantage point) to create commands.
@@ -31,7 +31,7 @@ subprocess. The whole server stays small enough to read end to end.
 
 # Why a self-signed certificate is the stronger choice here
 
-The alternative is a CA-issued certificate for `lab.plxnative.com`, which means ACME plumbing, a
+The alternative is a CA-issued certificate for `lab.example.com`, which means ACME plumbing, a
 renewal story and a private key living on a laptop. Instead each session generates its own
 certificate and the app pins its public key (`CURLOPT_PINNEDPUBLICKEY`, checked by libcurl
 independently of CA verification). The device then trusts exactly one key rather than the
@@ -79,7 +79,7 @@ SESSION_FILE = os.path.join(HOME, "session.json")
 UPLOAD_DIR = os.path.join(HOME, "uploads")
 SERVER_LOG = os.path.join(HOME, "receiver.log")
 
-DEFAULT_HOST = "lab.plxnative.com"
+DEFAULT_HOST = "lab.example.com"
 DEFAULT_PORT = 39443
 """The FIXED external port. Fixed so the app needs no discovery: the endpoint is a constant of the
 lab build, and the only thing that changes per session is the credential."""
@@ -902,7 +902,7 @@ def cmd_clear(args) -> int:
 
 
 def _dns_matches(st: dict) -> bool | None:
-    """Does `lab.plxnative.com` actually resolve to the address the router says it has?
+    """Does `lab.example.com` actually resolve to the address the router says it has?
 
     The one cheap check that the whole path exists BEFORE a tester spends a rented lab hour on it.
     `None` when either half is unknown (no UPnP, no DNS) rather than a confident `False`.
@@ -1074,7 +1074,7 @@ def selftest(_args) -> int:
             fails.append(name)
 
     with tempfile.TemporaryDirectory() as tmp:
-        cert, pin = make_cert(tmp, "lab.plxnative.com")
+        cert, pin = make_cert(tmp, "lab.example.com")
         check("certificate + SPKI pin", pin.startswith("sha256//") and len(pin) > 50, pin)
         # the pin is what the app will compare against: recomputing it from the cert must agree
         check("pin is stable", spki_pin(cert) == pin)

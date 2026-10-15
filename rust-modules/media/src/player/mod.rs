@@ -695,7 +695,7 @@ pub fn state(ps: &crate::route::PlaybackSession) -> shared::PlaybackState {
 }
 
 /// The one line that makes a phone photograph of the failure read-out a complete report:
-/// `PlxNative 0.6.0-dev · webOS 4.10.2 · 43LM6300PVB · m3r · tv_pipeline`. It exists because
+/// `Dispatcharr TV 0.6.0-dev · webOS 4.10.2 · 43LM6300PVB · m3r · tv_pipeline`. It exists because
 /// issue #63 arrived as a title, a model name and nothing else — no version, no reason — and the
 /// only surface carrying those facts (Stats for nerds) is reachable from the player's overflow
 /// menu alone and is force-closed on leaving playback, so a failed session had no way to show them.

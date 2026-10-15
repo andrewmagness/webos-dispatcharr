@@ -73,7 +73,7 @@ can reach Settings without a pre-seeded session.
 The app reaches it as any other server: `make sim-shot SIM_PMS=127.0.0.1 SIM_PORT=32499` with
 any non-empty string in `$SIM_DIR/dispatcharrtv-token` (the token is accepted, never checked).
 
-`--plaintext-only-lan` reproduces Sentry PLX-NATIVE-10: a person's OWN server (`owned=true`) on
+`--plaintext-only-lan` reproduces upstream Sentry issue 10: a person's OWN server (`owned=true`) on
 their LAN, whose owner never turned on port forwarding, so every HTTPS route plex.tv could name
 for it — a `*.plex.direct` connection AND relay — fails, while the plaintext local address still
 answers. It makes `/api/v2/resources` return exactly ONE resource, no relay connection at all,
@@ -242,7 +242,7 @@ VERIFY_PREFS = [
     {"id": "subtitleLanguage", "value": "en"},
     {"id": "subtitleMode", "value": "2"},
 ]
-# `--plaintext-only-lan` (PLX-NATIVE-10). Not a name — the fixed 32-hex label a real
+# `--plaintext-only-lan` (upstream Sentry issue 10). Not a name — the fixed 32-hex label a real
 # `*.plex.direct` hostname carries ahead of the dashed IP; the closed alphabet governs the
 # synthetic library's titles/tags, not a protocol constant like this or "h264".
 PLEX_DIRECT_HASH = "0123456789abcdef0123456789abcdef"
@@ -1528,7 +1528,7 @@ def colour_for(path):
     return (64 + h[0] % 128, 64 + h[1] % 128, 64 + h[2] % 128)
 
 
-# ---------------------------------------------------------------- PLX-NATIVE-10 (insecure LAN) --
+# ---------------------------------------------------------------- upstream Sentry issue 10 (insecure LAN) --
 
 def detect_lan_ip():
     """This host's primary LAN IPv4, best-effort. A UDP socket's `connect` only performs a routing
@@ -1582,7 +1582,7 @@ def open_insecure_fail_listener(fail_mode):
 
 
 def plaintext_only_lan_resources(lib, ip, http_port, fail_port, access_token):
-    """The exact `/api/v2/resources` PLX-NATIVE-10 needs: ONE owned server, no relay connection at
+    """The exact `/api/v2/resources` upstream Sentry issue 10 needs: ONE owned server, no relay connection at
     all, and two connections — the failing `https://…plex.direct` one and the plaintext LAN one,
     which is this same mock (`ip`:`http_port`). Field names match what
     `rust-modules/plex/src/plex/account.rs`'s `Resource`/`Connection` deserialize (`clientIdentifier`,
@@ -2550,7 +2550,7 @@ def serve(port, seed=1, host="127.0.0.1", verbose=False, movies=48, rail_fixture
     app on the simulator is on this machine, and a LAN-facing listener would be one more thing
     the outbound guard has to reason about. `catalog` serves the demo library instead of a seed.
 
-    `plaintext_only_lan=True` additionally answers `/api/v2/resources` (PLX-NATIVE-10; see the
+    `plaintext_only_lan=True` additionally answers `/api/v2/resources` (upstream Sentry issue 10; see the
     module doc) and opens the failing-HTTPS listener `insecure_fail_mode` names. `advertise_ip`
     picks the LAN address that resources row carries; `None` tries `detect_lan_ip()` and falls
     back to `"127.0.0.1"` with a stderr warning if nothing routes. The chosen address and the
@@ -2624,7 +2624,7 @@ def serve(port, seed=1, host="127.0.0.1", verbose=False, movies=48, rail_fixture
                 ip = "127.0.0.1"
                 print("mock_pms: WARNING --plaintext-only-lan found no routable LAN IPv4 to "
                       "advertise; falling back to 127.0.0.1, which the app classifies as "
-                      "loopback, NOT LAN-eligible — PLX-NATIVE-10's consent path will never "
+                      "loopback, NOT LAN-eligible — upstream Sentry issue 10's consent path will never "
                       "trigger against this fallback. Pass --advertise-ip with a real LAN "
                       "address.", file=sys.stderr, flush=True)
         fail_port, listener = open_insecure_fail_listener(insecure_fail_mode)
@@ -3041,7 +3041,7 @@ def _selftest_link():
 
 
 def _selftest_plaintext_only_lan():
-    """PLX-NATIVE-10: exactly two connections and no relay, the https one really fails a TLS
+    """upstream Sentry issue 10: exactly two connections and no relay, the https one really fails a TLS
     handshake (or is really unreachable, in the other fail mode), and the http one really answers
     `/identity` tokenless with the resource's own machineIdentifier. `advertise_ip="127.0.0.1"` is
     explicit here, so this is hermetic on a sandboxed CI runner with no real LAN route — it is
@@ -3123,7 +3123,7 @@ def _selftest_plaintext_only_lan():
 
 
 def main():
-    # The PLX-NATIVE-10 reproduction (module doc) is the help's epilog, so `--help` carries it.
+    # The upstream Sentry issue 10 reproduction (module doc) is the help's epilog, so `--help` carries it.
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  epilog=__doc__[__doc__.index("`--plaintext-only-lan` reproduces"):],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -3152,7 +3152,7 @@ def main():
                          "(custom.collection.<section>.<rk>.<n>), whose headings link to the collection")
     ap.add_argument("--hero", help="with --catalog: the film at the head of Continue Watching (the hero)")
     ap.add_argument("--plaintext-only-lan", action="store_true",
-                    help="PLX-NATIVE-10: /api/v2/resources answers with ONE owned server, no "
+                    help="upstream Sentry issue 10: /api/v2/resources answers with ONE owned server, no "
                          "relay, whose only HTTPS route (a plex.direct connection) fails before "
                          "the app's own logic runs, and whose plaintext http://<advertise-ip>:"
                          "<port> connection is this same server, answering /identity tokenless. "

@@ -366,7 +366,7 @@ selecting the tile again lands straight back on it. It does not ask, and it does
 remote's own EXIT key still terminates (checklist #38), and a script that wants the app closed uses
 SAM's `closeByAppId` exactly as
 `make kill`, `tests/run.py` and `tools/tv-session.sh` already do — which is why the
-`/tmp/dispatcharrtv-noexitconfirm` bypass went away with the "Exit PlxNative?" alert rather than being
+`/tmp/dispatcharrtv-noexitconfirm` bypass went away with the "Exit Dispatcharr TV?" alert rather than being
 kept: it existed only to let a caller quit by pressing BACK, and BACK is no longer a quit for
 anybody.
 

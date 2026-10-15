@@ -118,7 +118,7 @@ fn unauthorized() -> &'static str { plx_platform::i18n::msg::widgets_source_unau
 /// Did not answer at all — refused, timed out, or unresolvable.
 fn unreachable() -> &'static str { plx_platform::i18n::msg::widgets_source_unreachable() }
 /// Answered, verified as the right machine, but only over a transport this build may not put a
-/// credential on without the person's consent (issue #95, PLX-NATIVE-10). A different kind of fault from [`unreachable`] again — the server IS
+/// credential on without the person's consent (issue #95, upstream Sentry issue 10). A different kind of fault from [`unreachable`] again — the server IS
 /// there, it is the connection to it that has to change (HTTPS), not the server itself.
 ///
 /// Deliberately NOT the consent flow's "without encryption" wording: this row names a state no

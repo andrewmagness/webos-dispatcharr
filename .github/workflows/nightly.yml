@@ -191,7 +191,7 @@ jobs:
       nightly-date: ${{ needs.plan.outputs.date }}
       # The DEVELOPMENT telemetry pair — a nightly is unreleased and untested on a television, so
       # its crash reports and usage events belong in the project's development project
-      # (`plx-native-dev`), not mixed into what a real release reports. build-package.yml's own
+      # (`dispatcharr-tv-dev`), not mixed into what a real release reports. build-package.yml's own
       # build step asserts this pair specifically for `telemetry: development`.
       telemetry: development
       artifact: nightly-assets
@@ -322,7 +322,7 @@ jobs:
           gh release create "$TAG" \
             "dist/$IPK" dist/nightly.sha256 dist/com.magness.dispatcharrtv.nightly.manifest.json dist/ffmpeg-*.tar.xz dist/build-ffmpeg.sh dist/dispatcharrtv-source-*.tar.gz* \
             --target "$SHA" \
-            --title "PlxNative $LABEL" \
+            --title "Dispatcharr TV $LABEL" \
             --prerelease \
             --latest=false \
             --notes-file "$RUNNER_TEMP/notes.md"

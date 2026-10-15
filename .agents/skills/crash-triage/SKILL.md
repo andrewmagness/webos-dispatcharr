@@ -26,7 +26,7 @@ stack, and unwinds every other Linux LWP remotely through libunwind's ptrace acc
 with function names), attaching and detaching per thread. It records up to 128 frames for the
 crashing thread plus up to 32 for each other thread, registers, modules, Linux/webOS versions and
 build ids. Its transport is disabled; the next
-healthy PlxNative launch sanitises the envelope and sends it from the ordinary telemetry spool.
+healthy Dispatcharr TV launch sanitises the envelope and sends it from the ordinary telemetry spool.
 That Sentry event **is a
 backtrace** when it contains multiple frames.
 

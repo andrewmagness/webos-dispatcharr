@@ -28,7 +28,7 @@ kill. Full design + migration status: `docs/ui-system-migration.md`.
    no such shade, as an exact 8-bit code via `rgb8`. Two roles landing on one stop is expected and
    stays two roles (`ACCENT` and `TEXT_PRIMARY` are both Cool 0): retuning the focus fill must not
    restyle every title on screen. Overlays are `with_a(WHITE, a)` on the measured alpha ramp — a new
-   overlay is a weight, never a new hue. The layering mirrors the `PlxNative Design System` project
+   overlay is a weight, never a new hue. The layering mirrors the `upstream design system` project
    (`tokens/primitives.css` + `tokens/colors.css`), so a palette decision is one edit in each.
 
 2. **Never write a raw text size — every text size in the UI is a `theme::size` token.** The named

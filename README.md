@@ -58,7 +58,7 @@ server.
 ## Building
 
 The app is Rust (with a small C shim) cross-compiled to 32-bit ARM. [`docs/building.md`](docs/building.md)
-covers the toolchain and the test loop; it is inherited from PlxNative and still being adapted.
+covers the toolchain and the test loop; it is inherited from the upstream project and still being adapted.
 `make check` runs the host test suite and lint gates, and `make sim-linux` builds the desktop
 simulator.
 

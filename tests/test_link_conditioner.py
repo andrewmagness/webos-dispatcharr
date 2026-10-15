@@ -152,8 +152,16 @@ class OnTheMock(unittest.TestCase):
         self.post({"spec": "listing=none:latency=100"})
         urllib.request.urlopen(urllib.request.Request(self.base + "/_mock/wire", method="DELETE"), timeout=5)
         self.timed("/library/sections/1/all?X-Plex-Container-Start=24&X-Plex-Container-Size=24")
-        rows = json.loads(urllib.request.urlopen(self.base + "/_mock/wire", timeout=5).read())["rows"]
-        row = next(r for r in rows if r["path"] == "/library/sections/1/all")
+        # The server appends the row after the last byte is written, so the client can read the
+        # log before its own request is in it: wait for the row rather than racing the handler.
+        deadline = time.monotonic() + 2.0
+        while True:
+            rows = json.loads(urllib.request.urlopen(self.base + "/_mock/wire", timeout=5).read())["rows"]
+            row = next((r for r in rows if r["path"] == "/library/sections/1/all"), None)
+            if row is not None or time.monotonic() > deadline:
+                break
+            time.sleep(0.01)
+        self.assertIsNotNone(row, "the wire log never recorded the page")
         self.assertEqual((row["start"], row["size"], row["class"]), ("24", "24", "listing"))
         self.assertGreaterEqual(row["t_done"] - row["t_recv"], 0.09)
 

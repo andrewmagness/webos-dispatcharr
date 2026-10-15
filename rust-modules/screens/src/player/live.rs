@@ -7,11 +7,14 @@
 //! - The number keys type a channel number. It is tuned [`TYPED_COMMIT_MS`] after the last digit,
 //!   at once on OK, or at [`MAX_DIGITS`]. A number no channel carries says so for a moment.
 //! - OK shows the banner (channel, now/next, progress), or hides it if it is up. Every tune shows
-//!   it for [`BANNER_MS`].
+//!   it for [`BANNER_MS`]. A tap acts on its RELEASE, because the same key held is recall.
+//! - Holding OK for [`HOLD_MS`] recalls the channel watched before this one (the owner's choice,
+//!   2026-10-14: the Magic Remote has no recall key). Holding it again goes back.
 //! - BACK, STOP and EXIT are not live keys: they leave the player for the Guide as they always did.
 //! - LEFT/RIGHT and the transport keys do nothing on live TV. There is nothing to seek in, and a
 //!   paused live stream would fall behind the broadcast.
 
+use plx_machine::machine::Edge;
 use plx_media::route::LiveTune;
 use plx_ui::consts::{self, Key};
 use std::os::raw::c_uint;
@@ -24,6 +27,10 @@ pub const TYPED_COMMIT_MS: u32 = 2_000;
 pub const MISSING_MS: u32 = 2_500;
 /// The longest number typed before it is tuned without waiting.
 pub const MAX_DIGITS: usize = 4;
+/// How long OK must be held to recall the last channel.
+pub const HOLD_MS: u32 = 600;
+/// An OK still down this long with no repeat and no release lost its key-up: forget it.
+const OK_STALE_MS: u32 = 3_000;
 
 /// A press the live player answers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +88,9 @@ pub struct LiveControls {
     /// A typed number that matched no channel, shown until `missing_until`.
     pub missing: String,
     pub missing_until: u32,
+    /// The tick OK went down on, while it is down, and whether this hold has already recalled.
+    pub ok_down: Option<u32>,
+    pub ok_fired: bool,
 }
 
 impl LiveControls {
@@ -108,6 +118,10 @@ impl LiveControls {
             self.seen = Some(key);
             self.seen_ms = now;
             self.banner_until = now.wrapping_add(BANNER_MS);
+        }
+        if self.ok_down.is_some_and(|t0| !before(now, t0.wrapping_add(OK_STALE_MS))) {
+            self.ok_down = None;
+            self.ok_fired = false;
         }
         if !self.typed.is_empty() && !before(now, self.typed_at.wrapping_add(TYPED_COMMIT_MS)) {
             return self.commit(tune, now);
@@ -143,6 +157,42 @@ impl LiveControls {
                 LiveAction::None
             }
             LivePress::Swallow => LiveAction::None,
+        }
+    }
+
+    /// OK's three edges. Down only starts the press; a repeat [`HOLD_MS`] in is the hold, which
+    /// recalls once; the release of a press that did not recall is the tap.
+    pub fn ok(&mut self, tune: &LiveTune, edge: Edge, now: u32) -> LiveAction {
+        match edge {
+            Edge::Down => {
+                self.ok_down = Some(now);
+                self.ok_fired = false;
+                LiveAction::None
+            }
+            Edge::Repeat => match self.ok_down {
+                Some(t0) if !self.ok_fired && !before(now, t0.wrapping_add(HOLD_MS)) => {
+                    self.ok_fired = true;
+                    self.typed.clear();
+                    self.recall(tune, now)
+                }
+                _ => LiveAction::None,
+            },
+            Edge::Up => {
+                let pressed = self.ok_down.take().is_some();
+                let fired = std::mem::take(&mut self.ok_fired);
+                if pressed && !fired { self.key(tune, LivePress::Ok, now) } else { LiveAction::None }
+            }
+        }
+    }
+
+    /// The channel watched before this one; with none to go back to, the banner says where we are.
+    fn recall(&mut self, tune: &LiveTune, now: u32) -> LiveAction {
+        match tune.previous.filter(|&p| p != tune.index && tune.lineup.channels.get(p).is_some_and(|c| c.tunable())) {
+            Some(p) => LiveAction::Tune(tune.to(p)),
+            None => {
+                self.banner_until = now.wrapping_add(BANNER_MS);
+                LiveAction::None
+            }
         }
     }
 
@@ -234,6 +284,47 @@ mod tests {
         assert!(!c.banner_visible(1_000), "up: OK hides it");
         c.key(&t, LivePress::Ok, 2_000);
         assert!(c.banner_visible(2_000 + BANNER_MS - 1), "down: OK shows it");
+    }
+
+    #[test]
+    fn a_tap_of_ok_acts_on_release_and_a_hold_recalls_once() {
+        let mut c = LiveControls::default();
+        let t = LiveTune { previous: Some(2), ..tune(0) };
+        c.tick(Some(&t), 0);
+        // A tap: nothing on the press, the banner toggles on the release.
+        assert_eq!(c.ok(&t, Edge::Down, 6_000), LiveAction::None);
+        assert!(!c.banner_visible(6_000), "nothing on the press");
+        assert_eq!(c.ok(&t, Edge::Repeat, 6_100), LiveAction::None, "a short hold is still a tap");
+        assert_eq!(c.ok(&t, Edge::Up, 6_200), LiveAction::None);
+        assert!(c.banner_visible(6_200), "the tap showed the banner");
+        // A hold: the repeat past HOLD_MS recalls, once, and the release does nothing more.
+        c.ok(&t, Edge::Down, 9_000);
+        assert_eq!(tuned_to(c.ok(&t, Edge::Repeat, 9_000 + HOLD_MS)), Some(2), "recall");
+        assert_eq!(c.ok(&t, Edge::Repeat, 9_000 + HOLD_MS + 50), LiveAction::None, "once per hold");
+        let banner = c.banner_until;
+        assert_eq!(c.ok(&t, Edge::Up, 9_900), LiveAction::None);
+        assert_eq!(c.banner_until, banner, "the release of a hold is not a tap");
+    }
+
+    #[test]
+    fn recall_with_nowhere_to_go_back_shows_where_we_are() {
+        let mut c = LiveControls::default();
+        let t = tune(1);
+        c.tick(Some(&t), 0);
+        c.ok(&t, Edge::Down, 7_000);
+        assert_eq!(c.ok(&t, Edge::Repeat, 7_000 + HOLD_MS), LiveAction::None);
+        assert!(c.banner_visible(7_000 + HOLD_MS));
+    }
+
+    #[test]
+    fn a_lost_ok_release_is_forgotten_rather_than_read_as_a_hold() {
+        let mut c = LiveControls::default();
+        let t = LiveTune { previous: Some(2), ..tune(0) };
+        c.tick(Some(&t), 0);
+        c.ok(&t, Edge::Down, 1_000);
+        c.tick(Some(&t), 1_000 + OK_STALE_MS);
+        assert_eq!(c.ok_down, None);
+        assert_eq!(c.ok(&t, Edge::Repeat, 1_000 + OK_STALE_MS + 10), LiveAction::None, "no press, no hold");
     }
 
     #[test]

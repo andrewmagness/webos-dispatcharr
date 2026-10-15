@@ -64,7 +64,7 @@ pub const SHAPE: &str =
     "PlayerScreen{hud:{focus:i32,btn:i32,tab:i32,until:u32,dismissed:bool,visible_at_press:bool,\
      offer:Option<(u32,i64)>,was_standin:bool},scrub:{dir:i32,hold:bool,reveal:bool,drag:bool,\
      ns:i64,commit_at:u32},origin:Option<u32>,repair_alert:{open:bool,confirm:bool,scroll:u32},\
-     live:{seen:Option<(u64,i64)>,seen_ms:u32,banner_until:u32,typed:str,typed_at:u32,missing:str,missing_until:u32}}";
+     live:{seen:Option<(u64,i64)>,seen_ms:u32,banner_until:u32,typed:str,typed_at:u32,missing:str,missing_until:u32,ok_down:Option<u32>,ok_fired:bool}}";
 
 /// **The page this playback was launched from**, as the container's own identity.
 ///
@@ -842,13 +842,15 @@ impl PlayerScreen {
         if plx_appkit::player_hud::transport_hidden(ps) && matches!(press, live::LivePress::Ok | live::LivePress::Swallow) {
             return None;
         }
-        // Only the press itself acts: a held CH▲ does not race through the lineup, one Load per
-        // repeat, and the release of an OK is not a second OK.
-        if edge == Edge::Down {
-            let action = self.live.key(tune, press, now);
-            Self::live_act(action, fx);
-            plx_machine::idle::invalidate();
-        }
+        // OK is answered on all three edges (tap on release, hold for recall). Everything else
+        // acts on the press alone: a held CH▲ does not race through the lineup, one Load a repeat.
+        let action = match press {
+            live::LivePress::Ok => self.live.ok(tune, edge, now),
+            _ if edge == Edge::Down => self.live.key(tune, press, now),
+            _ => return Some(Handled::Yes),
+        };
+        Self::live_act(action, fx);
+        plx_machine::idle::invalidate();
         Some(Handled::Yes)
     }
 
@@ -1409,6 +1411,10 @@ impl LogicalState for PlayerScreen {
             .u32(self.live.typed_at)
             .str(&self.live.missing)
             .u32(self.live.missing_until);
+        c.option(self.live.ok_down.as_ref(), |c, t| {
+            c.u32(*t);
+        });
+        c.bool(self.live.ok_fired);
     }
     fn probe(&self, out: &mut String) {
         out.push_str(WORD);
@@ -2845,9 +2851,10 @@ mod repair_confirmation_tests {
         let reqs = deliver(&mut page, &ps, None, key_event(0, consts::WCODE_CH_UP_KEY));
         assert_eq!(reqs, vec![PlayerReq::Tune(here.to(1))]);
         assert!(deliver(&mut page, &ps, None, key_event(b'3' as u32, 0)).is_empty(), "a digit waits");
-        let ok = ScreenEvent::Input(InputEvent { kind: InputKind::Key { key: plx_machine::machine::Key::Ok, sym: 0, wcode: 0,
-            edge: Edge::Down, at_edge: false }, at: Tick::default(), source: Source::Sdl });
-        assert_eq!(deliver(&mut page, &ps, None, ok), vec![PlayerReq::Tune(here.to(2))], "OK tunes it at once");
+        let ok = |edge| ScreenEvent::Input(InputEvent { kind: InputKind::Key { key: plx_machine::machine::Key::Ok, sym: 0,
+            wcode: 0, edge, at_edge: false }, at: Tick::default(), source: Source::Sdl });
+        assert!(deliver(&mut page, &ps, None, ok(Edge::Down)).is_empty(), "OK's press waits: it may be a hold");
+        assert_eq!(deliver(&mut page, &ps, None, ok(Edge::Up)), vec![PlayerReq::Tune(here.to(2))], "its release tunes the number");
         assert!(deliver(&mut page, &ps, None, key_event(0, consts::WCODE_PAUSE)).is_empty(), "no pausing live TV");
         assert!(!page.hud_up(&ps, 0), "live TV has no transport");
         assert_eq!(deliver(&mut page, &ps, None, key_event(0, consts::WCODE_BACK)), vec![PlayerReq::Exit]);

@@ -158,7 +158,7 @@ pub(super) fn request_play_intent(
         plx_screens::registry::PlayIntent::Live(tune) => {
             // A channel has no library item behind it: nothing describes it to the Info card.
             meta.run(plx_data::stores::metadata::MetadataCmd::SetNowPlaying(None));
-            plx_media::route::request_live(session, tune.clone(), super::dispatcharr::unix_now())
+            plx_media::route::request_live(session, tune.clone(), plx_dispatcharr::dispatcharr::api::unix_now())
         }
     }
 }

@@ -187,7 +187,7 @@ fn tune_channel(
     bridge: &mut super::bridge::Bridge,
 ) {
     plx_media::player::stop_bufferfeed(ps, pa);
-    if plx_media::route::request_live(ps, tune, super::dispatcharr::unix_now()) {
+    if plx_media::route::request_live(ps, tune, plx_dispatcharr::dispatcharr::api::unix_now()) {
         start_playback(ps, pa, 0, Origin::Here, HUD_LINGER_MS, None, pages, bridge);
     } else {
         log("live: the channel change was refused");

@@ -982,7 +982,11 @@ pub fn draw_scrim(p: Painter) {
 /// the audit is about here is the row's left edge and its BOTTOM, and both are font-independent.
 #[cfg(any(test, feature = "test-support"))]
 pub fn overscan_rects(out: &mut Vec<(&'static str, Rect)>) {
-    out.push(("player read-out", readout_frame()));
+    // The failure page's footer (its failure code) spans the safe width at `FOOTER_TOP`, and the
+    // bottom caption line rests on `SUB_BASE_Y`: the two lowest things this module prints.
+    let safe_w = SCR_W - 2.0 * plx_ui::consts::MARGIN_X;
+    out.push(("player failure footer", Rect::new(plx_ui::consts::MARGIN_X, FOOTER_TOP, safe_w, 0.0)));
+    out.push(("player caption baseline", Rect::new(plx_ui::consts::MARGIN_X, SUB_BASE_Y - CAPTION_LINE_PITCH, safe_w, CAPTION_LINE_PITCH)));
 }
 
 #[cfg(test)]

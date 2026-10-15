@@ -8642,7 +8642,14 @@ pub fn demux(
                 } else {
                     // default: feed the track matching the Load payload's codec (Media[0].audioCodec),
                     // NOT av_find_best_stream — a codec mismatch stalls the audio ES and wedges video.
-                    audio_stream_matching(fmt, &acodec).unwrap_or_else(|| {
+                    // A live channel with no such track takes its first audio track, so the mismatch
+                    // check below names it and the declaration is corrected; `av_find_best_stream`
+                    // answered STREAM_NOT_FOUND for a broadcast's AAC there, and the channel played
+                    // silent with nothing said.
+                    let live_first = || {
+                        if SHARED.live_source.load(Ordering::Acquire) { nth_audio_stream(fmt, 0) } else { None }
+                    };
+                    audio_stream_matching(fmt, &acodec).or_else(live_first).unwrap_or_else(|| {
                         av_find_best_stream(
                             fmt,
                             AVMEDIA_TYPE_AUDIO,

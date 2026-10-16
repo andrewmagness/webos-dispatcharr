@@ -1846,7 +1846,7 @@ pub(crate) unsafe fn shutdown(
     ps: &mut plx_media::route::PlaybackSession,
     pa: &mut plx_media::player::adapter::PlayerAdapter,
 ) {
-    plx_media::player::report::abandon_pending(ps);
+    plx_media::player::report::abandon_pending();
     if is_started() {
         plx_media::player::stop_bufferfeed(ps, pa);
     }

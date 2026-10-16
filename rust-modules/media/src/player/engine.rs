@@ -1679,16 +1679,11 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     let mut eng = pa.take().expect("main-thread live check and take are one transaction");
     let stream = matches!(eng.source, Source::Stream { .. });
 
-    // **The one place a playback really ENDS.** `for_reload` covers a direct-play seek reload, an
-    // ABR rung change and an app-switch suspend — each of which destroys an ENGINE and keeps the
-    // playback — so reporting an ending on any of them would turn the completion rate into a
-    // measure of how often people scrub. Read before the teardown below zeroes both values.
+    // **The one place a playback really ENDS.** `for_reload` covers a reload and an app-switch
+    // suspend — each of which destroys an ENGINE and keeps the playback — so reporting an ending on
+    // either would count a channel that is still being watched as ended.
     if !for_reload {
-        crate::player::report::ended(
-            ps,
-            SHARED.playpos_ns.load(Ordering::Relaxed),
-            SHARED.duration_ns.load(Ordering::Relaxed),
-        );
+        crate::player::report::ended();
     }
     // 1. unblock every thread (abort queues, close the demux socket)
     if stream {

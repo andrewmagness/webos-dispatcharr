@@ -61,37 +61,6 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU8, Ordering::Re
 /// The current attempt's opaque id — random, per attempt, never stored. See `DiagEvent`'s playback
 /// block: it joins one attempt's lifecycle events and cannot link two playbacks, let alone two sets.
 static ATTEMPT: AtomicI64 = AtomicI64::new(0);
-/// The attempt's server slot and connection facts, packed into one word so `requested` publishes
-/// all three with a SINGLE store and `emit` reads them with a single load — three separate atomics
-/// (as this used to be: a `u16` server plus two `u8` link/ip fields) let a concurrent `emit` (the
-/// engine's own worker thread; `requested` runs on the main thread) observe a torn combination —
-/// e.g. the NEW attempt's server slot paired with the OLD attempt's link/ip, or vice versa,
-/// whenever the two threads interleave between the three stores/loads.
-///
-/// Bit layout (LSB first), all little-endian within the `u32`:
-/// - bits 0..16:  server slot (`ServerId::raw()`, a `u16`; `ServerId::UNSET.raw()` when idle)
-/// - bits 16..24: link code (`plex::client::encode_link`'s `u8`: 0 = unknown)
-/// - bits 24..32: ip code (`plex::client::encode_ip`'s `u8`: 0 = unknown)
-///
-/// #95 step 8, item 4: the connection half is SNAPSHOTTED once in [`requested`] rather than read
-/// live off the server slot's client at every `emit`. A live read would let a mid-attempt re-point
-/// (a fresh `Client` published over the same slot) relabel `started`/`ended` events that reported
-/// `local` a moment ago as `unknown`, or worse, as whatever the NEW server's connection happens to
-/// be — neither is the connection THIS attempt actually used.
-static ATTEMPT_CONNECTION: AtomicU32 = AtomicU32::new(pack_connection(plx_plex::plex::ServerId::UNSET.raw(), 0, 0));
-
-const fn pack_connection(server: u16, link: u8, ip: u8) -> u32 {
-    (server as u32) | ((link as u32) << 16) | ((ip as u32) << 24)
-}
-
-fn unpack_connection(word: u32) -> (u16, u8, u8) {
-    (word as u16, (word >> 16) as u8, (word >> 24) as u8)
-}
-
-// Link/IP encode-decode is the one pair `plx_plex::plex::client` owns (`encode_link`/`decode_link`,
-// `encode_ip`/`decode_ip`) — this module used to keep a second private copy of both tables, which
-// is exactly the drift the shared pair exists to rule out.
-use plx_plex::plex::{decode_ip, decode_link, encode_ip, encode_link};
 /// Process-local trace generation. Unlike `ATTEMPT`, this is never sent; it only prevents an
 /// outgoing demux worker from writing its late transitions into the next Play's reset trace.
 static NEXT_TRACE_GENERATION: AtomicU32 = AtomicU32::new(0);
@@ -565,12 +534,8 @@ fn presented_event(ps: &crate::route::PlaybackSession) -> TraceEvent {
 /// `origin` is why the viewer or the app is making it ([`AttemptOrigin`]): `Fresh` for a Play,
 /// which also restarts the session's open count; `UserRetry` or `QualityChange` for the resolve a
 /// failure screen's Retry or quality pick starts, which continues it.
-pub fn requested(
-    ps: &crate::route::PlaybackSession,
-    server: plx_plex::plex::ServerId,
-    origin: AttemptOrigin,
-) -> u32 {
-    resolve_replaced_attempt(ps);
+pub fn requested(origin: AttemptOrigin) -> u32 {
+    resolve_replaced_attempt();
     let id = new_attempt_id();
     let at = now_ms();
     // **`fetch_update`'s own read-modify-write loop, written out.** That method was deprecated on
@@ -595,13 +560,6 @@ pub fn requested(
     };
     ATTEMPT.store(id, Relaxed);
     ledger().begin(generation, origin);
-    // Snapshot the server slot AND the connection together, in one store — see
-    // `ATTEMPT_CONNECTION`'s doc for why `emit` must never re-read the live client, and why this
-    // must not be three separate stores.
-    let (link, ip) = plx_plex::plex::client_for(server)
-        .map(|c| (c.link(), c.ip_version()))
-        .unwrap_or((None, None));
-    ATTEMPT_CONNECTION.store(pack_connection(server.raw(), encode_link(link), encode_ip(ip)), Relaxed);
     SAW_START.store(false, Relaxed);
     SAW_FAIL.store(false, Relaxed);
     SAW_END.store(false, Relaxed);
@@ -629,23 +587,8 @@ pub fn requested(
     generation
 }
 
-/// Test-only window onto the frozen snapshot `requested` took, so a test can assert it survives a
-/// mid-attempt re-point without driving the whole consent/spool pipeline `emit` feeds.
-#[cfg(any(test, feature = "test-support"))]
-pub fn attempt_connection_snapshot_for_test(
-) -> (Option<plx_plex::plex::probe::Location>, Option<plx_plex::plex::IpVersion>) {
-    let (_, link, ip) = unpack_connection(ATTEMPT_CONNECTION.load(Relaxed));
-    (decode_link(link), decode_ip(ip))
-}
-
 fn emit(event: DiagEvent) {
-    // One load, not three — see `ATTEMPT_CONNECTION`'s doc for why a concurrent `requested` must
-    // never be observable as a torn mix of the old server slot and the new connection or back.
-    let (server, link, ip) = unpack_connection(ATTEMPT_CONNECTION.load(Relaxed));
-    let sid = plx_plex::plex::ServerId::from_raw(server);
-    let link = decode_link(link);
-    let ip = decode_ip(ip);
-    plx_telemetry::diag::event_for_connection(event, sid, link, ip);
+    plx_telemetry::diag::event(event);
 }
 
 /// Resolve an attempt before a newer Play overwrites its join key. Before first frame this is an
@@ -667,7 +610,7 @@ fn replacement(saw_start: bool, saw_fail: bool, saw_end: bool) -> Replacement {
     }
 }
 
-fn resolve_replaced_attempt(ps: &crate::route::PlaybackSession) {
+fn resolve_replaced_attempt() {
     let id = ATTEMPT.swap(0, Relaxed);
     if id == 0 {
         return;
@@ -681,14 +624,12 @@ fn resolve_replaced_attempt(ps: &crate::route::PlaybackSession) {
         Replacement::Cancelled => {
             emit(DiagEvent::PlaybackCancelled {
                 playback_id: id,
-                mode: mode(ps),
             });
         }
         Replacement::Abandoned => {
             report_quality(id);
             emit(DiagEvent::PlaybackAbandoned {
                 playback_id: id,
-                mode: mode(ps),
             });
         }
     }
@@ -696,7 +637,7 @@ fn resolve_replaced_attempt(ps: &crate::route::PlaybackSession) {
 
 /// The process is leaving an unresolved attempt. Unlike a newer Play, this was not a replacement
 /// choice, so classify it as abandonment; if playback had started, close its quality summary too.
-pub fn abandon_pending(ps: &crate::route::PlaybackSession) {
+pub fn abandon_pending() {
     let id = ATTEMPT.load(Relaxed);
     if id == 0 || SAW_FAIL.load(Relaxed) || SAW_END.swap(true, Relaxed) {
         return;
@@ -704,7 +645,6 @@ pub fn abandon_pending(ps: &crate::route::PlaybackSession) {
     report_quality(id);
     emit(DiagEvent::PlaybackAbandoned {
         playback_id: id,
-        mode: mode(ps),
     });
 }
 
@@ -770,7 +710,6 @@ pub fn tick(ps: &crate::route::PlaybackSession) {
             SAW_START.store(true, Relaxed);
             emit(DiagEvent::PlaybackStarted {
                 playback_id: ATTEMPT.load(Relaxed),
-                mode: mode(ps),
                 raster: raster_class(super::SHARED.video_raster().1),
                 fps: fps_rung(crate::route::stream_fps(ps)),
                 video: video_codec_class(&crate::route::stream_vcodec(ps)),
@@ -788,7 +727,6 @@ pub fn tick(ps: &crate::route::PlaybackSession) {
             plx_telemetry::telemetry::playback::report_error(kind, context, &trace);
             emit(DiagEvent::PlaybackFailed {
                 playback_id: ATTEMPT.load(Relaxed),
-                mode: mode(ps),
                 kind: shape.kind.code(),
             });
         }
@@ -798,7 +736,7 @@ pub fn tick(ps: &crate::route::PlaybackSession) {
 
 /// **A real teardown.** Called from the one place playback actually ends — never from a seek, a
 /// rung change or a suspend, each of which destroys an engine and keeps the playback.
-pub fn ended(ps: &crate::route::PlaybackSession, position_ns: i64, duration_ns: i64) {
+pub fn ended() {
     if SAW_END.swap(true, Relaxed) || SAW_FAIL.load(Relaxed) {
         clear_error_trace();
         return; // already terminal
@@ -811,17 +749,12 @@ pub fn ended(ps: &crate::route::PlaybackSession, position_ns: i64, duration_ns: 
     if !SAW_START.load(Relaxed) {
         emit(DiagEvent::PlaybackAbandoned {
             playback_id: id,
-            mode: mode(ps),
         });
         clear_error_trace();
         return;
     }
     report_quality(id);
-    emit(DiagEvent::PlaybackEnded {
-        playback_id: id,
-        mode: mode(ps),
-        watched: watched_class(position_ns, duration_ns),
-    });
+    emit(DiagEvent::PlaybackEnded { playback_id: id });
     clear_error_trace();
 }
 
@@ -888,22 +821,6 @@ fn rebuffer_time_class(ms: i64) -> &'static str {
         1..=1_999 => "<2s",
         2_000..=9_999 => "2-10s",
         _ => "10s+",
-    }
-}
-
-/// `direct` / `transcode` of the route this playback INSTALLED, `unknown` when none was.
-///
-/// A refused or unresolved plan installs no route (`tsession` stays empty), and "no encoder
-/// session" is how a direct play is recognised — so this read `direct` for every refusal, the same
-/// false claim [`delivery_class`] made until upstream Sentry issue 14. The usage funnel's `mode`
-/// domain gained `unknown` for it; `diag::schema::MODE` and `PRIVACY.md` carry the value.
-fn mode(ps: &crate::route::PlaybackSession) -> &'static str {
-    if crate::route::play_refused(ps) || crate::route::play_resolution_failed(ps) {
-        "unknown"
-    } else if crate::route::is_transcoding(ps) {
-        "transcode"
-    } else {
-        "direct"
     }
 }
 
@@ -996,100 +913,9 @@ pub fn startup_class(ms: i64) -> &'static str {
     }
 }
 
-/// How much of it was watched, as the four answers anyone asks of a completion rate. Not a
-/// percentage: a percentage plus a duration bucket is a duration, which is the fingerprint the
-/// buckets exist to avoid.
-pub fn watched_class(position_ns: i64, duration_ns: i64) -> &'static str {
-    if duration_ns <= 0 || position_ns < 0 {
-        return "unknown";
-    }
-    match (position_ns as f64) / (duration_ns as f64) {
-        f if f < 0.05 => "abandoned",
-        f if f < 0.5 => "some",
-        f if f < 0.9 => "most",
-        _ => "finished",
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// PR #104 review: `ATTEMPT_CONNECTION` packs the server slot, link code and ip code into one
-    /// `u32` so `requested`/`emit` publish/observe them with a single store/load. Every field must
-    /// round-trip through the pack/unpack pair independently of the others, at both ends of each
-    /// field's range (a bit landing in the wrong lane would show up here as one field corrupting
-    /// its neighbour).
-    #[test]
-    fn attempt_connection_packing_round_trips_every_field_independently() {
-        for server in [0u16, 1, u16::MAX - 1, u16::MAX] {
-            for link in [0u8, 1, 2, 3] {
-                for ip in [0u8, 1, 2] {
-                    let packed = pack_connection(server, link, ip);
-                    assert_eq!(
-                        unpack_connection(packed),
-                        (server, link, ip),
-                        "server={server} link={link} ip={ip} did not round-trip"
-                    );
-                }
-            }
-        }
-        // The three lanes must not bleed into each other: changing one field's bits must never
-        // change what another field decodes to.
-        let base = pack_connection(0x1234, 1, 2);
-        let bumped_server = pack_connection(0x5678, 1, 2);
-        let (_, link, ip) = unpack_connection(bumped_server);
-        assert_eq!((link, ip), (1, 2), "changing the server lane must not disturb link/ip");
-        let (server, _, _) = unpack_connection(base);
-        assert_eq!(server, 0x1234);
-    }
-
-    /// #95 step 8, item 4: `requested` snapshots the attempt's `(link, ip)` once; a re-point that
-    /// lands mid-attempt (a fresh `Client` published over the same slot, e.g. the roster refresh
-    /// path re-racing a working relay to LAN) must not relabel events already in flight for THIS
-    /// attempt. A live `client_for(server)` read at emit time would have.
-    #[test]
-    fn requested_snapshots_the_connection_and_a_mid_attempt_repoint_does_not_change_it() {
-        let _g = plx_base::testlock::serial();
-        plx_plex::plex::reset_servers_for_test();
-        let o = plx_plex::plex::Origin::http("10.0.0.9", 32400);
-        let connection = plx_plex::plex::ConnectionFacts::new(
-            Some(plx_plex::plex::probe::Location::Local),
-            Some(plx_plex::plex::IpVersion::V4),
-        );
-        let sid = plx_plex::plex::register_pinned_with_client_id(
-            "m1", &o, "tok", None, "cid", connection,
-        );
-        let ps = crate::route::PlaybackSession::default();
-        requested(&ps, sid, AttemptOrigin::Fresh);
-        assert_eq!(
-            attempt_connection_snapshot_for_test(),
-            (Some(plx_plex::plex::probe::Location::Local), Some(plx_plex::plex::IpVersion::V4)),
-            "snapshotted at requested time"
-        );
-        // Mid-attempt re-point: a DIFFERENT origin for the same machine id, e.g. a roster refresh
-        // finally reaching the LAN candidate — publishes a fresh `Client` with its own tier/ip.
-        let o2 = plx_plex::plex::Origin::http("10.0.0.20", 32400);
-        let repoint = plx_plex::plex::ConnectionFacts::new(
-            Some(plx_plex::plex::probe::Location::Relay),
-            Some(plx_plex::plex::IpVersion::V6),
-        );
-        let repointed = plx_plex::plex::register_pinned_with_client_id(
-            "m1", &o2, "tok", None, "cid", repoint,
-        );
-        assert_eq!(repointed, sid, "re-pointed in place — same slot id");
-        assert_eq!(
-            plx_plex::plex::client_for(sid).unwrap().link(),
-            Some(plx_plex::plex::probe::Location::Relay),
-            "the live client really did change"
-        );
-        assert_eq!(
-            attempt_connection_snapshot_for_test(),
-            (Some(plx_plex::plex::probe::Location::Local), Some(plx_plex::plex::IpVersion::V4)),
-            "the attempt's snapshot is untouched by the re-point"
-        );
-        plx_plex::plex::reset_servers_for_test();
-    }
 
     #[test]
     fn replacing_an_attempt_always_gives_the_old_one_a_terminal_outcome() {
@@ -1288,23 +1114,6 @@ mod tests {
         assert_eq!(audio_codec_class("ec-3"), AudioCodecClass::Eac3.code());
     }
 
-    /// `playback.failed`'s `mode` read `direct` for a refused plan, for the reason `delivery` did:
-    /// it was derived from the absence of an encoder session, and a refusal has none.
-    #[test]
-    fn a_refused_plan_reports_mode_unknown_and_a_real_route_keeps_its_mode() {
-        let _g = plx_base::testlock::serial();
-        let mut refused = crate::route::PlaybackSession::default();
-        crate::route::refuse_by_server_for_test(&mut refused, "", Default::default(), true, false, "", "");
-        assert_eq!(mode(&refused), "unknown");
-        let mut policy = crate::route::PlaybackSession::default();
-        crate::route::refuse_for_test(&mut policy, crate::route::PlayVerdict::DirectPlayDisabled);
-        assert_eq!(mode(&policy), "unknown");
-        assert_eq!(mode(&crate::route::PlaybackSession::default()), "direct");
-        let mut transcode = crate::route::PlaybackSession::default();
-        crate::route::install_transcode_for_test(&mut transcode, false, false);
-        assert_eq!(mode(&transcode), "transcode");
-    }
-
     /// The firmware's error number reaches the report context from the callback's latch: a
     /// simulated `type=18 num=601` then a failure reports 601, and a session whose pipeline never
     /// spoke an error reports 0.
@@ -1370,7 +1179,7 @@ mod tests {
         consented(|| {
             let mut ps = crate::route::PlaybackSession::default();
             crate::route::refuse_for_test(&mut ps, crate::route::PlayVerdict::DirectPlayDisabled);
-            requested(&ps, plx_plex::plex::ServerId::UNSET, AttemptOrigin::Fresh);
+            requested(AttemptOrigin::Fresh);
             observe(&ps, S::Resolving);
             observe(&ps, S::Error);
             assert_eq!(error_context(&ps).attempt_origin, AttemptOrigin::Fresh);
@@ -1395,8 +1204,7 @@ mod tests {
         let _g = plx_base::testlock::serial();
         consented(|| {
             let ps = crate::route::PlaybackSession::default();
-            let sid = plx_plex::plex::ServerId::UNSET;
-            requested(&ps, sid, AttemptOrigin::Fresh);
+            requested(AttemptOrigin::Fresh);
             observe(&ps, S::Connecting);
             observe(&ps, S::Error);
             let first = error_context(&ps);
@@ -1404,7 +1212,7 @@ mod tests {
 
             // The Retry: the failed playback is stopped (which clears the trace), then re-requested.
             clear_error_trace();
-            requested(&ps, sid, AttemptOrigin::UserRetry);
+            requested(AttemptOrigin::UserRetry);
             observe(&ps, S::Resolving);
             observe(&ps, S::Error);
             let retried = error_context(&ps);
@@ -1413,13 +1221,13 @@ mod tests {
 
             // A quality pick on the failure screen is a retry too, with its own cause.
             clear_error_trace();
-            requested(&ps, sid, AttemptOrigin::QualityChange);
+            requested(AttemptOrigin::QualityChange);
             let picked = error_context(&ps);
             assert_eq!((picked.attempt_origin.code(), picked.attempt_ordinal.code()), ("quality_change", "3"));
 
             // Pressing Play on an item starts a new session.
             clear_error_trace();
-            requested(&ps, sid, AttemptOrigin::Fresh);
+            requested(AttemptOrigin::Fresh);
             let fresh = error_context(&ps);
             assert_eq!((fresh.attempt_origin.code(), fresh.attempt_ordinal.code()), ("fresh", "1"));
         });
@@ -1431,11 +1239,10 @@ mod tests {
         let _g = plx_base::testlock::serial();
         consented(|| {
             let ps = crate::route::PlaybackSession::default();
-            let sid = plx_plex::plex::ServerId::UNSET;
-            requested(&ps, sid, AttemptOrigin::Fresh);
+            requested(AttemptOrigin::Fresh);
             let mut seen = vec![error_context(&ps).attempt_ordinal.code()];
             for _ in 0..12 {
-                requested(&ps, sid, AttemptOrigin::UserRetry);
+                requested(AttemptOrigin::UserRetry);
                 seen.push(error_context(&ps).attempt_ordinal.code());
             }
             assert_eq!(
@@ -1758,21 +1565,6 @@ mod tests {
                 "{h} leaked its height"
             );
         }
-        assert!(!watched_class(3_600_000_000_000, 7_200_000_000_000).contains(char::is_numeric));
-    }
-
-    /// The completion classes, including the two ends that are the point of the measure.
-    #[test]
-    fn the_watched_classes_separate_a_bounce_from_a_finish() {
-        let hour = 3_600_000_000_000i64;
-        assert_eq!(watched_class(0, hour), "abandoned");
-        assert_eq!(watched_class(hour / 100, hour), "abandoned");
-        assert_eq!(watched_class(hour / 4, hour), "some");
-        assert_eq!(watched_class(hour * 3 / 4, hour), "most");
-        assert_eq!(watched_class(hour, hour), "finished");
-        // A live stream, or metadata that never arrived — not a completion of anything.
-        assert_eq!(watched_class(hour, 0), "unknown");
-        assert_eq!(watched_class(-1, hour), "unknown");
     }
 
     /// The startup boundaries are where the EXPERIENCE changes rather than round numbers, and a

@@ -277,20 +277,8 @@ live_setting!(SubtitleSizePref, SUBTITLE_SIZE, "subtitle size");
 live_setting!(SubtitlePositionPref, SUBTITLE_POSITION, "subtitle position");
 live_setting!(SubtitleTonePref, crate::player::SUBTITLE_TONE, "subtitle tone");
 live_setting!(AudioEnhancementsPref, crate::player::AUDIO_ENHANCEMENTS, "audio enhancements");
-live_setting!(NextEpisodeModePref, NEXT_EPISODE_MODE, "next episode mode",
-    fn after_saved(mode: NextEpisodeMode) {
-        plx_telemetry::diag::event(plx_telemetry::diag::schema::DiagEvent::FeatureUsed {
-            feature: plx_telemetry::diag::schema::Feature::NextEpisode(mode),
-        });
-    }
-);
-live_setting!(SkipIntervalPref, SKIP_INTERVAL, "skip interval",
-    fn after_saved(interval: SkipInterval) {
-        plx_telemetry::diag::event(plx_telemetry::diag::schema::DiagEvent::FeatureUsed {
-            feature: plx_telemetry::diag::schema::Feature::SkipInterval(interval),
-        });
-    }
-);
+live_setting!(NextEpisodeModePref, NEXT_EPISODE_MODE, "next episode mode");
+live_setting!(SkipIntervalPref, SKIP_INTERVAL, "skip interval");
 live_setting!(QualityPref, QUALITY, "playback quality",
     fn normalize(q: Quality) -> Quality {
         supported_quality(q)

@@ -36,14 +36,13 @@ pub fn capture<T>(run: impl FnOnce() -> T) -> (T, Vec<DiagEvent>) {
 #[test]
 fn capture_observes_the_real_event_doors_and_restores_after_unwind() {
     use super::schema::Feature;
-    let event = DiagEvent::FeatureUsed { feature: Feature::LibrarySwitch };
+    let event = DiagEvent::FeatureUsed { feature: Feature::Pause };
     let (answer, events) = capture(|| {
         super::event(event);
-        super::event_for_connection(event, plx_plex::plex::ServerId::UNSET, None, None);
         7
     });
     assert_eq!(answer, 7);
-    assert_eq!(events, [event, event]);
+    assert_eq!(events, [event]);
     assert!(!intercept(event), "the capture must not remain installed");
     let result = std::panic::catch_unwind(|| capture(|| panic!("synthetic producer failure")));
     assert!(result.is_err());

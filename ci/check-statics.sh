@@ -13,23 +13,14 @@
 #                                  legacy FILE, matched by path alone; it shrinks with each phase
 #                                  and is EMPTY at phase 12. A stale entry (a path with no static
 #                                  left) fails, so a deletion must also delete its entry.
-# Every `static mut` under ui/, appkit/, screens/, (in the data crate) person.rs, metadata.rs, metadata/, pms.rs and stores/,
-# plus the two named globals, must match one of the two. search/ is scanned with Required 1's
-# wider spelling (`^\s*(pub(\(crate\))? )?static `, not just `static mut`) because that module
-# holds `recents.rs`'s two `Mutex`-guarded persistence-seam statics (STORE, PENDING) — real
-# process-wide state the narrower pattern cannot see. The wider pattern is NOT applied to the
-# other gated directories: run tree-wide it also matches every `thread_local! { static … }`
-# interior declaration (a different, safe, per-thread idiom used all over ui/ and screens/ for
-# render caches and test doubles), which would surface on the order of 80 unrelated hits in one
-# gate change. That widening is deliberately out of scope here — see the PR discussion — and
-# must not be resolved by mass-allowlisting.
+# Every `static mut` under ui/, appkit/, screens/ and (in the data crate) metadata.rs and
+# metadata/, plus the two named globals, must match one of the two.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 SRC=rust-modules/src
 # The ui layer is its own crate (docs/module-layers.md, Split 6); its files were $SRC/ui.
 UI=rust-modules/ui/src
-# The data layer is its own crate (docs/module-layers.md, Split 9); its files were $SRC/stores, $SRC/pms.rs,
-# $SRC/metadata*, $SRC/person.rs and $SRC/search.
+# The data layer is its own crate (docs/module-layers.md, Split 9); its files were $SRC/metadata*.
 DATA=rust-modules/data/src
 # The media layer is its own crate (docs/module-layers.md, Split 11); its files were $SRC/route and $SRC/player.
 MEDIA=rust-modules/media/src
@@ -45,16 +36,14 @@ ok()   { echo "  ok — $*"; }
 # silently drop out of the gate the way `"$SRC/person"` (never a real path — Person is the file
 # `person.rs`) used to. `2>/dev/null` on the grep itself is gone for the same reason: a missing
 # path is now a loud gate failure, not a swallowed scan of nothing.
-GATED_MUT_PATHS=("$UI" "$APPKIT" "$SCREENS" "$DATA/person.rs" "$DATA/metadata.rs" "$DATA/metadata" "$DATA/pms.rs" "$DATA/stores")
-GATED_WIDE_PATHS=("$DATA/search")
-for p in "${GATED_MUT_PATHS[@]}" "${GATED_WIDE_PATHS[@]}" "$MEDIA/route/decision.rs" "$MEDIA/player/engine.rs" "$UI/press.rs"; do
+GATED_MUT_PATHS=("$UI" "$APPKIT" "$SCREENS" "$DATA/metadata.rs" "$DATA/metadata")
+for p in "${GATED_MUT_PATHS[@]}" "$MEDIA/route/decision.rs" "$MEDIA/player/engine.rs" "$UI/press.rs"; do
   [ -e "$p" ] || fail "gated path missing: $p — the statics gate would silently scan nothing here"
 done
 
 # matches: `path<TAB>NAME` for every gated static declaration.
 matches() {
   { grep -rnE --include='*.rs' '^\s*static mut [A-Za-z_][A-Za-z_0-9]*' "${GATED_MUT_PATHS[@]}"
-    grep -rnE --include='*.rs' '^\s*(pub(\(crate\))? )?static (mut )?[A-Za-z_][A-Za-z_0-9]*' "${GATED_WIDE_PATHS[@]}"
     grep -nE '^\s*static mut SESSION\b' "$MEDIA/route/decision.rs" | sed "s|^|$MEDIA/route/decision.rs:|"
     grep -nE '^\s*static mut ENGINE\b' "$MEDIA/player/engine.rs" | sed "s|^|$MEDIA/player/engine.rs:|"
     grep -nE '^\s*static mut S\b' "$UI/press.rs" | sed "s|^|$UI/press.rs:|"

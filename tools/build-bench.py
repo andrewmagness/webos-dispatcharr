@@ -33,7 +33,7 @@ Scenarios (each a named row; `--only ID,ID` selects, `--quick` is `noop,leaf,siz
             `plx_platform`, `plx_net` and `plx_plex` stay fresh, the telemetry crate and the app
             crate behind it recompile.
   data      ...after appending one to a leaf file of the DATA layer crate
-            (rust-modules/data/src/stores/tape.rs, in `plx_data`): `plx_base`, `plx_machine`,
+            (rust-modules/data/src/metadata/track_names.rs, in `plx_data`): `plx_base`, `plx_machine`,
             `plx_platform`, `plx_plex` and `plx_telemetry` stay fresh, the data crate and the app
             crate behind it recompile.
   media     ...after appending one to a leaf file of the MEDIA layer crate
@@ -45,7 +45,7 @@ Scenarios (each a named row; `--only ID,ID` selects, `--quick` is `noop,leaf,siz
             `plx_gfx`, `plx_ui`, `plx_plex`, `plx_telemetry`, `plx_data` and `plx_media` stay
             fresh, the appkit crate and the app crate behind it recompile.
   screens   ...after appending one to a leaf file of the SCREENS layer crate
-            (rust-modules/screens/src/registry/tile_facts.rs, in `plx_screens`): `plx_base`, `plx_platform`,
+            (rust-modules/screens/src/player/ass_subtitles.rs, in `plx_screens`): `plx_base`, `plx_platform`,
             `plx_gfx`, `plx_ui`, `plx_plex`, `plx_telemetry`, `plx_data`, `plx_media` and `plx_appkit`
             stay fresh, the screens crate and the app crate behind it recompile.
   app       ...after appending one to a leaf file of the app crate (rust-modules/src/coldstart.rs):
@@ -131,10 +131,10 @@ NET_LEAF_FILE = "rust-modules/net/src/stream_redirect.rs"
 UI_LEAF_FILE = "rust-modules/ui/src/dwell.rs"
 PLEX_LEAF_FILE = "rust-modules/plex/src/plex/retry.rs"
 TELEMETRY_LEAF_FILE = "rust-modules/telemetry/src/telemetry/window.rs"
-DATA_LEAF_FILE = "rust-modules/data/src/stores/tape.rs"
+DATA_LEAF_FILE = "rust-modules/data/src/metadata/track_names.rs"
 MEDIA_LEAF_FILE = "rust-modules/media/src/abr/units.rs"
 APPKIT_LEAF_FILE = "rust-modules/appkit/src/live_banner.rs"
-SCREENS_LEAF_FILE = "rust-modules/screens/src/registry/tile_facts.rs"
+SCREENS_LEAF_FILE = "rust-modules/screens/src/player/ass_subtitles.rs"
 APP_LEAF_FILE = "rust-modules/src/coldstart.rs"
 HUB_FILE = "rust-modules/ui/src/lib.rs"
 TOUCH_FILE = "rust-modules/src/lib.rs"
@@ -177,10 +177,10 @@ TITLES = {
     "ui": "Edit leaf (plx_ui dwell.rs), non-incremental",
     "plex": "Edit leaf (plx_plex retry.rs), non-incremental",
     "telemetry": "Edit leaf (plx_telemetry window.rs), non-incremental",
-    "data": "Edit leaf (plx_data tape.rs), non-incremental",
+    "data": "Edit leaf (plx_data track_names.rs), non-incremental",
     "media": "Edit leaf (plx_media units.rs), non-incremental",
     "appkit": "Edit leaf (plx_appkit live_banner.rs), non-incremental",
-    "screens": "Edit leaf (plx_screens tile_facts.rs), non-incremental",
+    "screens": "Edit leaf (plx_screens ass_subtitles.rs), non-incremental",
     "app": "Edit leaf (app coldstart.rs), non-incremental",
     "hub": "Edit hub (plx_ui lib.rs), non-incremental",
     "leaf-inc": "Edit leaf (plx_base cbuf.rs), incremental",

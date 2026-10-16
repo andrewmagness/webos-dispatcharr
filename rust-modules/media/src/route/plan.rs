@@ -139,17 +139,6 @@ impl CarriedAudio {
     }
 }
 
-/// Everything needed to restore Auto's zero-video-encode state after HLS. `url` is the cold-start
-/// playback target; `probe_part` is the raw Part key used to bind runtime measurement and direct
-/// playback to the exact live HLS Streaming Resource. `direct` says whether the Part itself is
-/// playable or whether PMS must container-remux it while copying the video.
-#[derive(Clone)]
-pub(super) struct AutoOriginalCandidate {
-    pub(super) probe_part: String,
-    pub(super) dovi: plx_data::metadata::Dovi,
-}
-
-
 pub use plx_plex::plex::session::{PlaybackQuality as Quality, DeckPress, DirectPlayMode, NextEpisodeMode, SkipInterval, SubtitleSize, SubtitlePosition};
 
 /// The ladder IN ORDER, best first. The ONE place row order lives, so the picker's index mapping
@@ -178,19 +167,6 @@ pub(super) fn supported_quality(q: Quality) -> Quality {
     } else {
         q
     }
-}
-
-/// The family of route a caller is BUILDING (or, mid-play, is on) — the only shape question the
-/// Plex Pass audio enhancement (issue #266) asks. `Direct` = the raw Part; `Remux` = the
-/// codec-preserving progressive-MKV copy; `Other` = every encoder rung, fixed quality, HLS and
-/// relay. The enhancement decorates the Original route and nothing else (I5): M3 measured that on
-/// a re-encode shape the params change nothing observable, because the audio is transcoded there
-/// at baseline anyway.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum RouteFamily {
-    Direct,
-    Remux,
-    Other,
 }
 
 /// How a subtitle on screen interacts with the Plex Pass audio enhancement (issue #266 I6,

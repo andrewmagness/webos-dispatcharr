@@ -128,7 +128,7 @@ impl PlayerScreen {
         mix(u64::from(plx_media::player::TX.paused.load(Relaxed)));
         mix(self.render.ass.fingerprint());
         mix(plx_media::player::subtitle_cue_id(pos) as u64);
-        mix(u64::from(player_hud::caption_page(&self.render.captions, false, plx_media::route::subtitles_burned(ps))));
+        mix(u64::from(player_hud::caption_page(&self.render.captions, false)));
         mix(plx_media::player::active_bitmap_key(pos).unwrap_or(0) as u64);
         if let Some(tune) = plx_media::route::live_tune(ps) {
             let banner = self.live.banner_visible(now);
@@ -591,7 +591,7 @@ impl<H: PlayerLike> Screen<H> for PlayerScreen {
             player_hud::draw_subtitle_message(message, false);
         }
         player_hud::draw_subtitle_bitmap(&mut self.render.subs, false); // PGS/VobSub image subs
-        player_hud::draw_subtitles(&self.render.captions, false, plx_media::route::subtitles_burned(ps));
+        player_hud::draw_subtitles(&self.render.captions, false);
         self.draw_live(ps, now, f);
         // The read-out over everything but the repair question.
         player_hud::draw_readout(ps, self.busy, now, self.failure_sel, f.measure);

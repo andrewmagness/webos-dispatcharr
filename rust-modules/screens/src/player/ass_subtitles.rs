@@ -1,7 +1,7 @@
 //! Player-owned ASS texture cache. Native parsing/rasterization is the worker's job;
 //! the frame thread submits its clock and uploads only a changed completed image.
 //! Authored placement is retained even while the transport HUD is visible.
-use plx_media::player::{ass, ass_source, sidecar};
+use plx_media::player::{ass, ass_source};
 use plx_ui::{
     consts::{SCR_H, SCR_W},
     Painter, Rect,
@@ -20,11 +20,10 @@ pub struct AssSubtitles {
 
 impl AssSubtitles {
     pub fn update(&mut self, ps: &plx_media::route::PlaybackSession, now: u32) {
-        let source = if plx_media::route::subtitles_burned(ps) || plx_media::player::loading(ps) {
+        let source = if plx_media::player::loading(ps) {
             None
         } else {
-            sidecar::ass_source(false)
-                .or_else(|| ass_source::selected(plx_media::player::desired_sub_idx()))
+            ass_source::selected(plx_media::player::desired_sub_idx())
         };
         let Some(source) = source else {
             if self.source != 0 {

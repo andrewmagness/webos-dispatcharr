@@ -35,7 +35,6 @@ pub mod ffi_host;
 mod pump;
 pub mod report;
 mod shared;
-pub mod sidecar;
 #[cfg(feature = "hostsim")]
 pub mod sim_video; // the simulator's decoded picture, for screenshots (see its doc)
 pub mod threads;

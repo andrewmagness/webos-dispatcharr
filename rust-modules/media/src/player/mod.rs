@@ -36,7 +36,6 @@ mod pump;
 pub mod report;
 mod shared;
 pub mod sidecar;
-pub mod subside; // the side subtitle reader's thread and state (dev trigger `dispatcharrtv-subside`)
 #[cfg(feature = "hostsim")]
 pub mod sim_video; // the simulator's decoded picture, for screenshots (see its doc)
 pub mod threads;

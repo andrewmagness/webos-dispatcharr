@@ -262,23 +262,6 @@ pub(super) enum SubCue<'a> {
 }
 
 impl<'a> SubCue<'a> {
-    /// The cue with every time moved by `by_ns` (negative = earlier). The side reader's clock
-    /// mapping: a cue is stamped in the original Part's time and drawn against the remux's playhead,
-    /// so each one goes through this with `-delta` before [`Self::push`].
-    pub(super) fn shifted(self, by_ns: i64) -> SubCue<'a> {
-        match self {
-            SubCue::Text { track, start, end, payload } => {
-                SubCue::Text { track, start: start.saturating_add(by_ns), end: end.saturating_add(by_ns), payload }
-            }
-            SubCue::Ass { track, start, end, payload } => {
-                SubCue::Ass { track, start: start.saturating_add(by_ns), end: end.saturating_add(by_ns), payload }
-            }
-            SubCue::BitmapSet { track, pts, cw, ch, rects, total_rects } => {
-                SubCue::BitmapSet { track, pts: pts.saturating_add(by_ns), cw, ch, rects, total_rects }
-            }
-            SubCue::BitmapClear { track, pts } => SubCue::BitmapClear { track, pts: pts.saturating_add(by_ns) },
-        }
-    }
 }
 
 impl SubCue<'_> {
@@ -343,11 +326,6 @@ impl SubTracks {
             }
         }
         SubTracks { streams: out }
-    }
-
-    /// No tracks: what the main demuxer holds while a side reader owns the subtitles.
-    pub(super) fn empty() -> Self {
-        SubTracks { streams: Vec::new() }
     }
 
     /// The (stream index, kind, decoder) list, in file order.
@@ -535,35 +513,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn shifted_moves_every_variant() {
-        let by = -2_500_000_000;
-        match (SubCue::Text { track: 1, start: 10_000_000_000, end: 12_000_000_000, payload: b"x" }).shifted(by) {
-            SubCue::Text { track, start, end, payload } => {
-                assert_eq!((track, start, end, payload), (1, 7_500_000_000, 9_500_000_000, &b"x"[..]));
-            }
-            _ => panic!("a text cue stays a text cue"),
-        }
-        match (SubCue::Ass { track: 2, start: 5_000_000_000, end: 6_000_000_000, payload: b"y" }).shifted(by) {
-            SubCue::Ass { track, start, end, .. } => assert_eq!((track, start, end), (2, 2_500_000_000, 3_500_000_000)),
-            _ => panic!("an ASS cue stays an ASS cue"),
-        }
-        match (SubCue::BitmapSet { track: 3, pts: 9_000_000_000, cw: 1920, ch: 1080, rects: Vec::new(), total_rects: 4 })
-            .shifted(by)
-        {
-            SubCue::BitmapSet { track, pts, cw, ch, total_rects, .. } => {
-                assert_eq!((track, pts, cw, ch, total_rects), (3, 6_500_000_000, 1920, 1080, 4));
-            }
-            _ => panic!("a bitmap set stays a bitmap set"),
-        }
-        match (SubCue::BitmapClear { track: 3, pts: 1_000_000_000 }).shifted(by) {
-            SubCue::BitmapClear { track, pts } => assert_eq!((track, pts), (3, -1_500_000_000)),
-            _ => panic!("a clear stays a clear"),
-        }
-        // a huge time saturates rather than wrapping
-        match (SubCue::BitmapClear { track: 0, pts: i64::MAX }).shifted(5) {
-            SubCue::BitmapClear { pts, .. } => assert_eq!(pts, i64::MAX),
-            _ => unreachable!(),
-        }
-    }
 }

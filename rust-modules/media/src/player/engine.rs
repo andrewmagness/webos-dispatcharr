@@ -1369,10 +1369,6 @@ fn start_bufferfeed_inner(
     let mut aqa_box: Option<Box<AuQueue>> = None;
     let mut stream_th = None;
     let source;
-    // Whether the side subtitle reader will run for this engine run, decided BEFORE the demuxer is
-    // spawned: the demuxer reads `side_subs_owner` once, as it opens the stream, and must never
-    // also open subtitle decoders or ASS sources the reader replaces.
-    let side_target = if stream { crate::route::side_reader_target(ps) } else { None };
 
     if stream {
         let su = plx_plex::plex::StreamUrl::parse(&url); // the typed layer's URL splitter
@@ -1412,12 +1408,10 @@ fn start_bufferfeed_inner(
             // `teardown(true) + start_bufferfeed()` (reload_at / reload_transcode /
             // switch_audio_native), which respawns this thread with the new value.
             let acodec = crate::route::stream_acodec(ps);
-            SHARED.side_subs_owner.store(side_target.is_some(), Ordering::Release);
             stream_th = plx_base::task::spawn_off_frame_keeping("demux", move |_| {
                 crate::ff::demux(origin, path, acodec, aqp, aqap, hsp)
             });
             if stream_th.is_none() {
-                SHARED.side_subs_owner.store(false, Ordering::Release);
                 // Nothing will ever fill the AU queues, so there is no session to start. `hs` is
                 // about to drop with this early return, so retract the pointer first — the pump
                 // and teardown both read it straight off SHARED.
@@ -1450,7 +1444,6 @@ fn start_bufferfeed_inner(
         if !p.is_null() {
             plx_net::stream::http_shutdown(p);
         }
-        super::subside::stop("start-failed"); // before the demux join, like teardown
         crate::curlio::abort_active(); // the https demuxer's equivalent — see teardown
         if let Some(t) = stream_th.take() {
             plx_base::task::join("demux", t);
@@ -1460,13 +1453,6 @@ fn start_bufferfeed_inner(
         }
         return Err(crate::route::RouteStartResult::StartFailed);
     }
-    // The side subtitle reader (dev trigger `dispatcharrtv-subside`), started once the demuxer is
-    // spawned and the media thread exists: it waits for the demuxer's first keyframe before it
-    // reads anything. (Its ownership flag was set before the demux spawn, below.)
-    if let Some(target) = side_target {
-        start_side_reader(&target);
-    }
-
     let eng = Engine {
         route_start: route_attempt,
         native_epoch,
@@ -1641,19 +1627,6 @@ fn reload_start_outcome(
     }
 }
 
-/// Start the side subtitle reader for the live remux this engine run plays, drawing the track
-/// the route's target names.
-fn start_side_reader(target: &crate::route::SideReaderTarget) {
-    let started = super::subside::spec_for(target).is_some_and(super::subside::start);
-    if !started {
-        log("subside: could not start the reader thread");
-        // Nothing reads beside the stream: the demuxer must not leave the subtitle to a reader
-        // that is not there.
-        SHARED.side_subs_owner.store(false, Ordering::Release);
-        super::subside::raise_failure(); // the route falls back to the server's burn
-    }
-}
-
 pub fn reload_at(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, target_ns: i64) -> ReloadOutcome {
     if crate::route::url(ps).is_empty() {
         log("reload_at: no url (ignored)");
@@ -1726,9 +1699,6 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             SHARED.duration_ns.load(Ordering::Relaxed),
         );
     }
-    // The side subtitle reader first: it reads the original Part over its own transport and must
-    // be gone (its socket shut, its cues cleared) before the demux it was paired with is joined.
-    super::subside::stop(if for_reload { "reload" } else { "stop" });
     // 1. unblock every thread (abort queues, close the demux socket)
     if stream {
         // abort BOTH lanes: unblock the demux if it's parked in aq_push on a full lane

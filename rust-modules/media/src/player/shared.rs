@@ -655,13 +655,6 @@ pub struct Shared {
     pub ass_renderer: super::ass::Runtime,
     pub sub_bitmaps: Mutex<Vec<SubBitmap>>, // image-sub cues (every image track while subs are on)
 
-    /// The main demuxer's FIRST video keyframe of this engine run (stream time + a payload
-    /// fingerprint), published once for the side subtitle reader's clock mapping and cleared when
-    /// the demuxer starts. `None` until that packet is read.
-    pub side_anchor: Mutex<Option<crate::ff::subside::Anchor>>,
-    /// The side subtitle reader owns this playback's subtitles: `ff::demux` then neither enumerates
-    /// the stream's own subtitle tracks nor begins an ASS source, which the reader's would replace.
-    pub side_subs_owner: AtomicBool,
 
     // demux (D) -> main (M)
     pub file_size: AtomicI64, // g_file_size
@@ -902,8 +895,6 @@ impl Shared {
             dg_transport_age_ms: AtomicI64::new(-1),
             dg_transport_reopen_failed: AtomicBool::new(false),
             dg_net_rx: AtomicI64::new(0),
-            side_anchor: Mutex::new(None),
-            side_subs_owner: AtomicBool::new(false),
             dg_load_at: AtomicU32::new(0),
             dg_frame_at: AtomicU32::new(0),
             dg_vpres_ct: AtomicU32::new(0),

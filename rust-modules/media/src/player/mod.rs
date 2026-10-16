@@ -265,8 +265,7 @@ static PTYPE: AtomicI32 = AtomicI32::new(10); // g_ptype (PLAYER_TYPE_MSE)
 // same way. See `engine.rs`'s `start_bufferfeed`/`start_bufferfeed_tracked` for the gate itself.
 pub use engine::{
     acb_init, start_bufferfeed, start_bufferfeed_tracked, stop_bufferfeed,
-    suspend_bufferfeed, suspend_bufferfeed_if_attempt, BufferfeedStartOutcome, ResumeOutcome, ResumeStart,
-};
+    suspend_bufferfeed, BufferfeedStartOutcome, };
 
 pub use pump::pump;
 pub use shared::PlaybackState;
@@ -404,26 +403,6 @@ pub fn resume(pa: &mut adapter::PlayerAdapter) -> bool {
         }
     }
 } // playback_resume
-
-pub fn seek_preroll_active() -> bool {
-    TX.seek_preroll_active()
-}
-
-/// Re-establish the viewer's Pause after the seek prime has decoded its first landed frame. The
-/// transport intent stayed Paused throughout; only this method closes the temporary feed override.
-pub fn finish_paused_seek(pa: &mut adapter::PlayerAdapter) -> bool {
-    if !TX.seek_preroll_active() {
-        return true;
-    }
-    if !pause(pa) {
-        return false;
-    }
-    TX.finish_seek_preroll();
-    // One receipt after the accepted pause, never per frame: device scrub checks pair this
-    // boundary with stationary playhead samples rather than assuming CommitSeek held the pause.
-    log(&format!("seek: paused frame restored ns={}", SHARED.playpos_ns.load(Relaxed)));
-    true
-}
 
 #[cfg(all(any(test, feature = "test-support"), feature = "hostsim"))]
 pub fn force_pause_result_for_test(result: Option<c_int>) {
@@ -588,35 +567,6 @@ pub fn request_seek(ns: i64) {
     // Count the request even though the target it carries may be overwritten before the pump
     // ever sees it — that overwrite IS the coalescing, and this is the only place it's countable.
     TX.seek_reqs.fetch_add(1, Relaxed);
-}
-/// **The seek was ABANDONED — put the playhead back on reality.**
-///
-/// [`request_seek`] sets `SHARED.seeking`, and until 2026-08-27 exactly ONE place ever cleared it:
-/// the successful prime→Play in `engine::try_prime`. Every path that gives UP on a seek
-/// therefore leaked the flag — and that flag is what `pump::set_state` reads to publish
-/// `PlaybackState::Seeking`, which means a spinner over the picture, the playhead frozen at
-/// `seek_display_ns`, and `is_playing()` false, **for the rest of the playback**, while the
-/// pipeline goes on fetching and presenting underneath.
-///
-/// Device-measured 2026-08-27 (`docs/measurements/j3e-logs/pipe_abr_seek_flat.log`): a transcode
-/// seek whose rebuild returned `None` froze the read-out at `pos=5s` while 37 further segments
-/// were acquired, four rung commits landed, and the loop held 60 fps for another 84 seconds. The
-/// stream was fine; only the app's account of it was stuck.
-///
-/// A flag set by the requester and cleared only on the success path is a wedge waiting to happen.
-/// This exists so every give-up path can say so in one word, rather than each remembering a store
-/// — which is the arrangement that failed. `seek_display_ns` goes back to `-1` with it, since the
-/// HUD reads that as "no seek target" and a stale one would keep the frozen playhead after the
-/// spinner cleared.
-pub fn abandon_seek() {
-    crate::route::reject_user_seek();
-    SHARED.seeking.store(false, Relaxed);
-    SHARED.seek_display_ns.store(-1, Relaxed);
-    // A failed seek never got the one-frame preroll it was promised. Preserve the viewer's Paused
-    // intent and close only the feed override; the existing user clock hold remains authoritative.
-    if TX.seek_preroll_active() {
-        TX.finish_seek_preroll();
-    }
 }
 /// true while a seek is resolving (request → reopen/reload → prime → Play): the HUD shows a
 /// spinner and freezes the playhead at `seek_display_ns` instead of wobbling through the reopen.

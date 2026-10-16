@@ -445,14 +445,6 @@ pub fn note_attempt_for(generation: u32, origin: AttemptOrigin) {
     ledger().reopen(generation, origin);
 }
 
-/// [`note_attempt_for`] for the playback now in force, for the callers that run on the main thread
-/// and so cannot be stale (the foreground restore).
-pub fn note_attempt(origin: AttemptOrigin) {
-    let mut ledger = ledger();
-    let generation = ledger.generation;
-    ledger.reopen(generation, origin);
-}
-
 /// Why the open now in force was made and which open of the session it is.
 fn attempt_snapshot() -> (AttemptOrigin, AttemptOrdinal) {
     let ledger = ledger();

@@ -408,32 +408,6 @@ fn publish_diag(eng: &Engine, now: u32) {
     }
 }
 
-/// The failed half of the deferred Original recovery: put the old route back and say where to
-/// resume it, in nanoseconds. `None` means there was no recovery in flight, and the caller's
-/// failure means what it always did.
-///
-/// The three failure gates below all route through here rather than one of them, because the three
-/// ways a source can refuse to open are not distinguishable from the outside and all three cost
-/// the same thing: `demux_io_failed` is the transfer dying, `demux_failed` with no frames is the
-/// open being rejected, and `load_failed` is the pipeline refusing the payload the source implied.
-/// The device case was the first; a 404 or a codec the set will not take are the other two.
-///
-/// The first half of the way back from a failed Original open: take the rollback and say why the
-/// Original was refused. `None` means no recovery was pending. What is left is the rebase of the
-/// restored route — a flight either way: on the pump's frames ([`recover_failed_source_route`]), or
-/// Engine-less for the two callers that have no Engine for a pump to drive
-/// ([`begin_engineless_rollback`]).
-fn take_failed_original_rollback(ps: &mut crate::route::PlaybackSession, status: i32) -> Option<crate::route::OriginalRollback> {
-    let rollback = crate::route::rollback_original_recovery(ps)?;
-    if status >= 400 {
-        super::note_original_failure(super::ABR_FAILURE_ORIGINAL_HTTP, status);
-    } else {
-        // HTTP 200 followed by demux/Load failure is meaningfully different from no response.
-        super::note_original_failure(super::ABR_FAILURE_ORIGINAL_OPEN, status);
-    }
-    Some(rollback)
-}
-
 /// The three source-failure branches' shared answer: either a recovery is flying (the frame is
 /// done, the spinner stays up) or the Engine fails and the viewer gets the read-out. Always the
 /// frame's last act.

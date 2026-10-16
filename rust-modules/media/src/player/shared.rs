@@ -2565,14 +2565,6 @@ impl Transport {
         }
     }
 
-    pub fn begin_paused_seek(&self) -> bool {
-        if !self.paused.load(Ordering::Acquire) {
-            return false;
-        }
-        self.seek_preroll.store(true, Ordering::Release);
-        true
-    }
-
     pub fn seek_preroll_active(&self) -> bool {
         self.seek_preroll.load(Ordering::Acquire)
     }

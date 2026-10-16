@@ -348,13 +348,11 @@ fn test_path() -> Option<PathBuf> {
 /// **Also forgets [`ON_DISK`].** It is a per-PROCESS count, sound in production because `path()`
 /// is a `OnceLock` and the file never moves — but a test moves it, and a stale count from whichever
 /// spool test ran last makes the next `append` skip compaction and try to open a file that was
-/// never created at the new path (`append_locked`'s fast path only opens, it never creates). A
-/// one-off submit then reads that as a spool failure and takes the direct fallback instead.
+/// never created at the new path (`append_locked`'s fast path only opens, it never creates).
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_test_path(p: Option<PathBuf>) {
     *TEST_PATH.lock().unwrap_or_else(|e| e.into_inner()) = p;
     ON_DISK.store(UNKNOWN, std::sync::atomic::Ordering::Relaxed);
-    AFTER_APPEND.with(|slot| *slot.borrow_mut() = None);
 }
 
 #[cfg(test)]

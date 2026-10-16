@@ -618,6 +618,28 @@ mod live_url_tests {
         assert!(!is_live(&ps), "a file URL replaces it");
     }
 
+    /// **A tune is a playback attempt, and the usage funnel counts it.** Every way into live
+    /// playback (the Guide's OK, CH▲/▼, a reconnect, the foreground re-tune) goes through
+    /// `request_live`, so that is where the attempt is minted: `playback.requested` is emitted and
+    /// the attempt's trace generation becomes the one the engine's workers report under. Without
+    /// it no attempt exists, and `started`/`failed`/`ended` have nothing to join.
+    #[test]
+    fn a_tune_is_a_playback_attempt_the_funnel_counts() {
+        let _g = plx_base::testlock::serial();
+        let mut ps = PlaybackSession::IDLE;
+        let before = playback_trace_generation();
+        let (ok, events) = plx_telemetry::diag::test_events::capture(|| {
+            request_live(&mut ps, tune(&["http://192.0.2.1:9191/a"], 0), 50)
+        });
+        assert!(ok);
+        assert!(
+            events.iter().any(|e| matches!(e, plx_telemetry::diag::schema::DiagEvent::PlaybackRequested { .. })),
+            "a tune must emit playback.requested: {events:?}"
+        );
+        assert_ne!(playback_trace_generation(), before, "the tune publishes its attempt's trace generation");
+        clear_url(&mut ps);
+    }
+
     #[test]
     fn a_tune_installs_the_channel_its_lineup_and_its_declaration() {
         let mut ps = PlaybackSession::IDLE;
@@ -1657,6 +1679,12 @@ pub fn request_live(ps: &mut PlaybackSession, mut tune: super::LiveTune, now: i6
         }
     } };
     crate::player::log(&format!("live: tune #{} v={vcodec} a={acodec}", tune.index));
+    // **The playback funnel's denominator, minted HERE**: every way into live playback (the Guide's
+    // OK, CH▲/▼, a reconnect, the foreground re-tune) comes through this function, and it is past
+    // every refusal above, so a press that cannot tune is not an attempt. The engine's workers
+    // report under the trace generation published here.
+    let trace_generation = crate::player::report::requested(crate::player::report::AttemptOrigin::Fresh);
+    ACTIVE_TRACE_GENERATION.store(trace_generation, Ordering::SeqCst);
     set_live_url(ps, &url);
     tune.at = now;
     ps.tune = Some(tune);

@@ -997,7 +997,6 @@ mod tests {
 
     use super::*;
 
-    use plx_data::metadata::{Marker, MarkerKind};
 
     /// **The image-subtitle display set is a render, and it says how much of one** (§8.3 rule (c)):
     /// one texture per rect, the SOURCE pixels behind them, and nothing left claimed once the set
@@ -1015,24 +1014,6 @@ mod tests {
             plx_ui::frame::RenderReport::NONE,
             "a released set holds nothing and must stop claiming bytes"
         );
-    }
-
-    fn marker(kind: MarkerKind, final_seg: bool) -> Marker {
-        Marker {
-            kind,
-            start_ms: 1_000,
-            end_ms: 2_000,
-            final_seg,
-        }
-    }
-
-    fn seg(start_ms: i64, end_ms: i64, final_seg: bool) -> Marker {
-        Marker {
-            kind: MarkerKind::Credits,
-            start_ms,
-            end_ms,
-            final_seg,
-        }
     }
 
     // A rail 1000px wide over a 1000ms item: 1px per ms, so an offset reads straight off the x.

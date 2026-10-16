@@ -4145,9 +4145,9 @@ class DepGates(unittest.TestCase):
         bumped the mtime of a file `cargo` watches, so the NEXT cargo invocation of a `make check`
         recompiled the whole crate for nothing -- and made it impossible to run two self-tests at
         once."""
-        real = os.path.join(self.ROOT, "rust-modules", "data", "src", "browse", "mod.rs")
+        real = os.path.join(self.ROOT, "rust-modules", "data", "src", "metadata.rs")
         before = os.stat(real).st_mtime_ns
-        self.assertEqual(self._prepend("browse/mod.rs", "\n").returncode, 0)
+        self.assertEqual(self._prepend("metadata.rs", "\n").returncode, 0)
         self.assertEqual(os.stat(real).st_mtime_ns, before, "a self-test wrote into the real tree")
 
     def test_the_private_copy_grades_exactly_like_the_real_tree(self):
@@ -4207,31 +4207,9 @@ class DepGates(unittest.TestCase):
             if os.path.exists(target):
                 os.remove(target)
 
-    def _mutate(self, relpath, needle, replacement):
-        """Temporarily replace ONE occurrence of `needle` with `replacement` in a REAL tracked
-        file, run ci/check-deps.sh, then unconditionally restore the original bytes — even if the
-        assertion that follows fails. Unlike `_plant`'s orphan-file trick, `mutators-visibility`
-        greps a DECLARATION LINE inside one of the seven specific legacy-store files by path, not
-        a `find … -name '*.rs'` sweep, so an orphan file elsewhere in the tree is invisible to it
-        by design; a scratch mutation of the copied file's own content is what "plants a
-        pub(crate) fn set_cur in a temp copy" (the D3 brief's own words) has to mean here."""
-        target = self._store_file(relpath)
-        with open(target, encoding="utf-8") as f:
-            original = f.read()
-        self.assertEqual(original.count(needle), 1, f"{needle!r} not found exactly once in {relpath}")
-        try:
-            with open(target, "w", encoding="utf-8") as f:
-                f.write(original.replace(needle, replacement, 1))
-            return subprocess.run([os.path.join(self.tree, "ci", "check-deps.sh")],
-                                   capture_output=True, text=True)
-        finally:
-            with open(target, "w", encoding="utf-8") as f:
-                f.write(original)
-
     def _store_file(self, relpath):
-        """The private copy's path of a store module: the data layer's crate (`plx_data`, Split 9)
-        holds stores/, browse/, pms.rs, metadata.rs, search.rs, person.rs and viewstate.rs; any other
-        relative path is the application crate's. A path that exists in neither fails the caller's
+        """The private copy's path of a data-layer module: the data layer's crate (`plx_data`,
+        Split 9) holds metadata.rs; any other relative path is the application crate's. A path that exists in neither fails the caller's
         open(), loudly."""
         data = os.path.join(self.tree, "rust-modules", "data", "src", relpath)
         return data if os.path.exists(data) else os.path.join(self.tree, "rust-modules", "src", relpath)
@@ -4249,223 +4227,6 @@ class DepGates(unittest.TestCase):
         finally:
             with open(target, "w", encoding="utf-8") as f:
                 f.write(original)
-
-    def _prepend_files(self, fixtures):
-        """`_prepend` for several files at once, graded by ONE `ci/check-deps.sh` run.
-
-        `fixtures` maps a store-relative path to the module-level text to prepend. Each variant
-        a self-test wants to prove is rejected gets its OWN declaration (a distinct name), so the
-        one run still shows which variants the gate caught: `_assert_flagged` requires every one
-        by name. Run one variant at a time these were 34 of the 73 gate runs in this class, and a
-        run is ~7 s of CPU."""
-        originals = {}
-        try:
-            for relpath, content in fixtures.items():
-                target = self._store_file(relpath)
-                with open(target, encoding="utf-8") as f:
-                    originals[target] = f.read()
-                with open(target, "w", encoding="utf-8") as f:
-                    f.write(content + originals[target])
-            return subprocess.run([os.path.join(self.tree, "ci", "check-deps.sh")],
-                                  capture_output=True, text=True)
-        finally:
-            for target, original in originals.items():
-                with open(target, "w", encoding="utf-8") as f:
-                    f.write(original)
-
-    def _assert_flagged(self, r, rule, flagged):
-        """The run failed, and the gate named `rule:` and printed, for each `(relpath, marker)`,
-        a `path:line:text` line of THAT file whose text holds `marker` -- so a variant the gate
-        missed fails by name even though the others were caught in the same run."""
-        out = r.stdout + r.stderr
-        self.assertNotEqual(r.returncode, 0, out)
-        self.assertIn(f"{rule}:", out)
-        for relpath, marker in flagged:
-            with self.subTest(file=relpath, flagged=marker):
-                self.assertTrue(
-                    any(f"/src/{relpath}:" in line and marker in line for line in out.splitlines()),
-                    f"{rule} did not flag {marker!r} in {relpath}\n{out}")
-
-    def test_browse_owner_gate_rejects_a_republished_free_mutator(self):
-        """A valid module-level declaration is rejected even without a call site."""
-        r = self._prepend("browse/mod.rs", "\npub(crate) fn set_cur(i: usize) {}\n")
-        out = r.stdout + r.stderr
-        self.assertNotEqual(r.returncode, 0, out)
-        self.assertIn("browse-owner:", out)
-        self.assertIn("fn set_cur", out)
-
-    def test_browse_owner_gate_rejects_all_free_declaration_modifiers(self):
-        declarations = (
-            ("set_cur", "    pub(super) fn set_cur(i: usize) {}\n"),
-            ("cur", "async fn cur(i: usize) {}\n"),
-            ("reset", "const fn reset(i: usize) {}\n"),
-            ("requery", "unsafe extern \"C\" fn requery(i: usize) {}\n"),
-        )
-        r = self._prepend_files({"browse/mod.rs": "".join("\n" + d for _, d in declarations)})
-        self._assert_flagged(r, "browse-owner", [("browse/mod.rs", f"fn {n}") for n, _ in declarations])
-
-    def test_browse_owner_gate_rejects_attributes_and_split_free_declarations(self):
-        declarations = (
-            ("set_cur", "#[inline] pub(super) const fn set_cur(i: usize) {}\n"),
-            ("cur", "#[inline]\npub(super)\nconst fn\ncur(i: usize) {}\n"),
-        )
-        r = self._prepend_files({"browse/mod.rs": "".join("\n" + d for _, d in declarations)})
-        self._assert_flagged(r, "browse-owner", [("browse/mod.rs", name) for name, _ in declarations])
-
-    def test_browse_owner_gate_is_nonvacuous_for_indented_free_declarations(self):
-        r = self._prepend("browse/mod.rs", "\n    pub fn set_cur(i: usize) {}\n")
-        self.assertNotEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("browse/mod.rs", r.stdout + r.stderr)
-
-    def test_browse_owner_gate_ignores_normal_string_braces_before_a_free_const_fn(self):
-        """Compiling counterexample for the old raw brace counter: the `{` belongs to LABEL,
-        so the indented const fn after it is still a module-level retired facade and must fail."""
-        r = self._prepend(
-            "browse/mod.rs",
-            '\nconst LABEL: &str = "{";\n    pub(crate) const fn set_cur(i: usize) {}\n',
-        )
-        out = r.stdout + r.stderr
-        self.assertNotEqual(r.returncode, 0, out)
-        self.assertIn("browse-owner:", out)
-        self.assertIn("const fn set_cur", out)
-
-    def test_browse_owner_gate_ignores_every_rust_noncode_brace_before_a_free_fn(self):
-        fixtures = (
-            '// {\n',
-            '/* outer { /* nested { */ */\n',
-            'const RAW_SCOPE: &str = r###"{"###;\n',
-            'const BYTE_SCOPE: &[u8] = b"{";\n',
-            'const RAW_BYTE_SCOPE: &[u8] = br##"{"##;\n',
-            "const CHAR_SCOPE: char = '{';\n",
-            "const BYTE_CHAR_SCOPE: u8 = b'{';\n",
-            'const ESCAPED_SCOPE: &str = "\\\\\\\"{";\n',
-            "const ESCAPED_CHAR_SCOPE: char = '\\\'';\nconst LABEL_SCOPE: &str = \"{\";\n",
-        )
-        # One free fn per fixture, each under its own facade name, all in one file: a fixture the
-        # scanner mis-counts as an open scope hides its own fn (and so fails by name).
-        names = ("set_cur", "cur", "reset", "requery", "run", "pump", "sections", "sources", "states")
-        self.assertEqual(len(names), len(fixtures))
-        text = "".join(
-            "\n" + prefix + f"    pub(super) unsafe extern \"C\" fn {name}(i: usize) {{}}\n"
-            for prefix, name in zip(fixtures, names))
-        r = self._prepend_files({"browse/mod.rs": text})
-        self._assert_flagged(r, "browse-owner", [("browse/mod.rs", f"fn {n}(") for n in names])
-
-    def test_browse_owner_gate_ignores_noncode_closing_braces_inside_an_impl(self):
-        """A compiling impl fixture remains receiver-bound even when every Rust literal/comment
-        form contains `}`. The old counter escaped the impl and falsely reported `cur`."""
-        fixture = r'''
-struct BrowseScopeFixture;
-impl BrowseScopeFixture {
-    // }
-    /* outer } /* nested } */ } */
-    const NORMAL: &'static str = "}\\\"";
-    const RAW: &'static str = r###"}"###;
-    const BYTES: &'static [u8] = b"}";
-    const RAW_BYTES: &'static [u8] = br##"}"##;
-    const CHAR: char = '}';
-    const BYTE_CHAR: u8 = b'}';
-    const ESCAPED_CHAR: char = '\'';
-    pub(crate) fn cur(&self) -> usize { 0 }
-}
-'''
-        r = self._prepend("browse/mod.rs", fixture)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("ok — browse-owner", r.stdout)
-
-    def test_browse_owner_gate_rejects_retired_transport_declarations(self):
-        declarations = (
-            ("browse/mod.rs", "LEGACY_ADAPTER", "    pub(crate) static LEGACY_ADAPTER: () = ();\n"),
-            ("stores/browse.rs", "ACTIVE", "    pub(super) static ACTIVE: () = ();\n"),
-            ("browse/mod.rs", "RETIRED_BROWSE", "    static mut RETIRED_BROWSE: Option<BrowseState> = None;\n"),
-        )
-        by_file = {}
-        for relpath, _, declaration in declarations:
-            by_file[relpath] = by_file.get(relpath, "") + "\n" + declaration
-        r = self._prepend_files(by_file)
-        self._assert_flagged(r, "browse-owner", [(relpath, name) for relpath, name, _ in declarations])
-
-    def test_browse_owner_gate_rejects_retired_thread_local_selectors(self):
-        selectors = (("browse/mod.rs", "LEGACY_ADAPTER"), ("stores/browse.rs", "ACTIVE"))
-        r = self._prepend_files({
-            relpath: f"\nthread_local! {{\n    static {selector}: () = ();\n}}\n"
-            for relpath, selector in selectors})
-        self._assert_flagged(r, "browse-owner", [(relpath, f"static {selector}") for relpath, selector in selectors])
-
-    def test_browse_owner_gate_accepts_unrelated_thread_local_state(self):
-        r = self._prepend(
-            "browse/mod.rs",
-            "\nthread_local! {\n    static UNRELATED_CACHE: () = ();\n}\n",
-        )
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("ok — browse-owner", r.stdout)
-
-    def test_browse_owner_gate_fails_closed_when_a_scanner_input_is_missing(self):
-        target = self._store_file(os.path.join("browse", "view.rs"))
-        hidden = target + ".check-deps-selftest"
-        self.assertTrue(os.path.exists(target), f"missing scanner fixture {target}")
-        self.assertFalse(os.path.exists(hidden), f"stale self-test artifact at {hidden}")
-        try:
-            os.replace(target, hidden)
-            r = subprocess.run(
-                [os.path.join(self.tree, "ci", "check-deps.sh")],
-                capture_output=True,
-                text=True,
-            )
-        finally:
-            if os.path.exists(hidden):
-                os.replace(hidden, target)
-        out = r.stdout + r.stderr
-        self.assertNotEqual(r.returncode, 0, out)
-        self.assertIn("browse declaration scanner failed", out)
-        self.assertIn("browse-owner:", out)
-
-    def test_browse_owner_gate_accepts_receiver_bound_owned_methods(self):
-        """A BrowseState selector is safe when it requires an explicit receiver. GREEN:
-        re-declare the owned `cur(&self)` method (already `pub` since the data crate split, so the
-        mutation adds an attribute rather than widening); the gate must still pass, proving it
-        rejects free/global facades rather than all methods with those names."""
-        r = self._mutate(
-            os.path.join("browse", "mod.rs"),
-            "    pub fn cur(&self) -> usize {",
-            "    #[inline]\n    pub fn cur(&self) -> usize {",
-        )
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("ok — browse-owner", r.stdout)
-
-    def test_viewstate_owner_gate_rejects_a_republished_free_state_facade(self):
-        """A free pump can only reach process state; the owned spelling requires a receiver."""
-        declarations = (
-            ("pump", "pub(crate) fn pump() {}\n"),
-            ("is_busy", "#[inline]\npub(super)\nconst fn\nis_busy() -> bool { false }\n"),
-        )
-        r = self._prepend_files({"viewstate.rs": "".join("\n" + d for _, d in declarations)})
-        self._assert_flagged(r, "viewstate-owner", [("viewstate.rs", name) for name, _ in declarations])
-
-    def test_viewstate_owner_gate_rejects_storage_transport_and_selector_statics(self):
-        fixtures = (
-            ("viewstate.rs", "QUEUE", "static mut QUEUE: Vec<()> = Vec::new();\n"),
-            ("viewstate.rs", "MAIL", "static MAIL: std::sync::Mutex<Option<()>> = std::sync::Mutex::new(None);\n"),
-            ("stores/viewstate.rs", "RETIRED", "static RETIRED: Option<ViewStateStore> = None;\n"),
-            ("stores/viewstate.rs", "ACTIVE", "thread_local! {\n    static ACTIVE: () = ();\n}\n"),
-        )
-        by_file = {}
-        for relpath, _, declaration in fixtures:
-            by_file[relpath] = by_file.get(relpath, "") + "\n" + declaration
-        r = self._prepend_files(by_file)
-        self._assert_flagged(r, "viewstate-owner", [(relpath, name) for relpath, name, _ in fixtures])
-
-    def test_viewstate_owner_gate_accepts_receiver_bound_owned_methods(self):
-        fixture = """
-struct ViewStateOwnerGateFixture;
-impl ViewStateOwnerGateFixture {
-    pub(crate) fn pump(&mut self) {}
-    pub(crate) fn is_busy(&self) -> bool { false }
-}
-"""
-        r = self._prepend("viewstate.rs", fixture)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("ok — viewstate-owner", r.stdout)
 
     def test_test_module_discovery_lexer_and_graph_regressions(self):
         result = subprocess.run([sys.executable, os.path.join(self.ROOT, "ci", "test_rust_test_modules.py")],
@@ -4498,42 +4259,6 @@ impl ViewStateOwnerGateFixture {
         self.assertIn("threads:", result.stdout)
         self.assertIn("libm:", result.stdout)
         self.assertIn(target + ":", result.stdout)
-
-    def test_person_owner_gate_rejects_free_read_and_mutation_facades(self):
-        declarations = (
-            ("current", "pub(crate) fn current() -> Option<()> { None }\n"),
-            ("pump", "#[inline]\npub(super)\nfn\npump() -> bool { false }\n"),
-            ("apply", "pub(crate) fn apply() {}\n"),
-        )
-        r = self._prepend_files({"person.rs": "".join("\n" + d for _, d in declarations)})
-        self._assert_flagged(r, "person-owner", [("person.rs", name) for name, _ in declarations])
-
-    def test_person_owner_gate_rejects_model_transport_and_selector_statics(self):
-        fixtures = (
-            ("person.rs", "CURRENT", "static mut CURRENT: Option<Person> = None;\n"),
-            ("person.rs", "FETCH", "static FETCH: Option<Fetch> = None;\n"),
-            ("person.rs", "RETRY_CD", "static RETRY_CD: [u32; 1] = [0];\n"),
-            ("stores/person.rs", "RETIRED", "static RETIRED: Option<PersonStore> = None;\n"),
-            ("stores/person.rs", "ACTIVE", "thread_local! {\n    static ACTIVE: () = ();\n}\n"),
-        )
-        by_file = {}
-        for relpath, _, declaration in fixtures:
-            by_file[relpath] = by_file.get(relpath, "") + "\n" + declaration
-        r = self._prepend_files(by_file)
-        self._assert_flagged(r, "person-owner", [(relpath, name) for relpath, name, _ in fixtures])
-
-    def test_person_owner_gate_accepts_receiver_bound_owned_methods(self):
-        fixture = """
-struct PersonOwnerGateFixture;
-impl PersonOwnerGateFixture {
-    pub(crate) fn current(&self) -> Option<()> { None }
-    pub(crate) fn pump(&mut self) -> bool { false }
-    pub(crate) fn apply(&mut self) {}
-}
-"""
-        r = self._prepend("person.rs", fixture)
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn("ok — person-owner", r.stdout)
 
     def test_threads_gate_catches_a_bare_thread_spawn_after_use_std_thread(self):
         """The gate used to match only the fully-qualified `std::thread::spawn(` spelling, so a
@@ -4818,12 +4543,10 @@ impl PersonOwnerGateFixture {
         "dump.txt": 9,  # files that may name the frame-dump switch (ci/check-dump-consumers.py); a new file fails the gate
         "layers.txt": 0,
         "libm.txt": 6,  # widgets.rs's existing test helper moved to widgets_test_support.rs
-        "mutators.txt": 0,
         "nav.txt": 0,
         "sibling-migration.txt": 0,
         "statics-migration.txt": 0,
         "statics.txt": 17,
-        "store-seams.txt": 0,
         "threads.txt": 0,
         "ticks.txt": 2,
         "wall.txt": 3,

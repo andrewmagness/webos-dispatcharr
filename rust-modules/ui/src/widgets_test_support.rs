@@ -40,8 +40,8 @@ pub(super) fn band_region(w: f32) -> f32 {
 /// A MOVIE's facts at a given watched state, `in_progress` being the application's answer to its
 /// resume rule (30 of 100 minutes in, when it is). For a LEAF the two flags really are each
 /// other's negation — which is exactly what stops being true for a container, hence the show cases
-/// below. The resume rule's own edges (an offset past the end, no runtime) are the application's
-/// and are graded where it applies them, in `screens::registry::tile_facts`.
+/// below. The resume rule's own edges (an offset past the end, no runtime) are the application's,
+/// not the library's.
 pub(super) fn row(watched: bool, in_progress: bool) -> TileFacts<'static> {
     TileFacts {
         watched,

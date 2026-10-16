@@ -3034,19 +3034,22 @@ mod tests {
         tex::reset_for_test(16 * 1024 * 1024);
         store().slots = [Pslot::ZERO; PT_CAP];
         let rect = plx_ui::Rect::new(0.0, 0.0, 250.0, 375.0);
-        let mut item = plx_data::pms::PmsMovie::default();
-        item.sid = sid;
-        item.thumb = "/library/metadata/42/thumb".into();
-        item.still = "/library/metadata/42/still".into();
+        // One card's facts, as a row would supply them; `owner` keys its placement history.
+        let facts = plx_ui::tile::TileFacts {
+            owner: 42,
+            src: sid.raw(),
+            thumb: "/library/metadata/42/thumb",
+            still: "/library/metadata/42/still",
+            ..Default::default()
+        };
         plx_ui::widgets::resolve_card_art(plx_ui::Painter::recording(), rect,
-            &plx_ui::widgets::Art::Poster(Some(plx_screens::registry::tile_facts::of(&item))));
+            &plx_ui::widgets::Art::Poster(Some(facts)));
         assert!(store().slots.iter().all(|s| s.state == P_EMPTY), "text prewarming must not start poster work");
         for frame in 0..3 {
             plx_ui::card_motion::begin_frame(frame * 16);
             plx_machine::idle::frame_begin(0.016);
             plx_machine::idle::take_local_damage();
             let painter = plx_ui::Painter::root().translate(if frame == 0 { 0.0 } else { 80.0 }, 0.0);
-            let facts = plx_screens::registry::tile_facts::of(&item);
             for art in [plx_ui::widgets::Art::Poster(Some(facts)), plx_ui::widgets::Art::Still(Some(facts)),
                 plx_ui::widgets::Art::Thumb { sid: sid.raw(), key: "/test-thumb", res: (250, 375) },
                 plx_ui::widgets::Art::Person { sid: sid.raw(), key: "/test-person", res: (250, 250) }] {

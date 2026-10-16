@@ -163,7 +163,6 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         for needle in ('rust-modules/media/src/player/ass.rs: a listed product file is missing',
                        'rust-modules/data/src/metadata.rs: a listed product file is missing',
-                       'rust-modules/data/src/person.rs: a listed product file is missing',
                        'rust-modules/screens/src: a directory this gate reads is missing'):
             self.assertIn(needle, err.getvalue())
 

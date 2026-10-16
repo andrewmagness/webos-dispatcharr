@@ -10,13 +10,10 @@ use plx_screens::registry::ContentReq;
 
 pub(super) fn request_play_intent(
     session: &mut plx_media::route::PlaybackSession,
-    meta: &mut plx_data::stores::metadata::MetadataStore,
     play: &plx_screens::registry::PlayIntent,
 ) -> bool {
     match play {
         plx_screens::registry::PlayIntent::Live(tune) => {
-            // A channel has no library item behind it: nothing describes it.
-            meta.run(plx_data::stores::metadata::MetadataCmd::SetNowPlaying(None));
             let uuid = tune.channel().map(|c| c.uuid.clone()).unwrap_or_default();
             let tune = super::dispatcharr::with_previous(super::dispatcharr::with_known_codecs(tune.clone()));
             let ok = plx_media::route::request_live(session, tune,
@@ -88,7 +85,7 @@ pub(crate) fn content_requests(app: &mut App, _fr: &Frame) {
                 // The PAGE decided what to play; the LOOP performs the request, because starting
                 // playback takes the playback session's `&mut` and a screen is only ever shown the
                 // frame's publication (§2.2). A refusal leaves the page exactly where it was.
-                if !request_play_intent(&mut app.player.session, app.bridge.metadata_mut(), &play) { continue; }
+                if !request_play_intent(&mut app.player.session, &play) { continue; }
                 // The page's own `ReturnState` rides the push, so BACK out of the playback finds
                 // the spot the Play was pressed from.
                 start_playback(&mut app.player.session, &mut app.adapters.player,

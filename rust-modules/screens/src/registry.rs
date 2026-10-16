@@ -21,22 +21,14 @@
 //! the machine that should own it (Session, Player, Navigation over the app's real stack) is not
 //! on the dispatcher yet. The bridge drains them after every dispatcher frame.
 
-use plx_data::stores::{StoreCmd, StoreId, StoreWork};
 use plx_machine::machine::{
     Canon, Chrome, Cx, Effects, EntryId, Host, InstanceId, LogicalState, ScreenId,
 };
 use plx_ui::screen::{Mounter, ReturnState, Screen};
 
-/// The one conversion from a catalog row to the plain facts `ui` draws a tile from. It lives here
-/// because a screen may name `registry` but never a sibling screen, and `ui` cannot name the row.
-pub mod tile_facts;
 
 /// The application's effects (spec §3.1).
 pub enum AppFx {
-    /// A store command, executed as a `Deliver` to the store machine in the same drain.
-    Store(StoreId, StoreCmd),
-    /// Poll only the store work this visible route owns, after its read-only step returns.
-    StoreWork(StoreWork),
     /// A request of the legacy loop (§14) — see [`LoopReq`].
     Loop(LoopReq),
     /// Content requests (a live channel to play), executed by the navigation bridge.
@@ -181,19 +173,6 @@ pub enum PlayIntent {
     Live(plx_media::route::LiveTune),
 }
 
-/// A host publishing the Metadata layer's read surface borrowed from its concrete store owner
-/// for this frame, for a screen generic over `H` that needs `plx_data::metadata::MetadataView`
-/// rather than the app-concrete `Bridge`.
-pub trait MetadataLike: AppLike + Sized {
-    fn metadata<'a>(cx: &Cx<'a, Self>) -> plx_data::metadata::MetadataView<'a>;
-    /// The subtitle search the player's Search page reads. PROVIDED, defaulting to `None` — a host
-    /// that offers no search shows no Search row — so the many test hosts that only need metadata
-    /// owe nothing; the production host overrides it with the store's view.
-    fn subtitle_search<'a>(_cx: &Cx<'a, Self>) -> Option<plx_data::subsearch::SubSearchView<'a>> {
-        None
-    }
-}
-
 /// A host that publishes this frame's playback session (spec §2.3). The player's owned screens
 /// read the Player machine's decisions through it; a change is asked for as an effect
 /// (`AppFx::Player`, `ContentReq::Play`), because the publication is a copy and there is no `&mut`
@@ -202,11 +181,9 @@ pub trait PlayerLike: AppLike<Memory = PageMemory> + Sized {
     fn session<'a>(cx: &Cx<'a, Self>) -> &'a plx_media::route::PlaybackSession;
 }
 
-/// The application's messages (spec §3.1).
-pub enum AppMsg {
-    Store(StoreCmd),
-    StoreWork(StoreWork),
-}
+/// The application's messages (spec §3.1). None: no machine of this application takes a
+/// delivered message, so nothing can construct one.
+pub enum AppMsg {}
 
 /// What an owned screen asks the LEGACY LOOP to do, because the owner of that decision is not on
 /// the dispatcher yet. Each names the phase that retires it.
@@ -455,7 +432,7 @@ pub struct AppMounter {
 /// it for its own host exactly as the dispatcher instantiates everything else.
 impl<H> Mounter<H> for AppMounter
 where
-    H: plx_machine::machine::Host<Arg = AppArg> + PlayerLike + MetadataLike,
+    H: plx_machine::machine::Host<Arg = AppArg> + PlayerLike,
 {
     fn mount(
         &mut self,

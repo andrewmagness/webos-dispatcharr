@@ -320,7 +320,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   a **no-op** host test build (`cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run`; it reports from cargo's JSON `fresh`
   flag whether the app crate was rebuilt and flags a recompile as UNEXPECTED, the
   `ci/test_build_not_always_dirty.py` hazard); an **edit-rebuild** after appending a comment to a
-  leaf file of each crate (`plx_base`'s `cbuf.rs`, `plx_machine`'s `landgate.rs`, `plx_platform`'s `devcaps.rs`, `plx_gfx`'s `overdraw.rs`, `plx_net`'s `stream_redirect.rs`, `plx_ui`'s `dwell.rs`, `plx_plex`'s `retry.rs`, `plx_telemetry`'s `window.rs`, `plx_data`'s `tape.rs`, `plx_media`'s `units.rs`, `plx_appkit`'s `live_banner.rs`, `plx_screens`'s `registry/tile_facts.rs`, the application's `coldstart.rs`) and to a hub (`plx_ui`'s `lib.rs`), non-incremental (`CARGO_INCREMENTAL=0`, the
+  leaf file of each crate (`plx_base`'s `cbuf.rs`, `plx_machine`'s `landgate.rs`, `plx_platform`'s `devcaps.rs`, `plx_gfx`'s `overdraw.rs`, `plx_net`'s `stream_redirect.rs`, `plx_ui`'s `dwell.rs`, `plx_plex`'s `retry.rs`, `plx_telemetry`'s `window.rs`, `plx_data`'s `metadata/track_names.rs`, `plx_media`'s `units.rs`, `plx_appkit`'s `live_banner.rs`, `plx_screens`'s `player/ass_subtitles.rs`, the application's `coldstart.rs`) and to a hub (`plx_ui`'s `lib.rs`), non-incremental (`CARGO_INCREMENTAL=0`, the
   default `target`) and incremental (`CARGO_INCREMENTAL=1`, `target-fast`; skipped with a note when
   that tree is absent unless `--cold`); the **unit suite** run on a warm tree, through the same
   `tools/cargo-test-parallel.py` wrapper the Makefile's recipes use (`UNIT_RUN` in `print-bench-config`), with its `test
@@ -887,26 +887,6 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   Escape hatch: write `log` into `/tmp/dispatcharrtv-guard` before launch (sim: instance runtime root).
   This boot-latched DIAG trigger requires `devtriggers`, keeps the picker unchanged and downgrades
   both fatal paths to logs plus warnings. Release builds contain none of these new dev paths.
-- `rust-modules/data/src/stores/` (crate `plx_data`) — **the data stores behind ONE vocabulary and ONE step** (restructure
-  phase 4, 2026-09-07; `docs/stores-as-machines.md`): `StoreCmd` is the complete set of mutations
-  of `browse`/`pms`/`metadata`/`search`/`person`/`viewstate`. Browse, Hubs, Metadata, Person,
-  Search and ViewState are physically owned per `Bridge` by `Stores`: `BrowseStore` owns its
-  state/adapter/notice, `HubsStore` owns its `PmsState`/`Arc<PmsAdapter>`/notice,
-  `MetadataStore` owns its state/`Arc<MetadataAdapter>`/notice,
-  `PersonStore` owns its model/generation/retry state plus a rotated indexed fetch adapter,
-  `SearchStore` owns its state/adapter/notice with a rotated adapter, and `ViewStateStore`
-  owns its queue, in-flight request, retry/refresh latches, rotated worker adapter and notice.
-  ViewState completions carry a monotone request ID and only the exact in-flight identity lands;
-  a deferred Detail refresh retains its originating `(server, ratingKey, episode)` address. Owned
-  screens emit `AppFx::Store`, and `app/bridge.rs` delivers it to the owning machine. A command
-  that changes observable state raises the store's notice. Browse has no active-owner compatibility
-  reads and no `stores::browse::apply(Cmd)` shim: consumers receive per-owner retained
-  `DirectoryView`/`ListingView`/`HubsView` publications, and fixtures own a `BrowseStore` or
-  `Stores` before capturing those publications. Person's borrowed `PersonView` reaches its three
-  live readers through `AppViews`/`Cx`, never a
-  free selector. The aggregate notice drain in `app/bridge.rs` delivers `StoreChanged` to live
-  pages; `metadata` reads go through `MetadataView`, which borrows from the owner (`&'a`), not
-  a compatibility global or mailbox.
 - `rust-modules/base/src/dynlib.rs` — the runtime library binder (`dlopen`, by SONAME candidate list or
   by absolute path). **Four** callers in a lab build and three in every other, each for its own
   reason: `net.rs` binds **curl** by candidate list because its SONAME moves between releases;

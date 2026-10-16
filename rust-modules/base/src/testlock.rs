@@ -41,24 +41,12 @@
 //! it safe" — a store answers yes to the first question unconditionally, so only the second one
 //! applies to it.
 //!
-//! **Phase 12 / D5 closed the coverage this claim depends on** (2026-09-10): each remaining
-//! process-global store's `apply`/`run` funnel asserts (`stores::hubs::run`,
-//! `stores::metadata::run` and `stores::search::run`), as does every
-//! `_for_test` installer that touches shared state. Browse, Person and ViewState fixtures instead own
-//! explicit stores; Browse's helpers cover source, pin,
-//! table, item, letter and query seeds without selecting process Browse state. Helpers that
-//! also touch the shared session or server registry assert the same lock. The remaining global
-//! installers include `metadata.rs`
-//! (`install_for_test`, `set_current_for_test`, `begin_detail_for_test`,
-//! `land_detail_for_test`), `search.rs` (`publish_shelves_for_test`,
-//! `debounce_elapsed_for_test`) and `pms.rs`'s own eleven sites — and so does every entry point of
-//! the server registry a test can reach: `plex::servers::register_with_client_id` (and the
-//! `register_lazy` seam it and its sibling test constructors share), `revoke_all`,
-//! `set_current` and `reset_for_test`. A three-run `make check` plus a ten-run
-//! `--test-threads 16` stress at this coverage level turned up no test that had been writing a
-//! store without the lock — which says the existing call sites were already disciplined, not
-//! that the assertion was unnecessary: it is what keeps that true as the suite grows, instead of
-//! relying on every future PR remembering the convention on its own.
+//! **Phase 12 / D5 closed the coverage this claim depends on** (2026-09-10): every `_for_test`
+//! installer that touches shared state asserts the lock, and so does every entry point of the
+//! server registry a test can reach: `plex::servers::register_with_client_id` (and the
+//! `register_lazy` seam it and its sibling test constructors share), `revoke_all`, `set_current`
+//! and `reset_for_test`. The assertion is what keeps the call sites disciplined as the suite
+//! grows, instead of relying on every future PR remembering the convention on its own.
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static GLOBALS: std::sync::Mutex<()> = std::sync::Mutex::new(());

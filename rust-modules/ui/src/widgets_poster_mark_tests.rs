@@ -1,10 +1,7 @@
 //! The poster watch-state mark and its write-verb twin (`poster_mark` vs. `row_watch_state`).
 //!
-//! These grade the mark's CHOICE over plain [`TileFacts`]: the library names no application row.
-//! The half that needs a real catalog row — that its resume rule (an offset past the end is
-//! finished, a row with no runtime cannot be in progress) and the facts built from it agree with
-//! the bar the caller draws — is graded where the row is converted,
-//! `screens::registry::tile_facts`.
+//! These grade the mark's CHOICE over plain [`TileFacts`]: the library names no application row,
+//! so a row's own resume rule is the converting layer's to grade.
 
 use super::*;
 #[allow(unused_imports)]

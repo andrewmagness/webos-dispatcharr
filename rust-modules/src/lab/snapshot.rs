@@ -126,12 +126,6 @@ pub(crate) struct Player {
     pub cb_err_at: u32,
     pub http_status: i32,
     pub net_rx: i64,
-    pub abr_mode: u8,
-    pub abr_kbps: i64,
-    pub abr_net_kbps: i64,
-    pub abr_buffer_ms: i64,
-    pub abr_action: u8,
-    pub abr_why: u8,
 }
 
 #[derive(Serialize)]
@@ -168,12 +162,6 @@ impl From<&plx_media::player::Diag> for Player {
             cb_err_at: d.cb_err_at,
             http_status: d.http_status,
             net_rx: d.net_rx,
-            abr_mode: d.abr_mode,
-            abr_kbps: d.abr_kbps,
-            abr_net_kbps: d.abr_net_kbps,
-            abr_buffer_ms: d.abr_buffer_ms,
-            abr_action: d.abr_action,
-            abr_why: d.abr_why,
         }
     }
 }

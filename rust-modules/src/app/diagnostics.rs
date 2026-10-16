@@ -1443,7 +1443,6 @@ mod tests {
     fn route_line_shows_refused_and_unverified() {
         let _g = plx_base::testlock::serial();
         let asked = plx_plex::plex::AudioEnhancements { boost_dialog: true, normalize_loudness: false };
-        let d = plx_media::player::Diag::default();
 
         {
             let ps = EnhTestSession::new(EnhTestFixture::default());
@@ -1690,7 +1689,7 @@ mod tests {
         }
         assert_eq!(history.mean_activity_kbps(), Some(100));
         assert_eq!(
-            chart_values(&history)[1],
+            chart_values(&history)[0],
             "200 kbps · mean 100 kbps",
             "the right-hand legend names both the current bar and the exact visible-window statistic",
         );

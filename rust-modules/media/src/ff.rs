@@ -10,7 +10,6 @@
 //! detail — struct offsets, AVOption names, custom AVIO — belongs in one module.
 //! The struct layouts below are the FFmpeg n3.3 ABI, confirmed on-device by the
 //! Phase A probe (/tmp/dispatcharrtv-ffprobe logs codec_id/width/height for a known title).
-#![allow(dead_code)]
 use crate::aq::AuQueue;
 use crate::player::threads::SendPtr;
 use crate::player::SHARED;

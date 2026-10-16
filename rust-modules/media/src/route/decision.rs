@@ -2174,15 +2174,6 @@ fn observe_active_hls(
     }
 }
 
-fn active_hls() -> Option<(WorkerTicket, ActiveHlsRoute)> {
-    let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    control
-        .active
-        .hls
-        .clone()
-        .map(|hls| (worker_ticket_of(&control), hls))
-}
-
 /// Reconcile the worker-owned adaptive projection into the main-thread session immediately before
 /// an operation that rebuilds or snapshots the route.  Ordinary playback never needs this copy;
 /// seek, manual Original and track/quality reloads do, because they construct a new URL from the
@@ -2735,75 +2726,6 @@ fn auto_original_features(ps: &PlaybackSession) -> crate::abr::SourceFeatures {
         .unwrap_or_default()
 }
 
-/// Main-thread capture immediately before spawning the HLS demux worker.
-pub fn hls_abr_control(ps: &PlaybackSession) -> Option<(HlsAbrControl, WorkerTicket)> {
-    if forced_direct_play(ps) { return None; }
-    let seconds_per_segment = match cur_delivery(ps) {
-        plx_plex::plex::TranscodeDelivery::FixedHls {
-            seconds_per_segment,
-        } => seconds_per_segment,
-        plx_plex::plex::TranscodeDelivery::ProgressiveMkv => return None,
-    };
-    let live = active_hls();
-    let ticket = live
-        .as_ref()
-        .map(|(ticket, _)| ticket.clone())
-        .unwrap_or_else(worker_ticket);
-    if ticket.encoder().is_empty() {
-        return None;
-    }
-    // A manual Original open that failed is restored onto HLS while the picker still reflects the
-    // user's attempted choice.  That route still needs rung control, but it must not immediately
-    // auto-retry the same failed source. Selecting Auto later adopts this worker in place; a
-    // subsequent seek/reload constructs a fresh controller with Original recovery enabled again.
-    let original = (applied_quality() == Quality::Auto)
-        .then(|| ps.auto_original.as_ref())
-        .flatten();
-    Some((
-        HlsAbrControl {
-            trace_generation: playback_trace_generation(),
-            sid: cur_sid(ps),
-            rating_key: cur_rk(ps),
-            logical_session: sess(ps),
-            audio_stream_id: cur_audio_sid(ps),
-            subtitle_stream_id: cur_sub_sid(ps),
-            seconds_per_segment,
-            initial_rung: live
-                .as_ref()
-                .map(|(_, hls)| hls.rung)
-                .or_else(|| cur_ceiling(ps).and_then(crate::abr::Rung::from_ceiling))
-                .unwrap_or(crate::abr::Rung::P480),
-            initial_observed: live.as_ref().and_then(|(_, hls)| hls.observed),
-            fixture_base: ps.auto_fixture_base.clone(),
-            original_probe_part: original.map(|c| c.probe_part.clone()).unwrap_or_default(),
-            // **Whole-file rate if PMS gave one, else the video rate — but NEVER zero while a
-            // candidate exists.** `cur_transport_kbps`'s zero means "PMS did not say", and
-            // `can_recover_original` reads this as "there is no way back", which silently deletes
-            // the entire recovery feature — `ff.rs` then never constructs `OriginalRecovery`, and
-            // `probe_due` is the only thing that logs a reason, so the deletion is invisible.
-            // See `a_missing_whole_file_bitrate_must_not_silently_delete_original_recovery`.
-            //
-            // The video rate is the same quantity minus the audio track. It makes
-            // `source_requirement_kbps` slightly optimistic, which the probe then corrects with a
-            // real measurement of the real file — that is what the probe is for.
-            original_source_kbps: original
-                .and_then(|_| {
-                    let s = &*ps;
-                    u32::try_from(s.cur_transport_kbps)
-                        .ok()
-                        .filter(|&kbps| kbps > 0)
-                        .or_else(|| u32::try_from(s.cur_src.0).ok().filter(|&kbps| kbps > 0))
-                })
-                .unwrap_or(0),
-            catalog: auto_catalog(ps),
-            prior: auto_prior(ps),
-            history: auto_history(ps, ps.now_ms),
-            original_features: auto_original_features(ps),
-        },
-        ticket,
-    ))
-}
-
 /// Main-thread capture for a progressive demux worker. `Some` is the complete authorization to
 /// turn sustained starvation into an HLS replacement, plus everything the decision needs; the
 /// worker never reads route's mutable session directly.
@@ -2817,29 +2739,7 @@ pub struct AutoOriginalWatch {
 }
 
 impl AutoOriginalWatch {
-    pub fn request_hls_fallback(
-        &self,
-        conservative_kbps: u32,
-        position_ns: i64,
-    ) -> AutomaticIntentResult {
-        publish_automatic_route_intent(AutomaticRouteIntent::OriginalToHls {
-            ticket: self.ticket.clone(),
-            conservative_kbps,
-            position_ns,
-        })
-    }
 
-    /// A direct in-place seek keeps this demux worker and semantic route but invalidates every
-    /// pre-seek measurement. Return a fresh ticket only for that exact case; an engine/route move
-    /// belongs to another worker and may not be adopted.
-    pub fn refresh_ticket_after_seek(&mut self) -> bool {
-        let current = worker_ticket();
-        if current.engine_epoch != self.ticket.engine_epoch || current.route != self.ticket.route {
-            return false;
-        }
-        self.ticket = current;
-        true
-    }
 }
 
 pub fn auto_original_watch(ps: &PlaybackSession) -> Option<AutoOriginalWatch> {

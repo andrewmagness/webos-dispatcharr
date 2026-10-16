@@ -75,7 +75,7 @@ Plex client for webOS by Gleb Linnik. Its rendering, UI system, focus engine and
 what this app is built on. The Plex pages, plex.tv sign-in, the Settings pages, the Plex
 documentation tooling, the on-demand player's transport and panels, the trailer preview engine and
 the Plex transcode machinery (seek and quality flights, Original trials, the film-resume machine)
-have been removed; the Plex playback and library code still inside the player engine and data
+and the Plex adaptive-bitrate and HLS playback engine have been removed; the Plex playback and library code still inside the player engine and data
 layers is being removed in stages.
 
 ## Licence

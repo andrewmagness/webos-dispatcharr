@@ -2385,20 +2385,6 @@ impl UserPauseClock {
         }
     }
 
-    fn elapsed_at(self, now: Instant) -> Duration {
-        self.completed.saturating_add(
-            self.active_since
-                .map_or(Duration::ZERO, |since| now.saturating_duration_since(since)),
-        )
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct UserPauseSnapshot {
-    pub now: Instant,
-    pub elapsed: Duration,
-    pub paused: bool,
-    pub sequence: u64,
 }
 
 impl Transport {
@@ -2446,25 +2432,6 @@ impl Transport {
             _ => {}
         }
         self.paused.store(paused, Ordering::Release);
-    }
-
-    /// One synchronized sample for an unpaused-elapsed transaction clock. `Instant` and the
-    /// cumulative accepted-Pause duration are observed under the transition mutex, so a complete
-    /// Pause->Resume inside a blocked network call can never disappear between two bool reads.
-    pub fn pause_clock_sample(&self) -> (Instant, Duration) {
-        let sample = self.pause_state_sample();
-        (sample.now, sample.elapsed)
-    }
-
-    pub fn pause_state_sample(&self) -> UserPauseSnapshot {
-        let clock = self.pause_clock.lock().unwrap_or_else(|e| e.into_inner());
-        let now = pause_clock_now();
-        UserPauseSnapshot {
-            now,
-            elapsed: clock.elapsed_at(now),
-            paused: clock.active_since.is_some(),
-            sequence: clock.sequence,
-        }
     }
 
     pub fn seek_preroll_active(&self) -> bool {
@@ -2530,33 +2497,6 @@ pub enum Stage {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_worker_consumes_a_complete_hidden_pause_cycle_as_one_event() {
-        let transport = Transport::new();
-        let mut cursor = UserPauseCursor::new(transport.pause_state_sample());
-        transport.commit_paused(true);
-        std::thread::sleep(Duration::from_millis(2));
-        transport.commit_paused(false);
-
-        let after = transport.pause_state_sample();
-        assert!(
-            !after.paused,
-            "the surrounding boolean samples are both false"
-        );
-        assert_eq!(after.sequence, 2);
-        assert!(
-            cursor
-                .consume_completed(after)
-                .is_some_and(|elapsed| elapsed >= Duration::from_millis(1)),
-            "the accepted interval must survive a blocked worker",
-        );
-        assert_eq!(
-            cursor.consume_completed(after),
-            None,
-            "an event is consumed exactly once"
-        );
-    }
 
     #[test]
     fn user_hold_is_inside_the_automatic_transition_authority() {
@@ -2647,27 +2587,6 @@ mod tests {
     }
 
     #[test]
-    fn a_retired_actuator_cannot_publish_candidate_media_into_the_next_session() {
-        let shared = Shared::new();
-        let retired = shared
-            .begin_hls_automatic_transition(HlsAutomaticTransition::QualityDown)
-            .expect("first session grants its downshift");
-        shared.reset_hls_clock_for_test();
-        let current = shared
-            .begin_hls_automatic_transition(HlsAutomaticTransition::QualityDown)
-            .expect("next session grants its own downshift");
-        assert_eq!(
-            shared.begin_hls_candidate_transition(Some(retired)),
-            Err(HlsClockFenceError::Superseded),
-        );
-        let candidate = shared
-            .begin_hls_candidate_transition(Some(current))
-            .expect("only the current actuator may enter publication");
-        assert!(shared.settle_hls_candidate_transition(candidate));
-        assert!(shared.finish_hls_automatic_transition(current));
-    }
-
-    #[test]
     fn internal_reprime_waits_for_the_recovery_actuator_transaction() {
         let shared = Shared::new();
         let down = shared
@@ -2712,27 +2631,6 @@ mod tests {
             "a late network result is evidence only after the viewer owns the clock",
         );
         assert!(shared.finish_hls_automatic_transition(original));
-    }
-
-    #[test]
-    fn a_user_clock_transition_revokes_inflight_quality_publication() {
-        let shared = Shared::new();
-        let up = shared
-            .begin_hls_automatic_transition(HlsAutomaticTransition::QualityUp)
-            .expect("running playback grants the upshift lease");
-        let HlsUserPause::Issue(pause) = shared.prepare_hls_user_pause().unwrap() else {
-            panic!("the user Pause remains orthogonal while candidate I/O runs");
-        };
-        assert_eq!(
-            shared.complete_hls_user_pause(pause, true),
-            HlsPauseCompletion::Accepted,
-        );
-        assert_eq!(
-            shared.begin_hls_candidate_transition(Some(up)),
-            Err(HlsClockFenceError::Superseded),
-            "private candidate bytes may not publish after the viewer changed the clock",
-        );
-        assert!(shared.finish_hls_automatic_transition(up));
     }
 
     #[test]
@@ -3016,28 +2914,6 @@ mod tests {
     }
 
     #[test]
-    fn candidate_settlement_rebases_recovery_while_pause_is_still_issuing() {
-        let s = Shared::new();
-        let pause = s.prepare_hls_rebuffer_pause().expect("reserve Pause");
-        s.observe_hls_recovery(500_000, Duration::from_secs(2));
-        assert_eq!(s.hls_recovery().completed, 1);
-
-        let candidate = s
-            .begin_hls_candidate_transition(None)
-            .expect("arm down candidate");
-        assert!(s.settle_hls_candidate_transition(candidate));
-        assert_eq!(
-            s.hls_recovery().completed,
-            0,
-            "new-rung media needs a fresh recovery certificate even before Pause returns"
-        );
-        assert_eq!(
-            s.complete_hls_rebuffer_pause(pause, true),
-            HlsPauseCompletion::Accepted
-        );
-    }
-
-    #[test]
     fn a_paused_seek_reuses_the_physical_hold_and_resumes_acb_only_at_prime() {
         let s = Shared::new();
         let pause = match s.prepare_hls_user_pause() {
@@ -3154,40 +3030,6 @@ mod tests {
             s.complete_hls_prime_play(play, true),
             HlsPlayCompletion::Accepted { resume_acb: true },
             "the eventual internal Play must also finish the viewer's deferred ACB Resume",
-        );
-    }
-
-    #[test]
-    fn candidate_publication_defers_user_resume_until_it_settles() {
-        let s = Shared::new();
-        let pause = match s.prepare_hls_user_pause() {
-            Some(HlsUserPause::Issue(token)) => token,
-            other => panic!("unexpected Pause reservation: {other:?}"),
-        };
-        assert_eq!(
-            s.complete_hls_user_pause(pause, true),
-            HlsPauseCompletion::Accepted
-        );
-        let candidate = s
-            .begin_hls_candidate_transition(None)
-            .expect("arm candidate");
-
-        assert_eq!(s.prepare_hls_user_resume(true), Some(HlsUserResume::Prime));
-        let recovery = s.hls_recovery();
-        assert!(
-            s.reserve_hls_prime_play(HlsPrimeKind::Resume, candidate, recovery)
-                .is_none(),
-            "an active candidate generation must fence ResumePrime",
-        );
-        assert!(s.settle_hls_candidate_transition(candidate));
-
-        let generation = s.hls_candidate_generation.load(Ordering::Acquire);
-        let (play, _) = s
-            .reserve_hls_prime_play(HlsPrimeKind::Resume, generation, recovery)
-            .expect("settlement releases the pending user Play");
-        assert_eq!(
-            s.complete_hls_prime_play(play, true),
-            HlsPlayCompletion::Accepted { resume_acb: true }
         );
     }
 

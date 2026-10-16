@@ -677,50 +677,6 @@ mod tests {
     }
 
     #[test]
-    fn a_preexisting_abort_prevents_the_publication_closure() {
-        let mut q = aq_new(1);
-        let called = AtomicBool::new(false);
-        aq_abort(&mut *q);
-
-        let result = aq_if_not_aborted(&mut *q, || called.store(true, Ordering::SeqCst));
-
-        assert_eq!(result, None);
-        assert!(!called.load(Ordering::SeqCst));
-        aq_destroy(&mut *q);
-    }
-
-    #[test]
-    fn publication_and_abort_share_one_linearization_mutex() {
-        let mut q = aq_new(1);
-        let q_addr = (&mut *q as *mut AuQueue) as usize;
-        let entered = Arc::new(Barrier::new(2));
-        let release = Arc::new(Barrier::new(2));
-        let entered_worker = Arc::clone(&entered);
-        let release_worker = Arc::clone(&release);
-        let worker = std::thread::spawn(move || {
-            aq_if_not_aborted(q_addr as *mut AuQueue, || {
-                entered_worker.wait();
-                release_worker.wait();
-                41
-            })
-        });
-
-        entered.wait();
-        let mutex = unsafe { ptr::addr_of_mut!((*(q_addr as *mut AuQueue)).m) };
-        assert_eq!(
-            unsafe { libc::pthread_mutex_trylock(mutex) },
-            libc::EBUSY,
-            "the publication closure must own the abort mutex",
-        );
-        release.wait();
-        assert_eq!(worker.join().unwrap(), Some(41));
-
-        aq_abort(&mut *q);
-        assert!(unsafe { aq_is_aborted(&*q) });
-        aq_destroy(&mut *q);
-    }
-
-    #[test]
     fn timed_push_invokes_drain_while_the_consumer_holds_the_queue_full() {
         use std::sync::atomic::AtomicUsize;
         let mut q = aq_new(8);

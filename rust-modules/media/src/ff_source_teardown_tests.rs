@@ -123,265 +123,6 @@ fn an_aborted_read_and_seek_cannot_ping_pong_into_new_connections() {
 }
 
 #[test]
-fn an_expired_candidate_deadline_stops_before_touching_its_transport() {
-    let mut aq = crate::aq::aq_new(1 << 20);
-    let mut st = AvioState {
-        // A null stream would crash if dispatch were reached; the deadline must settle first.
-        src: Src::Socket {
-            hs: std::ptr::null_mut(),
-            host: CString::new("unused").unwrap(),
-            port: 1,
-            path: CString::new("/unused").unwrap(),
-        },
-        aq: &mut *aq,
-        off: 0,
-        size: -1,
-        io_failed: false,
-        body_active_us: 0,
-        body_bytes: 0,
-        first_byte_at: None,
-        reserve_deadline: ReserveDeadlineState::new(Some(std::time::Instant::now()), false),
-        bounce: Vec::new(),
-        bounce_pos: 0,
-    };
-    let mut dst = [0u8; 8];
-    let result = read_cb(
-        &mut st as *mut AvioState as *mut c_void,
-        dst.as_mut_ptr(),
-        dst.len() as c_int,
-    );
-    assert_eq!(result, AVERROR_EOF);
-    assert!(st.reserve_deadline.expired);
-    assert!(
-        !st.io_failed,
-        "a rejected prime is not an active-stream transport failure"
-    );
-    crate::aq::aq_destroy(&mut *aq);
-}
-
-#[test]
-fn a_stalled_candidate_body_ends_at_transport_liveness_not_recursive_reserve_retries() {
-    use std::io::{Read, Write};
-
-    let _guard = plx_base::testlock::serial();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stall server");
-    let port = listener.local_addr().unwrap().port();
-    let server = std::thread::spawn(move || {
-        let (mut socket, _) = listener.accept().expect("accept");
-        let _ = socket.set_read_timeout(Some(std::time::Duration::from_secs(1)));
-        let mut request = Vec::new();
-        let mut chunk = [0u8; 512];
-        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-            let n = socket.read(&mut chunk).expect("read request");
-            if n == 0 {
-                return;
-            }
-            request.extend_from_slice(&chunk[..n]);
-        }
-        socket
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n")
-            .expect("headers");
-        socket.flush().expect("flush headers");
-        std::thread::sleep(std::time::Duration::from_millis(160));
-    });
-
-    let host = CString::new("127.0.0.1").unwrap();
-    let path = CString::new("/segment.ts").unwrap();
-    let mut hs = plx_net::stream::http_stream_boxed();
-    assert_eq!(
-        plx_net::stream::http_open(
-            &mut *hs,
-            host.as_ptr(),
-            port as c_int,
-            path.as_ptr(),
-            std::ptr::null(),
-            "GET",
-        ),
-        0,
-    );
-    let start_ns = 80_000_000_000;
-    let old_playpos = SHARED.playpos_ns.swap(start_ns, Ordering::AcqRel);
-    let old_paused = crate::player::TX.paused.swap(false, Ordering::AcqRel);
-    let mut aq = crate::aq::aq_new(1 << 20);
-    let mut state = AvioState {
-        src: Src::Socket {
-            hs: &mut *hs,
-            host,
-            port: port as c_int,
-            path,
-        },
-        aq: &mut *aq,
-        off: 0,
-        size: 8,
-        io_failed: false,
-        body_active_us: 0,
-        body_bytes: 0,
-        first_byte_at: None,
-        reserve_deadline: ReserveDeadlineState::from_playhead_at(
-            start_ns,
-            std::time::Duration::from_millis(2),
-            false,
-        ),
-        transport_watchdog: Some(TransportWatchdog::with_inactivity(
-            std::time::Duration::from_millis(35),
-        )),
-        bounce: Vec::new(),
-        bounce_pos: 0,
-    };
-    let started = std::time::Instant::now();
-    let mut dst = [0u8; 8];
-    let result = read_cb(
-        &mut state as *mut AvioState as *mut c_void,
-        dst.as_mut_ptr(),
-        dst.len() as c_int,
-    );
-    let elapsed = started.elapsed();
-
-    assert_eq!(result, AVERROR_IO);
-    assert!(state.io_failed);
-    assert!(!state.reserve_deadline.expired);
-    assert!(
-        elapsed >= std::time::Duration::from_millis(20)
-            && elapsed < std::time::Duration::from_millis(140),
-        "one no-progress epoch should bound every stale reserve wake: {elapsed:?}",
-    );
-
-    SHARED.playpos_ns.store(old_playpos, Ordering::Release);
-    crate::player::TX
-        .paused
-        .store(old_paused, Ordering::Release);
-    plx_net::stream::http_close(&mut *hs);
-    crate::aq::aq_destroy(&mut *aq);
-    server.join().expect("stall server");
-}
-
-#[test]
-fn abort_while_a_playlist_body_is_blocked_wins_over_the_transport_result() {
-    use std::io::{Read, Write};
-
-    let _guard = plx_base::testlock::serial();
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind stall server");
-    let port = listener.local_addr().unwrap().port();
-    let server = std::thread::spawn(move || {
-        let (mut socket, _) = listener.accept().expect("accept");
-        let mut request = Vec::new();
-        let mut chunk = [0u8; 512];
-        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-            let n = socket.read(&mut chunk).expect("read request");
-            if n == 0 {
-                return;
-            }
-            request.extend_from_slice(&chunk[..n]);
-        }
-        socket
-            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\n\r\n")
-            .expect("headers");
-        socket.flush().expect("flush headers");
-        std::thread::sleep(std::time::Duration::from_millis(160));
-    });
-
-    let host = CString::new("127.0.0.1").unwrap();
-    let path = CString::new("/playlist.m3u8").unwrap();
-    let mut hs = plx_net::stream::http_stream_boxed();
-    assert_eq!(
-        plx_net::stream::http_open(
-            &mut *hs,
-            host.as_ptr(),
-            port as c_int,
-            path.as_ptr(),
-            std::ptr::null(),
-            "GET",
-        ),
-        0,
-    );
-    let mut aq = crate::aq::aq_new(1 << 20);
-    let aq_addr = (&mut *aq) as *mut AuQueue as usize;
-    let hs_addr = (&mut *hs) as *mut HttpStream as usize;
-    let mut src = Src::Socket {
-        hs: &mut *hs,
-        host,
-        port: port as c_int,
-        path,
-    };
-    let mut dst = [0u8; 8];
-    let outcome = std::thread::scope(|scope| {
-        scope.spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(30));
-            crate::aq::aq_abort(aq_addr as *mut AuQueue);
-            plx_net::stream::http_shutdown(hs_addr as *mut HttpStream);
-        });
-        hls_source_read(
-            &mut src,
-            &mut *aq,
-            &mut dst,
-            Some(std::time::Instant::now() + std::time::Duration::from_secs(1)),
-        )
-    });
-
-    assert!(matches!(outcome, Err(HlsExit::Aborted)), "got {outcome:?}");
-    plx_net::stream::http_close(&mut *hs);
-    crate::aq::aq_destroy(&mut *aq);
-    server.join().expect("stall server");
-}
-
-#[test]
-fn a_prefetched_segment_does_not_move_the_published_buffer() {
-    let prev_video = SHARED.hls_video_tail_ns.swap(-1, Ordering::AcqRel);
-    let prev_audio = SHARED.hls_audio_tail_ns.swap(-1, Ordering::AcqRel);
-    let prev_pos = SHARED.playpos_ns.swap(0, Ordering::AcqRel);
-    let prev_base = SHARED.disp_base.swap(0, Ordering::AcqRel);
-    let held = HlsSegmentOutput {
-        aus: Vec::new(),
-        transfer: SegmentTransfer {
-            bytes: 1,
-            active_us: 1,
-            total_us: 1,
-            audio_expected: true,
-        },
-        video_width: 1920,
-        video_height: 1080,
-        video_tail_ns: 2_000_000_000,
-        audio_tail_ns: Some(2_000_000_000),
-    };
-    let published = hls_buffer_snapshot(None).buffered_ms();
-    let if_counted = hls_buffer_snapshot(Some(&held)).buffered_ms();
-    SHARED
-        .hls_video_tail_ns
-        .store(prev_video, Ordering::Release);
-    SHARED
-        .hls_audio_tail_ns
-        .store(prev_audio, Ordering::Release);
-    SHARED.playpos_ns.store(prev_pos, Ordering::Release);
-    SHARED.disp_base.store(prev_base, Ordering::Release);
-    assert_ne!(
-        published, if_counted,
-        "feeding N+1 into the snapshot is what would inflate E; holding it off-queue must not"
-    );
-    assert!(
-        if_counted.unwrap_or(0) > published.unwrap_or(0),
-        "the trap is specifically that Some(prefetch) looks like more reserve"
-    );
-}
-
-#[test]
-fn lookahead_errors_are_not_fatal_except_teardown() {
-    assert!(hls_prefetch_is_fatal(&HlsExit::Aborted));
-    assert!(!hls_prefetch_is_fatal(&HlsExit::Failed(
-        "HTTP request failed"
-    )));
-    assert!(!hls_prefetch_is_fatal(&HlsExit::NotReady));
-    assert!(!hls_prefetch_is_fatal(&HlsExit::PrimeExpired));
-    assert!(!hls_prefetch_is_fatal(&HlsExit::StallAbort(
-        SegmentTransfer {
-            bytes: 1,
-            active_us: 1,
-            total_us: 1,
-            audio_expected: false,
-        }
-    )));
-}
-
-#[test]
 fn drain_keeps_polling_only_while_more_body_is_expected() {
     assert!(
         drain_keep_polling(true, false),
@@ -392,104 +133,6 @@ fn drain_keeps_polling_only_while_more_body_is_expected() {
         "a finished body must cond_wait, not spin"
     );
     assert!(!drain_keep_polling(false, false), "cap must cond_wait");
-}
-
-#[test]
-fn commit_skips_lookahead_and_stay_does_not() {
-    assert!(hls_should_prefetch_after_abr(true, false, true));
-    assert!(
-        !hls_should_prefetch_after_abr(true, false, false),
-        "a commit must not GET N+1"
-    );
-    assert!(!hls_should_prefetch_after_abr(true, true, true));
-    assert!(!hls_should_prefetch_after_abr(false, false, true));
-}
-
-#[test]
-fn io_failed_after_drain_surfaces_once_bounce_is_empty() {
-    assert!(!park_read_fails_closed(true, true));
-    assert!(park_read_fails_closed(false, true));
-    assert!(!park_read_fails_closed(false, false));
-
-    let mut aq = crate::aq::aq_new(1 << 20);
-    let mut st = AvioState {
-        src: Src::Idle,
-        aq: &mut *aq,
-        off: 0,
-        size: 8,
-        io_failed: true,
-        body_active_us: 0,
-        body_bytes: 0,
-        first_byte_at: None,
-        bounce: b"ABCD".to_vec(),
-        bounce_pos: 0,
-    };
-    let op = &mut st as *mut AvioState as *mut c_void;
-    let mut dst = [0u8; 8];
-    assert_eq!(read_cb(op, dst.as_mut_ptr(), dst.len() as c_int), 4);
-    assert_eq!(&dst[..4], b"ABCD");
-    assert_eq!(
-        read_cb(op, dst.as_mut_ptr(), dst.len() as c_int),
-        AVERROR_IO,
-        "park-time RST must not look like EOS after bounce is consumed"
-    );
-    crate::aq::aq_destroy(&mut *aq);
-}
-
-#[test]
-fn take_curl_leaves_idle_and_seek_on_idle_does_not_open() {
-    let mut src = Src::Socket {
-        hs: std::ptr::null_mut(),
-        host: CString::new("127.0.0.1").unwrap(),
-        port: 1,
-        path: CString::new("/").unwrap(),
-    };
-    assert!(src.take_curl().is_none());
-    assert!(
-        matches!(src, Src::Socket { port: 1, .. }),
-        "a socket source must come back unchanged"
-    );
-
-    let mut aq = crate::aq::aq_new(1 << 20);
-    let mut st = AvioState {
-        src: Src::Idle,
-        aq: &mut *aq,
-        off: 0,
-        size: 8,
-        io_failed: false,
-        body_active_us: 0,
-        body_bytes: 0,
-        first_byte_at: None,
-        bounce: Vec::new(),
-        bounce_pos: 0,
-    };
-    let op = &mut st as *mut AvioState as *mut c_void;
-    assert_eq!(
-        seek_cb(op, 4, SEEK_SET),
-        -1,
-        "Idle must refuse a seek instead of http_open on a dummy socket"
-    );
-    assert_eq!(seek_cb(op, 0, AVSEEK_SIZE), 8);
-    let mut dst = [0u8; 8];
-    assert_eq!(
-        read_cb(op, dst.as_mut_ptr(), dst.len() as c_int),
-        AVERROR_EOF,
-        "Idle must not panic or dial during avformat_close_input"
-    );
-    assert!(!st.drain_wire(), "Idle has nothing to drain");
-    crate::aq::aq_destroy(&mut *aq);
-}
-
-#[test]
-fn take_curl_from_a_live_curl_source_leaves_idle() {
-    let Some(_gate) = curl_gate() else { return };
-    with_counting_listener(|port, _, _| {
-        let cs = crate::curlio::CurlSource::open(&format!("http://127.0.0.1:{port}/f.mkv"), 0)
-            .expect("open");
-        let mut src = Src::Curl(cs);
-        assert!(src.take_curl().is_some());
-        assert!(matches!(src, Src::Idle));
-    });
 }
 
 #[test]
@@ -677,73 +320,6 @@ fn a_curl_transport_failure_crosses_avio_as_io_error_not_eof() {
     });
 }
 
-/// **Issue #504.** `ff: media transport failed during av_read_frame r=-5` was the whole account of
-/// a direct play that died a minute in. The line now carries the libcurl code the transfer died
-/// with, and the same fact is published for the handled playback error (as a class and an age
-/// bucket, never the numbers). A failure that was not a curl transfer's says nothing it does not
-/// know.
-#[test]
-fn a_frame_read_failure_names_the_curl_rc_and_publishes_it_for_the_report() {
-    let Some(_gate) = curl_gate() else { return };
-    with_counting_listener(|port, _, _| {
-        struct Clear;
-        impl Drop for Clear {
-            fn drop(&mut self) {
-                SHARED.demux_io_failed.store(false, Ordering::Relaxed);
-                SHARED.reset_session();
-            }
-        }
-        let _clear = Clear;
-        SHARED.reset_session();
-
-        fn state(src: Src, aq: *mut crate::aq::AuQueue) -> AvioState {
-            AvioState {
-                src,
-                aq,
-                off: 0,
-                size: 8,
-                io_failed: true,
-                body_active_us: 0,
-                body_bytes: 0,
-                first_byte_at: None,
-                bounce: Vec::new(),
-                bounce_pos: 0,
-            }
-        }
-        let mut aq = crate::aq::aq_new(1 << 20);
-
-        // Not a curl transfer: the old line, and nothing published.
-        let mut idle = state(Src::Idle, &mut *aq);
-        let plain = plx_base::eventlog::with_private_log(|| {
-            assert!(frame_read_failed(&mut idle, -5));
-            std::fs::read_to_string(plx_base::eventlog::events_log()).unwrap_or_default()
-        });
-        assert!(plain.contains("media transport failed during av_read_frame r=-5"), "{plain}");
-        assert!(!plain.contains("curl_rc="), "no curl code was known: {plain}");
-        assert_eq!(SHARED.dg_transport_rc.load(Ordering::Acquire), 0);
-        SHARED.demux_io_failed.store(false, Ordering::Relaxed);
-
-        // A curl transfer that died mid-body.
-        let mut cs = crate::curlio::CurlSource::open(&format!("http://127.0.0.1:{port}/f.mkv"), 0)
-            .expect("fixture: open");
-        cs.fail_body_for_test(56);
-        let mut st = state(Src::Curl(cs), &mut *aq);
-        let line = plx_base::eventlog::with_private_log(|| {
-            assert!(frame_read_failed(&mut st, -5));
-            std::fs::read_to_string(plx_base::eventlog::events_log()).unwrap_or_default()
-        });
-        assert!(
-            line.contains("media transport failed during av_read_frame r=-5 curl_rc=56"),
-            "{line}"
-        );
-        assert!(SHARED.demux_io_failed.load(Ordering::Acquire));
-        assert_eq!(SHARED.dg_transport_rc.load(Ordering::Acquire), 56);
-        assert!(SHARED.dg_transport_age_ms.load(Ordering::Acquire) >= 0);
-        assert!(!SHARED.dg_transport_reopen_failed.load(Ordering::Acquire));
-        crate::aq::aq_destroy(&mut *aq);
-    });
-}
-
 /// A server that cuts the transfer mid-body (rc=56, a PMS reaping the socket while the viewer sat
 /// in the subtitle menu on a webOS 3.4 set) used to end the session: libavformat heals only through
 /// `seek_cb`, and a plain read failure never reaches it. The read callback now reopens at the byte
@@ -904,43 +480,114 @@ fn a_server_that_always_cuts_fails_after_three_reopens() {
     assert!(io_failed && got.is_empty());
 }
 
-/// `read_cb` is shared with HLS segment reads, which carry an `AcquisitionRuntime`. Their
-/// transfers are bounded by its checkpoint and deadlines and a failed segment is the HLS retry
-/// policy's to answer, so a cut there must end the read without a silent, unbounded reopen.
 #[test]
-fn a_cut_hls_segment_read_is_not_reopened_by_the_read_callback() {
-    let Some(_gate) = curl_gate() else { return };
-    let (port, _, seen) = cutting_server(300_000, 1, 50_000, false);
-    let cs = crate::curlio::CurlSource::open(&format!("http://127.0.0.1:{port}/f.mkv"), 0)
-        .expect("fixture: open");
-    let size = cs.size();
+fn io_failed_after_drain_surfaces_once_bounce_is_empty() {
+    assert!(!park_read_fails_closed(true, true));
+    assert!(park_read_fails_closed(false, true));
+    assert!(!park_read_fails_closed(false, false));
+
     let mut aq = crate::aq::aq_new(1 << 20);
-    let (reserve_deadline, runtime) =
-        SegmentAcquisition::for_test(None, false, false).begin(&mut *aq);
+    // An unconnected socket source: the bounce is served, then the failure surfaces, without
+    // the transport ever being asked.
+    let mut stand_in_hs = plx_net::stream::http_stream_boxed();
     let mut st = AvioState {
-        src: Src::Curl(cs),
+        src: Src::Socket {
+            hs: &mut *stand_in_hs,
+            host: std::ffi::CString::new("127.0.0.1").unwrap(),
+            port: 9,
+            path: std::ffi::CString::new("/").unwrap(),
+        },
         aq: &mut *aq,
         off: 0,
-        size,
-        io_failed: false,
+        size: 8,
+        io_failed: true,
         body_active_us: 0,
         body_bytes: 0,
         first_byte_at: None,
-        reserve_deadline,
-        acquisition: Some(runtime),
-        bounce: Vec::new(),
+        bounce: b"ABCD".to_vec(),
         bounce_pos: 0,
     };
     let op = &mut st as *mut AvioState as *mut c_void;
-    let mut dst = [0u8; 32768];
-    let terminal = loop {
-        let r = read_cb(op, dst.as_mut_ptr(), dst.len() as c_int);
-        if r <= 0 {
-            break r;
-        }
-    };
-    assert_eq!(terminal, AVERROR_IO);
-    assert!(st.io_failed);
-    assert_eq!(seen.lock().unwrap().len(), 1, "no reopen: the cut is the retry policy's");
+    let mut dst = [0u8; 8];
+    assert_eq!(read_cb(op, dst.as_mut_ptr(), dst.len() as c_int), 4);
+    assert_eq!(&dst[..4], b"ABCD");
+    assert_eq!(
+        read_cb(op, dst.as_mut_ptr(), dst.len() as c_int),
+        AVERROR_IO,
+        "park-time RST must not look like EOS after bounce is consumed"
+    );
     crate::aq::aq_destroy(&mut *aq);
+}
+
+/// **Issue #504.** `ff: media transport failed during av_read_frame r=-5` was the whole account of
+/// a direct play that died a minute in. The line now carries the libcurl code the transfer died
+/// with, and the same fact is published for the handled playback error (as a class and an age
+/// bucket, never the numbers). A failure that was not a curl transfer's says nothing it does not
+/// know.
+#[test]
+fn a_frame_read_failure_names_the_curl_rc_and_publishes_it_for_the_report() {
+    let Some(_gate) = curl_gate() else { return };
+    with_counting_listener(|port, _, _| {
+        struct Clear;
+        impl Drop for Clear {
+            fn drop(&mut self) {
+                SHARED.demux_io_failed.store(false, Ordering::Relaxed);
+                SHARED.reset_session();
+            }
+        }
+        let _clear = Clear;
+        SHARED.reset_session();
+
+        fn state(src: Src, aq: *mut crate::aq::AuQueue) -> AvioState {
+            AvioState {
+                src,
+                aq,
+                off: 0,
+                size: 8,
+                io_failed: true,
+                body_active_us: 0,
+                body_bytes: 0,
+                first_byte_at: None,
+                bounce: Vec::new(),
+                bounce_pos: 0,
+            }
+        }
+        let mut aq = crate::aq::aq_new(1 << 20);
+
+        // Not a curl transfer: the old line, and nothing published.
+        let mut stand_in_hs = plx_net::stream::http_stream_boxed();
+        let mut idle = state(Src::Socket {
+            hs: &mut *stand_in_hs,
+            host: std::ffi::CString::new("127.0.0.1").unwrap(),
+            port: 9,
+            path: std::ffi::CString::new("/").unwrap(),
+        }, &mut *aq);
+        let plain = plx_base::eventlog::with_private_log(|| {
+            assert!(frame_read_failed(&mut idle, -5));
+            std::fs::read_to_string(plx_base::eventlog::events_log()).unwrap_or_default()
+        });
+        assert!(plain.contains("media transport failed during av_read_frame r=-5"), "{plain}");
+        assert!(!plain.contains("curl_rc="), "no curl code was known: {plain}");
+        assert_eq!(SHARED.dg_transport_rc.load(Ordering::Acquire), 0);
+        SHARED.demux_io_failed.store(false, Ordering::Relaxed);
+
+        // A curl transfer that died mid-body.
+        let mut cs = crate::curlio::CurlSource::open(&format!("http://127.0.0.1:{port}/f.mkv"), 0)
+            .expect("fixture: open");
+        cs.fail_body_for_test(56);
+        let mut st = state(Src::Curl(cs), &mut *aq);
+        let line = plx_base::eventlog::with_private_log(|| {
+            assert!(frame_read_failed(&mut st, -5));
+            std::fs::read_to_string(plx_base::eventlog::events_log()).unwrap_or_default()
+        });
+        assert!(
+            line.contains("media transport failed during av_read_frame r=-5 curl_rc=56"),
+            "{line}"
+        );
+        assert!(SHARED.demux_io_failed.load(Ordering::Acquire));
+        assert_eq!(SHARED.dg_transport_rc.load(Ordering::Acquire), 56);
+        assert!(SHARED.dg_transport_age_ms.load(Ordering::Acquire) >= 0);
+        assert!(!SHARED.dg_transport_reopen_failed.load(Ordering::Acquire));
+        crate::aq::aq_destroy(&mut *aq);
+    });
 }

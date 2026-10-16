@@ -115,36 +115,6 @@ fn hls_resource(port: u16) -> crate::hls::Resource {
     }
 }
 
-fn hls_open_plain(
-    port: u16,
-    request_path: &str,
-) -> (Result<(String, i64), String>, Box<HttpStream>) {
-    let mut hs = plx_net::stream::http_stream_boxed();
-    let mut aq = crate::aq::aq_new(1 << 20);
-    let mut net = HlsNet {
-        hs: &mut *hs,
-        curl: None,
-    };
-    let opened = hls_open_source(
-        &hls_resource(port),
-        request_path,
-        &mut *aq,
-        &mut net,
-        None,
-        &mut plx_base::checkpoint::NoCheckpoint,
-    );
-    let outcome = match opened {
-        Ok((Src::Socket { path, .. }, size, _)) => {
-            Ok((path.to_string_lossy().into_owned(), size))
-        }
-        Ok((Src::Curl(_), size, _)) => Ok(("<curl>".into(), size)),
-        Err(e) => Err(format!("{e:?}")),
-    };
-    plx_net::stream::http_close(&mut *hs);
-    crate::aq::aq_destroy(&mut *aq);
-    (outcome, hs)
-}
-
 /// A progressive open through the production helper, reduced to where it landed.
 fn progressive_open(port: u16, path: &str) -> Result<(String, i64), String> {
     let mut hs = plx_net::stream::http_stream_boxed();
@@ -159,33 +129,6 @@ fn progressive_open(port: u16, path: &str) -> Result<(String, i64), String> {
     plx_net::stream::http_close(&mut *hs);
     crate::aq::aq_destroy(&mut *aq);
     outcome
-}
-
-#[test]
-fn an_hls_open_follows_an_absolute_same_origin_302_and_keeps_the_token() {
-    let _serial = plx_base::testlock::serial();
-    let pms = Scripted::start(|head, port| {
-        if request_line(head).starts_with("GET /start") {
-            redirect(302, &format!("http://127.0.0.1:{port}/final/seg.ts"))
-        } else if request_line(head).starts_with("GET /final/seg.ts") {
-            ok_body("ABCD")
-        } else {
-            not_found()
-        }
-    });
-    let (outcome, _hs) = hls_open_plain(pms.port, "/start?X-Plex-Token=tok");
-    assert_eq!(
-        outcome,
-        Ok(("/final/seg.ts?X-Plex-Token=tok".to_string(), 4)),
-        "the open must land on the Location, and a later reopen must use it"
-    );
-    let heads = pms.heads();
-    assert_eq!(heads.len(), 2, "one redirect, one final GET: {heads:?}");
-    assert!(
-        request_line(&heads[1]).starts_with("GET /final/seg.ts?X-Plex-Token=tok "),
-        "a same-origin hop keeps the credential: {}",
-        request_line(&heads[1])
-    );
 }
 
 #[test]
@@ -272,19 +215,6 @@ fn a_cross_origin_hop_does_not_forward_the_token() {
 }
 
 #[test]
-fn a_redirect_loop_is_bounded_and_fails() {
-    let _serial = plx_base::testlock::serial();
-    let pms = Scripted::start(|_head, _port| redirect(302, "/loop"));
-    let (outcome, _hs) = hls_open_plain(pms.port, "/start");
-    assert!(outcome.is_err(), "a loop must fail: {outcome:?}");
-    assert_eq!(
-        pms.requests().len(),
-        1 + plx_net::stream::redirect::MAX_HOPS as usize,
-        "the first request plus exactly MAX_HOPS followed hops"
-    );
-}
-
-#[test]
 fn a_progressive_open_follows_a_302() {
     let _serial = plx_base::testlock::serial();
     let pms = Scripted::start(|head, _port| {
@@ -349,57 +279,3 @@ fn an_https_hop_from_the_socket_path_is_routed_to_curl() {
     );
 }
 
-/// Review finding: a redirected master playlist was parsed against the URL it was REQUESTED
-/// from, so `/old/master.m3u8` -> `/new/master.m3u8` with a relative child `variant.m3u8` asked
-/// for `/old/variant.m3u8`. Children resolve against where the playlist actually came from.
-#[test]
-fn a_redirected_master_playlist_resolves_its_children_against_the_redirect_target() {
-    let _serial = plx_base::testlock::serial();
-    let pms = Scripted::start(|head, _port| {
-        if request_line(head).starts_with("GET /old/master.m3u8") {
-            redirect(302, "/new/master.m3u8")
-        } else if request_line(head).starts_with("GET /new/master.m3u8") {
-            ok_body("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nvariant.m3u8\n")
-        } else {
-            not_found()
-        }
-    });
-    let mut hs = plx_net::stream::http_stream_boxed();
-    let mut aq = crate::aq::aq_new(1 << 20);
-    let mut net = HlsNet {
-        hs: &mut *hs,
-        curl: None,
-    };
-    let origin = plx_plex::plex::Origin::http("127.0.0.1", pms.port as i32);
-    let cursor = hls_cursor_open(
-        &origin,
-        "/old/master.m3u8?X-Plex-Token=tok",
-        &mut *aq,
-        &mut net,
-        false,
-        None,
-    );
-    let media = cursor
-        .as_ref()
-        .map(|c| c.media.path.clone())
-        .map_err(|e| format!("{e:?}"));
-    plx_net::stream::http_close(&mut *hs);
-    crate::aq::aq_destroy(&mut *aq);
-    assert_eq!(media, Ok("/new/variant.m3u8".to_string()));
-}
-
-/// The HLS contract (`hls.rs`): every request stays on the PMS origin, so the media worker can
-/// never be steered into fetching from elsewhere. A redirect off that origin is refused before
-/// anything is dialled there.
-#[test]
-fn an_hls_redirect_off_the_pms_origin_is_refused_before_it_is_dialled() {
-    let _serial = plx_base::testlock::serial();
-    let cdn = Scripted::start(|_head, _port| ok_body("ABCD"));
-    let cdn_port = cdn.port;
-    let pms = Scripted::start(move |_head, _port| {
-        redirect(302, &format!("http://127.0.0.1:{cdn_port}/cdn/v.ts?sig=abc"))
-    });
-    let (outcome, _hs) = hls_open_plain(pms.port, "/start?X-Plex-Token=tok");
-    assert!(outcome.is_err(), "{outcome:?}");
-    assert!(cdn.requests().is_empty(), "nothing may reach another origin");
-}

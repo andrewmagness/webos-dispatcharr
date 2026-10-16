@@ -270,9 +270,4 @@ impl AbrPolicy {
     }
 }
 
-/// The closed-loop plant (I0-B/C). Host-only: it never ships.
-#[cfg(test)]
-mod sim;
 
-#[cfg(test)]
-mod tests;

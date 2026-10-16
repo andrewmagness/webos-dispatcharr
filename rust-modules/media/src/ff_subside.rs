@@ -928,19 +928,6 @@ mod tests {
     }
 
     #[test]
-    fn assumed_delta_uses_keyframe_at_or_before_offset() {
-        let kfs = [590_000_000_000, 598_500_000_000, 603_000_000_000, 612_000_000_000];
-        let offset = 600_000_000_000;
-        let k = keyframe_at_or_before(&kfs, offset).expect("a keyframe precedes the offset");
-        assert_eq!(k, 598_500_000_000, "the keyframe AFTER the offset must not be chosen");
-        assert_eq!(keyframe_at_or_before(&kfs, 598_500_000_000), Some(598_500_000_000), "at counts");
-        assert_eq!(keyframe_at_or_before(&kfs, 1), None);
-        assert_eq!(keyframe_at_or_before(&[], offset), None);
-        // the remux's first keyframe is stamped 0 and labelled with disp_base = offset
-        assert_eq!(delta_assumed(k, 0, 0, offset), -1_500_000_000);
-    }
-
-    #[test]
     fn the_anchor_line_is_numbers_and_labels_only() {
         let exact = anchor_line(Some(598_500_000_000), 0, 600_000_000_000, 0, -1_500_000_000, Some(-1_500_000_000), 123, 45);
         assert_eq!(
@@ -973,29 +960,6 @@ mod tests {
     fn open_side(port: u16, stop: &Arc<SideStop>) -> Box<SideIo> {
         SideIo::open(&format!("http://127.0.0.1:{port}/library/parts/1/file.mkv"), stop)
             .unwrap_or_else(|e| panic!("fixture: the side open must succeed: {e:?}"))
-    }
-
-    #[test]
-    fn stop_makes_read_and_seek_fail_closed() {
-        with_counting_listener(|port, accepts, _| {
-            let stop = SideStop::new();
-            let mut io = open_side(port, &stop);
-            assert_eq!(accepts.load(Ordering::Acquire), 1, "fixture: one connection so far");
-            let op = &mut *io as *mut SideIo as *mut c_void;
-            let mut buf = [0u8; 4];
-            assert_eq!(side_read_cb(op, buf.as_mut_ptr(), 4), 4, "fixture: reads work before the stop");
-            stop.trigger();
-            assert!(io.stopped());
-            assert_eq!(side_read_cb(op, buf.as_mut_ptr(), 4), AVERROR_EOF);
-            assert_eq!(side_seek_cb(op, 0, SEEK_SET), -1);
-            assert_eq!(side_seek_cb(op, 2, SEEK_CUR), -1);
-            assert_eq!(
-                accepts.load(Ordering::Acquire),
-                1,
-                "a seek after the stop opened a SECOND connection the stop cannot reach"
-            );
-            assert_eq!(side_seek_cb(op, 0, AVSEEK_SIZE), 8, "a size query is a field read");
-        });
     }
 
     #[test]

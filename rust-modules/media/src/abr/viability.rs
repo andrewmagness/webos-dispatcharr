@@ -1,12 +1,5 @@
 use super::*;
 
-/// What one second of this source consumes on average.  PMS does not expose a peak envelope, so
-/// inflating the average by a fixed multiplier would be an unmeasured heuristic, not a bound.
-/// Short-term VBR demand is instead visible where it matters: in the playable-buffer derivative.
-pub fn source_requirement_kbps(source_kbps: u32, _policy: &AbrPolicy) -> u32 {
-    source_kbps
-}
-
 /// The two weights [`risk_score`] sums. Named so that [`RISK_SCORE_MAX`] can be their sum rather
 /// than a fourth number that has to be edited alongside them: the const's whole purpose is that the
 /// panel cannot go on dividing by a stale denominator after a coefficient moves, and while the

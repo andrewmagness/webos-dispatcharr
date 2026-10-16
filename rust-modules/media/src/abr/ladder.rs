@@ -155,30 +155,6 @@ impl Rung {
     }
 }
 
-/// What PMS actually attached to one fixed-HLS request.  This is deliberately not a [`Rung`]:
-/// the rung is the actuator sent on the decision request, while the master declaration and the
-/// decoded raster are the server's response.  PMS's mapping is item- and session-dependent and
-/// therefore has no honest inverse back to the request ladder.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ObservedHlsVariant {
-    pub declared_bps: u64,
-    pub width: u16,
-    pub height: u16,
-}
-
-impl ObservedHlsVariant {
-    pub fn new(declared_bps: u64, width: i32, height: i32) -> Option<Self> {
-        let width = u16::try_from(width).ok().filter(|value| *value > 0)?;
-        let height = u16::try_from(height).ok().filter(|value| *value > 0)?;
-        (declared_bps > 0).then_some(Self {
-            declared_bps,
-            width,
-            height,
-        })
-    }
-
-}
-
 /// One PMS operating point. `request_kbps` is what goes on the wire as the ceiling; the other two
 /// are what the server was measured to DO with it, and they are separate fields precisely because
 /// the request is not a promise in either direction. Read `expected_wire_kbps` with the

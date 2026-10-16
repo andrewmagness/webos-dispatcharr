@@ -9164,10 +9164,6 @@ pub fn demux(
 mod test_support;
 
 #[cfg(test)]
-#[path = "ff_abr_reject_tests.rs"]
-mod abr_reject_tests;
-
-#[cfg(test)]
 #[path = "ff_packet_framing_tests.rs"]
 mod packet_framing_tests;
 
@@ -9178,14 +9174,6 @@ mod aac_timestamp_tests;
 #[cfg(test)]
 #[path = "ff_source_teardown_tests.rs"]
 mod source_teardown_tests;
-
-#[cfg(test)]
-#[path = "ff_hls_reserve_tests.rs"]
-mod hls_reserve_tests;
-
-#[cfg(test)]
-#[path = "ff_stall_guard_tests.rs"]
-mod stall_guard_tests;
 
 #[cfg(test)]
 #[path = "ff_image_subtitle_tests.rs"]

@@ -11,7 +11,7 @@
 //! enabled, and nothing is queued unless the viewer actually reaches `PlaybackState::Error`.
 
 use super::classes::{
-    AttemptOrigin, FailureClass, PlaybackErrorContext, TraceEvent, TraceOutcome, TraceStep,
+    AttemptOrigin, FailureClass, PlaybackErrorContext, TraceEvent, TraceStep,
 };
 use serde_json::{Map, Value};
 
@@ -43,64 +43,16 @@ fn breadcrumb(step: TraceStep) -> Value {
     let mut data = Map::new();
     put(&mut data, "elapsed", step.age.code());
     let (message, level) = match step.event {
-        TraceEvent::Requested { selected } => {
-            put(&mut data, "selected", selected.code());
-            ("playback requested", "info")
-        }
+        TraceEvent::Requested => ("playback requested", "info"),
         TraceEvent::Presented {
-            delivery,
-            requested,
             declared_rate,
             raster,
         } => {
-            put(&mut data, "delivery", delivery.code());
-            put(&mut data, "requested", requested.code());
             put(&mut data, "declared_rate", declared_rate.code());
             put(&mut data, "raster", raster.code());
             ("picture presented", "info")
         }
         TraceEvent::SeekRequested => ("seek requested", "info"),
-        TraceEvent::QualitySelected { selected } => {
-            put(&mut data, "selected", selected.code());
-            ("quality selected", "info")
-        }
-        TraceEvent::DeliveryRequested {
-            delivery,
-            requested,
-            reason,
-        } => {
-            put(&mut data, "delivery", delivery.code());
-            put(&mut data, "requested", requested.code());
-            put(&mut data, "reason", reason.code());
-            ("delivery requested", "info")
-        }
-        TraceEvent::HlsCommitted {
-            direction,
-            requested,
-        } => {
-            put(&mut data, "direction", direction.code());
-            put(&mut data, "requested", requested.code());
-            ("HLS request committed", "info")
-        }
-        TraceEvent::OriginalProbe { phase, outcome } => {
-            put(&mut data, "phase", phase.code());
-            put(&mut data, "outcome", outcome.code());
-            (
-                "Original check phase",
-                if matches!(
-                    outcome,
-                    TraceOutcome::Deadline
-                        | TraceOutcome::Transport
-                        | TraceOutcome::Inconclusive
-                        | TraceOutcome::ServerState
-                        | TraceOutcome::Refused
-                ) {
-                    "error"
-                } else {
-                    "info"
-                },
-            )
-        }
         TraceEvent::LoadGateOpened { elapsed } => {
             put(&mut data, "load_elapsed", elapsed.code());
             ("load gate opened", "info")
@@ -160,12 +112,8 @@ pub fn event_body(
         }]},
         "tags": {
             "playback.kind": code,
-            "playback.delivery": context.delivery.code(),
-            "playback.selected_quality": context.selected.code(),
-            "playback.requested_quality": context.requested.code(),
             "playback.declared_rate": context.declared_rate.code(),
             "playback.started": if context.started { "yes" } else { "no" },
-            "playback.attempted_delivery": context.attempted_delivery.code(),
             "playback.attempt_started": if context.attempt_started { "yes" } else { "no" },
             "playback.attempt_origin": context.attempt_origin.code(),
             "playback.attempt_ordinal": context.attempt_ordinal.code(),
@@ -176,16 +124,12 @@ pub fn event_body(
         },
         "contexts": {"playback": {
             "type": "playback",
-            "delivery": context.delivery.code(),
-            "selected_quality": context.selected.code(),
-            "requested_quality": context.requested.code(),
             "declared_rate": context.declared_rate.code(),
             "media_rate": context.media_rate.code(),
             "raster": context.raster.code(),
             "pipeline": context.pipeline.code(),
             "http": context.http.code(),
             "http_status": context.http_status,
-            "attempted_delivery": context.attempted_delivery.code(),
             "attempt_started": context.attempt_started,
             "attempt_origin": context.attempt_origin.code(),
             "attempt_ordinal": context.attempt_ordinal.code(),
@@ -197,28 +141,6 @@ pub fn event_body(
         }},
         "breadcrumbs": {"values": breadcrumbs},
     });
-    if let Some(r) = context.refusal {
-        // Tags so an issue can be searched and grouped on them, a context so one event reads in
-        // one place. Every value is the `code()` of a closed enum; the server's own sentence has
-        // no field here and no path to one (see `PlayVerdict::Server` — it stays on the device).
-        for (key, value) in [
-            ("playback.refusal_general", r.general.code()),
-            ("playback.refusal_transcode", r.transcode.code()),
-            ("playback.attempted_delivery", r.attempted.code()),
-            ("playback.source_video", r.source_video.code()),
-            ("playback.source_audio", r.source_audio.code()),
-        ] {
-            body["tags"][key] = Value::String(value.to_string());
-        }
-        body["contexts"]["refusal"] = serde_json::json!({
-            "type": "refusal",
-            "general_code": r.general.code(),
-            "transcode_code": r.transcode.code(),
-            "attempted_delivery": r.attempted.code(),
-            "source_video": r.source_video.code(),
-            "source_audio": r.source_audio.code(),
-        });
-    }
     if !dist.is_empty() {
         body["dist"] = Value::String(dist.to_string());
     }
@@ -282,22 +204,17 @@ pub fn report_error(kind: FailureClass, context: PlaybackErrorContext, trace: &[
 /// the closed domains disclosed beside the preview. No consent-time identifier is minted.
 pub fn preview_event() -> Vec<u8> {
     use crate::telemetry::classes::{
-        AttemptOrdinal, AttemptOrigin, AudioCodecClass, BufferClass, DecisionCodeClass, DeliveryClass,
-        DeliveryReason, HttpClass, OriginalProbePhase, PipelineClass, QualityClass, RasterClass, RateClass, RefusalContext,
-        TraceAge, TraceDirection, TraceOutcome, TransferAgeClass, TransportClass, VideoCodecClass,
+        AttemptOrdinal, AttemptOrigin, BufferClass, HttpClass, PipelineClass, RasterClass, RateClass,
+        TraceAge, TransferAgeClass, TransportClass,
     };
     let trace = [
         TraceStep {
             age: TraceAge::Under1s,
-            event: TraceEvent::Requested {
-                selected: QualityClass::Auto,
-            },
+            event: TraceEvent::Requested,
         },
         TraceStep {
             age: TraceAge::S1To3,
             event: TraceEvent::Presented {
-                delivery: DeliveryClass::Hls,
-                requested: QualityClass::M4,
                 declared_rate: RateClass::M3To6,
                 raster: RasterClass::Hd,
             },
@@ -305,34 +222,6 @@ pub fn preview_event() -> Vec<u8> {
         TraceStep {
             age: TraceAge::S3To10,
             event: TraceEvent::SeekRequested,
-        },
-        TraceStep {
-            age: TraceAge::S10To30,
-            event: TraceEvent::QualitySelected {
-                selected: QualityClass::Original,
-            },
-        },
-        TraceStep {
-            age: TraceAge::S10To30,
-            event: TraceEvent::DeliveryRequested {
-                delivery: DeliveryClass::Direct,
-                requested: QualityClass::Original,
-                reason: DeliveryReason::OriginalRecovery,
-            },
-        },
-        TraceStep {
-            age: TraceAge::S30To120,
-            event: TraceEvent::HlsCommitted {
-                direction: TraceDirection::Up,
-                requested: QualityClass::M22,
-            },
-        },
-        TraceStep {
-            age: TraceAge::S30To120,
-            event: TraceEvent::OriginalProbe {
-                phase: OriginalProbePhase::SampleSource,
-                outcome: TraceOutcome::ServerState,
-            },
         },
         TraceStep {
             age: TraceAge::S30To120,
@@ -347,9 +236,6 @@ pub fn preview_event() -> Vec<u8> {
         Some(super::native::PREVIEW_USER_ID),
         FailureClass::PlaybackInterrupted,
         PlaybackErrorContext {
-            delivery: DeliveryClass::Hls,
-            selected: QualityClass::Auto,
-            requested: QualityClass::M22,
             declared_rate: RateClass::M3To6,
             media_rate: RateClass::M1To3,
             raster: RasterClass::Uhd,
@@ -359,22 +245,11 @@ pub fn preview_event() -> Vec<u8> {
             transport: TransportClass::RecvError,
             transfer_age: TransferAgeClass::S30To90,
             started: true,
-            attempted_delivery: DeliveryClass::Direct,
             attempt_started: false,
             attempt_origin: AttemptOrigin::QualityChange,
             attempt_ordinal: AttemptOrdinal::new(2),
             http_status: 404,
             pipeline_error: 601,
-            // Representative of a `decision_refused` report's extra block, shown here so the
-            // consent screen's sample carries every key a report can; a real report has it only
-            // when the server refused the plan.
-            refusal: Some(RefusalContext {
-                general: DecisionCodeClass::C2000,
-                transcode: DecisionCodeClass::C4007,
-                attempted: DeliveryClass::Transcode,
-                source_video: VideoCodecClass::Vp9,
-                source_audio: AudioCodecClass::Eac3,
-            }),
         },
         &trace,
     )
@@ -394,64 +269,27 @@ fn codes<T: Copy>(values: &[T], code: fn(T) -> &'static str) -> String {
 /// sample value is the only possible one.
 pub fn preview_domains() -> String {
     use crate::telemetry::classes::{
-        BufferClass as B, DeliveryClass as D, DeliveryReason as W, HttpClass as H,
-        OriginalProbePhase as P, PipelineClass as L, QualityClass as Q, RasterClass as X,
-        RateClass as R, TraceAge as A, TraceDirection as I, TraceOutcome as O,
-        TransferAgeClass as T, TransportClass as K,
+        BufferClass as B, HttpClass as H, PipelineClass as L, RasterClass as X, RateClass as R,
+        TraceAge as A, TransferAgeClass as T, TransportClass as K,
     };
-    use crate::telemetry::classes::{AudioCodecClass as Z, DecisionCodeClass as N, VideoCodecClass as V};
     use crate::telemetry::classes::{AttemptOrdinal, AttemptOrigin};
     use FailureClass as F;
     use plx_platform::i18n::msg;
     // The labels are the reader's words; the codes after them are the wire values themselves.
-    let domains: [(&str, String); 24] = [
+    let domains: [(&str, String); 14] = [
         (msg::core_preview_domain_failure_kind(), codes(
             &[
-                F::DecisionRefused,
-                F::PlaybackPolicy,
-                F::NoVideoTranscodeTarget,
                 F::NoVideoTrack,
                 F::MediaSource,
                 F::PlaybackInterrupted,
                 F::TvPipeline,
-                F::OriginalRollback,
                 F::Unspecified,
             ],
             F::code,
         )),
-        (msg::core_preview_domain_delivery(), codes(&[D::Unknown, D::Direct, D::Remux, D::Hls, D::Transcode], D::code)),
-        // The route the failed attempt was opening rides every report (a refusal's own block names
-        // the same value), so its row is the whole delivery domain.
-        (msg::core_preview_domain_attempted_delivery(), codes(&[D::Unknown, D::Direct, D::Remux, D::Hls, D::Transcode], D::code)),
         (msg::core_preview_domain_attempt_started(), "yes / no".to_owned()),
         (msg::core_preview_domain_attempt_origin(), codes(&AttemptOrigin::ALL, AttemptOrigin::code)),
         (msg::core_preview_domain_attempt_ordinal(), codes(&AttemptOrdinal::all().collect::<Vec<_>>(), AttemptOrdinal::code)),
-        // The three rows below ride a `decision_refused` report only (`PlaybackErrorContext::
-        // refusal`); the labels say so, and each list is its enum's own `ALL`/variant set.
-        (msg::core_preview_domain_refusal_codes(), codes(&N::ALL, N::code)),
-        (msg::core_preview_domain_source_video(), codes(&V::ALL, V::code)),
-        (msg::core_preview_domain_source_audio(), codes(&Z::ALL, Z::code)),
-        (msg::core_preview_domain_quality(), codes(
-            &[
-                Q::Unknown,
-                Q::Auto,
-                Q::Original,
-                Q::K320,
-                Q::K720,
-                Q::M2,
-                Q::M4,
-                Q::M6,
-                Q::M8,
-                Q::M10,
-                Q::M12,
-                Q::M14,
-                Q::M16,
-                Q::M18,
-                Q::M20,
-                Q::M22,
-            ],
-            Q::code,
-        )),
         (msg::core_preview_domain_observed_rate(), codes(
             &[
                 R::Unknown,
@@ -505,32 +343,6 @@ pub fn preview_domains() -> String {
             ],
             A::code
         )),
-        (msg::core_preview_domain_hls_direction(), codes(&[I::Up, I::Down, I::Refresh], I::code)),
-        (msg::core_preview_domain_delivery_reason(), codes(&W::ALL, W::code)),
-        (msg::core_preview_domain_original_phase(), codes(
-            &[
-                P::RetireHls,
-                P::SampleSource,
-                P::CloseSource,
-                P::RestoreHls,
-                P::OpenHls,
-                P::CommitHls
-            ],
-            P::code
-        )),
-        (msg::core_preview_domain_original_outcome(), codes(
-            &[
-                O::Started,
-                O::Succeeded,
-                O::NoBody,
-                O::Deadline,
-                O::Transport,
-                O::Inconclusive,
-                O::ServerState,
-                O::Refused
-            ],
-            O::code
-        )),
     ];
     let mut out = msg::core_preview_domains().to_owned();
     for (label, values) in domains {
@@ -544,16 +356,12 @@ pub fn preview_domains() -> String {
 mod tests {
     use super::*;
     use crate::telemetry::classes::{
-        AttemptOrdinal, AttemptOrigin, AudioCodecClass, BufferClass, DecisionCodeClass,
-        DeliveryClass, HttpClass, OriginalProbePhase, PipelineClass, QualityClass, RasterClass, RateClass, RefusalContext,
-        TraceAge, TraceOutcome, TransferAgeClass, TransportClass, VideoCodecClass,
+        AttemptOrdinal, AttemptOrigin, BufferClass, HttpClass, LoadElapsedClass, PipelineClass,
+        RasterClass, RateClass, TraceAge, TransferAgeClass, TransportClass,
     };
 
     fn context() -> PlaybackErrorContext {
         PlaybackErrorContext {
-            delivery: DeliveryClass::Hls,
-            selected: QualityClass::Auto,
-            requested: QualityClass::M22,
             declared_rate: RateClass::M3To6,
             media_rate: RateClass::M1To3,
             raster: RasterClass::Uhd,
@@ -563,48 +371,38 @@ mod tests {
             transport: TransportClass::None,
             transfer_age: TransferAgeClass::Unknown,
             started: true,
-            attempted_delivery: DeliveryClass::Hls,
             attempt_started: true,
             attempt_origin: AttemptOrigin::Fresh,
             attempt_ordinal: AttemptOrdinal::FIRST,
             http_status: 0,
             pipeline_error: 0,
-            refusal: None,
         }
     }
 
     #[test]
     fn handled_error_is_one_grouped_event_with_the_typed_causal_sequence() {
-        // Legacy-wire fixture: builds before 2026-08-31 emitted this destructive probe sequence.
-        // It remains serializable so historical dashboards keep stable codes; preview_event above
-        // deliberately demonstrates the current non-destructive SampleSource path instead.
         let trace = [
             TraceStep {
                 age: TraceAge::Under1s,
-                event: TraceEvent::Requested {
-                    selected: QualityClass::Auto,
+                event: TraceEvent::Requested,
+            },
+            TraceStep {
+                age: TraceAge::S1To3,
+                event: TraceEvent::LoadGateOpened {
+                    elapsed: LoadElapsedClass::from_ms(800),
                 },
             },
             TraceStep {
                 age: TraceAge::S1To3,
                 event: TraceEvent::Presented {
-                    delivery: DeliveryClass::Hls,
-                    requested: QualityClass::M22,
                     declared_rate: RateClass::M3To6,
                     raster: RasterClass::Hd,
                 },
             },
             TraceStep {
                 age: TraceAge::S30To120,
-                event: TraceEvent::OriginalProbe {
-                    phase: OriginalProbePhase::RetireHls,
-                    outcome: TraceOutcome::Deadline,
-                },
-            },
-            TraceStep {
-                age: TraceAge::S30To120,
                 event: TraceEvent::Failed {
-                    kind: FailureClass::OriginalRollback,
+                    kind: FailureClass::PlaybackInterrupted,
                 },
             },
         ];
@@ -612,7 +410,7 @@ mod tests {
             &"a".repeat(32),
             "0123456789abcdef",
             Some(&"e".repeat(32)),
-            FailureClass::OriginalRollback,
+            FailureClass::PlaybackInterrupted,
             context(),
             &trace,
         ))
@@ -620,16 +418,13 @@ mod tests {
         assert_eq!(v["exception"]["values"][0]["mechanism"]["handled"], true);
         assert_eq!(
             v["fingerprint"],
-            serde_json::json!(["playback-error", "original_rollback"])
+            serde_json::json!(["playback-error", "playback_interrupted"])
         );
-        assert_eq!(v["contexts"]["playback"]["requested_quality"], "22m");
         assert_eq!(v["contexts"]["playback"]["declared_rate"], "3-6m");
         let crumbs = v["breadcrumbs"]["values"].as_array().expect("breadcrumbs");
         assert_eq!(crumbs.len(), 4);
-        assert_eq!(crumbs[1]["data"]["requested"], "22m");
-        assert_eq!(crumbs[1]["data"]["declared_rate"], "3-6m");
-        assert_eq!(crumbs[2]["data"]["phase"], "retire_hls");
-        assert_eq!(crumbs[2]["data"]["outcome"], "deadline");
+        assert_eq!(crumbs[2]["data"]["declared_rate"], "3-6m");
+        assert_eq!(crumbs[3]["data"]["kind"], "playback_interrupted");
     }
 
     /// Regression: a handled playback failure must carry the same `hardware`/`webos` sandbox
@@ -709,7 +504,7 @@ mod tests {
             &"a".repeat(32),
             "0123456789abcdef",
             None,
-            FailureClass::OriginalRollback,
+            FailureClass::PlaybackInterrupted,
             context(),
             &[],
         ))
@@ -719,8 +514,6 @@ mod tests {
 
     #[test]
     fn handled_error_schema_keys_are_exact_for_every_breadcrumb_shape() {
-        use crate::telemetry::classes::{DeliveryReason, TraceDirection};
-
         fn keys(v: &Value) -> Vec<&str> {
             let mut out: Vec<_> = v
                 .as_object()
@@ -733,34 +526,17 @@ mod tests {
         }
 
         let trace = [
-            TraceEvent::Requested {
-                selected: QualityClass::Auto,
-            },
+            TraceEvent::Requested,
             TraceEvent::Presented {
-                delivery: DeliveryClass::Hls,
-                requested: QualityClass::M22,
                 declared_rate: RateClass::M3To6,
                 raster: RasterClass::Hd,
             },
             TraceEvent::SeekRequested,
-            TraceEvent::QualitySelected {
-                selected: QualityClass::Original,
-            },
-            TraceEvent::DeliveryRequested {
-                delivery: DeliveryClass::Direct,
-                requested: QualityClass::Original,
-                reason: DeliveryReason::OriginalRecovery,
-            },
-            TraceEvent::HlsCommitted {
-                direction: TraceDirection::Up,
-                requested: QualityClass::M22,
-            },
-            TraceEvent::OriginalProbe {
-                phase: OriginalProbePhase::RestoreHls,
-                outcome: TraceOutcome::Inconclusive,
+            TraceEvent::LoadGateOpened {
+                elapsed: LoadElapsedClass::from_ms(1_500),
             },
             TraceEvent::Failed {
-                kind: FailureClass::OriginalRollback,
+                kind: FailureClass::PlaybackInterrupted,
             },
         ]
         .map(|event| TraceStep {
@@ -771,7 +547,7 @@ mod tests {
             &"a".repeat(32),
             "0123456789abcdef",
             Some(&"e".repeat(32)),
-            FailureClass::OriginalRollback,
+            FailureClass::PlaybackInterrupted,
             context(),
             &trace,
         ))
@@ -814,18 +590,14 @@ mod tests {
                 "attempt_ordinal",
                 "attempt_origin",
                 "attempt_started",
-                "attempted_delivery",
                 "buffer",
                 "declared_rate",
-                "delivery",
                 "http",
                 "http_status",
                 "media_rate",
                 "pipeline",
                 "pipeline_error",
                 "raster",
-                "requested_quality",
-                "selected_quality",
                 "started",
                 "transfer_age",
                 "transport",
@@ -838,14 +610,10 @@ mod tests {
                 "playback.attempt_ordinal",
                 "playback.attempt_origin",
                 "playback.attempt_started",
-                "playback.attempted_delivery",
                 "playback.declared_rate",
-                "playback.delivery",
                 "playback.http_status",
                 "playback.kind",
                 "playback.pipeline_error",
-                "playback.requested_quality",
-                "playback.selected_quality",
                 "playback.started",
                 "playback.transfer_age",
                 "playback.transport",
@@ -864,19 +632,10 @@ mod tests {
 
         let crumbs = v["breadcrumbs"]["values"].as_array().expect("breadcrumbs");
         let want_data = [
-            vec!["elapsed", "selected"],
-            vec![
-                "declared_rate",
-                "delivery",
-                "elapsed",
-                "raster",
-                "requested",
-            ],
             vec!["elapsed"],
-            vec!["elapsed", "selected"],
-            vec!["delivery", "elapsed", "reason", "requested"],
-            vec!["direction", "elapsed", "requested"],
-            vec!["elapsed", "outcome", "phase"],
+            vec!["declared_rate", "elapsed", "raster"],
+            vec!["elapsed"],
+            vec!["elapsed", "load_elapsed"],
             vec!["elapsed", "kind"],
         ];
         assert_eq!(crumbs.len(), want_data.len());
@@ -887,114 +646,6 @@ mod tests {
             );
             assert_eq!(keys(&crumb["data"]), want);
         }
-    }
-
-    /// A refused plan's report carries the refusal block as tags (to search and group on) and as a
-    /// context (to read), every value a closed code; a report with no refusal carries neither, which
-    /// `handled_error_schema_keys_are_exact_for_every_breadcrumb_shape` pins key by key.
-    #[test]
-    fn a_refusal_context_adds_exactly_its_closed_tags_and_context_keys() {
-        fn keys(v: &Value) -> Vec<&str> {
-            let mut out: Vec<_> = v.as_object().expect("object").keys().map(String::as_str).collect();
-            out.sort_unstable();
-            out
-        }
-        let mut ctx = context();
-        ctx.delivery = DeliveryClass::Unknown;
-        ctx.requested = QualityClass::Unknown;
-        ctx.refusal = Some(RefusalContext {
-            general: DecisionCodeClass::C2000,
-            transcode: DecisionCodeClass::C4007,
-            attempted: DeliveryClass::Remux,
-            source_video: VideoCodecClass::Hevc,
-            source_audio: AudioCodecClass::TrueHd,
-        });
-        let v: Value = serde_json::from_slice(&event_body(
-            &"a".repeat(32),
-            "0123456789abcdef",
-            Some(&"e".repeat(32)),
-            FailureClass::DecisionRefused,
-            ctx,
-            &[],
-        ))
-        .expect("handled event JSON");
-        assert_eq!(
-            keys(&v["contexts"]),
-            ["hardware", "playback", "refusal", "webos"]
-        );
-        assert_eq!(
-            keys(&v["contexts"]["refusal"]),
-            ["attempted_delivery", "general_code", "source_audio", "source_video", "transcode_code", "type"]
-        );
-        assert_eq!(v["contexts"]["refusal"]["general_code"], "2000");
-        assert_eq!(v["contexts"]["refusal"]["transcode_code"], "4007");
-        assert_eq!(v["contexts"]["refusal"]["attempted_delivery"], "original_remux");
-        assert_eq!(v["contexts"]["refusal"]["source_video"], "hevc");
-        assert_eq!(v["contexts"]["refusal"]["source_audio"], "truehd");
-        assert_eq!(
-            keys(&v["tags"]),
-            [
-                "playback.attempt_ordinal",
-                "playback.attempt_origin",
-                "playback.attempt_started",
-                "playback.attempted_delivery",
-                "playback.declared_rate",
-                "playback.delivery",
-                "playback.http_status",
-                "playback.kind",
-                "playback.pipeline_error",
-                "playback.refusal_general",
-                "playback.refusal_transcode",
-                "playback.requested_quality",
-                "playback.selected_quality",
-                "playback.source_audio",
-                "playback.source_video",
-                "playback.started",
-                "playback.transfer_age",
-                "playback.transport",
-            ]
-        );
-        assert_eq!(v["tags"]["playback.delivery"], "unknown", "no route was installed");
-        assert_eq!(v["tags"]["playback.refusal_transcode"], "4007");
-        assert_eq!(v["tags"]["playback.attempted_delivery"], "original_remux");
-        assert_eq!(v["tags"]["playback.source_video"], "hevc");
-        // Grouping is unchanged: the fingerprint is the failure kind, as before.
-        assert_eq!(v["fingerprint"], serde_json::json!(["playback-error", "decision_refused"]));
-    }
-
-    #[test]
-    fn the_consent_sample_carries_every_key_a_refusal_report_can() {
-        let v: Value = serde_json::from_slice(&preview_event()).expect("preview JSON");
-        assert!(v["contexts"]["refusal"].is_object(), "{v}");
-        assert!(v["tags"]["playback.refusal_general"].is_string());
-    }
-
-    #[test]
-    fn consent_preview_and_privacy_name_every_refusal_domain_value() {
-        use crate::telemetry::classes::{AudioCodecClass, DecisionCodeClass, VideoCodecClass};
-        let legend = preview_domains();
-        let privacy = include_str!("../../../../PRIVACY.md");
-        let mut values: Vec<&str> = Vec::new();
-        values.extend(DecisionCodeClass::ALL.iter().map(|c| c.code()));
-        values.extend(VideoCodecClass::ALL.iter().map(|c| c.code()));
-        values.extend(AudioCodecClass::ALL.iter().map(|c| c.code()));
-        for value in values {
-            assert!(legend.contains(value), "preview domain omitted {value}");
-            assert!(privacy.contains(value), "PRIVACY.md omitted {value}");
-        }
-        // The whole domain, in order, once per field: the consent screen lists it as written.
-        assert!(legend.contains("absent / 2000 / 2003 / 4007 / other_1xxx / other_2xxx / other_3xxx / other_4xxx / other"));
-        assert!(legend.contains("original_remux / hls / progressive_transcode"));
-        assert!(legend.contains("unknown / h264 / hevc / av1 / vp9 / mpeg2 / other"));
-        assert!(legend.contains("unknown / aac / ac3 / eac3 / truehd / dts / flac / mp3 / opus / other"));
-    }
-
-    #[test]
-    fn consent_preview_lists_every_delivery_code_including_the_refused_unknown() {
-        // A refused plan reports `unknown`; a value the wire can carry but the consent screen does
-        // not list would be a payload the person was never shown.
-        assert!(preview_domains()
-            .contains("unknown / original_direct / original_remux / hls / progressive_transcode"));
     }
 
     #[test]
@@ -1138,9 +789,7 @@ mod tests {
     #[test]
     fn the_failed_attempt_is_tagged_and_in_the_context_beside_the_session_fields() {
         let mut ctx = context();
-        ctx.delivery = DeliveryClass::Hls;
         ctx.started = true;
-        ctx.attempted_delivery = DeliveryClass::Direct;
         ctx.attempt_started = false;
         ctx.http = HttpClass::ClientError;
         ctx.http_status = 404;
@@ -1153,13 +802,10 @@ mod tests {
             &[],
         ))
         .expect("handled event JSON");
-        assert_eq!(v["tags"]["playback.delivery"], "hls", "the session's route stays for continuity");
-        assert_eq!(v["tags"]["playback.attempted_delivery"], "original_direct");
         assert_eq!(v["tags"]["playback.started"], "yes");
         assert_eq!(v["tags"]["playback.attempt_started"], "no");
         assert_eq!(v["tags"]["playback.http_status"], "404");
         let c = &v["contexts"]["playback"];
-        assert_eq!(c["attempted_delivery"], "original_direct");
         assert_eq!(c["attempt_started"], false);
         assert_eq!(c["started"], true);
         assert_eq!(c["http"], "4xx");
@@ -1220,7 +866,7 @@ mod tests {
     #[test]
     fn only_a_preview_failure_groups_apart_and_every_other_fingerprint_is_unchanged() {
         use crate::telemetry::classes::FailureClass as F;
-        for kind in [F::MediaSource, F::TvPipeline, F::DecisionRefused, F::Unspecified] {
+        for kind in [F::MediaSource, F::TvPipeline, F::Unspecified] {
             for origin in AttemptOrigin::ALL {
                 let mut ctx = context();
                 ctx.attempt_origin = origin;

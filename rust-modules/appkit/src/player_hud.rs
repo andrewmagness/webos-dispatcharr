@@ -722,10 +722,6 @@ pub fn draw_readout(
 //  * the support facts (version · firmware · set · failure code) — one dim footer line at the
 //    foot of the screen, always; there is no *Details* control.
 
-/// The subscription's name in the one note that states it ("This server has no Plex Pass"). A
-/// product name, so it is not translated.
-const PLEX_PASS: &str = "Plex Pass";
-
 /// The support line's cap top this far above the canvas bottom — inside the safe area's
 /// bottom margin band's upper edge, clear of the row by construction, and
 /// `the_diagnostics_footer_sits_below_the_row_inside_the_safe_bottom_band` fails if a taller row or
@@ -761,7 +757,6 @@ fn failure_glyph(kind: plx_media::player::FailureKind) -> plx_ui::icons::Icon {
     use plx_media::player::FailureKind as K;
     use plx_ui::icons::Icon;
     match kind {
-        K::DecisionRefused | K::NoVideoTranscodeTarget => Icon::ServerBadgeXmark,
         K::JailMissingRtkmem => Icon::LockBadgeAlert,
         K::LoadTimeout => Icon::ClockBadgeAlert,
         _ => Icon::Alert,
@@ -796,28 +791,16 @@ impl FailureReadout {
 
     /// PURE: the read-out for one failure shape.
     ///
-    /// **Say it once.** The reason is ONE sentence: what happened and why. Under Force Direct
-    /// Play that is the route's own verdict ("Force Direct Play is on, and this video format can't
-    /// play without conversion"), which already names both — the old generic "Force Direct Play
-    /// could not play this stream" above it said the same thing a second time. The shape's
-    /// `detail` then goes to exactly one place, the note under the row (the server's own sentence,
-    /// the sandbox's remedy, a repair's progress) — unless it is the Force verdict already said as
-    /// the reason. The support facts are always the footer.
+    /// **Say it once.** The reason is ONE sentence: what happened and why. The shape's `detail`
+    /// goes to exactly one place, the note under the row (the sandbox's remedy, a repair's
+    /// progress). The support facts are always the footer.
     pub fn of(
         e: &plx_media::player::ErrorShape,
         actions: Vec<plx_media::player::FailureAction>,
         support: String,
     ) -> Self {
-        use plx_media::player::FailureKind;
-        let policy = e.kind == FailureKind::PlaybackPolicy && !e.detail.is_empty();
-        let reason: &str = if policy { &e.detail } else { e.readout };
-        let note: Option<String> = if e.no_pass {
-            Some(plx_platform::i18n::msg::widgets_failure_no_pass(PLEX_PASS))
-        } else if policy || e.detail.is_empty() {
-            None
-        } else {
-            Some(e.detail.to_string())
-        };
+        let reason: &str = e.readout;
+        let note: Option<String> = (!e.detail.is_empty()).then(|| e.detail.to_string());
         Self {
             glyph: failure_glyph(e.kind),
             reason: CString::new(reason).unwrap_or_default(),

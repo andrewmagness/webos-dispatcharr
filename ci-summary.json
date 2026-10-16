@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-16T16:40:11Z",
+ "generated": "2026-10-16T16:41:56Z",
  "metrics": [
   {
    "change30_pct": null,
@@ -32,9 +32,9 @@
    "id": "push_wait",
    "kind": "wait",
    "label": "Wait after merge",
-   "n_now": 21,
+   "n_now": 20,
    "n_prev": 0,
-   "now": 422,
+   "now": 424.0,
    "prev7": null,
    "shown": true,
    "state": "new",

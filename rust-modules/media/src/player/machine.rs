@@ -32,11 +32,8 @@ pub struct Player {
     /// The resolved route, the stream URL, the transcode session, the HUD strings and the Up Next
     /// queue — what `route::decision::SESSION` was.
     pub session: PlaybackSession,
-    /// The webOS app-switch lifecycle (`player::lifecycle`, which `app::lifecycle` re-exports):
-    /// suspend on background, the exact-attempt Load on foreground. Already a machine before
-    /// phase 9; this moves the `App` field in beside the session it drives, because every one of
-    /// its transitions is about this playback.
-    pub lifecycle: super::lifecycle::ForegroundLifecycle,
+    /// A stream was stopped by an OS background: the foreground tunes it again at the live edge.
+    pub parked: bool,
     /// This frame's millisecond stamp — see the module doc. Zero before the first frame.
     pub now_ms: u32,
     /// **Is the hardware video plane bound to our sink?** (spec §9, §4.4, §16 risk 10.)
@@ -61,7 +58,7 @@ impl Player {
     pub fn new() -> Self {
         Self {
             repair: RepairAttempt::new(),            session: PlaybackSession::IDLE,
-            lifecycle: super::lifecycle::ForegroundLifecycle::IDLE,
+            parked: false,
             now_ms: 0,
             video_plane_bound: false,
             clock_fp: 0,

@@ -450,55 +450,15 @@ pub(crate) fn key_pause(
     let _ = now;
 }
 
-/// PLAY — off the player route it starts the buffer-feed and enters the player; on it, it un-pauses.
-pub(crate) unsafe fn key_play(
-    ps: &mut plx_media::route::PlaybackSession,
+/// PLAY — on the player it un-pauses. Off it there is nothing to start: a channel is tuned from
+/// the Guide, and a parked one is tuned again by the foreground.
+pub(crate) fn key_play(
     pa: &mut plx_media::player::adapter::PlayerAdapter,
-    now: u32,
-    foreground: &mut ForegroundLifecycle,
-    repause_at: &mut i64,
-    ptr: &mut Pointer,
     pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
-    bridge: &mut super::bridge::Bridge,
 ) {
-    let was_off_player = super::bridge::player(pages).is_none();
-    if was_off_player {
-        foreground.discard_started_state();
+    if super::bridge::player(pages).is_some() && paused() {
+        set_transport_paused(pa, false);
     }
-    let activation = drive_foreground(
-        foreground,
-        ps,
-        ForegroundInput::PlayKey,
-        &mut PlayerForegroundActuator { pa, repause_at },
-    );
-    if matches!(activation, ForegroundActivation::Launched) {
-        // **A suspended session keeps its ORIGIN, and now it keeps its ENTRY too.** The lifecycle
-        // arm used to force the route to Home, which retired the player entry and the page under
-        // it; a park moves no page at all, so the only thing left to do here is put the player
-        // back on top if something else took it — which, while the tree is parked, nothing does.
-        super::bridge::show_page(pages, AppArg::Player);
-    } else if matches!(activation, ForegroundActivation::Ordinary) {
-        if was_off_player {
-            if plx_media::player::start_bufferfeed(ps, pa) {
-                // The origin is the page the PLAY key was pressed on — through the same one door
-                // `start_playback` uses, so the seed and the push cannot drift apart here.
-                enter_player(pages, bridge, Origin::Here, None);
-                // Keep the ordinary off-route start's existing stale-Pause defense. A foreground
-                // transition applies its explicit clock intent through the lifecycle actuator.
-                if paused() {
-                    set_transport_paused(pa, false);
-                }
-            }
-        } else if paused() {
-            set_transport_paused(pa, false);
-        }
-    }
-    if was_off_player && !ptr.dpad_mode {
-        hide_cursor();
-        ptr.dpad_mode = true;
-        ptr.cur_hidden = true;
-    }
-    let _ = now;
 }
 
 // (`key_scrub` and `seed_scrub` stood here — the LEFT/RIGHT ladder for the player route and the

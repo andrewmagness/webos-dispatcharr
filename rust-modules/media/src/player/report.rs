@@ -825,11 +825,7 @@ pub fn tick(ps: &crate::route::PlaybackSession) {
 
     let now = super::state(ps);
     let prev = super::shared::PlaybackState::from_u8(LAST.swap(now as u8, Relaxed));
-    // A claim's presentation hold answers Buffering on purpose (`state()`), so its
-    // Playing -> Buffering edge is the viewer's own pick working, not a stall.
-    if !super::claim_hold::active() {
-        note_rebuffer(prev, now, SAW_START.load(Relaxed));
-    }
+    note_rebuffer(prev, now, SAW_START.load(Relaxed));
     // `Resolving` and `Connecting` are the states of an engine being opened, whether the first or
     // a reload after a quality switch; a rebuffer or a seek is neither, so an open that never
     // reaches a picture is told apart from a session that had one.
@@ -1193,44 +1189,6 @@ mod tests {
         assert!(starts_rebuffer(S::Playing, S::Buffering, true));
         assert!(!starts_rebuffer(S::Seeking, S::Buffering, true));
         assert!(!starts_rebuffer(S::Playing, S::Buffering, false));
-    }
-
-    /// Finding: `starts_rebuffer` read every `Playing -> Buffering` edge as a stall, and a claim's
-    /// presentation hold (`claim_hold`) makes `state()` answer Buffering on purpose — so each held
-    /// track pick, enhancement toggle or quality change counted as a rebuffer in the quality
-    /// telemetry a viewer never experienced as one.
-    #[test]
-    fn a_claim_hold_is_not_a_rebuffer() {
-        let _g = plx_base::testlock::serial();
-        let ps = crate::route::PlaybackSession::IDLE;
-        REBUFFER_COUNT.store(0, Relaxed);
-        SAW_START.store(true, Relaxed);
-        LAST.store(S::Playing as u8, Relaxed);
-        // `state()` ranks a seek in flight above everything here; another test's leftover flag
-        // would answer Seeking for both edges below.
-        crate::player::SHARED.seeking.store(false, Relaxed);
-        crate::player::claim_hold::hold_for_test(7, true);
-        crate::route::force_applying_for_test(7);
-        assert_eq!(crate::player::state(&ps), S::Buffering, "the hold draws the spinner");
-
-        tick(&ps);
-        let held = REBUFFER_COUNT.load(Relaxed);
-
-        // ...whereas the same edge with no hold IS one.
-        crate::player::claim_hold::clear();
-        crate::route::reset_player_control_for_test(&ps);
-        LAST.store(S::Playing as u8, Relaxed);
-        crate::player::SHARED.pb_state.store(S::Buffering as u8, Relaxed);
-        tick(&ps);
-        let genuine = REBUFFER_COUNT.load(Relaxed);
-
-        crate::player::SHARED.pb_state.store(S::Idle as u8, Relaxed);
-        LAST.store(S::Idle as u8, Relaxed);
-        SAW_START.store(false, Relaxed);
-        REBUFFER_COUNT.store(0, Relaxed);
-        REBUFFER_AT_MS.store(0, Relaxed);
-        assert_eq!(held, 0, "a claim hold was counted as a rebuffer");
-        assert_eq!(genuine, 1, "a genuine stall still counts");
     }
 
     /// upstream Sentry issue 14: a plan the server (or Force Direct Play) REFUSED never installs a route — no

@@ -795,7 +795,6 @@ pub(crate) unsafe fn construct(
     let adapters = super::Adapters {
         player: plx_media::player::adapter::PlayerAdapter::new(mt),
     };
-    let repause_at = 0i64;
     // ui::press click state: a grid-card OK is deferred (press-in on down, activate on the
     // spring-back after key-up) so `ok_armed` marks "a press is in flight, commit it from the
     // per-frame loop when press::take_commit fires". Only ever set on Home's grid.
@@ -854,7 +853,6 @@ pub(crate) unsafe fn construct(
         diagnostics: crate::app::diagnostics::Diagnostics::default(),
         player,
         adapters,
-        repause_at,
         live_reconnect: super::playback::ReconnectBudget::default(),
         ok_armed,
         last_route_reported,

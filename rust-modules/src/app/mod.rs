@@ -259,7 +259,6 @@ pub(crate) struct App {
     /// through. One so far: the Player's, which holds the native session that was
     /// `player::engine::ENGINE` together with the main-thread token that confines it.
     pub(crate) adapters: Adapters,
-    repause_at: i64,
     /// How many times a live channel's ended stream has been reconnected lately.
     pub(crate) live_reconnect: playback::ReconnectBudget,
     pub(crate) ok_armed: bool,

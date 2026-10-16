@@ -434,101 +434,6 @@ fn take_failed_original_rollback(ps: &mut crate::route::PlaybackSession, status:
     Some(rollback)
 }
 
-/// What [`recover_failed_foreground_original`] / [`land_engineless_rollback`] settled for the
-/// foreground restore: the way back from an Original trial whose Load failed before an Engine
-/// existed, so there is no Engine for the pump to recover.
-pub enum ForegroundOriginalRecovery {
-    NotOriginal,
-    /// The rollback's rebase of the restored HLS route is a flight no Engine waits on
-    /// ([`land_engineless_rollback`] delivers it).
-    Pending,
-    Tracking(crate::route::RouteStartAttempt),
-    /// PMS preparation succeeded and the HLS candidate remains retryable, but native Engine
-    /// construction failed before an asynchronous Load could be observed.
-    RetryPrepared,
-    /// Rollback consumed the Original snapshot but could not rebuild/rebase a truthful HLS route.
-    Terminal,
-}
-
-/// Start the rollback of an Original trial whose Load failed while its Engine was being built (no
-/// Engine exists for [`pump`] to inspect): take the typed Original -> restored-HLS edge and
-/// dispatch its rebase as a flight no Engine waits on. The landing is
-/// [`land_engineless_rollback`]'s.
-fn begin_engineless_rollback(ps: &mut crate::route::PlaybackSession, status: i32) -> ForegroundOriginalRecovery {
-    let Some(rollback) = take_failed_original_rollback(ps, status) else {
-        return ForegroundOriginalRecovery::NotOriginal;
-    };
-    // The held rollback resource is still alive, but its old start URL begins at the boundary
-    // where that worker was created. Register a fresh physical HLS session at the recovery
-    // position before reloading it; reopening the saved URL pairs a new display base with old media
-    // and makes the picture jump backwards while the clock claims it did not.
-    match crate::route::dispatch_engineless_rollback_rebase(ps, rollback.offset_ns) {
-        crate::route::RecoveryDispatch::Flying { .. } => ForegroundOriginalRecovery::Pending,
-        crate::route::RecoveryDispatch::Refused => {
-            super::log(crate::route::ROLLBACK_REBASE_REFUSED);
-            set_state(super::shared::PlaybackState::Error);
-            ForegroundOriginalRecovery::Terminal
-        }
-    }
-}
-
-/// The foreground restore's synchronous Load failure inside an Original trial. No HTTP request
-/// necessarily happened: do not inherit the previous Engine's sticky status.
-pub fn recover_failed_foreground_original(ps: &mut crate::route::PlaybackSession) -> ForegroundOriginalRecovery {
-    begin_engineless_rollback(ps, 0)
-}
-
-/// What draining an Engine-less rollback's landing found.
-pub enum RollbackLanding {
-    /// The worker has not landed, or the outstanding flight is not a rollback's.
-    Waiting,
-    /// No Engine-less flight is outstanding: it ended (a Back, a suspend, a newer request) and
-    /// whoever ended it owns what happens next. A late landing has been reaped.
-    Stale,
-    Landed(ForegroundOriginalRecovery),
-}
-
-/// Drain the landing of a rollback no Engine waits on, once a frame while
-/// [`crate::route::engineless_flight_outstanding`]: reload onto the restored HLS route at the
-/// recovery position, or — the rebase was refused — fail the start. Reaps a stale flight's late landing first, since no pump will.
-pub fn land_engineless_rollback(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter) -> RollbackLanding {
-    crate::route::discard_stale_flight_landing();
-    if !crate::route::engineless_flight_outstanding() {
-        return RollbackLanding::Stale;
-    }
-    if crate::route::resume_flight_outstanding() {
-        return RollbackLanding::Waiting; // a resume's flight: `land_resume` drains it
-    }
-    let Some(landing) = crate::route::take_ready_recovery_flight(ps) else {
-        return RollbackLanding::Waiting;
-    };
-    RollbackLanding::Landed(match landing.verdict {
-        crate::route::RecoveryVerdict::Install => match super::engine::reload_transcode_tracked(ps, pa, landing.offset_ns) {
-            super::engine::BufferfeedStartOutcome::Launched(attempt) => ForegroundOriginalRecovery::Tracking(attempt),
-            super::engine::BufferfeedStartOutcome::Failed => ForegroundOriginalRecovery::RetryPrepared,
-            super::engine::BufferfeedStartOutcome::AlreadyRunning => {
-                set_state(super::shared::PlaybackState::Error);
-                ForegroundOriginalRecovery::Terminal
-            }
-        },
-        // `install_recovery_landing` already said `ROLLBACK_REBASE_REFUSED`.
-        crate::route::RecoveryVerdict::Refused => {
-            set_state(super::shared::PlaybackState::Error);
-            ForegroundOriginalRecovery::Terminal
-        }
-    })
-}
-
-/// The app loop's once-a-frame drain for a rollback NO foreground machine owns (the pump's
-/// `start_original_trial_reload` found its Load failing synchronously): a reload that does not
-/// start is the failure read-out.
-pub fn drain_engineless_rollback(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter) {
-    if let RollbackLanding::Landed(ForegroundOriginalRecovery::RetryPrepared) = land_engineless_rollback(ps, pa) {
-        super::log("abr: HLS rollback could not start (StartFailed)");
-        set_state(super::shared::PlaybackState::Error);
-    }
-}
-
 /// The three source-failure branches' shared answer: either a recovery is flying (the frame is
 /// done, the spinner stays up) or the Engine fails and the viewer gets the read-out. Always the
 /// frame's last act.
@@ -559,34 +464,6 @@ pub(super) fn settle_reload(outcome:super::engine::ReloadOutcome, operation: &st
     }
     set_state(super::shared::PlaybackState::Error);
     false
-}
-
-/// Start the flight for a seek on a live transcode at `target_ns` (already taken off
-/// `TX.seek_to_ns`): plan on this frame, PMS on a worker, presentation held until it lands.
-/// `inherited_hold` is the restore a superseded flight's hold still owes.
-fn start_transcode_seek_flight(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    target_ns: i64,
-    inherited_hold: bool,
-) {
-    match crate::route::dispatch_transcode_seek(ps, target_ns) {
-        crate::route::SeekDispatch::Flying { serial } => {
-            super::claim_hold::engage_inheriting(pa, serial, inherited_hold);
-            super::log(&format!("seek(transcode): rebuild in flight at {}s", target_ns / 1_000_000_000));
-        }
-        crate::route::SeekDispatch::Busy => {
-            // Another transaction holds the reducer for a frame or two: the tap stays a tap.
-            TX.seek_to_ns.store(target_ns, Release);
-            TX.seek_reqs.store(1, Release);
-            super::claim_hold::release(pa, inherited_hold);
-        }
-        crate::route::SeekDispatch::Refused => {
-            super::claim_hold::release(pa, inherited_hold);
-            super::abandon_seek();
-            super::log("seek(transcode): rebuild failed");
-        }
-    }
 }
 
 pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, now: u32) {
@@ -668,15 +545,9 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // PMS (~700ms): the retry closes the demux socket, so a premature watchdog KILLS an open that
     // was about to succeed and restarts it — at 500ms a rapid tap-burst self-DoS'd into the
     // reload fallback every time (caught by the seek_rapid harness cases).
-    // A claim's worker owns `ControlPhase::Applying` and has no vocabulary for a seek reload
-    // reaching in and replacing the encoder/engine out from under it (see `route::flight_outstanding`'s own
-    // doc). Skip both this branch and the plain pending-seek branch below while one is in flight —
-    // `TX.seek_to_ns` stays exactly where it is and the retranscode/native-audio tail re-checks it
-    // once the claim lands (`commit_or_carry_seek`).
     const SEEK_STUCK_MS: u32 = 1200;
     if eng.flushed && eng.rebase_pending
         && now.wrapping_sub(eng.seek_armed_at) > SEEK_STUCK_MS
-        && !crate::route::flight_outstanding()
     {
         // Adopt the NEWEST coalesced target if later taps landed while this seek was resolving
         // (TX.seek_to_ns holds the latest request): retrying/reloading at the original armed
@@ -719,35 +590,19 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     }
     // ---------- pending seek: flush, drop queued AUs, re-point the demux ----------
     let t = TX.seek_to_ns.load(Relaxed);
-    // A live transcode has NO Content-Length (file_size stays -1), so gate it on duration
-    // only and seek by RESTARTING the transcode at a time &offset (below). Direct-play
-    // seeks in place via av_seek.
-    let is_transcode = crate::route::is_transcoding(ps);
+    // Only a sized file (the dev URL playback) seeks, in place via av_seek; a live channel has no
+    // Content-Length and nothing to seek to.
     if stream
         && t >= 0
         && !crate::route::original_recovery_pending()
-        && !crate::route::flight_outstanding() // see the SEEK_STUCK_MS branch's doc above
         && !(eng.flushed && eng.rebase_pending) // coalesce: don't stack in-place seeks
         && eng.stage >= Stage::Playing
         && SHARED.duration_ns.load(Relaxed) > 0
-        && (is_transcode || SHARED.file_size.load(Relaxed) > 0)
+        && SHARED.file_size.load(Relaxed) > 0
     {
         TX.seek_to_ns.store(-1, Relaxed);
         let coalesced = take_coalesced(); // read here so BOTH branches consume this seek's requests
         let t = t.max(0);
-        // TRANSCODE seek: restart the encode at the new &offset and do a FULL RELOAD (fresh Load).
-        // A flush()+refeed of the new start.mkv left a STALE GStreamer segment → visual artifacts on
-        // the jump (the same class of bug the in-place seek cured for direct-play; a transcode can't
-        // use the in-place path — the stream content itself changes at the new offset). A fresh Load
-        // rebuilds the segment by construction. reload_transcode REPLACES the ENGINE, so `eng`
-        // dangles after it — return immediately and let the next pump() tick drive the fresh engine.
-        if is_transcode {
-            // The rebuild is a FLIGHT: planned here, PMS on a worker, installed by the drain at
-            // the top of the route block on a later frame. Presentation holds under the Seeking
-            // spinner meanwhile; a refused rebuild abandons the seek there.
-            start_transcode_seek_flight(ps, pa, t, false);
-            return;
-        }
         // DIRECT-PLAY seek: Kodi IN-PLACE seek — flush + av_seek the demuxer, and
         // (in feed_stream, on the first post-flush keyframe) setTimeToDecode + sendSegmentEvent
         // to re-anchor the GStreamer segment WITHOUT a reload/decoder re-init (no A/V-resync

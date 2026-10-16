@@ -16,7 +16,6 @@
 //! `threads::load_thread` calls `sf_load` off-main by design (see `ffi`).
 #![allow(non_upper_case_globals)]
 pub mod adapter;
-pub mod claim_hold;
 pub mod ass; // pinned libass worker and immutable rendered frames
 pub mod ass_script; // a sidecar script fed in windows around the playhead
 pub mod ass_source; // bounded embedded scripts and subtitle presentation clock
@@ -265,14 +264,11 @@ static PTYPE: AtomicI32 = AtomicI32::new(10); // g_ptype (PLAYER_TYPE_MSE)
 // refusal on leaving the player, called from `app.rs`'s `exit_player`) retires it precisely the
 // same way. See `engine.rs`'s `start_bufferfeed`/`start_bufferfeed_tracked` for the gate itself.
 pub use engine::{
-    acb_init, begin_resume, land_resume, start_bufferfeed, start_bufferfeed_tracked, stop_bufferfeed,
+    acb_init, start_bufferfeed, start_bufferfeed_tracked, stop_bufferfeed,
     suspend_bufferfeed, suspend_bufferfeed_if_attempt, BufferfeedStartOutcome, ResumeOutcome, ResumeStart,
 };
 
-pub use pump::{
-    drain_engineless_rollback, land_engineless_rollback, pump, recover_failed_foreground_original, ForegroundOriginalRecovery,
-    RollbackLanding,
-};
+pub use pump::pump;
 pub use shared::PlaybackState;
 
 /// The viewer picked an audio track and the stream is being rebuilt for it: `route::
@@ -641,13 +637,7 @@ pub fn state(ps: &crate::route::PlaybackSession) -> shared::PlaybackState {
     // Resolving is DERIVED here rather than stored: the pump owns `pb_state` but only runs once
     // an engine exists, which is false for the whole resolve window. Deriving in the one reader
     // keeps a single writer instead of poking the state in from the frame loop.
-    //
-    // A COLD RESUME's flight is the tail of that same resolve: the plan has landed, but the saved
-    // position's rebuild is still on a worker and the Load has not started, so the viewer keeps
-    // the Resolving spinner until it lands. So does every recovery no Engine waits on (the
-    // foreground restore's resume, a rollback after a Load that failed before its Engine
-    // existed): `route::engineless_flight_outstanding`.
-    if crate::route::play_pending() || crate::route::engineless_flight_outstanding() {
+    if crate::route::play_pending() {
         return shared::PlaybackState::Resolving;
     }
     // …and so is the PRE-FLIGHT refusal, for exactly the same reason: `/decision` answers before a
@@ -673,11 +663,6 @@ pub fn state(ps: &crate::route::PlaybackSession) -> shared::PlaybackState {
     // and the frozen target — a visible jump back and forth on every seek.
     if SHARED.seeking.load(Relaxed) {
         return shared::PlaybackState::Seeking;
-    }
-    // A retranscode claim's flight holds presentation (`claim_hold`): the stream is paused for the
-    // server's round trip, and the transport's busy mark is the HUD's existing way to say "working".
-    if claim_hold::active() {
-        return shared::PlaybackState::Buffering;
     }
     shared::PlaybackState::from_u8(SHARED.pb_state.load(Relaxed))
 }
@@ -1585,12 +1570,6 @@ pub fn intended_pos_ns(ps: &crate::route::PlaybackSession) -> i64 {
     let t = seek_display_ns();
     if loading(ps) && t >= 0 {
         t
-    } else if let Some(offset_ns) = crate::route::recovery_flight_offset_ns() {
-        // A resume/recovery flight is out and has not landed: `playpos_ns` is still the zero
-        // `reset_session` left (it is seeded at the landing), so the flight's own offset is where
-        // the viewer is. Without it a Home press mid-resume saves 0 and the restore plays from the
-        // start, after which the timeline reports overwrite the server's viewOffset.
-        offset_ns
     } else {
         playpos_ns()
     }

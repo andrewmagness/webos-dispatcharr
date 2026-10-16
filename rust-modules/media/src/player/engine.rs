@@ -1371,22 +1371,13 @@ fn start_bufferfeed_inner(
     let source;
 
     if stream {
-        let su = plx_plex::plex::StreamUrl::parse(&url); // the typed layer's URL splitter
-                                                      // **The whole ORIGIN goes down, not a `(host, port)` pair, because the SCHEME chooses the
-                                                      // transport**: `ff::demux` reads http through `plx_net::stream`'s cleartext socket and https
-                                                      // through `crate::curlio`. This used to REFUSE an https origin outright — cleartext to a
-                                                      // TLS port is a hang or a garbage response with nothing in the log — and that refusal is
-                                                      // what a remote QA reviewer, with no PMS on their LAN, would have hit on every Play.
-                                                      // Rebuilding the origin from an address would put the refusal back in a subtler form: the
-                                                      // certificate is issued for the `plex.direct` NAME, so a TLS connection to the dotted quad
-                                                      // behind it fails validation however well the packets flow (`net/origin.rs`).
-        if !plx_plex::http::credential_transport_allowed(&su.origin, &su.path, &[]) {
-            plx_base::eventlog::log("stream: refused insecure credential transport");
-            return Err(crate::route::RouteStartResult::StartFailed);
-        }
-        let path = su.path;
-        log(&stream_open_log_line(&su.origin.log_form(), &path));
-        let origin = su.origin;
+        // **The whole ORIGIN goes down, not a `(host, port)` pair, because the SCHEME chooses the
+        // transport**: `ff::demux` reads http through `plx_net::stream`'s cleartext socket and https
+        // through `crate::curlio`. Rebuilding the origin from an address would lose the name a TLS
+        // certificate is issued for (`net/origin.rs`).
+        let (origin, path) = plx_net::net::origin::split(&url);
+        let path = path.to_owned();
+        log(&stream_open_log_line(&origin.log_form(), &path));
         // Two-lane feed: the demuxer routes es=1 video to aq_video and es=2 audio to
         // aq_audio, each with its own cap + feeder.
         let mut qv = crate::aq::aq_new(AQ_VIDEO_BYTES);

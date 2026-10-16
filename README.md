@@ -51,9 +51,15 @@ Early and under active development. Nothing here has been released yet; the firs
 | M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, hold-OK recall, favourites, start on the last channel |
 | M5 — codec coverage, error handling, packaging and release | in progress — dropped or frozen streams reconnect, a busy server is retried, a channel's real codecs are detected and declared (H.264/HEVC video; AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio); an MPEG-2 video channel says how to fix it in Dispatcharr |
 
-Development targets a webOS 6 set. Features are verified in the desktop simulator against a mock
-Dispatcharr server (`tests/mock_dispatcharr.py`), and on the television against a real Dispatcharr
-server.
+### Tested televisions
+
+| Television | webOS | Notes |
+|---|---|---|
+| LG OLED C1 (2021, OLED65C1PUB) | 6.5.3 | the development set: every feature is verified here against a real Dispatcharr server |
+| LG OLED B8 (2018, OLED55B8PUA) | 4.4.3 | Setup found the Dispatcharr server on the network on its own; the guide and live playback perform well |
+
+Both sets are rooted (the app installs as a developer app). Features are also verified in the
+desktop simulator against a mock Dispatcharr server (`tests/mock_dispatcharr.py`).
 
 ## Building
 

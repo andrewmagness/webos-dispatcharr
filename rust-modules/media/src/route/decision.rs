@@ -698,18 +698,11 @@ mod live_url_tests {
 /// resource does not relabel it as a transcode. Adaptive HLS can replace the server identity from
 /// its demux worker without racing that `static mut` state. Teardown atomically takes this value,
 /// so a late candidate can never publish itself after the stop owner has retired the playback.
-#[derive(Clone)]
-struct ActiveHlsRoute {
-    url: String,
-    rung: crate::abr::Rung,
-}
-
 pub(super) struct ActiveEncoderState {
     /// Monotone semantic route generation. The PMS id may deliberately stay unchanged while the
     /// route changes from HLS to direct Original, so the id alone is not an ownership token.
     pub(super) epoch: u64,
     pub(super) id: String,
-    hls: Option<ActiveHlsRoute>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -778,28 +771,6 @@ pub enum RouteStartResult {
     Started,
     NoRoute,
     StartFailed,
-}
-
-/// Commit a contract change which requires no PMS/native route replacement.  This is still a
-/// reducer event: otherwise a later rejected action restores the older snapshot and silently
-/// undoes the already-visible quality/subtitle choice.
-fn commit_in_place_route_projection(ps: &PlaybackSession, quality_contract: bool) {
-    let audio_stream_id = ps.cur_audio.as_ref().map_or(0, |a| a.sid);
-    let subtitle_stream_id = ps.cur_sub_sid;
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    match control.phase {
-        ControlPhase::Stable | ControlPhase::StagingUser(_) => {
-            if quality_contract {
-                control.applied_revision = control.desired_revision;
-                control.applied_quality = control.desired_quality;
-            }
-        }
-        _ => return,
-    }
-    if let Some(timeline) = control.timeline.as_mut() {
-        timeline.audio_stream_id = audio_stream_id;
-        timeline.subtitle_stream_id = subtitle_stream_id;
-    }
 }
 
 /// Immutable main-thread projection consumed by the periodic timeline worker. `Session` itself is
@@ -871,14 +842,8 @@ pub(super) struct PlayerControl {
     /// Latest user-visible contract edit. It fences automatic publication through pending/phase,
     /// but is not a worker credential.
     desired_revision: u64,
-    /// Quality preference represented by `desired_revision`. The process-wide picker is only the
-    /// durable user preference; it cannot also describe bytes PMS has not accepted yet.
-    desired_quality: Quality,
     /// Revision represented by the physical route and therefore carried by WorkerTicket.
     pub(super) applied_revision: u64,
-    /// Quality policy which owns the physical worker. A refused Fixed/Original request leaves this
-    /// unchanged, so an already-accepted Auto handoff is never relabelled as the failed desire.
-    applied_quality: Quality,
     next_action: u64,
     pending_user: Option<UserRouteIntent>,
     /// Issue #266: the pending user intent stands in for a track pick's reload (see
@@ -948,14 +913,11 @@ static PLAYER_CONTROL: std::sync::Mutex<PlayerControl> = std::sync::Mutex::new(P
     active: ActiveEncoderState {
         epoch: 0,
         id: String::new(),
-        hls: None,
     },
     engine_epoch: 1,
     media_epoch: 1,
     desired_revision: 1,
-    desired_quality: Quality::Original,
     applied_revision: 1,
-    applied_quality: Quality::Original,
     next_action: 0,
     pending_user: None,
     displaced_pick: false,
@@ -975,13 +937,6 @@ static PLAYER_CONTROL: std::sync::Mutex<PlayerControl> = std::sync::Mutex::new(P
 
 fn advance_route(active: &mut ActiveEncoderState) {
     active.epoch = next_route_epoch(active.epoch);
-}
-
-fn applied_quality() -> Quality {
-    PLAYER_CONTROL
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .applied_quality
 }
 
 fn retarget_automatic_intent(
@@ -1072,62 +1027,6 @@ fn merge_user_route_intent(
         }
         (_, newer) => newer,
     }
-}
-
-/// Publish the PMS half of a resolve. A refused plan has no Engine and therefore lands in `Idle`;
-/// a playable plan lands in `Prepared`. Claiming a physical `Load` moves it to `Starting`, and only
-/// settling that exact attempt through [`settle_route_start`] may publish `Stable`. In particular,
-/// installing a URL is not evidence that the television accepted it.
-fn prepare_playback_landing(_ps: &PlaybackSession, playable: bool) -> Option<RouteStartTransaction> {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    control.desired_quality = quality();
-    control.engine_epoch = next_generation(control.engine_epoch);
-    control.media_epoch = next_generation(control.media_epoch);
-    if playable {
-        control.applied_revision = control.desired_revision;
-        control.applied_quality = control.desired_quality;
-    }
-    control.pending_auto = None;
-    if !playable {
-        control.timeline = None;
-    }
-    let serial = if playable {
-        // A dev fixture can install its real route from inside start_bufferfeed, after that call
-        // already reserved a route-start transaction. Reuse the same transaction owner instead of
-        // replacing it between construction and settlement.
-        let serial = match control.phase {
-            ControlPhase::Preparing(serial)
-            | ControlPhase::Prepared(serial)
-            | ControlPhase::Starting(serial, _) => serial,
-            _ => {
-                control.next_action = next_generation(control.next_action);
-                control.next_action
-            }
-        };
-        if !matches!(control.phase, ControlPhase::Starting(_, _)) {
-            control.phase = ControlPhase::Prepared(serial);
-        }
-        serial
-    } else {
-        control.phase = ControlPhase::Idle;
-        return None;
-    };
-    Some(RouteStartTransaction { serial })
-}
-
-/// Route unit tests install plans without a native Engine. Treat their explicit plan helper as
-/// the successful native boundary; reducer-specific tests call `prepare_playback_landing`
-/// directly to inspect `Prepared`, then explicitly claim and settle an attempt to inspect
-/// `Starting` or `Failed`.
-fn settle_plan_start_in_unit_test(ps: &mut PlaybackSession, start: Option<RouteStartTransaction>) {
-    #[cfg(any(test, feature = "test-support"))]
-    if let Some(start) = start {
-        if let Some(attempt) = claim_route_start_attempt(start) {
-            let _ = settle_route_start(attempt, RouteStartResult::Started);
-        }
-    }
-    #[cfg(not(any(test, feature = "test-support")))]
-    let _ = (ps, start);
 }
 
 /// Queue the latest explicit route contract. Unlike an automatic request it survives pre-roll and
@@ -1371,7 +1270,7 @@ pub fn publish_route_start_result(ticket: RouteStartAttempt, result: RouteStartR
 
 /// Main-thread publication point for every completed native Load call. Late/stale results are
 /// intentionally drained too; [`settle_route_start`] rejects their exact serial.
-pub fn drain_route_start_results(ps: &mut PlaybackSession) {
+pub fn drain_route_start_results(_ps: &mut PlaybackSession) {
     let results = {
         let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut control.start_results)
@@ -1492,12 +1391,9 @@ pub fn reset_player_control_for_test(ps: &PlaybackSession) {
     control.engine_epoch = next_generation(control.engine_epoch);
     control.media_epoch = next_generation(control.media_epoch);
     control.desired_revision = next_generation(control.desired_revision);
-    control.desired_quality = quality();
     control.applied_revision = control.desired_revision;
-    control.applied_quality = control.desired_quality;
     advance_route(&mut control.active);
     control.active.id.clear();
-    control.active.hls = None;
     control.next_action = 0;
     // Physical attempts are process-monotonic. The result queue outlives an Engine reset, so
     // reusing an id here would make a late completion an ABA match for the next fixture/session.
@@ -1512,226 +1408,11 @@ pub fn reset_player_control_for_test(ps: &PlaybackSession) {
     control.timeline = None;
 }
 
-fn install_active_encoder(value: &str) {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    let active = &mut control.active;
-    advance_route(active);
-    active.id = value.to_owned();
-    active.hls = None;
-}
-
-fn install_active_hls(value: &str, url: &str, rung: crate::abr::Rung) {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    let active = &mut control.active;
-    advance_route(active);
-    active.id = value.to_owned();
-    active.hls = Some(ActiveHlsRoute {
-        url: url.to_owned(),
-        rung,
-    });
-}
-
 fn take_active_encoder() -> String {
     let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
     let active = &mut control.active;
     advance_route(active);
-    active.hls = None;
     std::mem::take(&mut active.id)
-}
-
-/// The process route no longer belongs to the worker which tried to publish a bounded local
-/// transition. Kept separate from [`HlsCommitRefusal`]: this door changes no HLS route and has no
-/// controller-rejection or server-session arm.
-// Dev-only: used only by the `#[cfg(feature = "devtriggers")]` tests in this module's `tests`
-// submodule below (see the comment on the first one).
-#[cfg(all(any(test, feature = "test-support"), feature = "devtriggers"))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ActiveEncoderRefusal {
-    RouteMoved,
-}
-
-/// Reconcile the worker-owned adaptive projection into the main-thread session immediately before
-/// an operation that rebuilds or snapshots the route.  Ordinary playback never needs this copy;
-/// seek, manual Original and track/quality reloads do, because they construct a new URL from the
-/// stream that is live NOW rather than from the bootstrap stream that created the worker.
-fn sync_active_hls_to_session(ps: &mut PlaybackSession) -> Option<(WorkerTicket, ActiveHlsRoute)> {
-    // Capture the physical HLS commit and advance only those same physical fields in the applied
-    // projection while holding the route mutex.  A user may already have staged a different
-    // audio/subtitle/quality contract in Session; cloning Session wholesale here would falsely
-    // bless that proposal merely because an older HLS worker changed rung underneath it.
-    let active = {
-        let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        let hls = control.active.hls.clone()?;
-        let ticket = worker_ticket_of(&control);
-        (ticket, hls)
-    };
-    { let s = &mut *ps; {
-        s.url = active.1.url.clone();
-        s.tsession = active.0.encoder().to_owned();
-        // An adaptive commit changes the encoder, URL and requested rung, not the delivery
-        // contract. Preserve the route's negotiated segment duration instead of fabricating one
-        // here: seek/reload must carry the exact server contract that created this worker.
-        s.cur_contract.ceiling = Some(active.1.rung.ceiling());
-        s.cur_contract.remux = false;
-    } };
-    // The applied clone retained above intentionally excludes Session's staged user fields:
-    // rejection combines the newest physical HLS route with the last accepted track contract.
-    Some(active)
-}
-
-/// **The feasibility filter, as one object the worker cannot argue with.** Built from two
-/// independent facts and nothing else: what this device's own codec table says it decodes
-/// (`devcaps`, which exists because "4K yes" was once a constant describing one television), and
-/// what raster the source actually has. Neither is a preference and neither belongs in a utility
-/// weight — a candidate outside these bounds is removed before anything is scored.
-fn auto_catalog(ps: &PlaybackSession) -> crate::abr::HlsActuatorCatalog {
-    let caps = plx_platform::devcaps::caps();
-    let device = (
-        u16::try_from(caps.hevc_max.0).unwrap_or(u16::MAX),
-        u16::try_from(caps.hevc_max.1).unwrap_or(u16::MAX),
-    );
-    let (_, width, height) = ps.cur_src;
-    let source = (
-        u16::try_from(width).unwrap_or(u16::MAX),
-        u16::try_from(height).unwrap_or(u16::MAX),
-    );
-    crate::abr::HlsActuatorCatalog::measured().limited_to(device, source)
-}
-
-/// The source-probe measurement this playback already paid for, as a weak prior. `None` once it is
-/// too old to mean anything or when there never was one.
-/// **What the next controller starts from, and the seek is why it has two sources** (I8).
-///
-/// The CARRIED estimate wins when there is one. A seek destroys the engine and builds a fresh
-/// `Controller`, and before this the only thing that survived was `auto_prior_kbps` — whose writer
-/// on the Original->HLS fallback path is `measured_kbps` *at the moment the link failed*. So after
-/// one bad patch every subsequent seek re-seeded from the worst rate the playback had ever
-/// measured, at `MAX_UNCERTAINTY_PM` with one sample, and the ladder re-ramped for five to ten
-/// segments: ten to twenty seconds of visibly softer picture after every skip.
-///
-/// **`auto_prior_kbps` is not deleted and is not a fallback of convenience.** It remains the
-/// BOOTSTRAP seed — the startup probe, and the rate measured when Original was abandoned — which
-/// is the right seed when there is no live HLS estimate to carry, i.e. the first controller of a
-/// playback. `from_prior` states its own weakness (uncertainty at the cap, one sample); the
-/// carried snapshot states what was actually observed. Two different claims, two constructors.
-///
-/// Only the DELIVERY estimate crosses. The buffer, the risk history and any pending transaction
-/// describe a position that no longer exists and are reset by the new `Controller`'s construction.
-fn auto_prior(ps: &PlaybackSession) -> Option<crate::abr::CapacityEstimate> {
-    let carried = crate::player::SHARED.abr_seed();
-    carried.or_else(|| {
-        let kbps = ps.auto_prior_kbps;
-        (kbps > 0).then(|| crate::abr::CapacityEstimate::from_prior(kbps))
-    })
-}
-
-/// Arm the no-Plex pipeline tier for the same Original→HLS transaction production uses. The only
-/// substitution is URL allocation: [`HlsAbrControl`] maps a rung to fixture playlists rather than
-/// asking PMS to create an encoder. Transport, FFmpeg, buffer measurement, the controller, pump
-/// handoff and Starfish are unchanged, which makes a mid-request bandwidth profile testable on a
-/// TV without a library, account, token, or external server.
-///
-/// `start_hls` skips the Original phase entirely, removes the synthetic Original candidate and
-/// returns the playlist to open. Use it for every case that grades the HLS CONTROLLER; leave it
-/// off only where the transition itself is what is being graded, and give that case a
-/// `network_profile` that starves for real. Removing the candidate is load-bearing: otherwise a
-/// loopback source probe can escape to Original before a request-indexed HLS cliff occurs.
-/// [`crate::player::playurl::PlayUrl::auto_start_hls`] has the history — the alternative was declaring a
-/// source rate no link could carry and relying on a starvation horizon that did not check whether
-/// the reserve was draining.
-pub fn arm_auto_fixture(
-    ps: &mut PlaybackSession,
-    original_url: &str,
-    source_kbps: u32,
-    hls_base: &str,
-    start_hls: bool,
-    source_raster: (u16, u16),
-) -> Option<String> {
-    { let s = &mut *ps; {
-        s.url = original_url.to_owned();
-        s.cur_rk = "__auto_fixture__".into();
-        s.sess = "auto-fixture".into();
-        s.cur_contract.delivery = plx_plex::plex::TranscodeDelivery::ProgressiveMkv;
-        s.cur_contract.ceiling = None;
-        // **Saying the source raster out loud is load-bearing rather than cosmetic**: an unknown
-        // one is treated as unbounded (`HlsActuatorCatalog::limited_to`), which makes the 4K
-        // actuator feasible on every case. It was a hardcoded 1080p because
-        // `tests/serve_fixtures.py` served no 22000 rung, so such a candidate would 404 and read
-        // on the television as a rejected encoder — a fixture gap standing in for a policy, and
-        // the thing that kept the plan's I9 blocked. The server answers 22000 now, so the caller
-        // declares it (`player::playurl::PlayUrl::source_raster`) and the default is still 1080p.
-        s.cur_src = (
-            i64::from(source_kbps),
-            i64::from(source_raster.0),
-            i64::from(source_raster.1),
-        );
-        s.cur_transport_kbps = i64::from(source_kbps);
-        s.cur_auto_original_watched = true;
-        s.auto_bootstrap_rung = Some(crate::abr::Rung::P480);
-        s.auto_original = Some(AutoOriginalCandidate {
-            probe_part: original_url.to_owned(),
-            direct: true,
-            dovi: plx_data::metadata::Dovi::NONE,
-            dv_decision: plx_data::metadata::DvDecision::NONE,
-            audio: Some(CarriedAudio {
-                codec: "aac".into(),
-                ..CarriedAudio::named(0, -1)
-            }),
-            audio_converted: false,
-        });
-        s.auto_fixture_base = hls_base.trim_end_matches('/').to_owned();
-    } };
-    install_active_encoder("");
-    crate::player::log(&format!(
-        "auto fixture: Original source={}kbps armed",
-        source_kbps
-    ));
-    if !start_hls {
-        // The fixture is a real playback entry point (used by the device harness), not a bag of
-        // Session test setters.  Publish the installed Original through the same reducer landing
-        // as a resolved Plex item so its worker owns the selected Auto contract.  Without this,
-        // the durable picker said Auto while `applied_quality` still named the previous playback,
-        // and the progressive watchdog was correctly refused as belonging to another contract.
-        settle_plan_start_in_unit_test(ps, prepare_playback_landing(ps, true));
-        return None;
-    }
-    // Install exactly the state `fallback_auto_to_hls` leaves behind, at the bootstrap rung, and
-    // hand the caller the playlist to open. See `player::playurl::PlayUrl::auto_start_hls` for why this exists
-    // at all: the alternative was declaring a source rate no link could carry and relying on the
-    // starvation horizon to fire on a reserve that was visibly FILLING.
-    let rung = crate::abr::Rung::P480;
-    let base = hls_base.trim_end_matches('/');
-    let url = format!(
-        "{base}/{}/master.m3u8?X-Plex-Token=<plex-token>",
-        rung.kbps()
-    );
-    let encoder = format!("auto-fixture-{}", rung.kbps());
-    { let s = &mut *ps; {
-        s.cur_auto_original_watched = false;
-        // `start_hls` means this is an HLS-only controller fixture, not merely an HLS entry point.
-        // A synthetic whole-file request on loopback is not constrained by a later HLS-only
-        // segment profile and can therefore pre-empt the very collapse the case was built to
-        // grade. Original recovery has its own end-to-end fixture with `start_hls == false`.
-        s.auto_original = None;
-        s.cur_contract.remux = false;
-        s.cur_contract.delivery = plx_plex::plex::TranscodeDelivery::FixedHls {
-            seconds_per_segment: 2,
-        };
-        s.cur_contract.ceiling = Some(rung.ceiling());
-        s.url = url.clone();
-        s.tsession = encoder.clone();
-        s.stream_vcodec = "h264".into();
-        s.stream_acodec = "aac".into();
-    } };
-    install_active_hls(&encoder, &url, rung);
-    crate::player::log(&format!(
-        "auto fixture: starting in {}kbps {}x{} HLS (no Original phase)",
-        rung.kbps(),
-        rung.raster().0,
-        rung.raster().1,
-    ));
-    settle_plan_start_in_unit_test(ps, prepare_playback_landing(ps, true));
-    Some(url)
 }
 
 /// true while this playback is a server transcode (a live transcode session exists). Cheap
@@ -1958,16 +1639,12 @@ pub fn set_stream_codecs(ps: &mut PlaybackSession, vc: &str, ac: &str) {
 }
 
 /// **The widest raster this session can put through the decoder**, for the Starfish Load's
-/// `adaptiveStreaming` ceiling — `(0, 0)` when nobody said. Three routes, three answers:
+/// `adaptiveStreaming` ceiling — `(0, 0)` when nobody said. Two routes, two answers:
 ///
 /// * direct play / remux (`ProgressiveMkv`): the SOURCE's own coded size (`cur_src`), since the
 ///   file's elementary stream is what gets fed;
 /// * a fixed quality's HLS: the source capped by that quality's [`plx_plex::plex::Ceiling`] — PMS
-///   never upscales, so the smaller of the two is the largest picture it can send;
-/// * Auto: the bounding box of every FEASIBLE actuator (`HlsActuatorCatalog::widest_feasible_raster`),
-///   because a rung commit never re-issues `Load` and the controller may climb to the 4K point
-///   inside the one declaration — a ceiling sized to the bootstrap rung (`plan.ceiling`, which is
-///   the STARTING rung and not the maximum) would be exceeded on the first climb.
+///   never upscales, so the smaller of the two is the largest picture it can send.
 ///
 /// Main thread, like every other session read. Pure over the session it is given.
 pub fn sink_max_raster(ps: &PlaybackSession) -> (u16, u16) {
@@ -1976,24 +1653,18 @@ pub fn sink_max_raster(ps: &PlaybackSession) -> (u16, u16) {
     let source = (clamp(s.cur_src.1), clamp(s.cur_src.2));
     match s.cur_contract.delivery {
         plx_plex::plex::TranscodeDelivery::ProgressiveMkv => source,
-        plx_plex::plex::TranscodeDelivery::FixedHls { .. } => {
-            if applied_quality() == Quality::Auto {
-                auto_catalog(ps).widest_feasible_raster()
-            } else {
-                match s.cur_contract.ceiling {
-                    Some(c) => {
-                        // 0 on either side means "nobody said"; the other side's number wins.
-                        let axis = |src: u16, cap: i64| match (src, clamp(cap)) {
-                            (0, c) => c,
-                            (s, 0) => s,
-                            (s, c) => s.min(c),
-                        };
-                        (axis(source.0, c.max_w), axis(source.1, c.max_h))
-                    }
-                    None => source,
-                }
+        plx_plex::plex::TranscodeDelivery::FixedHls { .. } => match s.cur_contract.ceiling {
+            Some(c) => {
+                // 0 on either side means "nobody said"; the other side's number wins.
+                let axis = |src: u16, cap: i64| match (src, clamp(cap)) {
+                    (0, c) => c,
+                    (s, 0) => s,
+                    (s, c) => s.min(c),
+                };
+                (axis(source.0, c.max_w), axis(source.1, c.max_h))
             }
-        }
+            None => source,
+        },
     }
 }
 
@@ -2131,12 +1802,6 @@ pub fn cur_enhancement_label(ps: &PlaybackSession) -> Option<&'static str> {
 /// rebuilds so the constraint survives them — see [`PlaybackSession::cur_contract`].
 fn is_no_video_copy(ps: &PlaybackSession) -> bool {
     ps.cur_contract.no_video_copy
-}
-/// The quality ceiling THIS playback was resolved under — read by the two query rebuilds
-/// ([`plan_rebase`], [`retranscode`]) so a rung picked mid-film cannot reshape the encode
-/// already on screen. See [`PlaybackSession::cur_contract`].
-fn cur_ceiling(ps: &PlaybackSession) -> Option<plx_plex::plex::Ceiling> {
-    ps.cur_contract.ceiling
 }
 fn cur_delivery(ps: &PlaybackSession) -> plx_plex::plex::TranscodeDelivery {
     ps.cur_contract.delivery
@@ -2497,155 +2162,6 @@ pub fn forced_direct_play(ps: &PlaybackSession) -> bool {
 
 pub fn audio_track_direct_plays(ps: &PlaybackSession, codec: &str, channels: i64) -> bool {
     audio_direct_plays(ps.direct_play_mode, codec, channels)
-}
-
-fn apply_quality_choice(ps: &mut PlaybackSession, q: Quality) {
-    if forced_direct_play(ps) { return; }
-    // A later non-Auto pick supersedes an Auto restart that the pump has not consumed yet. If the
-    // live worker really was adaptive, the route comparison below schedules the symmetric restart
-    // which removes its watchdog; if it was still Manual, this cancellation avoids a stale Auto
-    // reload after the checkmark has already moved back.
-    if q != Quality::Auto {
-        crate::player::cancel_adaptive_reload();
-    }
-    // A worker-side ABR commit is the current route. Reconcile it before comparing or replacing
-    // anything, so a menu action cannot make a decision against the bootstrap ceiling.
-    let live_hls = sync_active_hls_to_session(ps);
-    // An exact direct/remux candidate survives both fixed-rung and HLS transitions. An explicit
-    // Original pick is an instruction to restore that native declaration now, not merely remove a
-    // bitrate cap and start another encoder. Leave the current route intact until the pump owns
-    // the same-position codec-changing reload.
-    if q == Quality::Original && is_transcoding(ps) && ps.auto_original.is_some() {
-        crate::player::log("quality: Original picked — restoring the native source");
-        crate::player::request_original_recovery(ps);
-        return;
-    }
-    if q == Quality::Auto && live_hls.is_some() {
-        // The bytes/rung stay exactly where they are, but the running worker may have been born
-        // while the picker was Manual Original (notably after an Original 500 rollback). Its HLS
-        // controller then captured no Original candidate. Recreate only the worker at this exact
-        // route so Auto means the same controller contract regardless of how HLS was reached.
-        crate::player::log(
-            "quality: Auto picked — retaining live HLS and refreshing its adaptive contract",
-        );
-        crate::player::request_adaptive_reload(ps);
-        return;
-    }
-    let location = plx_plex::plex::client_for(cur_sid(ps)).and_then(|client| client.link());
-    // A direct Remote already on screen is itself stronger evidence than a second prefix fetch:
-    // selecting Auto must not start an encoder under a movie which is currently arriving as
-    // Original. A fresh Remote play is measured in `build_stream`; an existing transcode has no
-    // such original-file observation and stays on HLS.
-    //
-    // Link class cannot create a source candidate. Local normally needs no throughput proof, but
-    // it still needs Original to be technically possible. `build_stream` records that fact as
-    // `auto_original`: `None` means the source codec/container/audio combination already failed
-    // feasibility. Treating Local alone as sufficient here turns a fixed-rung AV1 transcode (a set
-    // whose table lists no AV1 decoder, or a source over its row) into progressive MKV when the
-    // user returns to Auto, so no HLS controller is rebuilt.
-    let original_feasible = ps.auto_original.is_some();
-    let auto_original = q == Quality::Auto
-        && original_feasible
-        && (location == Some(plx_plex::plex::probe::Location::Local)
-            || (location == Some(plx_plex::plex::probe::Location::Remote)
-                && (!is_transcoding(ps) || is_remux(ps))));
-    let adaptive = auto_uses_hls(q, auto_original);
-    let delivery = if adaptive {
-        plx_plex::plex::TranscodeDelivery::FixedHls {
-            seconds_per_segment: 2,
-        }
-    } else {
-        plx_plex::plex::TranscodeDelivery::ProgressiveMkv
-    };
-    let starting_rung = adaptive.then(|| {
-        crate::abr::hls_reentry_rung(
-            cur_ceiling(ps).and_then(crate::abr::Rung::from_ceiling),
-            auto_prior(ps),
-            &auto_catalog(ps),
-            &crate::abr::AbrPolicy::measured(),
-        )
-    });
-    let ceiling = starting_rung
-        .map(crate::abr::Rung::ceiling)
-        .or_else(|| q.ceiling());
-    if cur_rk(ps).is_empty() {
-        return;
-    }
-    let route_unchanged = cur_ceiling(ps) == ceiling && cur_delivery(ps) == delivery;
-    let watched_before = ps.cur_auto_original_watched;
-    let (kbps, w, h) = ps.cur_src;
-    let admits = quality_policy(q, auto_original, kbps, w, h).direct_play;
-    { let s = &mut *ps; {
-        s.cur_contract.ceiling = ceiling;
-        s.cur_contract.delivery = delivery;
-        // Supervision does not depend on where the server is: `auto_original` already says Auto
-        // is going to run Original, and that is the whole question the watchdog asks. See the
-        // field. It was assigned to an `auto_original_watched` binding first, which named nothing
-        // the right-hand side did not already say — a leftover from the `auto_remote_original`
-        // refactor, where the two really were different.
-        s.cur_auto_original_watched = auto_original;
-        if matches!(delivery, plx_plex::plex::TranscodeDelivery::FixedHls { .. }) {
-            s.cur_contract.remux = false;
-        }
-    } };
-    // The bytes, URL and decoder declaration may be identical while the worker contract is not.
-    // `engine::start_bufferfeed` captures `auto_original_watch()` BY VALUE at spawn, so toggling
-    // Manual Original <-> Auto Original underneath the existing thread can never start/stop the
-    // controller. Replace only that worker/pipeline at the same movie position; this is not a PMS
-    // rendition change and must not go through the transcode-refresh path.
-    if route_unchanged && watched_before != auto_original {
-        crate::player::log(&format!(
-            "quality: {} picked — restarting the current source to {} adaptive supervision",
-            q.label(),
-            if auto_original { "enable" } else { "disable" },
-        ));
-        crate::player::request_adaptive_reload(ps);
-        return;
-    }
-    if route_unchanged {
-        commit_in_place_route_projection(ps, true);
-        return;
-    }
-    if admits && !is_transcoding(ps) {
-        // The bytes already satisfy the new ceiling, but the demux worker captured adaptive
-        // supervision by value. Auto <-> Manual therefore still needs a same-URL worker restart;
-        // otherwise the old Auto watchdog can publish a fallback after the picker says Manual.
-        if watched_before != auto_original {
-            crate::player::log(&format!(
-                "quality: {} picked — keeping direct bytes and refreshing adaptive supervision",
-                q.label(),
-            ));
-            crate::player::request_adaptive_reload(ps);
-        } else {
-            commit_in_place_route_projection(ps, true);
-        }
-        return; // the picture on screen already satisfies the new rung
-    }
-    crate::player::log(&format!(
-        "quality: {} picked — source {kbps}kbps {w}x{h}; re-transcoding this playback{}",
-        q.label(),
-        starting_rung
-            .map(|rung| format!(" at {}kbps HLS", rung.kbps()))
-            .unwrap_or_default(),
-    ));
-    // The pick is a new open of the route it names, whatever the pump makes of the refresh: say so
-    // now, or a failure of that open reads as one of the route the playback had (S5a left this
-    // path with no `DeliveryRequested`, so `attempted_delivery` fell back to the installed route).
-    crate::player::report::note_delivery_requested_for(
-        playback_trace_generation(),
-        if adaptive {
-            crate::player::report::DeliveryClass::Hls
-        } else {
-            crate::player::report::DeliveryClass::Transcode
-        },
-        starting_rung.map_or_else(
-            || crate::player::report::selected_quality_class(q),
-            crate::player::report::rung_quality_class,
-        ),
-        crate::player::report::DeliveryReason::QualityPick,
-        crate::player::report::AttemptOrigin::QualityChange,
-    );
-    crate::player::request_transcode_refresh(ps);
 }
 
 /// Select the audio + subtitle streams server-side for the current part before a

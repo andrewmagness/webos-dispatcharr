@@ -226,60 +226,6 @@ pub(super) fn supported_quality(q: Quality) -> Quality {
     }
 }
 
-/// **What the user's chosen ceiling allows a plan to ask for** — the same two flags
-/// [`plx_plex::plex::link_policy`] returns, deliberately, so [`build_stream`] can compose the two by
-/// AND and the stricter always wins. A relay link cannot be loosened by picking a high rung, and a
-/// low rung is not rescued by a fast link.
-///
-/// PURE, and the whole routing half of this feature is here:
-///
-/// * **Original restricts nothing** — the migration regression gate.
-/// * **Auto includes Original as its top state.** `auto_original` is true immediately on a
-///   verified LAN and only after a bounded file-throughput measurement on a direct Remote. A
-///   relay, an unknown link, or an inconclusive/slow Remote measurement selects encoded HLS.
-/// * A source MEASURED under the rung keeps both fast paths. Picking "1080p · 8 Mbps" must not
-///   send a 3 Mbit/s 720p episode to an encoder; there is nothing there to fix.
-/// * Anything else loses BOTH — direct play *and* the remux, for the one reason `link_policy`
-///   already states twice: they ship the same bytes at the same rate, one container apart, and
-///   neither carries a cap the server could come in under. What survives is the re-encode, which
-///   is the only flavor that can honour the ask at all.
-///
-/// **Unmeasured fails CLOSED** ([`plx_plex::plex::Ceiling::admits`] holds the full argument): `0` is
-/// "the server did not say", and the only way to honour an explicit ask about a file you have not
-/// measured is to route it where the server applies the bound for you. That is the opposite of
-/// [`video_direct_plays`]'s unknown-passes rule, and deliberately so: a device bound is a
-/// capability, a user ceiling is an instruction.
-pub(super) fn quality_policy(
-    q: Quality,
-    auto_original: bool,
-    src_kbps: i64,
-    src_w: i64,
-    src_h: i64,
-) -> plx_plex::plex::LinkPolicy {
-    if q == Quality::Auto {
-        return if auto_uses_hls(q, auto_original) {
-            plx_plex::plex::LinkPolicy {
-                direct_play: false,
-                remux: false,
-            }
-        } else {
-            plx_plex::plex::LinkPolicy::UNRESTRICTED
-        };
-    }
-    match q.ceiling() {
-        None => plx_plex::plex::LinkPolicy::UNRESTRICTED,
-        Some(c) if c.admits(src_kbps, src_w, src_h) => plx_plex::plex::LinkPolicy::UNRESTRICTED,
-        Some(_) => plx_plex::plex::LinkPolicy {
-            direct_play: false,
-            remux: false,
-        },
-    }
-}
-
-pub(super) fn auto_uses_hls(q: Quality, auto_original: bool) -> bool {
-    q == Quality::Auto && !auto_original
-}
-
 /// The family of route a caller is BUILDING (or, mid-play, is on) — the only shape question the
 /// Plex Pass audio enhancement (issue #266) asks. `Direct` = the raw Part; `Remux` = the
 /// codec-preserving progressive-MKV copy; `Other` = every encoder rung, fixed quality, HLS and

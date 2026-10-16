@@ -1159,21 +1159,6 @@ fn start_bufferfeed_inner(
                 if let Some([w, h]) = p.source_raster {
                     crate::route::set_stream_source_raster(ps, w, h);
                 }
-                if p.auto_source_kbps > 0 && !p.auto_hls_base.is_empty() {
-                    // A fixture that starts in HLS hands back the playlist to open: the route's
-                    // own `url` has already moved, and this local copy is what everything below
-                    // reads.
-                    if let Some(hls) = crate::route::arm_auto_fixture(
-                        ps,
-                        &p.url,
-                        p.auto_source_kbps,
-                        &p.auto_hls_base,
-                        p.auto_start_hls,
-                        p.source_raster.map_or((1_920, 1_080), |[w, h]| (w, h)),
-                    ) {
-                        url = hls;
-                    }
-                }
             }
             // Log and fall through rather than refuse: the next candidate may well be armed. The
             // harness grades this as a failure anyway, because the `load:` line below will not say
@@ -3320,9 +3305,6 @@ mod payload_tests {
             },
             atmos: false,
             live: false,
-            auto_source_kbps: 0,
-            auto_hls_base: String::new(),
-            auto_start_hls: false,
             source_raster: None,
         };
 

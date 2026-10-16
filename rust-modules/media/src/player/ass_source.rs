@@ -281,11 +281,6 @@ pub fn seek(generation: u64) {
 pub fn reset() {
     store().reset();
 }
-pub fn font_snapshot() -> (u64, Arc<[Font]>) {
-    let mut store = store();
-    let fonts = store.fonts.get_or_insert_with(|| Arc::from([])).clone();
-    (store.generation, fonts)
-}
 pub fn selected(track: i32) -> Option<Arc<Source>> {
     store().selected(track)
 }

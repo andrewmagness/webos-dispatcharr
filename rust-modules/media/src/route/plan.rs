@@ -169,22 +169,6 @@ pub(super) fn supported_quality(q: Quality) -> Quality {
     }
 }
 
-/// How a subtitle on screen interacts with the Plex Pass audio enhancement (issue #266 I6,
-/// reworked per M7 and the owner's "do it the Plex way" decision: PMS burns a subtitle in rather
-/// than dropping it, exactly as official Plex's playback lib does).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SubtitleEffect {
-    /// No subtitle on screen.
-    None,
-    /// An external file the CLIENT draws itself (`metadata::Stream::sidecar_renderable`) — fetched
-    /// and rendered by `player::sidecar` entirely outside the transcoded stream, so an enhanced
-    /// remux never touches it.
-    Sidecar,
-    /// An embedded (in-container) subtitle direct play renders from the demuxed stream — an
-    /// enhanced remux DROPS it (M4); only a forced re-encode with `subtitles=burn` keeps it (M7).
-    Embedded,
-}
-
 /// The two verdict NUMBERS of a `/decision` body — `generalDecisionCode` and `transcodeDecisionCode`
 /// — kept as the integers PMS sent (`None` = the body carried none; never a defaulted 0).
 ///

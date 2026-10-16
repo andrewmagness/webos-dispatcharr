@@ -228,20 +228,6 @@ pub fn reset() {
     st.failed = None;
 }
 
-/// **Honour a sidecar the SERVER already has selected for this part** — picked here in an earlier
-/// session, or on another Plex client. The embedded twin is `route::pick_dp_subtitle`, which
-/// leaves an external selection off because nothing could render it; now something can.
-/// Direct play, or a plain remux start (the caller's gate): a start that burns keeps subtitles off, as before.
-pub fn restore_server_selection(server: plx_plex::plex::ServerId, meta: plx_data::metadata::MetadataView<'_>) -> Option<i64> {
-    let item = meta.playing()?;
-    if let Some(s) = plx_data::metadata::server_selected_sidecar(item) {
-        super::log(&format!("server-selected sidecar subtitle: sid={}", s.id));
-        select(server, s.id, s.key.clone(), s.codec.clone());
-        return Some(s.id);
-    }
-    None
-}
-
 /// The line to draw at `now_ns`, if a sidecar is selected and the server is not burning it.
 pub fn active(now_ns: i64, burned: bool) -> Option<String> {
     active_span(now_ns, burned).map(|(text, _, _)| text)

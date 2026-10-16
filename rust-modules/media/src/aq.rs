@@ -128,19 +128,6 @@ pub fn aq_destroy(q: *mut AuQueue) {
     }
 }
 
-/// Producer: append one AU (copies `len` bytes). Blocks over the queue's `max_bytes` cap
-/// unless aborting. Returns 0 on success, -1 if aborting or OOM.
-pub fn aq_push(
-    q: *mut AuQueue,
-    data: *const c_uchar,
-    len: c_int,
-    pts: i64,
-    key: c_int,
-    es: c_int,
-) -> c_int {
-    aq_push_park(q, data, len, pts, key, es, None)
-}
-
 /// [`aq_push`] that runs `drain` whenever the queue is full.
 ///
 /// Original playback parks on this path on the same thread as AVIO. The drain keeps the media

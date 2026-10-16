@@ -35,7 +35,7 @@ use plx_plex::plex::session::{
     SubtitleTonePref,
 };
 use plx_plex::plex::session::prefs::{MemoryEntry, ProfileList, ProfileMemory, SettingsWrite};
-use plx_plex::plex::session::{self, Session, SubtitleOffsetEntry};
+use plx_plex::plex::session::{self, SubtitleOffsetEntry};
 use plx_plex::plex::AudioEnhancements;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
@@ -297,7 +297,6 @@ live_setting!(QualityPref, QUALITY, "playback quality",
     }
 );
 
-
 // ---- restore --------------------------------------------------------------------------------
 
 // ---- the memory door ------------------------------------------------------------------------
@@ -340,24 +339,11 @@ impl<E: MemoryEntry> MemoryMirror<E> {
         self.state.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// Seed from `record`'s list if the mirror was never seeded or was seeded under another tenure
-    /// or account stamp; otherwise leave it, since it already holds everything the record does
-    /// plus the writes still in flight.
-    pub fn reseed(&self, record: &Session) {
-        let seed = (session::tenure(), plx_plex::plex::grant::account_key(&record.account_token));
-        let mut state = self.lock();
-        if state.seeded.as_ref() != Some(&seed) {
-            state.lists = E::slot(record).clone();
-            state.seeded = Some(seed);
-        }
-    }
-
     /// Whether the mirror was seeded under the tenure that stands now.
     fn valid(state: &MirrorState<E>) -> bool {
         state.seeded.as_ref().is_some_and(|(tenure, _)| *tenure == session::tenure())
     }
 }
-
 
 static SUBTITLE_OFFSETS: MemoryMirror<SubtitleOffsetEntry> = MemoryMirror::new();
 
@@ -404,15 +390,6 @@ pub fn remember<E: MemoryTenant>(
     }
     let user = user.to_string();
     session::queue_update(move |cur| cur.with_memory::<E>(|m| m.upsert_with(&user, "", &key, f)))
-}
-
-/// Seed `E`'s mirror from `record` whatever it was seeded under before, so a test does not inherit
-/// another test's remembered entries (the mirror is a process global, and a restore under an
-/// unchanged tenure and stamp deliberately keeps it).
-#[cfg(any(test, feature = "test-support"))]
-pub fn seed_memory_for_test<E: MemoryTenant>(record: &Session) {
-    unseed_memory_for_test::<E>();
-    E::mirror().reseed(record);
 }
 
 /// Put `E`'s mirror back to never-seeded, which is how a process looks before its first restore.
@@ -468,8 +445,6 @@ macro_rules! choices {
             $($variant(<$marker as Setting>::Value)),*
         }
         impl Choice {
-            /// The key of every setting a Settings row saves through [`Choice`], in declaration order.
-            pub const KEYS: &'static [&'static str] = &[$(<$marker as Setting>::KEY),*];
         }
     };
 }

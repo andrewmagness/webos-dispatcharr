@@ -2256,7 +2256,6 @@ fn pause_clock_now() -> Instant {
     Instant::now()
 }
 
-
 #[derive(Clone, Copy)]
 struct UserPauseClock {
     completed: Duration,

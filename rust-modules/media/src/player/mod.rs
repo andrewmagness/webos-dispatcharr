@@ -141,74 +141,6 @@ static ACB_OK: AtomicBool = AtomicBool::new(false); // was the g_acb availabilit
 /// Off at boot, and never persisted.
 pub static DIAG_READOUT_ON: AtomicBool = AtomicBool::new(false);
 
-// Diagnostics-only Auto state. These codes cross the demux/UI thread boundary through atomics;
-// named constants keep the writer and the photograph formatter from growing separate vocabularies.
-pub const ABR_MODE_ORIGINAL: u8 = 1;
-pub const ABR_MODE_HLS: u8 = 2;
-pub const ABR_ACTION_STEADY: u8 = 1;
-pub const ABR_ACTION_PRIME_DOWN: u8 = 2;
-pub const ABR_ACTION_PRIME_UP: u8 = 3;
-pub const ABR_ACTION_COMMIT_DOWN: u8 = 4;
-pub const ABR_ACTION_COMMIT_UP: u8 = 5;
-pub const ABR_ACTION_REJECT_DOWN: u8 = 6;
-pub const ABR_ACTION_REJECT_UP: u8 = 7;
-pub const ABR_ACTION_PROBE_ORIGINAL: u8 = 8;
-pub const ABR_ACTION_RECOVER_ORIGINAL: u8 = 9;
-pub const ABR_ACTION_ORIGINAL_PROBE_FAILED: u8 = 10;
-pub const ABR_ACTION_PRIME_REFRESH: u8 = 11;
-pub const ABR_ACTION_COMMIT_REFRESH: u8 = 12;
-pub const ABR_ACTION_REJECT_REFRESH: u8 = 13;
-/// Typed, playback-scoped reason the last Original source experiment/open failed. It deliberately
-/// survives the engine reload that restores HLS, otherwise the successful rollback erases the
-/// only fact explaining why Original is no longer being attempted.
-pub const ABR_FAILURE_ORIGINAL_HTTP: u8 = 1;
-pub const ABR_FAILURE_ORIGINAL_DEADLINE: u8 = 2;
-pub const ABR_FAILURE_ORIGINAL_TRANSPORT: u8 = 3;
-pub const ABR_FAILURE_ORIGINAL_NO_BODY: u8 = 4;
-pub const ABR_FAILURE_ORIGINAL_OPEN: u8 = 5;
-
-pub const ABR_WHY_SAFE_BUDGET: u8 = 1;
-pub const ABR_WHY_UNSAFE_STATE: u8 = 2;
-pub const ABR_WHY_PRODUCTION: u8 = 3;
-pub const ABR_WHY_BUFFER: u8 = 4;
-/// The downshift trigger fired and there is no rung below — the ladder floor. Distinct from the
-/// constraint/telemetry codes above because it names the ABSENCE of an action rather than the
-/// observation that chose one: nothing the controller can do will improve this playback.
-pub const ABR_WHY_LADDER_FLOOR: u8 = 5;
-/// The starvation horizon fired: at the measured delivery law the reserve empties inside the
-/// fallback window. Distinct from [`ABR_WHY_UNSAFE_STATE`] because that one is completed-bag
-/// conservation (`sum A > sum D`) with no reserve in the predicate — and `A` includes every
-/// measured delivery cost, not only link transfer — while this one is a DEADLINE and is the code a
-/// reader sees on the way to a stall.
-pub const ABR_WHY_STARVATION: u8 = 6;
-/// The climb was selected and N11's reject/backoff guard refused it — the evidence supported the
-/// rung and a failed attempt on that same rung had not yet been paid for. Distinct from every code
-/// above because those all describe the MODEL; this one describes a guard sitting on top of it.
-pub const ABR_WHY_REJECT_BACKOFF: u8 = 7;
-/// Nothing above the current rung is sustainable: the two-constraint admission rule came back
-/// empty, or came back at or below where we already are.
-pub const ABR_WHY_NO_TARGET: u8 = 8;
-/// A target was selected and the acquisition window could not carry the climb. The exit that reads
-/// most like a stuck controller from outside — every other field on the line looks healthy.
-pub const ABR_WHY_EVIDENCE: u8 = 9;
-/// Already on the best rung the budget admits. Not a constraint; the controller is doing the right
-/// thing and previously had no way to say so.
-pub const ABR_WHY_AT_BEST: u8 = 10;
-/// The reserve was not knowable on this sample (the audio lane has produced no timestamp since
-/// the open or the seek), so there was nothing to decide against.
-pub const ABR_WHY_RESERVE_UNKNOWN: u8 = 11;
-/// A fetch hit its runway deadline and the controller rolled back without treating its censored
-/// prefix as a capacity measurement.
-pub const ABR_WHY_DEADLINE_ROLLBACK: u8 = 12;
-/// The largest request is active but its observed PMS master/raster is smaller than the request
-/// can produce. It is a response state, not `AtBestRung`: a fresh session at the same actuator
-/// remains eligible after stronger completed-service evidence.
-pub const ABR_WHY_RESPONSE_LIMITED: u8 = 13;
-/// The link would carry the higher rung and the VIEWER is the constraint: this playback has
-/// already made enough recent visible rung changes that the picture this one would buy is worth
-/// less than the interruption. Decays on its own (`AbrPolicy::visible_switch_decay_ms`), so it is
-/// never a terminal state.
-pub const ABR_WHY_SWITCH_COST: u8 = 14;
 // Kodi in-place seek (flush + reopen + re-anchor the decode position + sendSegmentEvent, NO
 // reload/decoder re-init → no HDR-mode popup, no A/V-resync glitch). On webOS<11 (this 4.5)
 // setTimeToDecode returns 0, so feed_stream falls back to the content-info path
@@ -1423,31 +1355,6 @@ pub fn diag(ps: &crate::route::PlaybackSession) -> Diag {
     }
 }
 
-pub fn seek_display_ns() -> i64 {
-    SHARED.seek_display_ns.load(Relaxed)
-}
-/// The playhead the user INTENDS, which is not always the one being published: while a seek is
-/// still resolving (request → reopen → prime → Play) `playpos_ns` keeps reporting the PRE-seek
-/// spot, so anything snapshotting "where are we?" inside that window snapshots the position the
-/// user just left. The rule — an in-flight seek target wins, else the published position — used to
-/// be open-coded at each reader that remembered it and was simply MISSING at the one that did not
-/// (the OS-background save; see `app::intended_pos`). This is that rule, once.
-///
-/// Use it at every reader that means "where the user is". Keep the raw `playpos_ns` only where the
-/// PUBLISHED position is the point: the re-pause gate (already behind `seek_pending() < 0`) and the
-/// heartbeat's `pos=`, which `tests/run.py` grades real playback progress from — feeding it an
-/// intended position would let a seek that never lands read as playback that climbed.
-///
-/// `appkit/player_hud.rs` deliberately does NOT call this: it needs the same outer two rungs with the
-/// live scrub preview between them, so its expression is a superset rather than a caller.
-pub fn intended_pos_ns(ps: &crate::route::PlaybackSession) -> i64 {
-    let t = seek_display_ns();
-    if loading(ps) && t >= 0 {
-        t
-    } else {
-        playpos_ns()
-    }
-}
 /// request an audio-track switch (Plex audioStreamID); the pump forces a fresh
 /// transcode with that source audio at the current position next tick.
 pub fn request_audio_switch(ps: &crate::route::PlaybackSession, _sid: i64) {
@@ -1470,26 +1377,6 @@ pub fn stage_native_audio(ps: &mut crate::route::PlaybackSession, audio_idx: i32
     crate::route::set_stream_acodec(ps, codec); // the reload's Load payload uses this audio codec
     SHARED.desired_audio_idx.store(audio_idx, Relaxed);
     SHARED.sub_cues.lock().unwrap().clear();
-}
-/// reset to the default (best) audio stream — called on a new item so a prior track choice
-/// does not leak across items (desired_audio_idx persists across seeks, not across items).
-pub fn reset_audio_track() {
-    SHARED.desired_audio_idx.store(-1, Relaxed);
-}
-/// reset the subtitle selection to Off — called on a NEW item. Like desired_audio_idx, the
-/// subtitle selection PERSISTS across seeks/reloads (it is no longer cleared in reset_session),
-/// so a reload-based seek (transcode, or the direct-play reload fallback) keeps the chosen sub
-/// instead of silently turning subtitles off.
-pub fn reset_subtitle() {
-    SHARED.desired_sub_idx.store(-1, Relaxed);
-    sidecar::reset(); // …and the previous item's external subtitle file with it
-    SUBTITLE_OFFSET_MS.store(0, Relaxed); // …and the timing offset tuned against that file
-}
-/// select the audio stream index the demuxer feeds at the FIRST Load (before start_bufferfeed) —
-/// used by the decision to direct-play a non-default direct-playable track (e.g. an AC3 track on
-/// a TrueHD-default item). -1 = default/best.
-pub fn set_audio_track(idx: i32) {
-    SHARED.desired_audio_idx.store(idx, Relaxed);
 }
 /// request a re-transcode at the current position with the CURRENT audio + subtitle —
 /// used when a subtitle is (de)selected while already transcoding, so the server
@@ -1644,33 +1531,6 @@ fn subtitle_floor_for(position_ns: i64, seeking: bool, target_ns: i64) -> i64 {
 /// served at once (`subtitle_floor_ns`, and the image store's eviction order in
 /// [`push_subtitle_bitmap`]).
 pub const SUBTITLE_OFFSET_LATEST_MS: i64 = 60_000;
-/// The earliest a SIDECAR goes. Its whole file is in memory (`sidecar`), so an advance is exactly
-/// as servable as a delay.
-pub const SUBTITLE_OFFSET_EARLIEST_SIDECAR_MS: i64 = -60_000;
-
-/// **The offset range for the selected subtitle, in milliseconds (`(earliest, latest)`)** — the
-/// ONE rule the Timing rows (their clamp and their limit dimming, `appkit::track_menu`) and the
-/// player's clamp ([`set_subtitle_offset`]) both call, so the menu can never offer a step the
-/// player refuses.
-///
-/// A sidecar gets -60..=+60 s. An EMBEDDED track (text or image) gets 0..=+60 s, a delay only:
-/// an advance needs cues the demuxer has not read yet, and an embedded track's packets ride the
-/// same byte-bounded A/V queues as the picture (`engine::AQ_VIDEO_BYTES`, 10 MiB — about 2 s of
-/// a 40 Mbit/s remux), so an advance would find nothing to draw. Off counts as embedded; the
-/// offset is 0 there anyway (a track change resets it).
-pub fn subtitle_offset_range_ms() -> (i64, i64) {
-    offset_range_for(sidecar::selected())
-}
-
-fn offset_range_for(sidecar: bool) -> (i64, i64) {
-    let earliest = if sidecar { SUBTITLE_OFFSET_EARLIEST_SIDECAR_MS } else { 0 };
-    (earliest, SUBTITLE_OFFSET_LATEST_MS)
-}
-
-fn clamp_subtitle_offset_ms(offset_ms: i64) -> i32 {
-    let (earliest, latest) = subtitle_offset_range_ms();
-    offset_ms.clamp(earliest, latest) as i32
-}
 
 /// The viewer's Plex Pass audio-DSP preference (issue #266: dialog boost, loudness normalization),
 /// as two bits — a PREFERENCE, like [`SUBTITLE_TONE`], so it outlives a playback. Only the
@@ -1683,38 +1543,6 @@ pub(crate) static AUDIO_ENHANCEMENTS: crate::route::LiveCell<plx_plex::plex::Aud
 /// The current preference (see [`AUDIO_ENHANCEMENTS`]).
 pub fn audio_enhancements() -> plx_plex::plex::AudioEnhancements {
     AUDIO_ENHANCEMENTS.get()
-}
-
-/// Select a preference on the main thread and retain its persistence for the shared storage
-/// worker, exactly as [`set_subtitle_tone`] does: both go through `route::choose` with
-/// `How::Optimistic`.
-pub fn set_audio_enhancements(a: plx_plex::plex::AudioEnhancements) {
-    crate::route::choose::<plx_plex::plex::session::AudioEnhancementsPref>(a, crate::route::How::Optimistic(None));
-}
-
-/// Set the timing offset (ms) on the main thread, clamped to the range; like the tone it takes
-/// effect on the next drawn frame, with nothing to reload. The live value is not persisted
-/// here; a commit remembers it per item, never per track, through the memory door
-/// (`route::persist_subtitle_offset`) — see [`SUBTITLE_OFFSET_MS`].
-pub fn set_subtitle_offset(offset_ms: i64) {
-    SUBTITLE_OFFSET_MS.store(clamp_subtitle_offset_ms(offset_ms), Relaxed);
-    plx_machine::idle::invalidate();
-}
-
-/// Carry a retry's offset through [`reset_subtitle`] (`route::reset_track_selection`). The
-/// subtitle it was tuned against is re-selected only when the retry lands — a sidecar, whose range
-/// allows an advance, among them — so this holds it to the WIDEST range, and the landing narrows it
-/// with [`reclamp_subtitle_offset`].
-pub fn restore_subtitle_offset(offset_ms: i64) {
-    let clamped = offset_ms.clamp(SUBTITLE_OFFSET_EARLIEST_SIDECAR_MS, SUBTITLE_OFFSET_LATEST_MS);
-    SUBTITLE_OFFSET_MS.store(clamped as i32, Relaxed);
-}
-
-/// Hold the offset to the range of the subtitle now selected ([`subtitle_offset_range_ms`]) —
-/// called by a landing, after it has re-selected the subtitle, so an advance carried by a retry
-/// never outlives the sidecar that allowed it.
-pub fn reclamp_subtitle_offset() {
-    SUBTITLE_OFFSET_MS.store(clamp_subtitle_offset_ms(subtitle_offset_ms()), Relaxed);
 }
 
 /// The text store's hard cap, a runaway guard that an ordinary file never reaches. The store

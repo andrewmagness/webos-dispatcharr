@@ -1,4 +1,4 @@
-# count: 2
+# count: 1
 # Frame-thread blocking exceptions, one line per production `allow_blocking(` CALL SITE, keyed `<path>::<enclosing fn>` (spec: ci/check-deps.sh `blocking`).
 # The gate compares this list to the tree as an exact multiset: a new site fails it, and so does an entry whose site is gone, so the list can only shrink. The way a line leaves is the work it
 # excuses moving onto a worker (`task::spawn_off_frame`; a PMS half takes `&OffFrame`) — never by editing the entry. Do not add a line to make a new call pass; move the work off the frame instead.

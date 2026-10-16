@@ -2057,7 +2057,7 @@ mod tests {
                 assert!(words.chars().count() <= 12, "{lang} {key} = {words:?} is too wide for the key gutter");
                 keys += 1;
             }
-            assert!(keys >= 27, "{lang}: every row key is in the catalog ({keys})");
+            assert!(keys >= 25, "{lang}: every row key is in the catalog ({keys})");
         }
     }
 

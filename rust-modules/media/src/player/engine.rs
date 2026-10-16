@@ -210,8 +210,6 @@ pub struct Engine {
     pub source: Source,
     pub stream_th: Option<std::thread::JoinHandle<()>>,
     pub load_th: Option<std::thread::JoinHandle<()>>,
-    pub report_th: Option<std::thread::JoinHandle<()>>, // /:/timeline progress reporter
-    pub report_stop: Option<std::sync::Arc<threads::ReportStop>>, // ITS stop signal, not SHARED's
 }
 
 impl Engine {
@@ -1159,21 +1157,6 @@ fn start_bufferfeed_inner(
                 if let Some([w, h]) = p.source_raster {
                     crate::route::set_stream_source_raster(ps, w, h);
                 }
-                if p.auto_source_kbps > 0 && !p.auto_hls_base.is_empty() {
-                    // A fixture that starts in HLS hands back the playlist to open: the route's
-                    // own `url` has already moved, and this local copy is what everything below
-                    // reads.
-                    if let Some(hls) = crate::route::arm_auto_fixture(
-                        ps,
-                        &p.url,
-                        p.auto_source_kbps,
-                        &p.auto_hls_base,
-                        p.auto_start_hls,
-                        p.source_raster.map_or((1_920, 1_080), |[w, h]| (w, h)),
-                    ) {
-                        url = hls;
-                    }
-                }
             }
             // Log and fall through rather than refuse: the next candidate may well be armed. The
             // harness grades this as a failure anyway, because the `load:` line below will not say
@@ -1386,10 +1369,6 @@ fn start_bufferfeed_inner(
     let mut aqa_box: Option<Box<AuQueue>> = None;
     let mut stream_th = None;
     let source;
-    // Whether the side subtitle reader will run for this engine run, decided BEFORE the demuxer is
-    // spawned: the demuxer reads `side_subs_owner` once, as it opens the stream, and must never
-    // also open subtitle decoders or ASS sources the reader replaces.
-    let side_target = if stream { crate::route::side_reader_target(ps) } else { None };
 
     if stream {
         let su = plx_plex::plex::StreamUrl::parse(&url); // the typed layer's URL splitter
@@ -1429,12 +1408,10 @@ fn start_bufferfeed_inner(
             // `teardown(true) + start_bufferfeed()` (reload_at / reload_transcode /
             // switch_audio_native), which respawns this thread with the new value.
             let acodec = crate::route::stream_acodec(ps);
-            SHARED.side_subs_owner.store(side_target.is_some(), Ordering::Release);
             stream_th = plx_base::task::spawn_off_frame_keeping("demux", move |_| {
                 crate::ff::demux(origin, path, acodec, aqp, aqap, hsp)
             });
             if stream_th.is_none() {
-                SHARED.side_subs_owner.store(false, Ordering::Release);
                 // Nothing will ever fill the AU queues, so there is no session to start. `hs` is
                 // about to drop with this early return, so retract the pointer first — the pump
                 // and teardown both read it straight off SHARED.
@@ -1467,7 +1444,6 @@ fn start_bufferfeed_inner(
         if !p.is_null() {
             plx_net::stream::http_shutdown(p);
         }
-        super::subside::stop("start-failed"); // before the demux join, like teardown
         crate::curlio::abort_active(); // the https demuxer's equivalent — see teardown
         if let Some(t) = stream_th.take() {
             plx_base::task::join("demux", t);
@@ -1477,30 +1453,6 @@ fn start_bufferfeed_inner(
         }
         return Err(crate::route::RouteStartResult::StartFailed);
     }
-    // The side subtitle reader (dev trigger `dispatcharrtv-subside`), started once the demuxer is
-    // spawned and the media thread exists: it waits for the demuxer's first keyframe before it
-    // reads anything. (Its ownership flag was set before the demux spawn, below.)
-    if let Some(target) = side_target {
-        start_side_reader(&target);
-    }
-
-    // progress reporter: post the play position to /:/timeline (updates resume + watched).
-    // The complete report projection and Engine epoch are captured atomically now. The reporter
-    // never reads route::Session: a stale lease stops at teardown, while active encoder changes
-    // remain synchronized with the projection under PlayerControl.
-    let report_stop = threads::ReportStop::new();
-    let report_th = if stream {
-        if let Some(lease) = crate::route::begin_timeline_reporting(ps) {
-            // best-effort: refused, the only loss is that the resume point stops being posted
-            let st = report_stop.clone();
-            plx_base::task::spawn("timeline", move || threads::timeline_thread(lease, st))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
     let eng = Engine {
         route_start: route_attempt,
         native_epoch,
@@ -1536,8 +1488,6 @@ fn start_bufferfeed_inner(
         source,
         stream_th,
         load_th,
-        report_th,
-        report_stop: Some(report_stop),
     };
     // Re-arm the in-place-seek probe for this session. `feed_stream` clears it when
     // `sf_send_segment` can't reach the pipeline, and that is a fact about the StarfishMediaAPIs
@@ -1677,19 +1627,6 @@ fn reload_start_outcome(
     }
 }
 
-/// Start the side subtitle reader for the live remux this engine run plays, drawing the track
-/// the route's target names.
-fn start_side_reader(target: &crate::route::SideReaderTarget) {
-    let started = super::subside::spec_for(target).is_some_and(super::subside::start);
-    if !started {
-        log("subside: could not start the reader thread");
-        // Nothing reads beside the stream: the demuxer must not leave the subtitle to a reader
-        // that is not there.
-        SHARED.side_subs_owner.store(false, Ordering::Release);
-        super::subside::raise_failure(); // the route falls back to the server's burn
-    }
-}
-
 pub fn reload_at(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, target_ns: i64) -> ReloadOutcome {
     if crate::route::url(ps).is_empty() {
         log("reload_at: no url (ignored)");
@@ -1703,7 +1640,7 @@ pub fn reload_at(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter
         "reload_at: fresh Load at {}s",
         target_ns / 1_000_000_000
     ));
-    teardown(ps, pa, true); // reload mode: preserve the session (no url-clear / stop-scrobble)
+    teardown(ps, pa, true); // reload mode: preserve the session (no url-clear / route retire)
     arm_seek(target_ns);
     reload_start_outcome(ps, pa, ticket)
 }
@@ -1715,8 +1652,8 @@ pub fn stop_bufferfeed(ps: &mut crate::route::PlaybackSession, pa: &mut super::a
 }
 
 /// Suspend for an app-switch: tear the pipeline down (webOS reclaims the video plane while we're
-/// backgrounded) but PRESERVE the playback session — keep the URL + transcode session, and
-/// don't scrobble "stopped". This makes the foreground restore a clean same-item reload
+/// backgrounded) but PRESERVE the playback session — keep the URL and the route. This makes the
+/// foreground restore a clean same-item reload
 /// (begin_resume + start_bufferfeed), the known-good path, instead of resurrecting a stopped session.
 pub fn suspend_bufferfeed(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter) {
     teardown(ps, pa, true);
@@ -1724,14 +1661,14 @@ pub fn suspend_bufferfeed(ps: &mut crate::route::PlaybackSession, pa: &mut super
 
 /// The teardown body. `for_reload` = this is a direct-play seek reload (reload_at), NOT a real
 /// stop: preserve the playback session so start_bufferfeed can restart the SAME item — skip
-/// the "stopped" timeline scrobble, the server transcode stop, and the URL clear.
+/// the route retire and the URL clear.
 fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, for_reload: bool) {
     // A prepared route whose native start failed has no Engine but still owns its exact PMS
     // resource and Session projection. A real stop must retire that ownership exactly once;
     // returning here used to leak the candidate forever while the reducer remained Failed.
     if !pa.is_live() {
         if !for_reload {
-            crate::route::scrobble_stop(ps, None, None);
+            crate::route::retire_route(ps);
             crate::route::begin_engine_teardown(false);
             crate::route::clear_url(ps);
             SHARED.reset_session();
@@ -1751,13 +1688,10 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     let mut eng = pa.take().expect("main-thread live check and take are one transaction");
     let stream = matches!(eng.source, Source::Stream { .. });
 
-    // capture the final-position report BEFORE teardown zeroes playpos/duration (a reload is
-    // not a stop — don't scrobble "stopped", it would falsely pause/mark-watched the item)
     // **The one place a playback really ENDS.** `for_reload` covers a direct-play seek reload, an
     // ABR rung change and an app-switch suspend — each of which destroys an ENGINE and keeps the
     // playback — so reporting an ending on any of them would turn the completion rate into a
-    // measure of how often people scrub. Read before the teardown below zeroes both values, for
-    // the same reason `final_report` is.
+    // measure of how often people scrub. Read before the teardown below zeroes both values.
     if !for_reload {
         crate::player::report::ended(
             ps,
@@ -1765,29 +1699,7 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             SHARED.duration_ns.load(Ordering::Relaxed),
         );
     }
-    let final_report = if for_reload {
-        None
-    } else {
-        let rk = crate::route::cur_rk(ps);
-        let dur = SHARED.duration_ns.load(Ordering::Relaxed);
-        if !rk.is_empty() && dur > 0 {
-            Some((
-                rk,
-                SHARED.playpos_ns.load(Ordering::Relaxed) / 1_000_000,
-                dur / 1_000_000,
-            ))
-        } else {
-            None
-        }
-    };
-
-    // The side subtitle reader first: it reads the original Part over its own transport and must
-    // be gone (its socket shut, its cues cleared) before the demux it was paired with is joined.
-    super::subside::stop(if for_reload { "reload" } else { "stop" });
     // 1. unblock every thread (abort queues, close the demux socket)
-    if let Some(st) = eng.report_stop.take() {
-        st.stop(); // this reporter's own signal — unaffected by the reset_session below
-    }
     if stream {
         // abort BOTH lanes: unblock the demux if it's parked in aq_push on a full lane
         for q in [eng.aq_video.as_mut(), eng.aq_audio.as_mut()]
@@ -1838,24 +1750,8 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             plx_net::stream::http_close(p);
         }
     }
-    // Final position report (state=stopped, so the server commits the resume point) + the
-    // server-side transcode stop, both dispatched to a worker. They used to run inline HERE and
-    // twelve lines below — two blocking PMS round trips on the SDL thread, ~17 s each worst case,
-    // on 100% of real stops. `scrobble_stop` reads and clears route's session statics on THIS
-    // thread and hands the worker owned copies; `plex_run` drains it at exit so the report still
-    // lands. Skipped for a reload, which is not a stop.
-    // The reporter is NOT joined here. Its handle rides out with the scrobble worker, which
-    // joins it before posting `stopped` — so the last `playing` report still lands first, but the
-    // MAIN thread stops paying for it. It parked the frame loop for the remainder of SO_RCVTIMEO
-    // whenever that POST had stalled (measured: `THREADJOIN timeline 6974ms`, tools/netcond.py in
-    // `stall@/:/timeline` — whose scope was broken until 2026-08-23, so that run stalled EVERY
-    // connection. The named `THREADJOIN` line is what keeps the attribution good, and step 1 above
-    // is why: demux and the AU lanes are woken before they are joined, so `timeline` was the only
-    // one that could park). Safe to outlive the Engine: the reporter owns `ReportStop` and a
-    // `TimelineLease`, samples only SHARED clock state, and the route reducer revalidates the lease
-    // before each network effect.
     if !for_reload {
-        crate::route::scrobble_stop(ps, final_report, eng.report_th.take());
+        crate::route::retire_route(ps);
     }
     // 3. Release the native object (see `release_native_object` for the proof chain), unless its
     // Load is still in flight — then hand it, its thread and its payload to the adapter.
@@ -1916,12 +1812,7 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         // The failure is retained across the rollback reload only; a new playback must not carry
         // another item's PMS response into its diagnostics.
         SHARED.clear_abr_failure();
-        crate::route::clear_url(ps); // the transcode stop rode out with `scrobble_stop` above
-    } else if let Some(t) = eng.report_th.take() {
-        // A reload posts no `stopped`, so there is nothing to order against: detach. Its own
-        // ReportStop is already set, so it exits after its current POST and cannot be revived by
-        // the next session — which is exactly what the shared flag could not guarantee.
-        drop(t);
+        crate::route::clear_url(ps);
     }
     // Every worker `begin_engine_teardown` fenced is joined, the native object is retired and the
     // URL is gone: the stop is COMPLETE, so retire the fence too. A reload keeps its own phase
@@ -3320,9 +3211,6 @@ mod payload_tests {
             },
             atmos: false,
             live: false,
-            auto_source_kbps: 0,
-            auto_hls_base: String::new(),
-            auto_start_hls: false,
             source_raster: None,
         };
 
@@ -3678,15 +3566,117 @@ mod prime_livelock_tests {
             source: Source::Stream,
             stream_th: None,
             load_th: None,
-            report_th: None,
-            report_stop: None,
         }
     }
 
-    /// Push one whole segment into both lanes before any tick runs — which is what a segmented
-    /// demux does, and the entire difference from direct play.
-    fn push_one_segment(eng: &mut Engine) {
-        push_segment_at(eng, 0);
+    /// One pump tick — the real one. [`super::pump::pump`] calls exactly this.
+    ///
+    /// **This comment used to claim the test therefore "cannot drift from the shipped ordering",
+    /// and that was false**: the test calls the wrapper, so a `pump` reverted to two separate lane
+    /// calls would have restored the bug with this test still green. What actually enforces it is
+    /// that [`feed_stream`] and [`feed_audio_lane`] are private — the revert no longer compiles.
+    /// The test pins the BEHAVIOUR; the visibility pins the dispatch.
+    fn tick(mt: &plx_base::task::MainThread, eng: &mut Engine) {
+        feed_both_lanes(mt, eng);
+    }
+
+    /// Arm the host clock sink and a per-read feed-clock cost; restored on drop (both are
+    /// process-globals).
+    struct SlowFeed;
+    impl SlowFeed {
+        fn arm(step_us: u64) -> Self {
+            crate::player::ffi_host::force_clocksink_for_test(true);
+            FEED_TEST_CLOCK_STEP_US.with(|s| s.set(step_us));
+            SlowFeed
+        }
+    }
+    impl Drop for SlowFeed {
+        fn drop(&mut self) {
+            FEED_TEST_CLOCK_STEP_US.with(|s| s.set(0));
+            crate::player::ffi_host::force_clocksink_for_test(false);
+        }
+    }
+
+    #[test]
+    fn a_complete_candidate_cycle_invalidates_an_even_prime_snapshot() {
+        assert!(hls_candidate_snapshot_stable(40, 40));
+        assert!(
+            !hls_candidate_snapshot_stable(40, 42),
+            "an even->odd->next-even cycle is not the same stable snapshot",
+        );
+        assert!(!hls_candidate_snapshot_stable(41, 41));
+    }
+
+    /// Paused Starfish source buffers are finite. Media already demuxed into our AU queues is
+    /// nonetheless guaranteed playable, so a pause-local recovery certificate may span both
+    /// layers once the native decoder itself has its ordinary prime. Otherwise a full native
+    /// buffer plus a full application queue can never release the hold.
+    #[test]
+    fn internal_rebuffer_certificate_counts_the_whole_playable_pipeline() {
+        let _serial = plx_base::testlock::serial();
+        struct Restore {
+            runway: i64,
+            rebuffering: bool,
+            video_tail: i64,
+            audio_tail: i64,
+            audio_expected: bool,
+            pts_shift: i64,
+            seeking: bool,
+            paused: bool,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                SHARED
+                    .hls_prime_runway_ms
+                    .store(self.runway, Ordering::Relaxed);
+                SHARED
+                    .hls_rebuffering
+                    .store(self.rebuffering, Ordering::Relaxed);
+                SHARED
+                    .hls_video_tail_ns
+                    .store(self.video_tail, Ordering::Relaxed);
+                SHARED
+                    .hls_audio_tail_ns
+                    .store(self.audio_tail, Ordering::Relaxed);
+                SHARED
+                    .hls_audio_expected
+                    .store(self.audio_expected, Ordering::Relaxed);
+                SHARED.pts_shift.store(self.pts_shift, Ordering::Relaxed);
+                SHARED.seeking.store(self.seeking, Ordering::Relaxed);
+                TX.paused.store(self.paused, Ordering::Relaxed);
+                SHARED.finish_hls_recovery();
+                crate::player::ffi_host::force_clocksink_for_test(false);
+            }
+        }
+        crate::player::ffi_host::force_clocksink_for_test(true);
+        let _restore = Restore {
+            runway: SHARED.hls_prime_runway_ms.swap(3_000, Ordering::Relaxed),
+            rebuffering: SHARED.hls_rebuffering.swap(true, Ordering::Relaxed),
+            video_tail: SHARED
+                .hls_video_tail_ns
+                .swap(3_500_000_000, Ordering::Relaxed),
+            audio_tail: SHARED
+                .hls_audio_tail_ns
+                .swap(3_500_000_000, Ordering::Relaxed),
+            audio_expected: SHARED.hls_audio_expected.swap(true, Ordering::Relaxed),
+            pts_shift: SHARED.pts_shift.swap(0, Ordering::Relaxed),
+            seeking: SHARED.seeking.swap(false, Ordering::Relaxed),
+            paused: TX.paused.swap(false, Ordering::Relaxed),
+        };
+
+        let mt = unsafe { plx_base::task::MainThread::assume() };
+        let mut eng = engine_after_reload();
+        eng.max_fed_video_pts = PRIME_NS;
+        eng.max_fed_audio_pts = PRIME_AUDIO_NS;
+        SHARED.begin_hls_recovery();
+        SHARED.observe_hls_recovery(3_000_000, std::time::Duration::from_secs(3));
+        try_prime(&mt, &mut eng);
+
+        assert!(
+            !eng.prime_play,
+            "three seconds already demuxed behind a decoder-prime must release a 3s runway hold",
+        );
+        assert!(!SHARED.hls_rebuffering.load(Ordering::Relaxed));
     }
 
     fn push_segment_at(eng: &mut Engine, base_ns: i64) {
@@ -3715,15 +3705,252 @@ mod prime_livelock_tests {
         }
     }
 
-    /// One pump tick — the real one. [`super::pump::pump`] calls exactly this.
-    ///
-    /// **This comment used to claim the test therefore "cannot drift from the shipped ordering",
-    /// and that was false**: the test calls the wrapper, so a `pump` reverted to two separate lane
-    /// calls would have restored the bug with this test still green. What actually enforces it is
-    /// that [`feed_stream`] and [`feed_audio_lane`] are private — the revert no longer compiles.
-    /// The test pins the BEHAVIOUR; the visibility pins the dispatch.
-    fn tick(mt: &plx_base::task::MainThread, eng: &mut Engine) {
-        feed_both_lanes(mt, eng);
+    /// Push one whole segment into both lanes before any tick runs — which is what a segmented
+    /// demux does, and the entire difference from direct play.
+    fn push_one_segment(eng: &mut Engine) {
+        push_segment_at(eng, 0);
+    }
+
+    /// A `Play` request is an actuator command, not confirmation that the media clock moved. If
+    /// Starfish refuses it, clearing the internal hold would publish smooth playback while the
+    /// clock is still stopped and leave no path that retries the command.
+    #[test]
+    fn a_refused_play_keeps_the_internal_rebuffer_hold_armed() {
+        let _serial = plx_base::testlock::serial();
+        struct Restore {
+            runway: i64,
+            rebuffering: bool,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                SHARED
+                    .hls_prime_runway_ms
+                    .store(self.runway, Ordering::Relaxed);
+                SHARED
+                    .hls_rebuffering
+                    .store(self.rebuffering, Ordering::Relaxed);
+                SHARED.finish_hls_recovery();
+                crate::player::ffi_host::force_play_result_for_test(None);
+                crate::player::ffi_host::force_clocksink_for_test(false);
+            }
+        }
+
+        crate::player::ffi_host::force_clocksink_for_test(true);
+        crate::player::ffi_host::force_play_result_for_test(Some(0));
+        let _restore = Restore {
+            runway: SHARED.hls_prime_runway_ms.swap(500, Ordering::Relaxed),
+            rebuffering: SHARED.hls_rebuffering.swap(true, Ordering::Relaxed),
+        };
+        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
+        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
+
+        let mt = unsafe { plx_base::task::MainThread::assume() };
+        let mut eng = engine_after_reload();
+        SHARED.begin_hls_recovery();
+        SHARED.observe_hls_recovery(500_000, std::time::Duration::from_secs(2));
+        push_one_segment(&mut eng);
+        tick(&mt, &mut eng);
+
+        assert!(
+            eng.prime_play,
+            "a refused Play must remain pending for the next pump tick"
+        );
+        assert!(
+            SHARED.hls_rebuffering.load(Ordering::Relaxed),
+            "the UI/runtime hold was cleared without a successful clock transition",
+        );
+    }
+
+    /// Starting with less playable media than the next observed acquisition costs recreates the
+    /// freeze/catch-up loop: the clock empties the segment before its replacement can be credited.
+    /// The demuxer's runway is a measured duration, so it must raise the decoder-only prime floor.
+    #[test]
+    fn an_hls_clock_waits_for_the_observed_acquisition_runway() {
+        let _serial = plx_base::testlock::serial();
+        struct Restore {
+            runway: i64,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                SHARED
+                    .hls_prime_runway_ms
+                    .store(self.runway, Ordering::Relaxed);
+                crate::player::ffi_host::force_clocksink_for_test(false);
+            }
+        }
+        crate::player::ffi_host::force_clocksink_for_test(true);
+        let old = SHARED.hls_prime_runway_ms.swap(3_000, Ordering::Relaxed);
+        let _restore = Restore { runway: old };
+        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
+        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
+
+        let mt = unsafe { plx_base::task::MainThread::assume() };
+        let mut eng = engine_after_reload();
+        push_one_segment(&mut eng);
+        tick(&mt, &mut eng);
+
+        let vbuf = eng.max_fed_video_pts - eng.seek_base_pts;
+        let abuf = eng.max_fed_audio_pts - eng.seek_base_pts;
+        assert!(
+            vbuf > PRIME_NS && abuf > PRIME_AUDIO_NS,
+            "the decoder prime is satisfied"
+        );
+        assert!(
+            vbuf < 3_000_000_000 && abuf < 3_000_000_000,
+            "the measured runway is not"
+        );
+        assert!(
+            eng.prime_play,
+            "Play started on decoder latency alone even though the next acquisition costs 3000ms",
+        );
+    }
+
+    /// **A playing lane below low-water is fed past its slice**: at 4 ms a `Feed()` the slice
+    /// alone would feed one AU a tick, which at a 50 Hz present rate cannot keep 60 fps content's
+    /// lead. Below [`FEED_LOW_WATER_NS`] the lane is topped up in one tick; above it, the slice.
+    #[test]
+    fn a_playing_lane_below_low_water_is_fed_past_its_slice() {
+        let _serial = plx_base::testlock::serial();
+        let _slow = SlowFeed::arm(4_000);
+        let mt = unsafe { plx_base::task::MainThread::assume() };
+        const PRES: i64 = 10_000_000_000;
+        SHARED.pres_fed.store(PRES, Ordering::Relaxed);
+        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
+
+        let mut eng = engine_after_reload();
+        eng.prime_play = false;
+        eng.seek_base_pts = 0;
+        let lead0 = 100_000_000;
+        eng.max_fed_video_pts = PRES + lead0;
+        eng.max_fed_audio_pts = PRES + lead0;
+        push_segment_at(&mut eng, PRES + lead0 + 1);
+
+        tick(&mt, &mut eng);
+        let v_fed = (eng.max_fed_video_pts - (PRES + lead0)) / V_STEP_NS;
+        let want = (FEED_LOW_WATER_NS - lead0 + V_STEP_NS - 1) / V_STEP_NS;
+        assert_eq!(v_fed, want, "the video lane is topped up to low-water in one tick, not one AU");
+        assert!(eng.max_fed_video_pts - PRES >= FEED_LOW_WATER_NS);
+
+        // Above low-water the slice is back in force: one AU a tick at 4 ms a Feed().
+        let v0 = eng.max_fed_video_pts;
+        tick(&mt, &mut eng);
+        assert_eq!((eng.max_fed_video_pts - v0) / V_STEP_NS, 1, "a healthy lane is sliced");
+        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
+    }
+
+    /// Reproduces the device sequence: Pause, let the demux queues fill, then Resume. The user
+    /// intent may reopen feeding, but it must not run the native/ACB clock until Starfish has
+    /// accepted a balanced decoder prime. The measured runway may extend into the validated queue
+    /// tails because a paused native source buffer is finite and cannot accept the whole runway.
+    #[test]
+    fn pause_to_fill_resume_primes_both_lanes_before_native_play() {
+        let _serial = plx_base::testlock::serial();
+        struct Restore {
+            runway: i64,
+            video_tail: i64,
+            audio_tail: i64,
+            audio_expected: bool,
+            pts_shift: i64,
+            presented: i64,
+            paused: bool,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                SHARED
+                    .hls_prime_runway_ms
+                    .store(self.runway, Ordering::Relaxed);
+                SHARED
+                    .hls_video_tail_ns
+                    .store(self.video_tail, Ordering::Relaxed);
+                SHARED
+                    .hls_audio_tail_ns
+                    .store(self.audio_tail, Ordering::Relaxed);
+                SHARED
+                    .hls_audio_expected
+                    .store(self.audio_expected, Ordering::Relaxed);
+                SHARED.pts_shift.store(self.pts_shift, Ordering::Relaxed);
+                SHARED.pres_fed.store(self.presented, Ordering::Relaxed);
+                TX.commit_paused(self.paused);
+                SHARED.reset_hls_clock_for_test();
+                crate::player::ffi_host::force_clocksink_for_test(false);
+            }
+        }
+
+        crate::player::ffi_host::force_clocksink_for_test(true);
+        SHARED.reset_hls_clock_for_test();
+        let base = 10_000_000_000;
+        let _restore = Restore {
+            runway: SHARED.hls_prime_runway_ms.swap(3_000, Ordering::Relaxed),
+            video_tail: SHARED
+                .hls_video_tail_ns
+                .swap(base + 3_500_000_000, Ordering::Relaxed),
+            audio_tail: SHARED
+                .hls_audio_tail_ns
+                .swap(base + 3_500_000_000, Ordering::Relaxed),
+            audio_expected: SHARED.hls_audio_expected.swap(true, Ordering::Relaxed),
+            pts_shift: SHARED.pts_shift.swap(0, Ordering::Relaxed),
+            presented: SHARED.pres_fed.swap(base, Ordering::Relaxed),
+            paused: TX.paused.swap(true, Ordering::Relaxed),
+        };
+        let pause = SHARED.prepare_hls_user_pause().expect("reserve user Pause");
+        let pause = match pause {
+            super::super::shared::HlsUserPause::Issue(token) => token,
+            other => panic!("unexpected Pause reservation: {other:?}"),
+        };
+        assert_eq!(
+            SHARED.complete_hls_user_pause(pause, true),
+            super::super::shared::HlsPauseCompletion::Accepted
+        );
+        assert_eq!(
+            SHARED.prepare_hls_user_resume(true),
+            Some(super::super::shared::HlsUserResume::Prime)
+        );
+
+        let mt = unsafe { plx_base::task::MainThread::assume() };
+        let mut eng = engine_after_reload();
+        eng.prime_play = false;
+        arm_live_clock_prime(&mut eng);
+        assert_eq!(eng.seek_base_pts, base);
+        push_segment_at(&mut eng, base);
+        let before = crate::player::ffi_host::play_calls_for_test();
+        try_prime(&mt, &mut eng);
+        assert_eq!(
+            crate::player::ffi_host::play_calls_for_test(),
+            before,
+            "Resume intent itself issued Play before feeding reopened",
+        );
+
+        TX.commit_paused(false);
+        tick(&mt, &mut eng);
+
+        let accepted_video = eng.max_fed_video_pts - base;
+        let accepted_audio = eng.max_fed_audio_pts - base;
+        assert!(accepted_video >= PRIME_NS && accepted_audio >= PRIME_AUDIO_NS);
+        assert!(
+            accepted_video < 3_000_000_000 && accepted_audio < 3_000_000_000,
+            "the fixture must leave part of the measured runway in the application queues",
+        );
+        assert_eq!(crate::player::ffi_host::play_calls_for_test(), before + 1);
+        assert!(
+            !eng.prime_play,
+            "balanced accepted A/V plus validated queued runway did not release ResumePrime",
+        );
+    }
+
+    /// Ticks a freshly reloaded engine takes to start the clock on one whole segment.
+    fn ticks_to_prime(step_us: u64) -> (u32, Engine) {
+        let _slow = SlowFeed::arm(step_us);
+        let mt = unsafe { plx_base::task::MainThread::assume() };
+        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
+        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
+        let mut eng = engine_after_reload();
+        push_one_segment(&mut eng);
+        let mut ticks = 0;
+        while eng.prime_play && ticks < 100 {
+            tick(&mt, &mut eng);
+            ticks += 1;
+        }
+        (ticks, eng)
     }
 
     #[test]
@@ -3789,60 +4016,6 @@ mod prime_livelock_tests {
         );
     }
 
-    /// Arm the host clock sink and a per-read feed-clock cost; restored on drop (both are
-    /// process-globals).
-    struct SlowFeed;
-    impl SlowFeed {
-        fn arm(step_us: u64) -> Self {
-            crate::player::ffi_host::force_clocksink_for_test(true);
-            FEED_TEST_CLOCK_STEP_US.with(|s| s.set(step_us));
-            SlowFeed
-        }
-    }
-    impl Drop for SlowFeed {
-        fn drop(&mut self) {
-            FEED_TEST_CLOCK_STEP_US.with(|s| s.set(0));
-            crate::player::ffi_host::force_clocksink_for_test(false);
-        }
-    }
-
-    /// Ticks a freshly reloaded engine takes to start the clock on one whole segment.
-    fn ticks_to_prime(step_us: u64) -> (u32, Engine) {
-        let _slow = SlowFeed::arm(step_us);
-        let mt = unsafe { plx_base::task::MainThread::assume() };
-        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
-        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
-        let mut eng = engine_after_reload();
-        push_one_segment(&mut eng);
-        let mut ticks = 0;
-        while eng.prime_play && ticks < 100 {
-            tick(&mt, &mut eng);
-            ticks += 1;
-        }
-        (ticks, eng)
-    }
-
-    /// **A slow `Feed()` does not stretch the prime.** With each feed-clock read costing 4 ms
-    /// (past [`FEED_LANE_SLICE_US`]) a sliced lane feeds one AU a tick, and the prime's 17 video
-    /// and ~15 audio AUs took that many ticks to first frame. A lane short of its prime depth is
-    /// exempt, so the prime takes the same ticks as a greedy feed, and still on BOTH lanes.
-    #[test]
-    fn a_slow_feed_does_not_stretch_the_prime() {
-        let _serial = plx_base::testlock::serial();
-        let (greedy, _) = ticks_to_prime(0);
-        let (slow, eng) = ticks_to_prime(4_000);
-        assert!(!eng.prime_play, "the prime never completed in {slow} ticks");
-        assert!(
-            slow <= greedy + 1,
-            "a 4 ms Feed() took {slow} ticks to prime; greedy feeding takes {greedy}"
-        );
-        assert!(
-            eng.max_fed_video_pts - eng.seek_base_pts >= PRIME_NS
-                && eng.max_fed_audio_pts - eng.seek_base_pts >= PRIME_AUDIO_NS,
-            "Play started without both lanes primed"
-        );
-    }
-
     /// **Once a lane holds its prime depth, the rest of the backlog is fed a slice per lane per
     /// tick, not all in one frame.** On the TV every `Feed()` blocks the frame thread, and the
     /// first tick of a playback fed 62 video and 120 audio AUs at once (an 89 ms frame). Each
@@ -3892,197 +4065,6 @@ mod prime_livelock_tests {
             "one tick fed {v_fed} video and {a_fed} audio AUs; the slice allows {per_lane_max} per lane",
         );
         SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
-    }
-
-    /// **A playing lane below low-water is fed past its slice**: at 4 ms a `Feed()` the slice
-    /// alone would feed one AU a tick, which at a 50 Hz present rate cannot keep 60 fps content's
-    /// lead. Below [`FEED_LOW_WATER_NS`] the lane is topped up in one tick; above it, the slice.
-    #[test]
-    fn a_playing_lane_below_low_water_is_fed_past_its_slice() {
-        let _serial = plx_base::testlock::serial();
-        let _slow = SlowFeed::arm(4_000);
-        let mt = unsafe { plx_base::task::MainThread::assume() };
-        const PRES: i64 = 10_000_000_000;
-        SHARED.pres_fed.store(PRES, Ordering::Relaxed);
-        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
-
-        let mut eng = engine_after_reload();
-        eng.prime_play = false;
-        eng.seek_base_pts = 0;
-        let lead0 = 100_000_000;
-        eng.max_fed_video_pts = PRES + lead0;
-        eng.max_fed_audio_pts = PRES + lead0;
-        push_segment_at(&mut eng, PRES + lead0 + 1);
-
-        tick(&mt, &mut eng);
-        let v_fed = (eng.max_fed_video_pts - (PRES + lead0)) / V_STEP_NS;
-        let want = (FEED_LOW_WATER_NS - lead0 + V_STEP_NS - 1) / V_STEP_NS;
-        assert_eq!(v_fed, want, "the video lane is topped up to low-water in one tick, not one AU");
-        assert!(eng.max_fed_video_pts - PRES >= FEED_LOW_WATER_NS);
-
-        // Above low-water the slice is back in force: one AU a tick at 4 ms a Feed().
-        let v0 = eng.max_fed_video_pts;
-        tick(&mt, &mut eng);
-        assert_eq!((eng.max_fed_video_pts - v0) / V_STEP_NS, 1, "a healthy lane is sliced");
-        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
-    }
-
-    /// Starting with less playable media than the next observed acquisition costs recreates the
-    /// freeze/catch-up loop: the clock empties the segment before its replacement can be credited.
-    /// The demuxer's runway is a measured duration, so it must raise the decoder-only prime floor.
-    #[test]
-    fn an_hls_clock_waits_for_the_observed_acquisition_runway() {
-        let _serial = plx_base::testlock::serial();
-        struct Restore {
-            runway: i64,
-        }
-        impl Drop for Restore {
-            fn drop(&mut self) {
-                SHARED
-                    .hls_prime_runway_ms
-                    .store(self.runway, Ordering::Relaxed);
-                crate::player::ffi_host::force_clocksink_for_test(false);
-            }
-        }
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let old = SHARED.hls_prime_runway_ms.swap(3_000, Ordering::Relaxed);
-        let _restore = Restore { runway: old };
-        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
-        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
-
-        let mt = unsafe { plx_base::task::MainThread::assume() };
-        let mut eng = engine_after_reload();
-        push_one_segment(&mut eng);
-        tick(&mt, &mut eng);
-
-        let vbuf = eng.max_fed_video_pts - eng.seek_base_pts;
-        let abuf = eng.max_fed_audio_pts - eng.seek_base_pts;
-        assert!(
-            vbuf > PRIME_NS && abuf > PRIME_AUDIO_NS,
-            "the decoder prime is satisfied"
-        );
-        assert!(
-            vbuf < 3_000_000_000 && abuf < 3_000_000_000,
-            "the measured runway is not"
-        );
-        assert!(
-            eng.prime_play,
-            "Play started on decoder latency alone even though the next acquisition costs 3000ms",
-        );
-    }
-
-    #[test]
-    fn automatic_rebuffer_cannot_resume_without_fresh_media() {
-        let _serial = plx_base::testlock::serial();
-        struct Restore {
-            runway: i64,
-            rebuffering: bool,
-        }
-        impl Drop for Restore {
-            fn drop(&mut self) {
-                SHARED
-                    .hls_prime_runway_ms
-                    .store(self.runway, Ordering::Relaxed);
-                SHARED
-                    .hls_rebuffering
-                    .store(self.rebuffering, Ordering::Relaxed);
-                SHARED.finish_hls_recovery();
-                crate::player::ffi_host::force_clocksink_for_test(false);
-            }
-        }
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let restore = Restore {
-            runway: SHARED.hls_prime_runway_ms.swap(500, Ordering::Relaxed),
-            rebuffering: SHARED.hls_rebuffering.swap(false, Ordering::Relaxed),
-        };
-        let _restore = restore;
-        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
-        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
-
-        let mt = unsafe { plx_base::task::MainThread::assume() };
-        let mut eng = engine_after_reload();
-        push_one_segment(&mut eng);
-        tick(&mt, &mut eng);
-        assert!(
-            !eng.prime_play,
-            "ordinary initial prime should have started"
-        );
-
-        eng.prime_play = true;
-        SHARED.begin_hls_recovery();
-        SHARED.hls_rebuffering.store(true, Ordering::Relaxed);
-        tick(&mt, &mut eng);
-        assert!(
-            eng.prime_play,
-            "the old high-water is not newly buffered media"
-        );
-
-        SHARED.observe_hls_recovery(500_000, std::time::Duration::from_secs(2));
-        push_segment_at(&mut eng, 2_000_000_000);
-        tick(&mt, &mut eng);
-        assert!(
-            !eng.prime_play,
-            "a fresh segment covering the measured runway may resume"
-        );
-        assert!(!SHARED.hls_rebuffering.load(Ordering::Relaxed));
-    }
-
-    /// A candidate transaction owns the discretionary reserve its deadline is currently spending.
-    /// Starting an already-held native clock in the middle would spend the same balance at the
-    /// playhead too. The transaction must reach commit/reject before already-buffered media may
-    /// release an initial or internal prime; a running clock is never stopped by this marker.
-    #[test]
-    fn an_inflight_hls_trial_cannot_release_the_prime_hold() {
-        let _serial = plx_base::testlock::serial();
-        struct Restore {
-            runway: i64,
-            trial_reserve: i64,
-        }
-        impl Drop for Restore {
-            fn drop(&mut self) {
-                SHARED
-                    .hls_prime_runway_ms
-                    .store(self.runway, Ordering::Relaxed);
-                SHARED
-                    .hls_trial_reserve_ms
-                    .store(self.trial_reserve, Ordering::Relaxed);
-                crate::player::ffi_host::force_clocksink_for_test(false);
-            }
-        }
-
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let _restore = Restore {
-            runway: SHARED.hls_prime_runway_ms.swap(500, Ordering::Relaxed),
-            trial_reserve: SHARED.hls_trial_reserve_ms.swap(500, Ordering::Relaxed),
-        };
-        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
-        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
-
-        let mt = unsafe { plx_base::task::MainThread::assume() };
-        let mut eng = engine_after_reload();
-        push_one_segment(&mut eng);
-        tick(&mt, &mut eng);
-        assert!(
-            eng.prime_play,
-            "Play started while the candidate still owned its measured reserve",
-        );
-
-        SHARED.hls_trial_reserve_ms.store(-1, Ordering::Relaxed);
-        tick(&mt, &mut eng);
-        assert!(
-            !eng.prime_play,
-            "the completed transaction did not release an otherwise-ready prime",
-        );
-    }
-
-    #[test]
-    fn a_complete_candidate_cycle_invalidates_an_even_prime_snapshot() {
-        assert!(hls_candidate_snapshot_stable(40, 40));
-        assert!(
-            !hls_candidate_snapshot_stable(40, 42),
-            "an even->odd->next-even cycle is not the same stable snapshot",
-        );
-        assert!(!hls_candidate_snapshot_stable(41, 41));
     }
 
     /// A recovery downshift has no discretionary up-trial reserve. Its first queued candidate
@@ -4205,22 +4187,33 @@ mod prime_livelock_tests {
         );
     }
 
-    /// Paused Starfish source buffers are finite. Media already demuxed into our AU queues is
-    /// nonetheless guaranteed playable, so a pause-local recovery certificate may span both
-    /// layers once the native decoder itself has its ordinary prime. Otherwise a full native
-    /// buffer plus a full application queue can never release the hold.
+    /// **A slow `Feed()` does not stretch the prime.** With each feed-clock read costing 4 ms
+    /// (past [`FEED_LANE_SLICE_US`]) a sliced lane feeds one AU a tick, and the prime's 17 video
+    /// and ~15 audio AUs took that many ticks to first frame. A lane short of its prime depth is
+    /// exempt, so the prime takes the same ticks as a greedy feed, and still on BOTH lanes.
     #[test]
-    fn internal_rebuffer_certificate_counts_the_whole_playable_pipeline() {
+    fn a_slow_feed_does_not_stretch_the_prime() {
+        let _serial = plx_base::testlock::serial();
+        let (greedy, _) = ticks_to_prime(0);
+        let (slow, eng) = ticks_to_prime(4_000);
+        assert!(!eng.prime_play, "the prime never completed in {slow} ticks");
+        assert!(
+            slow <= greedy + 1,
+            "a 4 ms Feed() took {slow} ticks to prime; greedy feeding takes {greedy}"
+        );
+        assert!(
+            eng.max_fed_video_pts - eng.seek_base_pts >= PRIME_NS
+                && eng.max_fed_audio_pts - eng.seek_base_pts >= PRIME_AUDIO_NS,
+            "Play started without both lanes primed"
+        );
+    }
+
+    #[test]
+    fn automatic_rebuffer_cannot_resume_without_fresh_media() {
         let _serial = plx_base::testlock::serial();
         struct Restore {
             runway: i64,
             rebuffering: bool,
-            video_tail: i64,
-            audio_tail: i64,
-            audio_expected: bool,
-            pts_shift: i64,
-            seeking: bool,
-            paused: bool,
         }
         impl Drop for Restore {
             fn drop(&mut self) {
@@ -4230,68 +4223,57 @@ mod prime_livelock_tests {
                 SHARED
                     .hls_rebuffering
                     .store(self.rebuffering, Ordering::Relaxed);
-                SHARED
-                    .hls_video_tail_ns
-                    .store(self.video_tail, Ordering::Relaxed);
-                SHARED
-                    .hls_audio_tail_ns
-                    .store(self.audio_tail, Ordering::Relaxed);
-                SHARED
-                    .hls_audio_expected
-                    .store(self.audio_expected, Ordering::Relaxed);
-                SHARED.pts_shift.store(self.pts_shift, Ordering::Relaxed);
-                SHARED.seeking.store(self.seeking, Ordering::Relaxed);
-                TX.paused.store(self.paused, Ordering::Relaxed);
                 SHARED.finish_hls_recovery();
                 crate::player::ffi_host::force_clocksink_for_test(false);
             }
         }
         crate::player::ffi_host::force_clocksink_for_test(true);
-        let _restore = Restore {
-            runway: SHARED.hls_prime_runway_ms.swap(3_000, Ordering::Relaxed),
-            rebuffering: SHARED.hls_rebuffering.swap(true, Ordering::Relaxed),
-            video_tail: SHARED
-                .hls_video_tail_ns
-                .swap(3_500_000_000, Ordering::Relaxed),
-            audio_tail: SHARED
-                .hls_audio_tail_ns
-                .swap(3_500_000_000, Ordering::Relaxed),
-            audio_expected: SHARED.hls_audio_expected.swap(true, Ordering::Relaxed),
-            pts_shift: SHARED.pts_shift.swap(0, Ordering::Relaxed),
-            seeking: SHARED.seeking.swap(false, Ordering::Relaxed),
-            paused: TX.paused.swap(false, Ordering::Relaxed),
+        let restore = Restore {
+            runway: SHARED.hls_prime_runway_ms.swap(500, Ordering::Relaxed),
+            rebuffering: SHARED.hls_rebuffering.swap(false, Ordering::Relaxed),
         };
+        let _restore = restore;
+        SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
+        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
 
         let mt = unsafe { plx_base::task::MainThread::assume() };
         let mut eng = engine_after_reload();
-        eng.max_fed_video_pts = PRIME_NS;
-        eng.max_fed_audio_pts = PRIME_AUDIO_NS;
-        SHARED.begin_hls_recovery();
-        SHARED.observe_hls_recovery(3_000_000, std::time::Duration::from_secs(3));
-        try_prime(&mt, &mut eng);
-
+        push_one_segment(&mut eng);
+        tick(&mt, &mut eng);
         assert!(
             !eng.prime_play,
-            "three seconds already demuxed behind a decoder-prime must release a 3s runway hold",
+            "ordinary initial prime should have started"
+        );
+
+        eng.prime_play = true;
+        SHARED.begin_hls_recovery();
+        SHARED.hls_rebuffering.store(true, Ordering::Relaxed);
+        tick(&mt, &mut eng);
+        assert!(
+            eng.prime_play,
+            "the old high-water is not newly buffered media"
+        );
+
+        SHARED.observe_hls_recovery(500_000, std::time::Duration::from_secs(2));
+        push_segment_at(&mut eng, 2_000_000_000);
+        tick(&mt, &mut eng);
+        assert!(
+            !eng.prime_play,
+            "a fresh segment covering the measured runway may resume"
         );
         assert!(!SHARED.hls_rebuffering.load(Ordering::Relaxed));
     }
 
-    /// Reproduces the device sequence: Pause, let the demux queues fill, then Resume. The user
-    /// intent may reopen feeding, but it must not run the native/ACB clock until Starfish has
-    /// accepted a balanced decoder prime. The measured runway may extend into the validated queue
-    /// tails because a paused native source buffer is finite and cannot accept the whole runway.
+    /// A candidate transaction owns the discretionary reserve its deadline is currently spending.
+    /// Starting an already-held native clock in the middle would spend the same balance at the
+    /// playhead too. The transaction must reach commit/reject before already-buffered media may
+    /// release an initial or internal prime; a running clock is never stopped by this marker.
     #[test]
-    fn pause_to_fill_resume_primes_both_lanes_before_native_play() {
+    fn an_inflight_hls_trial_cannot_release_the_prime_hold() {
         let _serial = plx_base::testlock::serial();
         struct Restore {
             runway: i64,
-            video_tail: i64,
-            audio_tail: i64,
-            audio_expected: bool,
-            pts_shift: i64,
-            presented: i64,
-            paused: bool,
+            trial_reserve: i64,
         }
         impl Drop for Restore {
             fn drop(&mut self) {
@@ -4299,130 +4281,34 @@ mod prime_livelock_tests {
                     .hls_prime_runway_ms
                     .store(self.runway, Ordering::Relaxed);
                 SHARED
-                    .hls_video_tail_ns
-                    .store(self.video_tail, Ordering::Relaxed);
-                SHARED
-                    .hls_audio_tail_ns
-                    .store(self.audio_tail, Ordering::Relaxed);
-                SHARED
-                    .hls_audio_expected
-                    .store(self.audio_expected, Ordering::Relaxed);
-                SHARED.pts_shift.store(self.pts_shift, Ordering::Relaxed);
-                SHARED.pres_fed.store(self.presented, Ordering::Relaxed);
-                TX.commit_paused(self.paused);
-                SHARED.reset_hls_clock_for_test();
+                    .hls_trial_reserve_ms
+                    .store(self.trial_reserve, Ordering::Relaxed);
                 crate::player::ffi_host::force_clocksink_for_test(false);
             }
         }
 
         crate::player::ffi_host::force_clocksink_for_test(true);
-        SHARED.reset_hls_clock_for_test();
-        let base = 10_000_000_000;
-        let _restore = Restore {
-            runway: SHARED.hls_prime_runway_ms.swap(3_000, Ordering::Relaxed),
-            video_tail: SHARED
-                .hls_video_tail_ns
-                .swap(base + 3_500_000_000, Ordering::Relaxed),
-            audio_tail: SHARED
-                .hls_audio_tail_ns
-                .swap(base + 3_500_000_000, Ordering::Relaxed),
-            audio_expected: SHARED.hls_audio_expected.swap(true, Ordering::Relaxed),
-            pts_shift: SHARED.pts_shift.swap(0, Ordering::Relaxed),
-            presented: SHARED.pres_fed.swap(base, Ordering::Relaxed),
-            paused: TX.paused.swap(true, Ordering::Relaxed),
-        };
-        let pause = SHARED.prepare_hls_user_pause().expect("reserve user Pause");
-        let pause = match pause {
-            super::super::shared::HlsUserPause::Issue(token) => token,
-            other => panic!("unexpected Pause reservation: {other:?}"),
-        };
-        assert_eq!(
-            SHARED.complete_hls_user_pause(pause, true),
-            super::super::shared::HlsPauseCompletion::Accepted
-        );
-        assert_eq!(
-            SHARED.prepare_hls_user_resume(true),
-            Some(super::super::shared::HlsUserResume::Prime)
-        );
-
-        let mt = unsafe { plx_base::task::MainThread::assume() };
-        let mut eng = engine_after_reload();
-        eng.prime_play = false;
-        arm_live_clock_prime(&mut eng);
-        assert_eq!(eng.seek_base_pts, base);
-        push_segment_at(&mut eng, base);
-        let before = crate::player::ffi_host::play_calls_for_test();
-        try_prime(&mt, &mut eng);
-        assert_eq!(
-            crate::player::ffi_host::play_calls_for_test(),
-            before,
-            "Resume intent itself issued Play before feeding reopened",
-        );
-
-        TX.commit_paused(false);
-        tick(&mt, &mut eng);
-
-        let accepted_video = eng.max_fed_video_pts - base;
-        let accepted_audio = eng.max_fed_audio_pts - base;
-        assert!(accepted_video >= PRIME_NS && accepted_audio >= PRIME_AUDIO_NS);
-        assert!(
-            accepted_video < 3_000_000_000 && accepted_audio < 3_000_000_000,
-            "the fixture must leave part of the measured runway in the application queues",
-        );
-        assert_eq!(crate::player::ffi_host::play_calls_for_test(), before + 1);
-        assert!(
-            !eng.prime_play,
-            "balanced accepted A/V plus validated queued runway did not release ResumePrime",
-        );
-    }
-
-    /// A `Play` request is an actuator command, not confirmation that the media clock moved. If
-    /// Starfish refuses it, clearing the internal hold would publish smooth playback while the
-    /// clock is still stopped and leave no path that retries the command.
-    #[test]
-    fn a_refused_play_keeps_the_internal_rebuffer_hold_armed() {
-        let _serial = plx_base::testlock::serial();
-        struct Restore {
-            runway: i64,
-            rebuffering: bool,
-        }
-        impl Drop for Restore {
-            fn drop(&mut self) {
-                SHARED
-                    .hls_prime_runway_ms
-                    .store(self.runway, Ordering::Relaxed);
-                SHARED
-                    .hls_rebuffering
-                    .store(self.rebuffering, Ordering::Relaxed);
-                SHARED.finish_hls_recovery();
-                crate::player::ffi_host::force_play_result_for_test(None);
-                crate::player::ffi_host::force_clocksink_for_test(false);
-            }
-        }
-
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        crate::player::ffi_host::force_play_result_for_test(Some(0));
         let _restore = Restore {
             runway: SHARED.hls_prime_runway_ms.swap(500, Ordering::Relaxed),
-            rebuffering: SHARED.hls_rebuffering.swap(true, Ordering::Relaxed),
+            trial_reserve: SHARED.hls_trial_reserve_ms.swap(500, Ordering::Relaxed),
         };
         SHARED.pres_fed.store(PRES_NONE, Ordering::Relaxed);
         SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
 
         let mt = unsafe { plx_base::task::MainThread::assume() };
         let mut eng = engine_after_reload();
-        SHARED.begin_hls_recovery();
-        SHARED.observe_hls_recovery(500_000, std::time::Duration::from_secs(2));
         push_one_segment(&mut eng);
         tick(&mt, &mut eng);
-
         assert!(
             eng.prime_play,
-            "a refused Play must remain pending for the next pump tick"
+            "Play started while the candidate still owned its measured reserve",
         );
+
+        SHARED.hls_trial_reserve_ms.store(-1, Ordering::Relaxed);
+        tick(&mt, &mut eng);
         assert!(
-            SHARED.hls_rebuffering.load(Ordering::Relaxed),
-            "the UI/runtime hold was cleared without a successful clock transition",
+            !eng.prime_play,
+            "the completed transaction did not release an otherwise-ready prime",
         );
     }
 }
@@ -4496,7 +4382,7 @@ mod replay_after_stop_tests {
         );
         let attempt = crate::route::claim_route_start_attempt(start)
             .expect("a granted transaction must mint one physical Load attempt");
-        assert!(crate::route::settle_route_start(&mut ps, 
+        assert!(crate::route::settle_route_start(
             attempt,
             crate::route::RouteStartResult::Started
         ));
@@ -4568,114 +4454,6 @@ mod load_in_flight_tests {
             );
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-    }
-
-    /// The primary test: real concurrency, a real second thread running `threads::load_thread`,
-    /// a real held `sf_load`.
-    #[test]
-    fn nothing_reaches_the_seam_while_load_is_still_in_flight() {
-        let mut ps = crate::route::PlaybackSession::IDLE;
-        let _serial = plx_base::testlock::serial();
-        SHARED.reset_session();
-        crate::route::reset_player_control_for_test(&ps);
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let _cleanup = Cleanup;
-
-        let mut pa = crate::player::adapter::PlayerAdapter::new(unsafe {
-            plx_base::task::MainThread::assume()
-        });
-        let epoch = SHARED.begin_native_session().expect("native session");
-        pa.install(engine_loading(epoch));
-
-        // Push a whole segment's worth onto both lanes now, the way a demuxer already running
-        // ahead of Load would (investigation.md §A.4 names exactly this as what differed between
-        // the dev set's clean runs and the reporter's segmented-HLS one) — enough to clear both
-        // `PRIME_NS` (video) and `PRIME_AUDIO_NS` (audio), so the positive half below can reach a
-        // real `sf_play` once the gate opens, not just an engine that primed and stalled.
-        {
-            const V_STEP_NS: i64 = 41_666_666; // 24 fps
-            const A_STEP_NS: i64 = 21_333_333; // 1024 samples at 48 kHz
-            const VIDEO_AUS: i64 = 30; // ~1.25s > PRIME_NS (700ms)
-            const AUDIO_AUS: i64 = 20; // ~427ms > PRIME_AUDIO_NS (300ms)
-            let eng = pa.engine().expect("engine installed above");
-            let au = [0u8; 32];
-            let qv = &mut **eng.aq_video.as_mut().unwrap() as *mut crate::aq::AuQueue;
-            for i in 0..VIDEO_AUS {
-                crate::aq::aq_push(
-                    qv,
-                    au.as_ptr(),
-                    au.len() as c_int,
-                    i * V_STEP_NS,
-                    c_int::from(i == 0),
-                    1,
-                );
-            }
-            let qa = &mut **eng.aq_audio.as_mut().unwrap() as *mut crate::aq::AuQueue;
-            for i in 0..AUDIO_AUS {
-                crate::aq::aq_push(qa, au.as_ptr(), au.len() as c_int, i * A_STEP_NS, 1, 2);
-            }
-        }
-
-        crate::player::ffi_host::hold_load_for_test();
-        let payload = std::ffi::CString::new("{}").unwrap();
-        let payload_ptr = threads::SendPtr(payload.as_ptr() as *mut c_char);
-        let load_thread = std::thread::Builder::new()
-            .name("test-load-thread".into())
-            .spawn(move || threads::load_thread(payload_ptr, epoch, None))
-            .expect("spawn load_thread");
-
-        wait_for_load_in_flight();
-
-        // The primary assertion: several real pump ticks, none of which may reach the seam.
-        for _ in 0..5 {
-            crate::player::pump::pump(&mut ps, &mut pa, 1_000);
-        }
-        assert_eq!(
-            crate::player::ffi_host::in_flight_calls_for_test(), 0,
-            "the pump reached the Starfish/ACB seam ({:?}) while StarfishMediaAPIs::Load was \
-             still executing on the load thread. In issue #74 that window is where the app died: \
-             a SIGSEGV in libc with a null first argument on the priming path, and a \
-             Play-vs-LoadCommon deadlock ending in an OMX_VideoComp abort on the immediate-Play \
-             path.",
-            crate::player::ffi_host::in_flight_verb_for_test()
-        );
-        assert!(
-            !SHARED.native_load_returned(epoch),
-            "sanity: the Rust-side gate must still read closed while sf_load has not returned"
-        );
-        assert!(
-            pa.engine().is_some_and(|e| e.stage == Stage::Loading),
-            "the pump must not have advanced past Loading while Load was still in flight"
-        );
-
-        // Release the held Load and let it actually return.
-        crate::player::ffi_host::release_load_for_test();
-        load_thread.join().expect("load_thread joins");
-
-        // The positive half: the gate isn't just permanently closed. A few more ticks must now
-        // advance past Loading and reach Play — proving the fix doesn't just refuse forever.
-        let mut advanced = false;
-        for _ in 0..20 {
-            crate::player::pump::pump(&mut ps, &mut pa, 1_000);
-            if pa.engine().is_some_and(|e| e.stage != Stage::Loading) {
-                advanced = true;
-                break;
-            }
-        }
-        assert!(
-            SHARED.native_load_returned(epoch),
-            "the Rust-side gate must open once threads::load_thread has actually returned"
-        );
-        assert!(
-            advanced,
-            "the gate opening must let the pump leave Stage::Loading"
-        );
-        assert!(
-            crate::player::ffi_host::play_calls_for_test() > 0,
-            "once Load has genuinely returned, Play must eventually be reached — the gate must \
-             not simply stay closed forever"
-        );
     }
 
     /// `load-budget-skipped-when-the-gate-can-never-open` (a fix-wave finding, not a P1a
@@ -5251,6 +5029,113 @@ mod load_in_flight_tests {
         );
     }
 
+    /// The primary test: real concurrency, a real second thread running `threads::load_thread`,
+    /// a real held `sf_load`.
+    #[test]
+    fn nothing_reaches_the_seam_while_load_is_still_in_flight() {
+        let mut ps = crate::route::PlaybackSession::IDLE;
+        let _serial = plx_base::testlock::serial();
+        SHARED.reset_session();
+        crate::route::reset_player_control_for_test(&ps);
+        crate::player::ffi_host::reset_native_lifecycle_for_test();
+        crate::player::ffi_host::force_clocksink_for_test(true);
+        let _cleanup = Cleanup;
+
+        let mut pa = crate::player::adapter::PlayerAdapter::new(unsafe {
+            plx_base::task::MainThread::assume()
+        });
+        let epoch = SHARED.begin_native_session().expect("native session");
+        pa.install(engine_loading(epoch));
+
+        // Push a whole segment's worth onto both lanes now, the way a demuxer already running
+        // ahead of Load would (investigation.md §A.4 names exactly this as what differed between
+        // the dev set's clean runs and the reporter's segmented-HLS one) — enough to clear both
+        // `PRIME_NS` (video) and `PRIME_AUDIO_NS` (audio), so the positive half below can reach a
+        // real `sf_play` once the gate opens, not just an engine that primed and stalled.
+        {
+            const V_STEP_NS: i64 = 41_666_666; // 24 fps
+            const A_STEP_NS: i64 = 21_333_333; // 1024 samples at 48 kHz
+            const VIDEO_AUS: i64 = 30; // ~1.25s > PRIME_NS (700ms)
+            const AUDIO_AUS: i64 = 20; // ~427ms > PRIME_AUDIO_NS (300ms)
+            let eng = pa.engine().expect("engine installed above");
+            let au = [0u8; 32];
+            let qv = &mut **eng.aq_video.as_mut().unwrap() as *mut crate::aq::AuQueue;
+            for i in 0..VIDEO_AUS {
+                crate::aq::aq_push(
+                    qv,
+                    au.as_ptr(),
+                    au.len() as c_int,
+                    i * V_STEP_NS,
+                    c_int::from(i == 0),
+                    1,
+                );
+            }
+            let qa = &mut **eng.aq_audio.as_mut().unwrap() as *mut crate::aq::AuQueue;
+            for i in 0..AUDIO_AUS {
+                crate::aq::aq_push(qa, au.as_ptr(), au.len() as c_int, i * A_STEP_NS, 1, 2);
+            }
+        }
+
+        crate::player::ffi_host::hold_load_for_test();
+        let payload = std::ffi::CString::new("{}").unwrap();
+        let payload_ptr = threads::SendPtr(payload.as_ptr() as *mut c_char);
+        let load_thread = std::thread::Builder::new()
+            .name("test-load-thread".into())
+            .spawn(move || threads::load_thread(payload_ptr, epoch, None))
+            .expect("spawn load_thread");
+
+        wait_for_load_in_flight();
+
+        // The primary assertion: several real pump ticks, none of which may reach the seam.
+        for _ in 0..5 {
+            crate::player::pump::pump(&mut ps, &mut pa, 1_000);
+        }
+        assert_eq!(
+            crate::player::ffi_host::in_flight_calls_for_test(), 0,
+            "the pump reached the Starfish/ACB seam ({:?}) while StarfishMediaAPIs::Load was \
+             still executing on the load thread. In issue #74 that window is where the app died: \
+             a SIGSEGV in libc with a null first argument on the priming path, and a \
+             Play-vs-LoadCommon deadlock ending in an OMX_VideoComp abort on the immediate-Play \
+             path.",
+            crate::player::ffi_host::in_flight_verb_for_test()
+        );
+        assert!(
+            !SHARED.native_load_returned(epoch),
+            "sanity: the Rust-side gate must still read closed while sf_load has not returned"
+        );
+        assert!(
+            pa.engine().is_some_and(|e| e.stage == Stage::Loading),
+            "the pump must not have advanced past Loading while Load was still in flight"
+        );
+
+        // Release the held Load and let it actually return.
+        crate::player::ffi_host::release_load_for_test();
+        load_thread.join().expect("load_thread joins");
+
+        // The positive half: the gate isn't just permanently closed. A few more ticks must now
+        // advance past Loading and reach Play — proving the fix doesn't just refuse forever.
+        let mut advanced = false;
+        for _ in 0..20 {
+            crate::player::pump::pump(&mut ps, &mut pa, 1_000);
+            if pa.engine().is_some_and(|e| e.stage != Stage::Loading) {
+                advanced = true;
+                break;
+            }
+        }
+        assert!(
+            SHARED.native_load_returned(epoch),
+            "the Rust-side gate must open once threads::load_thread has actually returned"
+        );
+        assert!(
+            advanced,
+            "the gate opening must let the pump leave Stage::Loading"
+        );
+        assert!(
+            crate::player::ffi_host::play_calls_for_test() > 0,
+            "once Load has genuinely returned, Play must eventually be reached — the gate must \
+             not simply stay closed forever"
+        );
+    }
 }
 
 /// **The webOS 10.3.1 refusal, replayed.** `docs/webos10-lab-report.md` §3.2 records the exact
@@ -5633,6 +5518,33 @@ mod late_audio_start_tests {
         }
     }
 
+    fn run_ticks(eng: &mut Engine) {
+        let mt = unsafe { plx_base::task::MainThread::assume() };
+        for _ in 0..8 {
+            feed_both_lanes(&mt, eng);
+        }
+    }
+
+    fn arm() -> Restore {
+        crate::player::ffi_host::force_clocksink_for_test(true);
+        SHARED.pres_fed.store(0, Ordering::Relaxed);
+        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
+        Restore
+    }
+
+    #[test]
+    fn audio_far_ahead_that_does_not_open_the_timeline_is_still_dropped_as_stale() {
+        let _serial = plx_base::testlock::serial();
+        let _restore = arm();
+        // The demuxer has not marked these AUs: stale pre-seek audio looks exactly like this.
+        let mut eng = started_with_late_audio(i64::MIN);
+        run_ticks(&mut eng);
+
+        assert!(eng.max_fed_video_pts > 0, "PRECONDITION FAILED: the host sink fed no video");
+        assert_eq!(eng.max_fed_audio_pts, 0, "stale audio must not reach the sink");
+        assert_eq!(eng.audio_start_fp, None);
+    }
+
     /// An engine past `SMP Play` at offset 0 holding the film's first 12 s: video from 0, audio
     /// from [`AUDIO_DELAY_NS`]. `first_audio` is what the demuxer published as its first audio.
     fn started_with_late_audio(first_audio: i64) -> Engine {
@@ -5649,20 +5561,6 @@ mod late_audio_start_tests {
         }
         SHARED.first_audio_pts.store(first_audio, Ordering::Relaxed);
         eng
-    }
-
-    fn run_ticks(eng: &mut Engine) {
-        let mt = unsafe { plx_base::task::MainThread::assume() };
-        for _ in 0..8 {
-            feed_both_lanes(&mt, eng);
-        }
-    }
-
-    fn arm() -> Restore {
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        SHARED.pres_fed.store(0, Ordering::Relaxed);
-        SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
-        Restore
     }
 
     #[test]
@@ -5688,18 +5586,5 @@ mod late_audio_start_tests {
         // Past the lead-in the throttle holds the audio — held, not dropped as stale.
         let next = eng.pending_audio.as_ref().map(|n| unsafe { crate::aq::au_fields(n.0) }.2);
         assert_eq!(next, Some(eng.max_fed_audio_pts + A_STEP_NS), "the next AU waits for the clock");
-    }
-
-    #[test]
-    fn audio_far_ahead_that_does_not_open_the_timeline_is_still_dropped_as_stale() {
-        let _serial = plx_base::testlock::serial();
-        let _restore = arm();
-        // The demuxer has not marked these AUs: stale pre-seek audio looks exactly like this.
-        let mut eng = started_with_late_audio(i64::MIN);
-        run_ticks(&mut eng);
-
-        assert!(eng.max_fed_video_pts > 0, "PRECONDITION FAILED: the host sink fed no video");
-        assert_eq!(eng.max_fed_audio_pts, 0, "stale audio must not reach the sink");
-        assert_eq!(eng.audio_start_fp, None);
     }
 }

@@ -275,9 +275,8 @@ on the frame thread and call `idle::invalidate()` only when visible content chan
 must be explicit and justified through `task::allow_blocking`, never added to a tick — and every production
 `allow_blocking(` site is a line in `ci/allow/blocking.txt`, which the `blocking` gate holds exact (a
 new site or a stale line fails; the list only shrinks). Move the work to a worker (`task::spawn_off_frame`; a PMS half takes
-`&OffFrame`) instead of adding a line. The ledger holds two sites, both a refused worker thread's fallback rather than a user
-action: `task::spawn_or_inline` (OS refused a thread; a server-side stop that must not be dropped runs inline) and
-`route::decision::scrobble_stop` (refused `spawn_small_keeping`; its reporter handle and stop fence must stay ordered).
+`&OffFrame`) instead of adding a line. The ledger holds one site, a refused worker thread's fallback rather than a user
+action: `task::spawn_or_inline` (OS refused a thread; a server-side stop that must not be dropped runs inline).
 To see it fire on the TV, hold the TV lock and, after the first present in a `threadcheck` + `devtriggers` build, run `tools/tv-session.sh key hang:1000` for the guard abort, or `key hang-raw:1000` for the watchdog's unlabeled warning path (both capped at 5000 ms).
 
 The release-enabled `task::watchdog` independently checks loop progress every 100 ms. It reports

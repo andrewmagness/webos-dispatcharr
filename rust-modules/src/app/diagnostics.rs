@@ -637,15 +637,6 @@ fn pipeline_rows(ps: &plx_media::route::PlaybackSession, d: &plx_media::player::
     if plx_media::route::stream_immersive(ps) {
         audio.push_str(" · Dolby Atmos");
     }
-    // Issue #266: only when the server DEMONSTRABLY applied the DSP — `Unverified`/`Refused`/`Off`
-    // say nothing was provably added to this stream, so the row must not claim it.
-    let applied = plx_media::route::applied_audio_enhancements(ps);
-    if applied.boost_dialog {
-        audio.push_str(" · dialog boost");
-    }
-    if applied.normalize_loudness {
-        audio.push_str(" · loudness");
-    }
     v.push(Field::new(plx_platform::i18n::msg::browse_diagnostics_field_audio(), audio).fault(d.load_a == 0 && d.load_v != 0));
 
     // **The frame rate here is a CLAIM, and the row says whose.** `video_fps_milli` is what LG's
@@ -811,13 +802,7 @@ fn route_line(ps: &plx_media::route::PlaybackSession) -> String {
         (true, true) => plx_platform::i18n::msg::browse_diagnostics_remux(),
         (true, false) => plx_platform::i18n::msg::browse_diagnostics_transcode(),
     };
-    // Issue #266: the server's own verdict on the Plex Pass DSP ask, distinct from `transform`
-    // (which only says remux vs re-encode) — absent entirely while the enhancement is Off, so an
-    // ordinary playback's route line is unchanged.
-    match plx_media::route::cur_enhancement_label(ps) {
-        Some(word) => format!("{transport} · {transform} · enh={word}"),
-        None => format!("{transport} · {transform}"),
-    }
+    format!("{transport} · {transform}")
 }
 
 /// The video plane's whole state as one sentence, and whether it is a fault. Split out because the
@@ -1376,102 +1361,6 @@ pub(crate) fn overscan_rects(out: &mut Vec<(&'static str, Rect)>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use plx_media::route::{reset_player_control_for_test, EnhTestFixture};
-
-    /// `enhancement_test_session` registers a synthetic server AND a playback session; every
-    /// caller must undo both in the same order, and the five call sites below once repeated that
-    /// two-line teardown by hand. This wraps the pair as an RAII scope instead: `Deref` lets a
-    /// guard stand in for the `PlaybackSession` at every read site, and `Drop` runs the identical
-    /// teardown at the identical point — end of the owning block — that the manual calls did.
-    struct EnhTestSession {
-        ps: plx_media::route::PlaybackSession,
-    }
-
-    impl EnhTestSession {
-        fn new(fixture: EnhTestFixture) -> Self {
-            let (ps, _sid) = plx_media::route::enhancement_test_session(fixture);
-            Self { ps }
-        }
-    }
-
-    impl std::ops::Deref for EnhTestSession {
-        type Target = plx_media::route::PlaybackSession;
-        fn deref(&self) -> &Self::Target {
-            &self.ps
-        }
-    }
-
-    impl Drop for EnhTestSession {
-        fn drop(&mut self) {
-            reset_player_control_for_test(&self.ps);
-            plx_plex::plex::reset_servers_for_test();
-        }
-    }
-
-    /// Issue #266 PR 4: the Audio row's " · dialog boost"/" · loudness" suffix names what the
-    /// server DEMONSTRABLY did with the ask (`EnhancementOutcome::Applied`), never merely what the
-    /// viewer requested — `Unverified`/`Refused`/`Off` all say nothing was provably added, so the
-    /// suffix must be silent for every one of them.
-    #[test]
-    fn audio_row_suffix_only_when_applied() {
-        let _g = plx_base::testlock::serial();
-        let both = plx_plex::plex::AudioEnhancements { boost_dialog: true, normalize_loudness: true };
-        for (applied, refused, expect_suffix) in [
-            (both, false, true),   // Applied: cur_enhancement derives Applied from `applied.any()`
-            (plx_plex::plex::AudioEnhancements::NONE, false, false), // Off: nothing asked
-            (both, true, false),   // Refused: asked, but the server did not honour it
-        ] {
-            let ps = EnhTestSession::new(EnhTestFixture { applied, refused, ..Default::default() });
-            let d = plx_media::player::Diag::default();
-            let audio_row = pipeline_rows(&ps, &d, (0, 0, 0), 0)
-                .into_iter()
-                .find(|f| f.key == plx_platform::i18n::msg::browse_diagnostics_field_audio())
-                .expect("an Audio row is always drawn");
-            let val = audio_row.val.unwrap_or_default();
-            assert_eq!(
-                val.contains("dialog boost") || val.contains("loudness"),
-                expect_suffix,
-                "applied={applied:?} refused={refused} -> {val:?}",
-            );
-        }
-    }
-
-    /// The route line's `enh=<word>` suffix mirrors the server's own verdict — absent entirely
-    /// while the enhancement is Off (an ordinary playback's route line is byte-for-byte
-    /// unchanged), and naming `refused`/`unverified` distinctly from `applied` otherwise.
-    #[test]
-    fn route_line_shows_refused_and_unverified() {
-        let _g = plx_base::testlock::serial();
-        let asked = plx_plex::plex::AudioEnhancements { boost_dialog: true, normalize_loudness: false };
-
-        {
-            let ps = EnhTestSession::new(EnhTestFixture::default());
-            assert!(!route_line(&ps).contains("enh="), "Off: no enh= at all");
-        }
-
-        {
-            let ps = EnhTestSession::new(EnhTestFixture { applied: asked, ..Default::default() });
-            assert!(route_line(&ps).contains("enh=applied"));
-        }
-
-        {
-            let ps = EnhTestSession::new(EnhTestFixture {
-                applied: asked,
-                refused: true,
-                ..Default::default()
-            });
-            assert!(route_line(&ps).contains("enh=refused"));
-        }
-
-        {
-            let ps = EnhTestSession::new(EnhTestFixture {
-                applied: asked,
-                unverified: true,
-                ..Default::default()
-            });
-            assert!(route_line(&ps).contains("enh=unverified"));
-        }
-    }
     use plx_ui::consts::{SCR_H, SCR_W};
 
     fn header_fixture(idle: bool, head: [String; 2]) -> Diagnostics {

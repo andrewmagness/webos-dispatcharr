@@ -303,31 +303,6 @@ impl HlsActuatorCatalog {
         }
     }
 
-    /// Restrict the catalog to rasters this playback can actually use. Both bounds matter and they
-    /// are different questions: `device` is what the SoC decodes (`devcaps`, the television's own
-    /// table), and `source` is the picture that exists — asking PMS to UPSCALE a 1080p master to
-    /// 4K buys nothing and costs the measured 2.1x of server work, so a candidate wider than the
-    /// source is infeasible rather than merely unattractive.
-    /// **A zero on either axis means NOBODY SAID, and is treated as unbounded** — not as a
-    /// forbidden zero-pixel picture. PMS omits source dimensions often enough that the other
-    /// reading would empty the catalog and park Auto on whatever the floor happens to be, which is
-    /// the opposite of what a missing field justifies. (This is the mirror image of
-    /// `plex::Ceiling::admits`, where an unmeasured source fails CLOSED — deliberately: there, `0`
-    /// is being asked to honour an explicit user instruction, and here it is being asked to
-    /// forbid a device capability nobody has contradicted.)
-    pub fn limited_to(mut self, device: (u16, u16), source: (u16, u16)) -> Self {
-        fn axis(value: u16) -> u16 {
-            if value == 0 {
-                u16::MAX
-            } else {
-                value
-            }
-        }
-        self.raster_limit = (axis(device.0), axis(device.1));
-        self.source = source;
-        self
-    }
-
     /// Does the DEVICE decode this raster? A hard bound, and the only unconditional one.
     fn decodable(&self, candidate: HlsCandidate) -> bool {
         let (width, height) = candidate.rung.raster();
@@ -379,20 +354,6 @@ impl HlsActuatorCatalog {
             .iter()
             .copied()
             .filter(move |c| self.admits(*c))
-    }
-
-    /// **The widest raster this session can ever be asked to decode**, i.e. the bounding box of
-    /// every feasible candidate — `(0, 0)` when nothing is feasible. This is what the Starfish
-    /// Load has to declare for an adaptive session: a rung commit changes the encoder and the URL
-    /// but never re-issues `Load` (`route::sync_active_hls_to_session`), so a declaration sized to
-    /// the BOOTSTRAP rung would be exceeded the moment the controller climbs past it. The
-    /// smallest-sufficient-box rule already removes the 4K point for a 1080p source, which is why
-    /// this is a question for the catalog and not a second copy of that policy.
-    pub fn widest_feasible_raster(&self) -> (u16, u16) {
-        self.feasible().fold((0, 0), |acc, c| {
-            let (w, h) = c.rung.raster();
-            (acc.0.max(w), acc.1.max(h))
-        })
     }
 
     pub fn candidate(self, rung: Rung) -> HlsCandidate {

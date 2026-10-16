@@ -348,7 +348,7 @@ def source_paths(root: Path):
     for rel in ('app/diagnostics.rs', 'app/playback.rs', 'lab/toast.rs'):
         yield src / rel
     # `player/{ass, mod, shared, sidecar}.rs` and `route/{decision, plan}.rs` moved with the media split.
-    for rel in ('player/ass.rs', 'player/mod.rs', 'player/shared.rs', 'player/sidecar.rs', 'route/decision.rs', 'route/plan.rs'):
+    for rel in ('player/ass.rs', 'player/mod.rs', 'player/shared.rs', 'route/decision.rs', 'route/plan.rs'):
         yield root / 'rust-modules/media/src' / rel
     for rel in ('webos.rs', 'tv/device.rs', 'devcaps/dv.rs'):
         yield platform / rel

@@ -1,17 +1,5 @@
 use super::*;
 
-/// The two weights [`risk_score`] sums. Named so that [`RISK_SCORE_MAX`] can be their sum rather
-/// than a fourth number that has to be edited alongside them: the const's whole purpose is that the
-/// panel cannot go on dividing by a stale denominator after a coefficient moves, and while the
-/// coefficients were literals it did not achieve that — moving one still meant editing the 90 by
-/// hand, which is the edit it exists to make unnecessary.
-const RISK_NET: i64 = 40;
-const RISK_BUFFER: i64 = 30;
-
-/// The largest value [`risk_score`] can return. It is the DENOMINATOR the read-out renders with,
-/// and it is here rather than as a literal at the render site.
-pub const RISK_SCORE_MAX: u32 = (RISK_NET + RISK_BUFFER) as u32;
-
 /// Historical unconditional second-segment budget retained for the archived plant and tests.
 ///
 /// The live path does not call this helper. A boundary object which satisfies

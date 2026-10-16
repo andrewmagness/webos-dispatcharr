@@ -34,9 +34,8 @@ and seeks by time via `av_seek_frame` (libavformat's own Cues index).
   on the main thread; `engine` spawns the workers below.
 - `pump.rs` — the **main-thread pump** (was `bufferfeed_pump`): each frame it drives bind → Play →
   feed and services seeks.
-- `threads.rs` — the workers beside the demuxer: **`load_thread`** (construct Starfish + `Load()`,
-  which owns its own GMainContext) and **`timeline_thread`** (the ~10 s `/:/timeline` progress
-  reporter). The **demux thread body is `ff::demux`** (spawned by `engine::start_bufferfeed`): open
+- `threads.rs` — the worker beside the demuxer: **`load_thread`** (construct Starfish + `Load()`,
+  which owns its own GMainContext). The **demux thread body is `ff::demux`** (spawned by `engine::start_bufferfeed`): open
   the part URL, read+convert packets, push AUs to the two lanes; **and service seeks** — it
   `av_seek_frame`s on `seek_to_ns` between two `av_read_frame` calls, which is the whole seek
   mechanism (nothing interrupts it; see the seek gotcha below).
@@ -84,8 +83,8 @@ something.
   `num=601 Resource Allocation Error`, while the identical envelope carrying `"H265"` played in the
   same session, and a 1920x1080 H.264 declaration loaded in 117 ms. The rule now is exactly that
   measurement and no more: HEVC keeps 4K60; H.264 declares 1920x1080@60 when the session's widest
-  raster (`route::sink_max_raster` — source for direct play, the ceiling for a fixed quality, the
-  catalog's widest feasible actuator for Auto, since a rung commit never re-Loads) fits FHD, and
+  raster (`route::sink_max_raster` — source for direct play, the ceiling for a fixed quality)
+  fits FHD, and
   stays 4K60 otherwise; the device table's per-codec row (`devcaps::Caps::{h264_row,hevc_row}`,
   frame rate included) clamps it only when the table was actually read. The `load:` line carries
   `max=WxH@F`, the pipeline echoes what it was handed as `smp_cb type=5`, and the pipeline tier
@@ -173,8 +172,7 @@ something.
   demuxer never sees it, so it is fetched whole from PMS, parsed, and looked up by time from its OWN
   store — not `SHARED.sub_cues`, which is a window the demuxer refills and a backward seek would
   empty. It is silent where the server burns the selection (a re-encode, or a remux whose embedded
-  track the app may not read itself); over a plain remux the app draws it, and draws an embedded
-  track too (`subside.rs`) when the link is local and the Part is 1..=30000 kbps.
+  track the app may not read itself); over a plain remux the app draws it.
 - **A seek NEVER interrupts the demuxer.** The pump publishes the target in `seek_to_ns` and the
   demux thread — the only thread that touches the `AVFormatContext` — `av_seek_frame`s on it
   between two reads. Do not reintroduce an interrupt: the pump used to `shutdown(2)` the socket to

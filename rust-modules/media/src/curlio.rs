@@ -778,29 +778,6 @@ impl CurlSource {
         )
     }
 
-    /// Open the finite prefix used by an Original throughput experiment. Unlike an ordinary
-    /// offset-zero media open this sends `Range: bytes=0-(len-1)`, so completing the sample also
-    /// completes the HTTP response instead of abandoning the rest of a multi-gigabyte file.
-    fn open_bounded_with_reservation_until(
-        url: &str,
-        len: usize,
-        reservation: OpenReservation,
-        deadline: Option<std::time::Instant>,
-    ) -> Result<Box<CurlSource>, OpenErr> {
-        let end = i64::try_from(len)
-            .ok()
-            .and_then(|n| n.checked_sub(1))
-            .ok_or(OpenErr::Local)?;
-        Self::open_with_reservation_range_until(
-            url,
-            0,
-            Some(end),
-            reservation,
-            deadline,
-            &mut NoCheckpoint,
-        )
-    }
-
     fn open_with_reservation_range_until(
         url: &str,
         at: i64,
@@ -1845,123 +1822,6 @@ impl CurlSource {
         self.done = true;
         self.note_body_failure();
     }
-}
-
-/// A bounded sample of the actual remote file used by Auto before it commits to Original.
-/// `elapsed` covers body reads only; DNS/TLS/header latency is bounded by the same outer deadline
-/// but is not confused with sustainable byte throughput.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ThroughputSample {
-    pub bytes: u64,
-    pub elapsed: std::time::Duration,
-    pub target_reached: bool,
-}
-
-/// Why a bounded source measurement did not produce even one body byte.  Keeping the setup
-/// failure typed is what lets Auto distinguish a PMS refusal from a zero-rate link: an HTTP 500,
-/// 503 or 509 is a statement about this request, not a throughput observation.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ThroughputFailure {
-    Open(OpenErr),
-    BodyDeadline,
-    BodyRead { status: c_int },
-    NoBody { status: c_int },
-}
-
-impl ThroughputSample {
-    pub fn kbps(self) -> u64 {
-        let us = self.elapsed.as_micros().max(1);
-        ((u128::from(self.bytes) * 8 * 1_000) / us).min(u128::from(u64::MAX)) as u64
-    }
-}
-
-/// Read at most `target_bytes` from a URL inside two separately bounded serial phases, without
-/// taking over the live demuxer's abort registry.
-///
-/// `setup_budget` bounds DNS/TLS/response headers. `body_budget` starts only after those headers
-/// exist and is the interval reported in [`ThroughputSample::elapsed`]. Sharing one absolute
-/// deadline between them confounds a one-off reload cost with ongoing body service: a fast body
-/// can be truncated merely because setup spent the first part of its measurement window. The
-/// caller funds both phases; this function reports only the body observation. Dropping the source
-/// stops the request as soon as the sample is complete, so the remainder of the movie is never
-/// downloaded here.
-/// Bounded source measurement used by the ABR control path. Its typed failure keeps a server
-/// refusal visible instead of collapsing it into an absent/zero capacity sample. The lower curl
-/// boundary enforces the same credential-transport policy as the live demuxer.
-pub fn sample_throughput_result(
-    url: &str,
-    target_bytes: usize,
-    setup_budget: std::time::Duration,
-    body_budget: std::time::Duration,
-) -> Result<ThroughputSample, ThroughputFailure> {
-    let setup_deadline = sample_setup_deadline(target_bytes, setup_budget, body_budget)?;
-    let reservation = OpenReservation::private().ok_or(ThroughputFailure::Open(OpenErr::Local))?;
-    sample_throughput_with_reservation(url, target_bytes, setup_deadline, body_budget, reservation)
-}
-
-fn sample_setup_deadline(
-    target_bytes: usize,
-    setup_budget: std::time::Duration,
-    body_budget: std::time::Duration,
-) -> Result<std::time::Instant, ThroughputFailure> {
-    if target_bytes == 0 || setup_budget.is_zero() || body_budget.is_zero() || !available() {
-        return Err(ThroughputFailure::Open(OpenErr::Unavailable));
-    }
-    std::time::Instant::now()
-        .checked_add(setup_budget)
-        .ok_or(ThroughputFailure::Open(OpenErr::Local))
-}
-
-fn sample_throughput_with_reservation(
-    url: &str,
-    target_bytes: usize,
-    setup_deadline: std::time::Instant,
-    body_budget: std::time::Duration,
-    reservation: OpenReservation,
-) -> Result<ThroughputSample, ThroughputFailure> {
-    let mut src = CurlSource::open_bounded_with_reservation_until(
-        url,
-        target_bytes,
-        reservation,
-        Some(setup_deadline),
-    )
-    .map_err(ThroughputFailure::Open)?;
-    // `start_range_until` disarms its setup-only total timeout after validating the headers.
-    // `read_until` supplies the independently bounded body deadline from this point on.
-    let started = std::time::Instant::now();
-    let body_deadline = started
-        .checked_add(body_budget)
-        .ok_or(ThroughputFailure::Open(OpenErr::Local))?;
-    let mut bytes = 0usize;
-    let mut last_read = 0;
-    let mut chunk = [0u8; 64 * 1024];
-    while bytes < target_bytes {
-        let want = chunk.len().min(target_bytes - bytes);
-        let n = src.read_until(&mut chunk[..want], Some(body_deadline), &mut NoCheckpoint);
-        last_read = n;
-        if n <= 0 {
-            break;
-        }
-        bytes = bytes.saturating_add(n as usize);
-    }
-    if bytes == 0 {
-        return Err(if std::time::Instant::now() >= body_deadline {
-            ThroughputFailure::BodyDeadline
-        } else if last_read < 0 {
-            ThroughputFailure::BodyRead {
-                status: src.status(),
-            }
-        } else {
-            ThroughputFailure::NoBody {
-                status: src.status(),
-            }
-        });
-    }
-    Ok(ThroughputSample {
-        bytes: bytes as u64,
-        elapsed: started.elapsed(),
-        target_reached: bytes >= target_bytes,
-    })
 }
 
 /// The `CURLOPT_RESOLVE` entry for a request to `origin`: its pin in `net::resolve`, when that holds
@@ -3167,28 +3027,6 @@ mod tests {
                 BODY.len() as i64,
                 "Content-Range's total must not shrink to the tail length"
             );
-        });
-    }
-
-    /// A connection handshake is a one-off reload cost; the body interval is the evidence about
-    /// whether ongoing Original can replenish media. Sharing one deadline between them truncated
-    /// the device probe after 625 ms of body at 35 Mbit/s merely because setup had spent the first
-    /// ~375 ms, then called a 25 Mbit/s source inconclusive although manual Original played. The
-    /// request itself must also name a finite byte range: reading a prefix from an unbounded 200
-    /// and dropping the handle leaves PMS serving the rest of an 18 GB file into a broken pipe.
-    #[test]
-    fn source_probe_gives_setup_and_body_their_own_bounded_windows() {
-        let Some(_gate) = curl_gate() else { return };
-        with_server(RangeMode::DelayedSample, |port, _, _| {
-            let sample = sample_throughput_result(
-                &format!("http://127.0.0.1:{port}/f.mkv"),
-                BODY.len(),
-                std::time::Duration::from_millis(500),
-                std::time::Duration::from_millis(500),
-            )
-            .expect("both individually bounded phases should complete");
-            assert!(sample.target_reached);
-            assert_eq!(sample.bytes, BODY.len() as u64);
         });
     }
 

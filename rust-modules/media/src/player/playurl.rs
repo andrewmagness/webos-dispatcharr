@@ -68,41 +68,8 @@ pub struct PlayUrl {
     /// the broadcast clock stands, so the engine rebases it to 0 (`route::set_live_url`).
     #[serde(default)]
     pub live: bool,
-    /// Pipeline-tier Auto watchdog seam: whole Original wire bitrate. Zero leaves the ordinary
-    /// Plex-free one-shot playback unchanged.
-    #[serde(default)]
-    pub auto_source_kbps: u32,
-    /// Same-origin fixture HLS root used after the synthetic Original becomes unsustainable.
-    /// Present only in debug/test artifacts; production playback obtains replacement URLs from
-    /// PMS through `HlsAbrControl`.
-    #[serde(default)]
-    pub auto_hls_base: String,
-    /// **Start in HLS instead of arriving there through a starvation.** The pipeline tier's ABR
-    /// cases exist to exercise the HLS controller, and until 2026-08-27 their only way in was to
-    /// declare an Original source rate no link could carry (900 000 kbps) and let the starvation
-    /// horizon fire. That worked only because the horizon fired without checking whether the
-    /// reserve was actually draining — on an unshaped link it was FILLING — so the entry depended
-    /// on a defect, and it stopped working the moment the defect was fixed
-    /// (`docs/measurements/local-original-blind.md`, `docs/measurements/orig-first-window-fallback.md`).
-    /// With this set, `route::arm_auto_fixture` installs the post-fallback state directly and the
-    /// controller runs from the first segment. `pipe_auto_original_slow_recover` deliberately does
-    /// NOT set it: the transition is what that case grades.
-    #[serde(default)]
-    pub auto_start_hls: bool,
-    /// **The SOURCE raster, which decides whether the 4K actuator is feasible at all.**
-    ///
-    /// `route::arm_auto_fixture` hardcoded `1920x1080`, and its comment gave the honest reason:
-    /// an unknown source raster is treated as UNBOUNDED by
-    /// [`HlsActuatorCatalog::limited_to`](crate::abr::HlsActuatorCatalog::limited_to), which makes
-    /// the Uhd rung feasible — and `tests/serve_fixtures.py` served no 22000 rung, so a candidate
-    /// there would 404 and read on the television as a rejected encoder. That is a fixture gap
-    /// standing in for a policy, and it is what kept the plan's I9 blocked: with every
-    /// `auto_network` case pinned to a 1080p source, `admits` deletes Uhd and the two entries the
-    /// production table calls empirical are the two no case can reach.
-    ///
-    /// `[w, h]`. Absent or malformed keeps the 1080p default, so every existing case is unchanged
-    /// by construction. The server now answers 22000 with a real 4K clip, so declaring 4K here
-    /// selects a rung that exists rather than one that 404s.
+    /// The source raster, `[w, h]`, when the case declares one; it reaches the route as the
+    /// stream's source raster. Absent or malformed leaves it unset.
     #[serde(default)]
     pub source_raster: Option<[u16; 2]>,
 }
@@ -214,21 +181,6 @@ mod tests {
             plx_data::metadata::Dovi::NONE,
             "an absent dovi node must be silence itself"
         );
-    }
-
-    /// The synthetic Auto case carries only public fixture coordinates and a declared source
-    /// rate. Keep that cross-language seam pinned separately from the ordinary declaration: a
-    /// parser that silently defaults either field would play Original forever and make the TV
-    /// network-profile case grade the wrong path.
-    #[test]
-    fn the_auto_fixture_fields_reach_the_runtime_verbatim() {
-        let p = super::parse_playurl(
-            r#"{"url":"http://192.0.2.10:8020/original.mp4","vcodec":"h264","acodec":"aac",
-                "auto_source_kbps":8000,"auto_hls_base":"http://192.0.2.10:8020/__abr"}"#,
-        )
-        .unwrap();
-        assert_eq!(p.auto_source_kbps, 8_000);
-        assert_eq!(p.auto_hls_base, "http://192.0.2.10:8020/__abr");
     }
 
     /// `present` is DERIVED, so it cannot disagree with the profile in either direction.

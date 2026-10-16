@@ -4,9 +4,8 @@
 //!
 //! §3.3 step 3 says adapter results are keyed by `(completion_frame, adapter_rank,
 //! arrival_index)` and that `completion_frame` is "recorded, so thread scheduling is
-//! irrelevant". Nothing enforced that half: the stores that land OUTSIDE the dispatcher's drain
-//! (`stores::metadata::pump_detail` and its siblings, `person`, `viewstate`, `browse`, `search`,
-//! and Home's hubs through `bridge::take_live_results`) poll their own mailboxes every frame, so
+//! irrelevant". Nothing enforced that half: a store that lands OUTSIDE the dispatcher's drain
+//! polls its own mailbox every frame (the Plex data stores did, until they were removed), so
 //! the frame a landing was OBSERVED on was whatever the network and the scheduler produced.
 //! Measured 2026-09-10: the one recorded `async` record of flow 12 sat on frame 1 in the
 //! recording and on frame 0 in every replay, and because a spring started one frame earlier

@@ -120,7 +120,7 @@ def main() -> None:
     new = nextver(cur, a.spec)
     if tuple(map(int, new.split("."))) < tuple(map(int, cur.split("."))):
         # Only BACKWARDS is refused here. Going sideways is legitimate and is in fact the very
-        # first release: appinfo.json already says 0.1.0, nothing has ever been tagged, and
+        # first release when appinfo.json already says the version to ship (nothing tagged yet), and
         # `--version 0.1.0` means "ship what is already written". Refusing equality made the
         # first release structurally impossible — the guard was pointed at appinfo.json when the
         # thing that must not repeat is a TAG. Whether a version has already shipped is a

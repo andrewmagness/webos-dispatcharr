@@ -42,16 +42,10 @@ fn wrap(s: &str, max: usize) -> Vec<String> {
 /// every frame independent of the transport HUD; hidden when subtitles are off or no
 /// cue is active at the current position.
 ///
-/// TWO producers, one renderer: an external (sidecar) selection is asked first — it is no
-/// demuxer track, so `desired_sub_idx` is -1 while one is up and the embedded store answers
-/// nothing — then the embedded cue store. `burned` (`route::subtitles_burned`) silences the sidecar, because
-/// a server that BURNS the selection into the picture (a re-encode, or a remux the app may not
-/// draw over) would otherwise show the line twice.
-///
 /// A cue too tall for the area below the Timing capsule is shown a page at a time
 /// ([`CaptionPlan`]); `pager` holds its layout so the wrap and fit run once per cue, not per frame.
-pub fn draw_subtitles(pager: &CaptionPager, hud_up: bool, burned: bool) {
-    let Some(page) = pager.refresh(hud_up, burned) else { return };
+pub fn draw_subtitles(pager: &CaptionPager, hud_up: bool) {
+    let Some(page) = pager.refresh(hud_up) else { return };
     let slot = pager.slot.borrow();
     if let Some((_, plan)) = slot.as_ref() {
         draw_caption_block(plan.page_lines(page), &plan.page_layout(page));
@@ -61,8 +55,8 @@ pub fn draw_subtitles(pager: &CaptionPager, hud_up: bool, burned: bool) {
 /// Which page of the active cue is showing (0 for a cue that fits whole, and for no cue), so the
 /// player's frame fingerprint can owe a frame at the instant a long cue turns its page: nothing
 /// else on the screen changes then.
-pub fn caption_page(pager: &CaptionPager, hud_up: bool, burned: bool) -> u32 {
-    pager.refresh(hud_up, burned).unwrap_or(0) as u32
+pub fn caption_page(pager: &CaptionPager, hud_up: bool) -> u32 {
+    pager.refresh(hud_up).unwrap_or(0) as u32
 }
 
 /// Shared caption placement for plain text and a styled-renderer failure message. Text size and
@@ -181,13 +175,12 @@ pub struct CaptionPager {
 impl CaptionPager {
     /// Look the active cue up, re-plan it if it is not the one planned, and return the page to
     /// show. `None` for no caption.
-    fn refresh(&self, hud_up: bool, burned: bool) -> Option<usize> {
+    fn refresh(&self, hud_up: bool) -> Option<usize> {
         let now_ns = plx_media::player::playpos_ns();
-        // the sidecar is looked up on the SUBTITLE clock (the playhead less the viewer's timing
-        // offset); the embedded store applies the same subtraction inside `active_subtitle_span`
+        // the SUBTITLE clock (the playhead less the viewer's timing offset) pages the cue; the cue
+        // store applies the same subtraction inside `active_subtitle_span`
         let clock = plx_media::player::subtitle_clock_ns(now_ns);
-        let (text, start, end) = plx_media::player::sidecar::active_span(clock, burned)
-            .or_else(|| plx_media::player::active_subtitle_span(now_ns))?;
+        let (text, start, end) = plx_media::player::active_subtitle_span(now_ns)?;
         if text.trim().is_empty() {
             return None;
         }
@@ -1004,7 +997,6 @@ mod tests {
 
     use super::*;
 
-    use plx_data::metadata::{Marker, MarkerKind};
 
     /// **The image-subtitle display set is a render, and it says how much of one** (§8.3 rule (c)):
     /// one texture per rect, the SOURCE pixels behind them, and nothing left claimed once the set
@@ -1022,24 +1014,6 @@ mod tests {
             plx_ui::frame::RenderReport::NONE,
             "a released set holds nothing and must stop claiming bytes"
         );
-    }
-
-    fn marker(kind: MarkerKind, final_seg: bool) -> Marker {
-        Marker {
-            kind,
-            start_ms: 1_000,
-            end_ms: 2_000,
-            final_seg,
-        }
-    }
-
-    fn seg(start_ms: i64, end_ms: i64, final_seg: bool) -> Marker {
-        Marker {
-            kind: MarkerKind::Credits,
-            start_ms,
-            end_ms,
-            final_seg,
-        }
     }
 
     // A rail 1000px wide over a 1000ms item: 1px per ms, so an offset reads straight off the x.

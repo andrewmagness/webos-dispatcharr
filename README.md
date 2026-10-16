@@ -73,10 +73,12 @@ simulator.
 This project is a standalone derivative of [PlxNative](https://github.com/GLinnik21/plx-native), a native
 Plex client for webOS by Gleb Linnik. Its rendering, UI system, focus engine and native player are
 what this app is built on. The Plex pages, plex.tv sign-in, the Settings pages, the Plex
-documentation tooling, the on-demand player's transport and panels, the trailer preview engine and
-the Plex transcode machinery (seek and quality flights, Original trials, the film-resume machine)
-and the Plex adaptive-bitrate and HLS playback engine have been removed; the Plex playback and library code still inside the player engine and data
-layers is being removed in stages.
+documentation tooling, the on-demand player's transport and panels, the trailer preview engine,
+the Plex transcode machinery (seek and quality flights, Original trials, the film-resume machine),
+the Plex adaptive-bitrate and HLS playback engine, the Plex play resolve, timeline reporting
+and subtitle routing (side reader, sidecars, server burns), and the Plex library data stores
+(Home, Library, Detail, Search, Person, Collection, watch state, subtitle search) have been
+removed; the Plex client library the player still links is being removed in stages.
 
 ## Licence
 

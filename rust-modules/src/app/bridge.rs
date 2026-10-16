@@ -2,7 +2,7 @@
 //!
 //! What lives here: the application's `Host` ([`AppHost`]) — its screen argument [`AppArg`], the
 //! whole page alphabet; the rig the dispatcher borrows ([`Bridge`]: the real `TtfMeasure`, the
-//! store deliveries, the requests an owned screen makes of the loop); [`frame`], which the loop
+//! requests an owned screen makes of the loop); [`frame`], which the loop
 //! calls once per iteration with the inputs it collected for the dispatcher; and **the loop's
 //! navigations as container ops** ([`nav_root`], [`nav_push`], [`nav_pop`], [`nav_pop_to`],
 //! [`nav_cancel`], [`show_page`], [`background`], [`foreground`]). The container is the one
@@ -27,7 +27,6 @@
 use std::ffi::CStr;
 
 use plx_screens::registry::{AppArg, AppFx, AppMounter, AppMsg, ContentReq, LoopReq, PageMemory};
-use plx_data::stores::{StoreCmd, StoreId};
 use plx_ui::containers::modal::{HostRender, Phase};
 use plx_ui::dispatch::{CxParts, Dispatcher, FrameReport, Rig, Split};
 #[cfg(test)]
@@ -36,7 +35,7 @@ use plx_screens::registry::every_surface_arg;
 use plx_ui::dispatch::NoTap;
 use plx_ui::frame::Budget;
 use plx_machine::machine::{
-    Canon, Cx, Delivery, Edge, Effects, EntryId, Fx, Handled, Host, InputEvent, InputKind,
+    Canon, Cx, Edge, Effects, EntryId, Handled, Host, InputEvent, InputKind,
     Key, LogicalState, MachineId, Measure, NavOp, Source, Tick, TimerId,
 };
 use plx_machine::present::Present;
@@ -50,10 +49,6 @@ pub(crate) struct AppHost;
 
 #[derive(Clone, Copy)]
 pub(crate) struct AppViews<'a> {
-    /// The owner's borrowed read handle onto the metadata store the player's panels read.
-    pub(crate) metadata: plx_data::metadata::MetadataView<'a>,
-    /// The player's subtitle search (`plx_data::subsearch`).
-    pub(crate) subtitle_search: plx_data::subsearch::SubSearchView<'a>,
     /// **The playback session, as this frame's publication** (spec §2.3). The Player machine
     /// (`App.player`) owns the value; `Split` can only lend what the RIG owns, so the loop copies
     /// the decisions in once per frame ([`plx_media::route::PlaybackSession::publication`]) and a
@@ -88,21 +83,10 @@ impl Host for AppHost {
     fn shed_memory(memory: &mut PageMemory, focus: Option<u32>) {
         memory.shed_to_identity(focus);
     }
-
-    fn app_fx_needs_return(fx: &AppFx) -> bool {
-        !matches!(fx, AppFx::Store(..) | AppFx::StoreWork(_))
-    }
 }
 
 impl plx_screens::registry::PlayerLike for AppHost {
     fn session<'a>(cx: &Cx<'a, Self>) -> &'a plx_media::route::PlaybackSession { cx.views.session }
-}
-
-impl plx_screens::registry::MetadataLike for AppHost {
-    fn metadata<'a>(cx: &Cx<'a, Self>) -> plx_data::metadata::MetadataView<'a> { cx.views.metadata }
-    fn subtitle_search<'a>(cx: &Cx<'a, Self>) -> Option<plx_data::subsearch::SubSearchView<'a>> {
-        Some(cx.views.subtitle_search)
-    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -111,7 +95,6 @@ impl plx_screens::registry::MetadataLike for AppHost {
 
 /// What the bridge lends the dispatcher, and what it collects for the loop.
 pub(crate) struct Bridge {
-    stores: plx_data::stores::Stores,
     mounter: AppMounter,
     /// This frame's publication of the playback session — see `AppViews::session`. Refreshed by
     /// [`Bridge::publish_playback`] from the loop, once per iteration.
@@ -166,7 +149,6 @@ impl Bridge {
 
     fn with_measure(measure: &'static dyn Measure, now_us: fn() -> u64) -> Self {
         Self {
-            stores: plx_data::stores::Stores::default(),
             mounter: AppMounter::default(),
             playback: plx_media::route::PlaybackSession::IDLE,
             playback_live: false,
@@ -260,13 +242,6 @@ impl Drop for Bridge {
 }
 
 impl Bridge {
-    pub(crate) fn metadata_mut(&mut self) -> &mut plx_data::stores::metadata::MetadataStore {
-        &mut self.stores.metadata
-    }
-
-
-
-
 
     /// **Publish the video plane's EDGE**, from `Player::set_video_plane_bound` and from nowhere
     /// else (spec §16 risk 10).
@@ -290,38 +265,6 @@ impl Bridge {
         }
     }
 
-    fn deliver_inner(&mut self, to: MachineId, msg: &AppMsg) -> Handled {
-        let store = match msg {
-            AppMsg::Store(cmd) => cmd.store(),
-            AppMsg::StoreWork(work) => work.store(),
-        };
-        let MachineId::Store(ord) = to else {
-            return Handled::No;
-        };
-        if StoreId::from_ord(ord) != Some(store) {
-            plx_base::eventlog::log(&format!(
-                "stores: a {} event was addressed to store ordinal {} — dropped",
-                store.name(),
-                ord.0
-            ));
-            return Handled::No;
-        }
-        match msg {
-            AppMsg::Store(StoreCmd::SubtitleSearch(command)) => {
-                self.stores.subtitle_search_run(command.clone());
-                Handled::Yes
-            }
-            AppMsg::Store(StoreCmd::Metadata(command)) => {
-                self.stores.metadata_run(command.clone());
-                Handled::Yes
-            }
-            AppMsg::StoreWork(plx_data::stores::StoreWork::SubtitleSearch) => {
-                self.stores.subtitle_search_pump();
-                Handled::Yes
-            }
-            _ => Handled::No,
-        }
-    }
 }
 
 impl Rig<AppHost> for Bridge {
@@ -341,23 +284,21 @@ impl Rig<AppHost> for Bridge {
         Split {
             mounter: &mut self.mounter,
             views: AppViews {
-                metadata: self.stores.metadata_view(),
-                subtitle_search: self.stores.subtitle_search_view(),
                 session: &self.playback,
             },
             measure: &self.measure,
         }
     }
-    fn deliver(&mut self, to: MachineId, msg: &AppMsg, _parts: &CxParts<u32>, _fx: &mut Effects<'_, AppHost>) -> Handled {
-        self.deliver_inner(to, msg)
+    fn deliver(&mut self, _to: MachineId, msg: &AppMsg, _parts: &CxParts<u32>, _fx: &mut Effects<'_, AppHost>) -> Handled {
+        match *msg {}
     }
 
     fn timer(&mut self, _owner: MachineId, _id: TimerId, _parts: &CxParts<u32>, _fx: &mut Effects<'_, AppHost>) {}
     fn app_return(&mut self, _from: MachineId, ret: ReturnState<u32, PageMemory>) {
         self.effect_return = ret;
     }
-    fn app_fx(&mut self, from: MachineId, fx: AppFx, _parts: &CxParts<u32>, out: &mut Effects<'_, AppHost>) {
-        self.app_effect(from, fx, out);
+    fn app_fx(&mut self, from: MachineId, fx: AppFx, _parts: &CxParts<u32>, _out: &mut Effects<'_, AppHost>) {
+        self.app_effect(from, fx);
     }
     fn log(&mut self, line: &str) {
         plx_base::eventlog::log(line);
@@ -402,11 +343,8 @@ impl Rig<AppHost> for Bridge {
 }
 
 impl Bridge {
-    fn app_effect(&mut self, from: MachineId, fx: AppFx, out: &mut Effects<'_, AppHost>) {
+    fn app_effect(&mut self, from: MachineId, fx: AppFx) {
         match fx {
-            AppFx::Store(id, cmd) => out.push(Fx::Deliver(MachineId::Store(id.ord()), Delivery::Machine(AppMsg::Store(cmd)))),
-            AppFx::StoreWork(work) => out.push(Fx::Deliver(
-                MachineId::Store(work.store().ord()), Delivery::Machine(AppMsg::StoreWork(work)))),
             AppFx::Loop(req) => self.reqs.push(req),
             AppFx::Content(req) => self.content_reqs.push((from, req, self.effect_return.clone())),
             AppFx::Player(req) => self.player_reqs.push(req),
@@ -420,7 +358,7 @@ impl Bridge {
 // ---------------------------------------------------------------------------------------------
 
 /// The dispatcher's frame, once per loop iteration: the pending navigation's own commit (at
-/// [`PageDip`](plx_ui::containers::transition::PageDip)'s floor), the stores' notices, then
+/// [`PageDip`](plx_ui::containers::transition::PageDip)'s floor), then
 /// the ten steps WITHOUT the draw (the loop draws at its own slot, on its own gate). Returns the
 /// top page's heartbeat word.
 #[cfg(test)]
@@ -447,7 +385,8 @@ pub(crate) type AppResults = Vec<(plx_machine::machine::Addr, AppMsg)>;
 /// frame-view capture, and this function never additionally polls a live mailbox.
 ///
 /// **The trunk every app frame passes through, so it is where the test-only lock rule is
-/// ENFORCED**: a frame pumps the stores, which are process-wide state a concurrent test may own.
+/// ENFORCED**: a frame pumps the storage worker, which is process-wide state a concurrent test may
+/// own.
 pub(crate) fn frame_with_results(
     d: &mut Dispatcher<AppHost>,
     rig: &mut Bridge,
@@ -458,11 +397,8 @@ pub(crate) fn frame_with_results(
 ) -> (&'static str, FrameReport) {
     let _frame_scope = plx_base::task::FrameScope::enter();
     #[cfg(test)]
-    plx_base::testlock::assert_held("the store pump behind an app::bridge frame");
+    plx_base::testlock::assert_held("the storage pump behind an app::bridge frame");
     plx_base::storage_worker::pump_retained();
-    for (id, gen) in rig.stores.take_notices() {
-        d.store_changed(id.ord(), gen);
-    }
     let surface = d.surface_up();
     // A surface's MOTION is not attributed here: `ModalStack::tick` and `Dispatcher`'s per-surface
     // step and draw open one scope each (§4.4); the page's tick runs in none.
@@ -489,14 +425,6 @@ pub(crate) fn frame_with_results(
     (word, report)
 }
 
-
-
-
-
-
-
-
-
 // ---------------------------------------------------------------------------------------------
 // the loop's navigations, as container ops
 // ---------------------------------------------------------------------------------------------
@@ -510,8 +438,6 @@ pub(crate) fn frame_with_results(
 pub(crate) fn nav_root(d: &mut Dispatcher<AppHost>, arg: AppArg) {
     d.request(MachineId::Nav, NavOp::Root(arg));
 }
-
-
 
 /// **Put `want` on top, reusing an entry that already holds it.**
 ///
@@ -543,7 +469,6 @@ pub(crate) fn nav_push_with_return(
 ) {
     d.request_with_return(MachineId::Nav, NavOp::Push(arg), ret);
 }
-
 
 /// **Back to a NAMED entry** — the player's exit (§5.1: the origin is an `EntryId`).
 ///
@@ -579,8 +504,6 @@ pub(crate) fn background(d: &mut Dispatcher<AppHost>) {
 pub(crate) fn foreground(d: &mut Dispatcher<AppHost>) {
     d.resume();
 }
-
-
 
 /// **The player instance, if one is mounted** — the one door to the state phase 9 moved off `App`.
 ///
@@ -632,8 +555,6 @@ pub(crate) fn text_reaches_page(surface_up: bool, page_owned: bool) -> bool {
 pub(crate) fn owns_input(d: &Dispatcher<AppHost>) -> bool {
     d.surface_up() || d.owns_input()
 }
-
-
 
 /// The host page is REPLACED: the loop skips drawing it.
 pub(crate) fn host_replaced(d: &Dispatcher<AppHost>) -> bool {
@@ -785,20 +706,14 @@ pub(crate) fn release_input(now: Tick) -> InputEvent<u32> {
     }
 }
 
-
-
 #[allow(dead_code)]
 fn _measure_is_object_safe(m: &dyn Measure, s: &CStr) -> f32 {
     m.width(s, 1, false)
 }
 
-// Whole-app tests that moved up out of `ui` (docs/module-layers.md, step L13): the dispatcher's
-// bookmark capture, graded with `AppHost`'s own predicate, and the overscan audit over every
-// layer's outermost rects. (`app/mod.rs` may not declare test modules: `check-deps.sh` testmod.)
-#[cfg(test)]
-#[path = "dispatch_return_tests.rs"]
-mod dispatch_return_tests;
-
+// Whole-app tests that moved up out of `ui` (docs/module-layers.md, step L13): the overscan audit
+// over every layer's outermost rects. (`app/mod.rs` may not declare test modules: `check-deps.sh`
+// testmod.)
 #[cfg(test)]
 #[path = "overscan_audit_tests.rs"]
 mod overscan_audit_tests;

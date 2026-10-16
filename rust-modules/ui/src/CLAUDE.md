@@ -237,9 +237,8 @@ with no Plex type in scope (`fixture.rs`). If you find yourself reaching for `cr
 
 A widget that needs a fact about an application row takes it as a plain value the caller fills, and
 does not name the row. A catalog row reaches the poster and still tiles, their captions and the
-page wash as `ui::tile::TileFacts`, built by `screens::registry::tile_facts::of` (the resume rule,
-the composite-thumb test and the kind table stay with the layer that owns them and arrive already
-answered); a server is the raw `u16` id `ui::tex` already takes (`ServerId::raw()`); a review score's
+page wash as `ui::tile::TileFacts`, built by the layer that owns the row (any rule about the row
+stays with that layer and arrives already answered); a server is the raw `u16` id `ui::tex` already takes (`ServerId::raw()`); a review score's
 units are `fmt::RatingScale`. Never add an `impl ui::Trait for pms::Type` in a third layer to get
 around this: after the crate split that impl has neither its trait nor its type in its own crate,
 which the orphan rule forbids.
@@ -275,9 +274,8 @@ on the frame thread and call `idle::invalidate()` only when visible content chan
 must be explicit and justified through `task::allow_blocking`, never added to a tick — and every production
 `allow_blocking(` site is a line in `ci/allow/blocking.txt`, which the `blocking` gate holds exact (a
 new site or a stale line fails; the list only shrinks). Move the work to a worker (`task::spawn_off_frame`; a PMS half takes
-`&OffFrame`) instead of adding a line. The ledger holds two sites, both a refused worker thread's fallback rather than a user
-action: `task::spawn_or_inline` (OS refused a thread; a server-side stop that must not be dropped runs inline) and
-`route::decision::scrobble_stop` (refused `spawn_small_keeping`; its reporter handle and stop fence must stay ordered).
+`&OffFrame`) instead of adding a line. The ledger holds one site, a refused worker thread's fallback rather than a user
+action: `task::spawn_or_inline` (OS refused a thread; a server-side stop that must not be dropped runs inline).
 To see it fire on the TV, hold the TV lock and, after the first present in a `threadcheck` + `devtriggers` build, run `tools/tv-session.sh key hang:1000` for the guard abort, or `key hang-raw:1000` for the watchdog's unlabeled warning path (both capped at 5000 ms).
 
 The release-enabled `task::watchdog` independently checks loop progress every 100 ms. It reports

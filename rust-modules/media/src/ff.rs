@@ -1327,33 +1327,11 @@ fn load_libraries() -> bool {
     ok
 }
 
-/// Did the bundled FFmpeg load and match the ABI table? The diagnostics read-out's first question
-/// about the demuxer: false means every playback will refuse before it opens a socket, which from
-/// the outside looks identical to a stall.
-fn abi_ok() -> bool {
-    ABI_OK.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Did the CURRENT demux session hand over a single video AU? Distinguishes "the demuxer produced
 /// nothing" from "it produced AUs that never reached the decoder" — two stalls that present
 /// identically as a spinner. See [`PUSHED_ANY`].
 pub fn pushed_any() -> bool {
     PUSHED_ANY.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// The three FFmpeg majors actually bound, for the read-out's build line. Zeroes before [`boot`]
-/// has run or when the libraries did not load.
-pub fn majors() -> (u32, u32, u32) {
-    if !abi_ok() {
-        return (0, 0, 0);
-    }
-    unsafe {
-        (
-            avformat_version() >> 16,
-            avcodec_version() >> 16,
-            avutil_version() >> 16,
-        )
-    }
 }
 
 /// Boot smoke test + optional ABI probe. Called once at startup.
@@ -1511,8 +1489,6 @@ impl Src {
 
 #[path = "ff_subs.rs"]
 mod subs;
-#[path = "ff_subside.rs"]
-pub(crate) mod subside;
 use subs::{SubKind, SubTracks};
 #[cfg(test)]
 use subs::{decode_bitmap_cue, open_sub_decoder, sub_kind};
@@ -3177,6 +3153,45 @@ mod pre_audio_headroom_tests {
         assert_eq!(h.before_video(true, true, 7), VideoStep::Proceed, "audio arrived: not this case");
     }
 
+    /// **F3.** The seek reset must take the lane's grant away. Restarting the struct alone left a
+    /// seek that landed while the grant was unreleased with the video lane at base + 24 MiB for the
+    /// rest of the session (the next epoch may be audio-first, or carry audio whose pts never span
+    /// the lead-in), with the exhaustion check off.
+    #[test]
+    fn a_seek_with_the_grant_outstanding_returns_the_lane_to_its_base_cap() {
+        let mut q = crate::aq::aq_new(100);
+        let qp = &mut *q as *mut AuQueue;
+        let mut h = PreAudioHeadroom::default();
+        let VideoStep::Grant(extra) = h.before_video(true, true, 0) else { panic!("grant") };
+        crate::aq::aq_set_headroom(qp, extra);
+        assert_eq!(crate::aq::aq_cap(qp), 100 + extra as i64);
+        h.restart(qp);
+        assert_eq!(crate::aq::aq_cap(qp), 100, "the lane is back at its base cap after the seek reset");
+        assert_eq!(h.before_video(false, true, 0), VideoStep::Proceed, "and the state started over");
+        assert!(!h.granted && !h.released && h.first_audio_ns.is_none());
+        // The next epoch grants afresh.
+        assert_eq!(h.before_video(true, true, 0), GRANT);
+    }
+
+    /// The geometry the constants claim, pinned: the cap is the base plus the headroom, an 11 s delay
+    /// at the measured rates fits, and the fixture-sized read-ahead plus the engine's lead-in still
+    /// fits, while a delay at ~35 Mbit/s does not (the bound is real).
+    #[test]
+    fn the_bound_holds_the_measured_cases_and_not_everything() {
+        let base = crate::player::aq_caps().0;
+        let cap = base + PRE_AUDIO_VIDEO_HEADROOM as i64;
+        assert_eq!(cap, 34 * 1024 * 1024);
+        let bytes = |mbit: f64, secs: f64| (mbit * 1e6 / 8.0 * secs) as i64;
+        // the reported film: 11.008 s of ~9.5 Mbit/s video
+        let film = bytes(9.495_770, 11.008);
+        assert!(film > base, "the plain cap alone cannot hold it");
+        assert!(film < cap);
+        // the fixture: 12 Mbit/s, same delay, and then the lead-in's worth of video as well
+        let lead_s = (crate::player::engine::AUDIO_LEAD_IN_NS + LEAD_IN_MARGIN_NS) as f64 / 1e9;
+        assert!(bytes(12.0, 11.008 + lead_s) < cap, "headroom spans the pre-audio stretch AND the lead-in");
+        assert!(bytes(35.0, 11.008) > cap, "a bound, not a promise");
+    }
+
     /// **F1.** A lane whose consumer IS draining is not the hang: after a seek into an audioless
     /// stretch the pump pops video while the demuxer reads at LAN speed, and main parks that lane
     /// (and plays through the engine's video-only prime escape) instead of failing the open. The
@@ -3223,26 +3238,6 @@ mod pre_audio_headroom_tests {
         assert_eq!(h.before_video(true, true, crate::aq::aq_pops(qp)), VideoStep::Proceed, "released once");
     }
 
-    /// **F3.** The seek reset must take the lane's grant away. Restarting the struct alone left a
-    /// seek that landed while the grant was unreleased with the video lane at base + 24 MiB for the
-    /// rest of the session (the next epoch may be audio-first, or carry audio whose pts never span
-    /// the lead-in), with the exhaustion check off.
-    #[test]
-    fn a_seek_with_the_grant_outstanding_returns_the_lane_to_its_base_cap() {
-        let mut q = crate::aq::aq_new(100);
-        let qp = &mut *q as *mut AuQueue;
-        let mut h = PreAudioHeadroom::default();
-        let VideoStep::Grant(extra) = h.before_video(true, true, 0) else { panic!("grant") };
-        crate::aq::aq_set_headroom(qp, extra);
-        assert_eq!(crate::aq::aq_cap(qp), 100 + extra as i64);
-        h.restart(qp);
-        assert_eq!(crate::aq::aq_cap(qp), 100, "the lane is back at its base cap after the seek reset");
-        assert_eq!(h.before_video(false, true, 0), VideoStep::Proceed, "and the state started over");
-        assert!(!h.granted && !h.released && h.first_audio_ns.is_none());
-        // The next epoch grants afresh.
-        assert_eq!(h.before_video(true, true, 0), GRANT);
-    }
-
     /// With the lane holding more than its base cap, the seek reset still never drops the cap under
     /// what the lane holds (`aq_release_headroom`), and a grant that was already released (or never
     /// made) is left alone.
@@ -3263,25 +3258,6 @@ mod pre_audio_headroom_tests {
         PreAudioHeadroom::default().restart(qp);
         assert_eq!(crate::aq::aq_cap(qp), 1_100, "nothing granted by this state, nothing withdrawn");
     }
-
-    /// The geometry the constants claim, pinned: the cap is the base plus the headroom, an 11 s delay
-    /// at the measured rates fits, and the fixture-sized read-ahead plus the engine's lead-in still
-    /// fits, while a delay at ~35 Mbit/s does not (the bound is real).
-    #[test]
-    fn the_bound_holds_the_measured_cases_and_not_everything() {
-        let base = crate::player::aq_caps().0;
-        let cap = base + PRE_AUDIO_VIDEO_HEADROOM as i64;
-        assert_eq!(cap, 34 * 1024 * 1024);
-        let bytes = |mbit: f64, secs: f64| (mbit * 1e6 / 8.0 * secs) as i64;
-        // the reported film: 11.008 s of ~9.5 Mbit/s video
-        let film = bytes(9.495_770, 11.008);
-        assert!(film > base, "the plain cap alone cannot hold it");
-        assert!(film < cap);
-        // the fixture: 12 Mbit/s, same delay, and then the lead-in's worth of video as well
-        let lead_s = (crate::player::engine::AUDIO_LEAD_IN_NS + LEAD_IN_MARGIN_NS) as f64 / 1e9;
-        assert!(bytes(12.0, 11.008 + lead_s) < cap, "headroom spans the pre-audio stretch AND the lead-in");
-        assert!(bytes(35.0, 11.008) > cap, "a bound, not a promise");
-    }
 }
 
 /// The demux thread body (spawned by `engine::start_bufferfeed`).
@@ -3301,7 +3277,6 @@ pub fn demux(
     hs: SendPtr<HttpStream>,
 ) {
     PUSHED_ANY.store(false, Ordering::Relaxed);
-    *SHARED.side_anchor.lock().unwrap_or_else(|e| e.into_inner()) = None;
     // Refuse rather than read a struct whose shape we do not know (see `boot`). EOF must still be
     // set on both lanes or `pump` waits forever on a queue nothing will ever fill — the same
     // contract the panic barrier below exists to keep.
@@ -3720,16 +3695,8 @@ pub fn demux(
                 // indexes metadata d.subs, i.e. every streamType==3 stream in document order). The
                 // selected track is read LIVE in the loop below, so switching subtitles mid-play takes
                 // effect with no reopen (parity with mkv.rs's active_sub_track).
-                // A side reader that owns this playback's subtitles (`ff_subside.rs`) demuxes them
-                // from the original Part; this stream's own enumeration and ASS source would be
-                // replaced by it.
-                let side_owner = SHARED.side_subs_owner.load(Ordering::Acquire);
-                let mut sub_tracks = if side_owner { SubTracks::empty() } else { SubTracks::open(fmt, streams) };
-                let ass_generation = if side_owner {
-                    0
-                } else {
-                    begin_ass_sources(&url, fmt, streams, sub_tracks.entries())
-                };
+                let mut sub_tracks = SubTracks::open(fmt, streams);
+                let ass_generation = begin_ass_sources(&url, fmt, streams, sub_tracks.entries());
                 sub_tracks.log_tracks();
 
                 // Hand-roll length-prefix -> Annex-B + prepend VPS/SPS/PPS at every keyframe (the
@@ -3793,7 +3760,6 @@ pub fn demux(
                     break;
                 }
 
-                let mut anchor_taken = false;
                 // The video lane's pre-audio headroom (`PreAudioHeadroom`): granted at the first
                 // video push that WOULD PARK at the base cap with no audio yet, held until the
                 // engine's audio lead-in has been pushed, then released as the consumer drains.
@@ -3847,14 +3813,6 @@ pub fn demux(
                     }
                     let si = (*pkt).stream_index;
                     if si == vi {
-                        // The side subtitle reader's clock anchor: the first keyframe this run reads,
-                        // fingerprinted BEFORE the Annex-B conversion rewrites it.
-                        if !anchor_taken && (*pkt).flags & AV_PKT_FLAG_KEY != 0 && !(*pkt).data.is_null() {
-                            anchor_taken = true;
-                            let raw = std::slice::from_raw_parts((*pkt).data, (*pkt).size.max(0) as usize);
-                            *SHARED.side_anchor.lock().unwrap_or_else(|e| e.into_inner()) =
-                                Some(subside::Anchor::of(pts_ns(pkt, vst), raw));
-                        }
                         let is_key = if is_av1 {
                             let pkt_bytes: &[u8] = if (*pkt).data.is_null() {
                                 &[]

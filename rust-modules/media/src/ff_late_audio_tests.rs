@@ -387,7 +387,6 @@ fn prepare_with(tag: &str, make: impl FnOnce(&Path) -> PathBuf) -> Option<Prepar
     SHARED.seek_to_ns.store(-1, Ordering::Relaxed);
     SHARED.desired_audio_idx.store(-1, Ordering::Relaxed);
     SHARED.dg_load_v.store(0, Ordering::Relaxed);
-    SHARED.side_subs_owner.store(false, Ordering::Relaxed);
     SHARED.demux_failed.store(false, Ordering::Relaxed);
     SHARED.demux_io_failed.store(false, Ordering::Relaxed);
     FEED_AUDIO.store(true, Ordering::Relaxed);

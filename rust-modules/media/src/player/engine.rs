@@ -210,8 +210,6 @@ pub struct Engine {
     pub source: Source,
     pub stream_th: Option<std::thread::JoinHandle<()>>,
     pub load_th: Option<std::thread::JoinHandle<()>>,
-    pub report_th: Option<std::thread::JoinHandle<()>>, // /:/timeline progress reporter
-    pub report_stop: Option<std::sync::Arc<threads::ReportStop>>, // ITS stop signal, not SHARED's
 }
 
 impl Engine {
@@ -1469,23 +1467,6 @@ fn start_bufferfeed_inner(
         start_side_reader(&target);
     }
 
-    // progress reporter: post the play position to /:/timeline (updates resume + watched).
-    // The complete report projection and Engine epoch are captured atomically now. The reporter
-    // never reads route::Session: a stale lease stops at teardown, while active encoder changes
-    // remain synchronized with the projection under PlayerControl.
-    let report_stop = threads::ReportStop::new();
-    let report_th = if stream {
-        if let Some(lease) = crate::route::begin_timeline_reporting(ps) {
-            // best-effort: refused, the only loss is that the resume point stops being posted
-            let st = report_stop.clone();
-            plx_base::task::spawn("timeline", move || threads::timeline_thread(lease, st))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
     let eng = Engine {
         route_start: route_attempt,
         native_epoch,
@@ -1521,8 +1502,6 @@ fn start_bufferfeed_inner(
         source,
         stream_th,
         load_th,
-        report_th,
-        report_stop: Some(report_stop),
     };
     // Re-arm the in-place-seek probe for this session. `feed_stream` clears it when
     // `sf_send_segment` can't reach the pipeline, and that is a fact about the StarfishMediaAPIs
@@ -1688,7 +1667,7 @@ pub fn reload_at(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter
         "reload_at: fresh Load at {}s",
         target_ns / 1_000_000_000
     ));
-    teardown(ps, pa, true); // reload mode: preserve the session (no url-clear / stop-scrobble)
+    teardown(ps, pa, true); // reload mode: preserve the session (no url-clear / route retire)
     arm_seek(target_ns);
     reload_start_outcome(ps, pa, ticket)
 }
@@ -1700,8 +1679,8 @@ pub fn stop_bufferfeed(ps: &mut crate::route::PlaybackSession, pa: &mut super::a
 }
 
 /// Suspend for an app-switch: tear the pipeline down (webOS reclaims the video plane while we're
-/// backgrounded) but PRESERVE the playback session — keep the URL + transcode session, and
-/// don't scrobble "stopped". This makes the foreground restore a clean same-item reload
+/// backgrounded) but PRESERVE the playback session — keep the URL and the route. This makes the
+/// foreground restore a clean same-item reload
 /// (begin_resume + start_bufferfeed), the known-good path, instead of resurrecting a stopped session.
 pub fn suspend_bufferfeed(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter) {
     teardown(ps, pa, true);
@@ -1709,14 +1688,14 @@ pub fn suspend_bufferfeed(ps: &mut crate::route::PlaybackSession, pa: &mut super
 
 /// The teardown body. `for_reload` = this is a direct-play seek reload (reload_at), NOT a real
 /// stop: preserve the playback session so start_bufferfeed can restart the SAME item — skip
-/// the "stopped" timeline scrobble, the server transcode stop, and the URL clear.
+/// the route retire and the URL clear.
 fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, for_reload: bool) {
     // A prepared route whose native start failed has no Engine but still owns its exact PMS
     // resource and Session projection. A real stop must retire that ownership exactly once;
     // returning here used to leak the candidate forever while the reducer remained Failed.
     if !pa.is_live() {
         if !for_reload {
-            crate::route::scrobble_stop(ps, None, None);
+            crate::route::retire_route(ps);
             crate::route::begin_engine_teardown(false);
             crate::route::clear_url(ps);
             SHARED.reset_session();
@@ -1736,13 +1715,10 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     let mut eng = pa.take().expect("main-thread live check and take are one transaction");
     let stream = matches!(eng.source, Source::Stream { .. });
 
-    // capture the final-position report BEFORE teardown zeroes playpos/duration (a reload is
-    // not a stop — don't scrobble "stopped", it would falsely pause/mark-watched the item)
     // **The one place a playback really ENDS.** `for_reload` covers a direct-play seek reload, an
     // ABR rung change and an app-switch suspend — each of which destroys an ENGINE and keeps the
     // playback — so reporting an ending on any of them would turn the completion rate into a
-    // measure of how often people scrub. Read before the teardown below zeroes both values, for
-    // the same reason `final_report` is.
+    // measure of how often people scrub. Read before the teardown below zeroes both values.
     if !for_reload {
         crate::player::report::ended(
             ps,
@@ -1750,29 +1726,10 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             SHARED.duration_ns.load(Ordering::Relaxed),
         );
     }
-    let final_report = if for_reload {
-        None
-    } else {
-        let rk = crate::route::cur_rk(ps);
-        let dur = SHARED.duration_ns.load(Ordering::Relaxed);
-        if !rk.is_empty() && dur > 0 {
-            Some((
-                rk,
-                SHARED.playpos_ns.load(Ordering::Relaxed) / 1_000_000,
-                dur / 1_000_000,
-            ))
-        } else {
-            None
-        }
-    };
-
     // The side subtitle reader first: it reads the original Part over its own transport and must
     // be gone (its socket shut, its cues cleared) before the demux it was paired with is joined.
     super::subside::stop(if for_reload { "reload" } else { "stop" });
     // 1. unblock every thread (abort queues, close the demux socket)
-    if let Some(st) = eng.report_stop.take() {
-        st.stop(); // this reporter's own signal — unaffected by the reset_session below
-    }
     if stream {
         // abort BOTH lanes: unblock the demux if it's parked in aq_push on a full lane
         for q in [eng.aq_video.as_mut(), eng.aq_audio.as_mut()]
@@ -1823,24 +1780,8 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             plx_net::stream::http_close(p);
         }
     }
-    // Final position report (state=stopped, so the server commits the resume point) + the
-    // server-side transcode stop, both dispatched to a worker. They used to run inline HERE and
-    // twelve lines below — two blocking PMS round trips on the SDL thread, ~17 s each worst case,
-    // on 100% of real stops. `scrobble_stop` reads and clears route's session statics on THIS
-    // thread and hands the worker owned copies; `plex_run` drains it at exit so the report still
-    // lands. Skipped for a reload, which is not a stop.
-    // The reporter is NOT joined here. Its handle rides out with the scrobble worker, which
-    // joins it before posting `stopped` — so the last `playing` report still lands first, but the
-    // MAIN thread stops paying for it. It parked the frame loop for the remainder of SO_RCVTIMEO
-    // whenever that POST had stalled (measured: `THREADJOIN timeline 6974ms`, tools/netcond.py in
-    // `stall@/:/timeline` — whose scope was broken until 2026-08-23, so that run stalled EVERY
-    // connection. The named `THREADJOIN` line is what keeps the attribution good, and step 1 above
-    // is why: demux and the AU lanes are woken before they are joined, so `timeline` was the only
-    // one that could park). Safe to outlive the Engine: the reporter owns `ReportStop` and a
-    // `TimelineLease`, samples only SHARED clock state, and the route reducer revalidates the lease
-    // before each network effect.
     if !for_reload {
-        crate::route::scrobble_stop(ps, final_report, eng.report_th.take());
+        crate::route::retire_route(ps);
     }
     // 3. Release the native object (see `release_native_object` for the proof chain), unless its
     // Load is still in flight — then hand it, its thread and its payload to the adapter.
@@ -1901,12 +1842,7 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         // The failure is retained across the rollback reload only; a new playback must not carry
         // another item's PMS response into its diagnostics.
         SHARED.clear_abr_failure();
-        crate::route::clear_url(ps); // the transcode stop rode out with `scrobble_stop` above
-    } else if let Some(t) = eng.report_th.take() {
-        // A reload posts no `stopped`, so there is nothing to order against: detach. Its own
-        // ReportStop is already set, so it exits after its current POST and cannot be revived by
-        // the next session — which is exactly what the shared flag could not guarantee.
-        drop(t);
+        crate::route::clear_url(ps);
     }
     // Every worker `begin_engine_teardown` fenced is joined, the native object is retired and the
     // URL is gone: the stop is COMPLETE, so retire the fence too. A reload keeps its own phase
@@ -3660,8 +3596,6 @@ mod prime_livelock_tests {
             source: Source::Stream,
             stream_th: None,
             load_th: None,
-            report_th: None,
-            report_stop: None,
         }
     }
 

@@ -1,5 +1,5 @@
 //! The IMPURE half of the route split (spec §9, §15.2): session state, the synchronized
-//! [`PlayerControl`], PMS/native I/O, and the encoder/scrobble/timeline machinery — everything
+//! [`PlayerControl`], PMS/native I/O, and the route-retire bookkeeping — everything
 //! [`super::plan`] is not. `PlaybackSession` is the main-thread projection used to build URLs/payloads;
 //! [`PLAYER_CONTROL`] is the synchronized authority for route ownership and route-changing
 //! intents. The player engine reads the URL/session through the accessors here; appkit::player_hud
@@ -773,44 +773,6 @@ pub enum RouteStartResult {
     StartFailed,
 }
 
-/// Immutable main-thread projection consumed by the periodic timeline worker. `Session` itself is
-/// deliberately absent: it is main-thread-confined, while this owned clone lives under the same
-/// mutex as the active encoder and engine epoch. A report therefore observes either the complete
-/// old playback projection or the complete new one, never a hybrid assembled across a reload.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct TimelineProjection {
-    sid: ServerId,
-    rating_key: String,
-    logical_session: String,
-    play_queue_id: String,
-    play_queue_item_id: String,
-    audio_stream_id: i64,
-    subtitle_stream_id: i64,
-}
-
-/// One reporter's authority to sample the playback which spawned it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TimelineLease {
-    engine_epoch: u64,
-    /// Every stop announced before this Engine was published must finish its final old-playback
-    /// timeline effect before this reporter may send the replacement playback's first update.
-    required_stop: u64,
-}
-
-#[derive(Clone)]
-struct TimelineSnapshot {
-    sid: ServerId,
-    rating_key: String,
-    state: plx_plex::plex::TimelineState,
-    time_ms: i64,
-    duration_ms: i64,
-    session: String,
-    play_queue_id: String,
-    play_queue_item_id: String,
-    audio_stream_id: i64,
-    subtitle_stream_id: i64,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ControlPhase {
     Idle,
@@ -891,7 +853,6 @@ pub(super) struct PlayerControl {
     next_start_attempt: u64,
     start_results: Vec<(RouteStartAttempt, RouteStartResult)>,
     last_start_result: Option<(RouteStartAttempt, RouteStartResult)>,
-    timeline: Option<TimelineProjection>,
 }
 
 impl PlayerControl {
@@ -932,7 +893,6 @@ static PLAYER_CONTROL: std::sync::Mutex<PlayerControl> = std::sync::Mutex::new(P
     next_start_attempt: 0,
     start_results: Vec::new(),
     last_start_result: None,
-    timeline: None,
 });
 
 fn advance_route(active: &mut ActiveEncoderState) {
@@ -1203,7 +1163,6 @@ pub fn abort_route_start(ticket: RouteStartTransaction, result: RouteStartResult
         }
         _ => return false,
     };
-    control.timeline = None;
     control.phase = phase;
     true
 }
@@ -1221,7 +1180,6 @@ pub fn settle_route_start(ticket: RouteStartAttempt, result: RouteStartResult) -
     match result {
         RouteStartResult::Started => control.phase = ControlPhase::Stable,
         RouteStartResult::NoRoute | RouteStartResult::StartFailed => {
-            control.timeline = None;
             control.phase = ControlPhase::Failed(ticket.serial);
         }
     }
@@ -1297,7 +1255,6 @@ pub fn fail_current_engine() {
     control.engine_epoch = next_generation(control.engine_epoch);
     control.media_epoch = next_generation(control.media_epoch);
     control.pending_auto = None;
-    control.timeline = None;
     control.clear_flight();
     control.phase = ControlPhase::Failed(serial);
 }
@@ -1327,7 +1284,6 @@ pub fn begin_engine_teardown(for_reload: bool) {
         control.pending_seek_ns = None;
         control.phase = ControlPhase::Stopping;
         control.clear_flight();
-        control.timeline = None;
         } else {
         let current = control.phase;
         control.phase = match current {
@@ -1405,7 +1361,6 @@ pub fn reset_player_control_for_test(ps: &PlaybackSession) {
     control.clear_flight();
     control.start_results.clear();
     control.last_start_result = None;
-    control.timeline = None;
 }
 
 fn take_active_encoder() -> String {
@@ -1823,333 +1778,14 @@ pub fn source_vcodec(ps: &PlaybackSession) -> String {
 pub fn source_acodec(ps: &PlaybackSession) -> String {
     ps.src_acodec.clone()
 }
-struct ScrobbleWork {
-    client: Option<&'static plx_plex::plex::Client>,
-    final_report: Option<(String, i64, i64)>,
-    report_th: Option<std::thread::JoinHandle<()>>,
-    session: String,
-    play_queue_id: String,
-    play_queue_item_id: String,
-    audio_stream_id: i64,
-    subtitle_stream_id: i64,
-    transcode_session: String,
-    timeline_stop: Option<TimelineStopCompletion>,
-}
-
-impl ScrobbleWork {
-    fn run(mut self) {
-        // The progress reporter's last `playing` POST attempt must finish BEFORE this `stopped`
-        // attempt begins. Waiting here keeps that ordering off the SDL thread; the stop generation
-        // was announced before this worker was spawned, so a replacement reporter waits without
-        // blocking the old one.
-        if let Some(t) = self.report_th.take() {
-            plx_base::task::join("timeline", t);
-        }
-        if let Some((rk, t_ms, d_ms)) = self.final_report.take() {
-            let ok = {
-                let _effect = TIMELINE_EFFECT.lock().unwrap_or_else(|e| e.into_inner());
-                self.client.is_some_and(|c| {
-                    c.timeline(&plx_plex::plex::TimelineReport {
-                        rating_key: &rk,
-                        state: plx_plex::plex::TimelineState::Stopped,
-                        time_ms: t_ms,
-                        duration_ms: d_ms,
-                        session: &self.session,
-                        play_queue_id: &self.play_queue_id,
-                        play_queue_item_id: &self.play_queue_item_id,
-                        audio_stream_id: self.audio_stream_id,
-                        subtitle_stream_id: self.subtitle_stream_id,
-                    })
-                })
-            };
-            plx_base::eventlog::log(&format!(
-                "timeline stopped t={}s/{}s ok={}",
-                t_ms / 1000,
-                d_ms / 1000,
-                ok as i32,
-            ));
-        }
-        // This is the semantic publication boundary: old reporter joined, then old stopped was
-        // attempted in the common effect lane. Wake replacement reporters before the unrelated
-        // encoder-stop request, whose latency must not delay their progress heartbeat.
-        if let Some(stop) = self.timeline_stop.take() {
-            stop.finish();
-        }
-        if !self.transcode_session.is_empty() {
-            let ok = self
-                .client
-                .is_some_and(|c| c.transcode_stop(&self.transcode_session));
-            plx_base::eventlog::log(&format!("transcode stopped ok={}", ok as i32));
-        }
-    }
-}
-
-/// The end-of-playback PMS work, moved OFF the main thread: the `state=stopped` timeline report
-/// (which commits the server-side resume point and watched state) and the server-side transcode
-/// stop. Replaces the inline `report_timeline` + `stop_transcode` pair in `engine::teardown`.
-///
-/// Both ran inline on the SDL
-/// thread — two blocking PMS round trips, each bounded by `CONNECT_TIMEOUT_MS` + `SO_RCVTIMEO`
-/// (~17 s), on **100% of real stops**. That was the largest guaranteed main-loop park left in the
-/// engine, and strictly bigger than the rare in-flight-POST window at the joins above it.
-///
-/// Everything the worker needs is read HERE, on the main thread, and the two fields a stop retires
-/// are cleared here too: the [`Session`] is a `static mut`, and what keeps it sound is that the main
-/// thread is its only writer. The worker gets owned copies and touches none of it — the same
-/// capture the demux thread's `acodec` does, and for the same reason.
-pub fn scrobble_stop(
-    ps: &mut PlaybackSession,
-    final_report: Option<(String, i64, i64)>,
-    report_th: Option<std::thread::JoinHandle<()>>,
-) {
-    let (logical_session, pq, pqi) = (sess(ps), pq_id(ps), pq_item_id(ps));
-    let (aud, sub) = (cur_audio_sid(ps), cur_sub_sid(ps)); // the selection this playback reported under
-    let tsession = take_active_encoder();
-    let session = if tsession.is_empty() {
-        logical_session
-    } else {
-        tsession.clone()
-    };
-    // The two fields THIS function retires (teardown clears the URL a few lines later, and that is
-    // the whole of what a stop resets). A partial write rather than a whole-session reset because
-    // the rest is still read after teardown returns — see `reset_session`'s doc for the reader that
-    // would break.
-    { let s = &mut *ps; {
-        s.tsession.clear();
-        s.cur_contract.remux = false;
-    } };
-    if final_report.is_none() && tsession.is_empty() && report_th.is_none() {
-        return; // nothing to post and nobody to wait for
-    }
-    // The server this playback came FROM, not whichever one is current — the resume point and the
-    // transcode session both live there, and by the time a stop runs the user may well have walked
-    // back to a different source's Home.
-    let client = cur_client(ps);
-    // Serialise against a previous stop still in flight: these carry a position for a specific
-    // item, and letting two race would let an older one land last. Normally free — the measured
-    // baseline for a finished worker is 0 ms.
-    drain_scrobble();
-    let timeline_stop =
-        (final_report.is_some() || report_th.is_some()).then(|| TIMELINE_STOP_FENCE.announce());
-    let work = std::sync::Arc::new(std::sync::Mutex::new(Some(ScrobbleWork {
-        client,
-        final_report,
-        report_th,
-        session,
-        play_queue_id: pq,
-        play_queue_item_id: pqi,
-        audio_stream_id: aud,
-        subtitle_stream_id: sub,
-        transcode_session: tsession,
-        timeline_stop,
-    })));
-    let worker = work.clone();
-    let join_generation = SCROBBLE_JOIN.reserve();
-    let h = plx_base::task::spawn_small_keeping("scrobble", move || {
-        let work = { worker.lock().unwrap_or_else(|e| e.into_inner()).take() };
-        if let Some(work) = work {
-            work.run();
-        }
-    });
-    if let Some(handle) = h {
-        SCROBBLE_JOIN.install(join_generation, handle);
-    } else {
-        // Thread refusal is extraordinarily rare, but dropping the old reporter handle and
-        // opening the stop fence would recreate the exact new-before-old race. Pay the old
-        // synchronous cost on this failure path and preserve ordering.
-        let _block = plx_base::task::allow_blocking(
-            const { &plx_base::task::BlockingLabel::new("scrobble stop (worker thread refused)") },
-        );
-        let work = { work.lock().unwrap_or_else(|e| e.into_inner()).take() };
-        if let Some(work) = work {
-            work.run();
-        }
-        SCROBBLE_JOIN.complete_spawn_refusal(join_generation);
-    }
-}
-
-struct ScrobbleJoinState {
-    generation: u64,
-    completed: u64,
-    spawn_pending: bool,
-    joining: bool,
-    handle: Option<(u64, std::thread::JoinHandle<()>)>,
-}
-
-struct ScrobbleJoin {
-    state: std::sync::Mutex<ScrobbleJoinState>,
-    changed: std::sync::Condvar,
-}
-
-impl ScrobbleJoin {
-    const fn new() -> Self {
-        Self {
-            state: std::sync::Mutex::new(ScrobbleJoinState {
-                generation: 0,
-                completed: 0,
-                spawn_pending: false,
-                joining: false,
-                handle: None,
-            }),
-            changed: std::sync::Condvar::new(),
-        }
-    }
-
-    /// Publish unfinished work before spawning it. A concurrent drain then waits for handle
-    /// installation (or synchronous refusal completion) instead of seeing a false idle window.
-    fn reserve(&self) -> u64 {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        debug_assert_eq!(state.completed, state.generation);
-        debug_assert!(!state.spawn_pending && !state.joining && state.handle.is_none());
-        state.generation = state
-            .generation
-            .checked_add(1)
-            .expect("scrobble generation exhausted");
-        state.spawn_pending = true;
-        state.generation
-    }
-
-    fn install(&self, generation: u64, handle: std::thread::JoinHandle<()>) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        debug_assert_eq!(state.generation, generation);
-        debug_assert!(state.spawn_pending && state.handle.is_none());
-        state.handle = Some((generation, handle));
-        state.spawn_pending = false;
-        self.changed.notify_all();
-    }
-
-    fn complete_spawn_refusal(&self, generation: u64) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        debug_assert_eq!(state.generation, generation);
-        state.completed = state.completed.max(generation);
-        state.spawn_pending = false;
-        self.changed.notify_all();
-    }
-
-    fn drain(&self) {
-        loop {
-            let (generation, handle) = {
-                let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-                loop {
-                    if state.completed >= state.generation {
-                        return;
-                    }
-                    if !state.spawn_pending && !state.joining {
-                        if let Some((generation, handle)) = state.handle.take() {
-                            state.joining = true;
-                            break (generation, handle);
-                        }
-                    }
-                    state = self.changed.wait(state).unwrap_or_else(|e| e.into_inner());
-                }
-            };
-            plx_base::task::join("scrobble", handle);
-            let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            state.completed = state.completed.max(generation);
-            state.joining = false;
-            self.changed.notify_all();
-            // Another generation may have been reserved as soon as this one completed.
-        }
-    }
-}
-
-/// The final scrobble still in flight, with a shared completion barrier so every concurrent
-/// drainer waits even after one of them has taken ownership of the JoinHandle.
-static SCROBBLE_JOIN: ScrobbleJoin = ScrobbleJoin::new();
-
-/// One ordered network-effect lane for progress publication. The route lease is revalidated only
-/// after this lock is acquired, then `PLAYER_CONTROL` is released before I/O. Consequently an old
-/// reporter either lands before the replacement or observes its stale epoch and sends nothing;
-/// it can never validate first, stall, and land after the replacement report.
-static TIMELINE_EFFECT: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-struct TimelineStopFenceState {
-    announced: u64,
-    completed: u64,
-}
-
-struct TimelineStopFence {
-    state: std::sync::Mutex<TimelineStopFenceState>,
-    changed: std::sync::Condvar,
-}
-
-impl TimelineStopFence {
-    const fn new() -> Self {
-        Self {
-            state: std::sync::Mutex::new(TimelineStopFenceState {
-                announced: 0,
-                completed: 0,
-            }),
-            changed: std::sync::Condvar::new(),
-        }
-    }
-
-    fn announce(&'static self) -> TimelineStopCompletion {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        state.announced = state
-            .announced
-            .checked_add(1)
-            .expect("timeline stop generation exhausted");
-        TimelineStopCompletion {
-            generation: state.announced,
-            finished: false,
-        }
-    }
-
-    fn announced(&self) -> u64 {
-        self.state
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .announced
-    }
-
-    fn wait(&self, required: u64) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        while state.completed < required {
-            state = self.changed.wait(state).unwrap_or_else(|e| e.into_inner());
-        }
-    }
-
-    fn complete(&self, generation: u64) {
-        let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        if generation > state.completed {
-            state.completed = generation;
-            self.changed.notify_all();
-        }
-    }
-}
-
-static TIMELINE_STOP_FENCE: TimelineStopFence = TimelineStopFence::new();
-
-struct TimelineStopCompletion {
-    generation: u64,
-    finished: bool,
-}
-
-impl TimelineStopCompletion {
-    fn finish(mut self) {
-        TIMELINE_STOP_FENCE.complete(self.generation);
-        self.finished = true;
-    }
-}
-
-impl Drop for TimelineStopCompletion {
-    fn drop(&mut self) {
-        if !self.finished {
-            // Panic or refused worker must not strand every later reporter behind this stop.
-            TIMELINE_STOP_FENCE.complete(self.generation);
-        }
-    }
-}
-
-/// Wait for pending [`scrobble_stop`] work to finish its ordered timeline/transcode attempts.
-///
-/// Production uses this before another stop, before Retry starts a replacement encoder, and at
-/// `plex_run` exit. The exit wait matters because the process is about to die and a detached worker
-/// dies with it; the other waits preserve ordering without putting routine BACK teardown on the
-/// SDL thread.
-pub fn drain_scrobble() {
-    SCROBBLE_JOIN.drain();
+/// Retire a playback's route at a real stop: the active route identity, plus the two session
+/// fields a stop resets (teardown clears the URL right after). A partial write rather than a
+/// whole-session reset because the rest is still read after teardown returns — see
+/// `reset_session`'s doc for the reader that would break.
+pub fn retire_route(ps: &mut PlaybackSession) {
+    take_active_encoder();
+    ps.tsession.clear();
+    ps.cur_contract.remux = false;
 }
 
 use plx_base::cbuf::set as set_c; // shared fixed-C-buffer write (the session's HUD title/ctxline)
@@ -3010,116 +2646,3 @@ pub fn commit_audio_selection(ps: &mut PlaybackSession, audio: CarriedAudio) {
     crate::player::note_audio_pick();
 }
 
-/// Atomically publish the main-thread session fields a newly spawned timeline reporter may read.
-/// Called at the reporter spawn site, before ownership crosses to its worker. The active encoder
-/// remains in `PlayerControl`, so a later in-place ABR commit changes the wire session and this
-/// projection under one lock without touching main-thread-only `Session`.
-pub fn begin_timeline_reporting(ps: &PlaybackSession) -> Option<TimelineLease> {
-    let projection = TimelineProjection {
-        sid: cur_sid(ps),
-        rating_key: cur_rk(ps),
-        logical_session: sess(ps),
-        play_queue_id: pq_id(ps),
-        play_queue_item_id: pq_item_id(ps),
-        audio_stream_id: cur_audio_sid(ps),
-        subtitle_stream_id: cur_sub_sid(ps),
-    };
-    if projection.rating_key.is_empty() || !projection.sid.is_set() {
-        return None;
-    }
-    let required_stop = TIMELINE_STOP_FENCE.announced();
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    control.timeline = Some(projection);
-    Some(TimelineLease {
-        engine_epoch: control.engine_epoch,
-        required_stop,
-    })
-}
-
-/// Linearize one worker sample against route replacement and engine teardown. No network work is
-/// done while the mutex is held. `None` permanently invalidates this reporter after its Engine is
-/// retired; transient Applying/Resolving phases skip a hybrid report without borrowing Session.
-fn timeline_snapshot(
-    lease: &TimelineLease,
-    state: plx_plex::plex::TimelineState,
-    time_ms: i64,
-    duration_ms: i64,
-) -> Option<TimelineSnapshot> {
-    let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    if control.engine_epoch != lease.engine_epoch {
-        return None;
-    }
-    if !matches!(
-        control.phase,
-        ControlPhase::Stable
-    ) {
-        return None;
-    }
-    let projection = control.timeline.as_ref()?;
-    let session = if control.active.id.is_empty() {
-        projection.logical_session.clone()
-    } else {
-        control.active.id.clone()
-    };
-    Some(TimelineSnapshot {
-        sid: projection.sid,
-        rating_key: projection.rating_key.clone(),
-        state,
-        time_ms,
-        duration_ms,
-        session,
-        play_queue_id: projection.play_queue_id.clone(),
-        play_queue_item_id: projection.play_queue_item_id.clone(),
-        audio_stream_id: projection.audio_stream_id,
-        subtitle_stream_id: projection.subtitle_stream_id,
-    })
-}
-
-/// POST one periodic timeline update for an exact [`TimelineLease`]. After waiting for the stop
-/// fence captured by that lease, this serializes through `TIMELINE_EFFECT` and snapshots the
-/// server, item, PlayQueue and selected tracks together from [`PlayerControl`]; a stale Engine lease
-/// sends nothing. Final `Stopped` is emitted separately by [`ScrobbleWork`] from its owned teardown
-/// snapshot.
-pub fn report_timeline(
-    lease: &TimelineLease,
-    state: plx_plex::plex::TimelineState,
-    t_ms: i64,
-    d_ms: i64,
-) -> bool {
-    // This lease belongs to a replacement Engine only after every stop synchronously announced
-    // before its publication has joined the old reporter and attempted old `stopped`. Old leases
-    // captured an earlier generation and never wait on the stop worker which is joining them.
-    TIMELINE_STOP_FENCE.wait(lease.required_stop);
-    let _effect = TIMELINE_EFFECT.lock().unwrap_or_else(|e| e.into_inner());
-    let Some(report) = timeline_snapshot(lease, state, t_ms, d_ms) else {
-        return false;
-    };
-    let c = match plx_plex::plex::client_for(report.sid) {
-        Some(c) => c,
-        None => return true,
-    };
-    let ok = c.timeline(&plx_plex::plex::TimelineReport {
-        rating_key: &report.rating_key,
-        state: report.state,
-        time_ms: report.time_ms,
-        duration_ms: report.duration_ms,
-        session: &report.session,
-        play_queue_id: &report.play_queue_id,
-        play_queue_item_id: &report.play_queue_item_id,
-        audio_stream_id: report.audio_stream_id,
-        subtitle_stream_id: report.subtitle_stream_id,
-    });
-    // FAILURES ONLY. The reporter thread logs `timeline <state> t=…s/…s` for every tick whichever
-    // way the POST went (`player::threads`), so a report the server never took looks exactly like
-    // one it did — for the whole length of a film, ten seconds at a time. The success half is
-    // already on that line and this runs at 0.1 Hz, so only the silence needs a line of its own.
-    if !ok {
-        plx_base::eventlog::log(&format!(
-            "timeline post failed rk={} state={} t={}s",
-            report.rating_key,
-            report.state.as_str(),
-            report.time_ms / 1000,
-        ));
-    }
-    true
-}

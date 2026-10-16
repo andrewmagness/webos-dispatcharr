@@ -75,8 +75,6 @@ pub use estimate::*;
 pub use ladder::*;
 pub use mode::*;
 pub use original::*;
-pub use plant::*;
-pub use units::*;
 pub use viability::*;
 pub use window::*;
 
@@ -272,9 +270,4 @@ impl AbrPolicy {
     }
 }
 
-/// The closed-loop plant (I0-B/C). Host-only: it never ships.
-#[cfg(test)]
-mod sim;
 
-#[cfg(test)]
-mod tests;

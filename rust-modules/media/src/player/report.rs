@@ -451,37 +451,6 @@ fn attempt_snapshot() -> (AttemptOrigin, AttemptOrdinal) {
     (ledger.origin, ledger.ordinal)
 }
 
-pub fn note_hls_committed_for(
-    generation: u32,
-    direction: crate::abr::Direction,
-    rung: crate::abr::Rung,
-    refresh: bool,
-) {
-    let direction = if refresh {
-        TraceDirection::Refresh
-    } else {
-        match direction {
-            crate::abr::Direction::Up => TraceDirection::Up,
-            crate::abr::Direction::Down => TraceDirection::Down,
-        }
-    };
-    push_trace_for(
-        generation,
-        TraceEvent::HlsCommitted {
-            direction,
-            requested: rung_quality_class(rung),
-        },
-    );
-}
-
-pub fn note_original_probe_for(
-    generation: u32,
-    phase: OriginalProbePhase,
-    outcome: TraceOutcome,
-) {
-    push_trace_for(generation, TraceEvent::OriginalProbe { phase, outcome });
-}
-
 /// Record the native Load-returned gate opening, or issue #74 D.1.4's budget firing first — see
 /// [`LoadElapsedClass`]. Callable off the main thread (the load thread reports the ordinary gate
 /// transition), like every other `_for` breadcrumb here.
@@ -495,7 +464,7 @@ pub fn note_load_gate_for(generation: u32, elapsed: LoadElapsedClass) {
 fn requested_quality(delivery: DeliveryClass, selected: QualityClass) -> QualityClass {
     match delivery {
         DeliveryClass::Unknown => QualityClass::Unknown,
-        DeliveryClass::Hls => QualityClass::from_kbps(super::SHARED.dg_abr_kbps.load(Relaxed)),
+        DeliveryClass::Hls => QualityClass::from_kbps(0),
         DeliveryClass::Direct | DeliveryClass::Remux => QualityClass::Original,
         DeliveryClass::Transcode => selected,
     }
@@ -541,12 +510,12 @@ fn error_context(ps: &crate::route::PlaybackSession) -> PlaybackErrorContext {
         delivery,
         selected,
         requested,
-        declared_rate: RateClass::from_kbps(super::SHARED.dg_abr_declared_kbps.load(Relaxed)),
-        media_rate: RateClass::from_kbps(super::SHARED.dg_abr_media_kbps.load(Relaxed)),
+        declared_rate: RateClass::from_kbps(-1),
+        media_rate: RateClass::from_kbps(-1),
         raster: RasterClass::from_height(super::SHARED.video_raster().1),
         pipeline: PipelineClass::from_stage(super::SHARED.dg_stage.load(Relaxed)),
         http: HttpClass::from_status(http_status),
-        buffer: BufferClass::from_ms(super::SHARED.dg_abr_buffer_ms.load(Relaxed)),
+        buffer: BufferClass::from_ms(-1),
         transport,
         transfer_age,
         started: SAW_START.load(Relaxed),
@@ -621,7 +590,7 @@ fn presented_event(ps: &crate::route::PlaybackSession) -> TraceEvent {
     TraceEvent::Presented {
         delivery,
         requested,
-        declared_rate: RateClass::from_kbps(super::SHARED.dg_abr_declared_kbps.load(Relaxed)),
+        declared_rate: RateClass::from_kbps(-1),
         raster: RasterClass::from_height(super::SHARED.video_raster().1),
     }
 }

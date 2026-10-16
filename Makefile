@@ -1956,11 +1956,23 @@ install: ipk tv-lock-require
 	$(SCP) $(IPK) tv:/tmp/
 	@# `script -qc` because luna-send needs a tty (see the webos-screen-capture note); `-i` keeps
 	@# the subscription open long enough for appinstalld to report, which is the only place a
-	@# failure is ever named.
-	$(SSH) 'script -qc "luna-send -i -a com.webos.appInstallService \
+	@# failure is ever named. It never CLOSES, though, and webOS 6.5.3 never reports "installed"
+	@# either (its stream stops at "service installing"), so `tools/luna-sub.py` ends it: at
+	@# "installed", at a failure, or after 20 s of silence, which is answered by checking that the
+	@# install rewrote $(APPDIR)/appinfo.json. A `| head -20` here hung until killed, and the
+	@# deploy below never ran.
+	@t0=$$($(SSH) 'date +%s') && \
+	python3 tools/luna-sub.py --done installed --quiet 20 --deadline 600 -- $(SSH) 'script -qc "luna-send -i -a com.webos.appInstallService \
 	  luna://com.webos.appInstallService/dev/install \
-	  \"{\\\"id\\\":\\\"$(APPID)\\\",\\\"ipkUrl\\\":\\\"/tmp/$(notdir $(IPK))\\\",\\\"subscribe\\\":true}\"" /dev/null' | head -20
-	$(SSH) 'rm -f /tmp/$(notdir $(IPK))'
+	  \"{\\\"id\\\":\\\"$(APPID)\\\",\\\"ipkUrl\\\":\\\"/tmp/$(notdir $(IPK))\\\",\\\"subscribe\\\":true}\"" /dev/null'; \
+	rc=$$?; \
+	if [ $$rc -eq 3 ]; then \
+	  $(SSH) "[ \$$(stat -c %Y $(APPDIR)/appinfo.json 2>/dev/null || echo 0) -ge $$t0 ]" \
+	    && { echo "install: appinstalld went quiet before \"installed\"; $(APPDIR) was rewritten, so it landed"; rc=0; } \
+	    || echo "install: appinstalld went quiet and $(APPDIR)/appinfo.json was not rewritten"; \
+	fi; \
+	$(SSH) 'rm -f /tmp/$(notdir $(IPK))'; \
+	exit $$rc
 	@$(MAKE) --no-print-directory deploy FLAVOR=$(FLAVOR) RELEASE=$(RELEASE)
 	@echo "installed and deployed $(APPID)"
 
@@ -1968,9 +1980,16 @@ install: ipk tv-lock-require
 # watches with is not something a make target should make easy, and appinstalld gives no undo.
 uninstall: tv-lock-require
 	@test "$(FLAVOR)" != stable || { echo "refusing to uninstall $(APPID_STABLE) — do that from the TV's own app list"; exit 1; }
-	$(SSH) 'script -qc "luna-send -i -a com.webos.appInstallService \
+	@# Ended by `tools/luna-sub.py` for the reason `install` gives; silence is answered by
+	@# checking that $(APPDIR) is gone.
+	@python3 tools/luna-sub.py --done removed --quiet 20 --deadline 300 -- $(SSH) 'script -qc "luna-send -i -a com.webos.appInstallService \
 	  luna://com.webos.appInstallService/dev/remove \
-	  \"{\\\"id\\\":\\\"$(APPID)\\\",\\\"subscribe\\\":true}\"" /dev/null' | head -20
+	  \"{\\\"id\\\":\\\"$(APPID)\\\",\\\"subscribe\\\":true}\"" /dev/null'; \
+	rc=$$?; \
+	if [ $$rc -eq 3 ]; then \
+	  $(SSH) '[ ! -e $(APPDIR) ]' && rc=0 || echo "uninstall: appinstalld went quiet and $(APPDIR) is still there"; \
+	fi; \
+	exit $$rc
 	$(SSH) 'rm -rf $(RUNDIR)' || true
 	@echo "removed $(APPID)"
 

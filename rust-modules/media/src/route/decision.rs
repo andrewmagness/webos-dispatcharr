@@ -618,6 +618,21 @@ mod live_url_tests {
         assert!(!is_live(&ps), "a file URL replaces it");
     }
 
+    #[test]
+    fn a_tune_installs_the_channel_its_lineup_and_its_declaration() {
+        let mut ps = PlaybackSession::IDLE;
+        assert!(!request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 1), 50), "no stream, no tune");
+        assert!(live_tune(&ps).is_none());
+        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 0), 50));
+        assert!(is_live(&ps));
+        assert_eq!(url(&ps), "http://192.0.2.1:9191/a");
+        assert_eq!((stream_vcodec(&ps).as_str(), stream_acodec(&ps).as_str()), ("h264", "aac"));
+        assert_eq!(live_tune(&ps).map(|t| (t.index, t.at)), Some((0, 50)), "stamped with the tune's second");
+        assert!(ps.publication().tune.is_some(), "the page reads it from the publication");
+        clear_url(&mut ps);
+        assert!(live_tune(&ps).is_none(), "teardown forgets the channel");
+    }
+
     fn tune(urls: &[&str], index: usize) -> super::super::LiveTune {
         let channels = urls.iter().enumerate().map(|(i, u)| super::super::LiveChannel {
             id: i as i64, uuid: format!("u-{i}"), number: (i + 1).to_string(), name: format!("C{i}"), url: (*u).into(), logo: None,

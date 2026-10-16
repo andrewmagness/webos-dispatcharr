@@ -2974,10 +2974,6 @@ mod tests {
         rect(0, 0, 1024, (bytes / per_row) as i32)
     }
 
-    /// One second, in the cue stores' unit. The offset is set in MILLISECONDS and every cue is in
-    /// NANOSECONDS; mixing the two is how this test once put a 1 000 ns cue under a 1 s offset.
-    const SEC: i64 = 1_000_000_000;
-
     /// **Held bytes are what is really allocated.** A rect whose index buffer has spare capacity
     /// (a `Vec` that grew by doubling) holds that capacity, so the budget counts it.
     #[test]
@@ -3165,12 +3161,6 @@ mod seek_hud_regressions {
 #[cfg(test)]
 mod audio_switch_tests {
     use super::*;
-    use std::sync::atomic::Ordering::Relaxed;
-
-    fn reset() {
-        SHARED.reset_session();
-        SHARED.audio_switch.store(shared::AudioSwitch::None as u8, Relaxed);
-    }
 
     #[test]
     fn the_caption_is_chosen_by_the_pick_and_only_for_buffering() {

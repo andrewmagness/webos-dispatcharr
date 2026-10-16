@@ -70,33 +70,6 @@ impl Dovi {
         rpu_present: false,
     };
 
-    /// [`Self::version`] back as the dotted string the server sent (`"1.0"`), or `None` when it
-    /// sent none. `None` and `Some("0.0")` are different answers and the panel draws only the
-    /// former's absence — a server that really reported version 0 would still get a row.
-    pub fn version_str(&self) -> Option<String> {
-        (self.version != (0, 0)).then(|| format!("{}.{}", self.version.0, self.version.1))
-    }
-
-    /// Parse `DOVIVersion`'s dotted string into [`Self::version`]'s pair. PURE, and deliberately
-    /// forgiving: a value this does not understand is `(0, 0)` — i.e. "the server said nothing" —
-    /// because a version string is a caption and must never be a parse failure that costs the
-    /// whole item.
-    pub fn parse_version(s: &str) -> (i64, i64) {
-        let s = s.trim();
-        if s.is_empty() {
-            return (0, 0);
-        }
-        let (a, b) = match s.split_once('.') {
-            // a trailing ".0.0" (a three-part version) keeps its first two components
-            Some((a, rest)) => (a, rest.split('.').next().unwrap_or("0")),
-            None => (s, "0"),
-        };
-        match (a.trim().parse::<i64>(), b.trim().parse::<i64>()) {
-            (Ok(a), Ok(b)) if a >= 0 && b >= 0 => (a, b),
-            _ => (0, 0),
-        }
-    }
-
     /// PURE: **true when the base layer on its own is not a picture we can put on the panel
     /// correctly** — i.e. when this bitstream, decoded as ordinary HEVC by a pipeline that was
     /// never TOLD it is Dolby Vision, shows the user wrong colours (or nothing).
@@ -222,23 +195,6 @@ impl Dovi {
         })
     }
 
-    /// Resolve a fresh decision from the cached platform answer and the boot-latched diagnostic
-    /// signal. Call once at a route boundary; installed playback must retain the returned value.
-    pub fn presentation_now(&self, video_is_hevc: bool) -> DvPresentation {
-        self.presentation(
-            !dv_withheld(),
-            plx_platform::devcaps::dv::capability(),
-            video_is_hevc,
-        )
-    }
-
-    pub fn decision_now(&self, video_is_hevc: bool) -> DvDecision {
-        let capability = plx_platform::devcaps::dv::capability();
-        DvDecision {
-            capability,
-            presentation: self.presentation(!dv_withheld(), capability, video_is_hevc),
-        }
-    }
 }
 
 /// The `option.externalStreamingInfo.contents.DolbyHdrInfo` node of the Starfish Load payload:

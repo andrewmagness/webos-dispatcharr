@@ -1982,6 +1982,42 @@ mod lifecycle_regression_tests {
         );
     }
 
+    /// **An app switch parks a stream and the foreground starts it again.** A channel is not
+    /// resumed at a position: background stops the stream (freeing the server's slot) and marks the
+    /// player parked; the DID foreground clears the park and starts playback afresh, at the live
+    /// edge for a channel. With nothing playing there is nothing to park.
+    #[test]
+    fn an_app_switch_parks_the_stream_and_the_foreground_restarts_it() {
+        let _serial = plx_base::testlock::serial();
+        let mut app = app();
+        let mut fr = Frame::begin();
+        for et in [0x103, 0x104] {
+            event(&mut app, &mut fr, et);
+        }
+        assert!(!app.player.parked, "nothing was playing, so nothing is parked");
+        for et in [0x105, 0x106] {
+            event(&mut app, &mut fr, et);
+        }
+
+        use plx_media::route::{LiveChannel, LiveLineup, LiveTune};
+        let channels = vec![LiveChannel { id: 1, uuid: "u-1".into(), number: "1".into(), name: String::new(),
+            url: "http://127.0.0.1:9/stream.ts".into(), logo: None, programmes: Vec::new() }];
+        let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
+        let tune = LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None };
+        assert!(plx_media::route::request_live(&mut app.player.session, tune, 0));
+        for et in [0x103, 0x104] {
+            event(&mut app, &mut fr, et);
+        }
+        assert!(app.player.parked, "a background with a stream parks it");
+        event(&mut app, &mut fr, 0x105);
+        assert!(app.player.parked, "the WILL edge restarts nothing");
+        event(&mut app, &mut fr, 0x106);
+        assert!(!app.player.parked, "the DID foreground spends the park");
+        assert!(app.adapters.player.is_live(), "and tunes the channel again");
+        assert_eq!(plx_media::route::live_tune(&app.player.session).map(|t| t.index), Some(0));
+        plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
+    }
+
     /// `wayland_released` is a step only when a borrowed surface was actually released (the second
     /// of WILL + DID background finds none), so a reader can tell "released" from "nothing held".
     #[test]

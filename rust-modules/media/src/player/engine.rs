@@ -99,29 +99,9 @@ pub fn fed_totals() -> (i64, i64) {
 /// lane's cap by `ff::PRE_AUDIO_VIDEO_HEADROOM` (24 MiB) and then walks it back down as the
 /// consumer drains, so the read-out can show a video lane ABOVE this number then. That is the
 /// headroom doing its job, not an accounting error. An ordinary file never sees it: the grant is
-/// taken only when a video push would park at this cap with no audio yet. The reachable-reserve
-/// model (`abr::plant::b_max_est_ms`) wants exactly this steady-state number: the headroom is a
-/// transient of the start of one kind of file, gone before the buffer-driven controller acts.
+/// taken only when a video push would park at this cap with no audio yet.
 pub const fn aq_caps() -> (i64, i64) {
     (AQ_VIDEO_BYTES as i64, AQ_AUDIO_BYTES as i64)
-}
-
-/// **The feed-ahead throttle's two leads, milliseconds** — video, then audio.
-///
-/// The other half of the reachable-reserve geometry. `B_max = lead + queue_bytes/rate` and
-/// `aq_caps` above exposes only the `queue_bytes`; `abr/sim.rs` — the closed-loop plant the ABR
-/// controller is graded against — carried these two BY VALUE with a comment, so half of `B_max`
-/// could move here and nothing anywhere would fail.
-///
-/// That is not hypothetical. The same shape had already happened one level up: `sim.rs`'s
-/// operating-point table was hand-transcribed, the fixture pack was rebuilt under it, and the
-/// plant modelled a television that no longer existed at two of its three points for a month
-/// without a single test going red. This closes the identical hole in the geometry.
-pub const fn feed_leads_ms() -> (i64, i64) {
-    (
-        MAX_FEED_AHEAD_NS / 1_000_000,
-        (MAX_FEED_AHEAD_NS + AUDIO_SLACK_NS) / 1_000_000,
-    )
 }
 
 // Per-lane queue byte caps (two-lane feed). Audio is kept small (the TV is RAM-tight and audio
@@ -1449,11 +1429,9 @@ fn start_bufferfeed_inner(
             // `teardown(true) + start_bufferfeed()` (reload_at / reload_transcode /
             // switch_audio_native), which respawns this thread with the new value.
             let acodec = crate::route::stream_acodec(ps);
-            let abr = crate::route::hls_abr_control(ps);
-            let auto_original = crate::route::auto_original_watch(ps);
             SHARED.side_subs_owner.store(side_target.is_some(), Ordering::Release);
-            stream_th = plx_base::task::spawn_off_frame_keeping("demux", move |off| {
-                crate::ff::demux(off, origin, path, acodec, abr, auto_original, aqp, aqap, hsp)
+            stream_th = plx_base::task::spawn_off_frame_keeping("demux", move |_| {
+                crate::ff::demux(origin, path, acodec, aqp, aqap, hsp)
             });
             if stream_th.is_none() {
                 SHARED.side_subs_owner.store(false, Ordering::Release);

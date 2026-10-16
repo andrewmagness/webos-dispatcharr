@@ -10,13 +10,11 @@
 
 use plx_data::metadata::lang_matches;
 use plx_plex::plex::ServerId;
-use std::sync::atomic::Ordering;
 
 use super::decision::{
     measure_remote_original, measure_remote_remux, put_selection, resolve_playqueue,
-    server_decision, forced_server_decision, ActiveEncoderState, AutomaticRouteIntent, MdeVerdict, PlayerControl,
-    ENCODER_GENERATION,
-};
+    server_decision, forced_server_decision, ActiveEncoderState, MdeVerdict, PlayerControl,
+    };
 
 /// One worker's right to observe or replace the active route. Both fields are required: `encoder`
 /// addresses PMS, while `epoch` distinguishes semantic routes which intentionally reuse that
@@ -103,21 +101,6 @@ pub(super) fn worker_ticket_of(control: &PlayerControl) -> WorkerTicket {
         media_epoch: control.media_epoch,
         applied_revision: control.applied_revision,
     }
-}
-
-pub(super) fn ticket_is_current(control: &PlayerControl, ticket: &WorkerTicket) -> bool {
-    ticket == &worker_ticket_of(control)
-}
-
-pub(super) fn automatic_ticket(intent: &AutomaticRouteIntent) -> &WorkerTicket {
-    match intent {
-        AutomaticRouteIntent::OriginalToHls { ticket, .. }
-        | AutomaticRouteIntent::HlsToOriginal { ticket, .. } => ticket,
-    }
-}
-
-pub(super) fn next_encoder_generation() -> u64 {
-    ENCODER_GENERATION.fetch_add(1, Ordering::Relaxed) + 1
 }
 
 /// The audio track a route has decided to carry, frozen at the moment of decision (issue #266's
@@ -278,93 +261,6 @@ impl AutoOriginalCandidate {
         self.subtitle_ordinal = ordinal.filter(|o| *o >= 0);
         true
     }
-}
-
-pub(super) fn source_probe_sample_outcome(
-    sample: crate::curlio::ThroughputSample,
-) -> crate::player::report::TraceOutcome {
-    if sample.target_reached {
-        crate::player::report::TraceOutcome::Succeeded
-    } else {
-        // A non-empty prefix is useful only as a right-censored observation. `curlio` currently
-        // collapses the terminal deadline/read reason once bytes exist, so naming it successful
-        // would be stronger than the evidence. Keep the trace honest until that result type grows
-        // a terminal-cause field.
-        crate::player::report::TraceOutcome::Inconclusive
-    }
-}
-
-/// **Why [`HlsAbrControl::prime`] would not register a candidate encoder**, in the one distinction
-/// the caller's backoff turns on. It maps straight onto `crate::abr::RejectCause` and is a
-/// separate type only because `route` must not decide an ABR policy question — it reports which
-/// exit it took, and `ff.rs` translates.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PrimeRefusal {
-    /// The session moved underneath the request: the active encoder changed or the server client
-    /// vanished. **Says nothing about the rung**, so it must not arm N11's backoff — the same
-    /// reading `origin_changed` already gets one branch later.
-    Session,
-    /// The decision API completed without a usable decision: HTTP rejection, malformed success,
-    /// or a transport failure. The typed request chain preserves each as non-deadline evidence;
-    /// all three remain inconclusive about the rung and must not arm its backoff.
-    Control,
-    /// The caller-owned absolute snapshot actually stopped the PMS request. This is the only
-    /// outcome eligible for a reserve retry; observing the clock after any other completed cause
-    /// cannot manufacture it.
-    Deadline,
-    /// PMS was asked for this rung's ceiling and refused it. The one exit that IS about the
-    /// candidate, and the one that should arm the backoff: re-proposing buys the same answer at
-    /// the same price.
-    Rung,
-}
-
-pub(super) fn classify_prime_decision(
-    session_active: bool,
-    outcome: plx_plex::plex::JsonDeadlineOutcome,
-) -> Result<plx_plex::plex::MediaContainer, PrimeRefusal> {
-    if !session_active {
-        return Err(PrimeRefusal::Session);
-    }
-    match outcome {
-        plx_plex::plex::JsonDeadlineOutcome::Response {
-            parsed: Some(decision),
-            ..
-        } => Ok(decision),
-        plx_plex::plex::JsonDeadlineOutcome::Response { parsed: None, .. }
-        | plx_plex::plex::JsonDeadlineOutcome::Transport => Err(PrimeRefusal::Control),
-        plx_plex::plex::JsonDeadlineOutcome::Deadline => Err(PrimeRefusal::Deadline),
-    }
-}
-
-/// This playback's universal-transcoder spec, rebuilt from the module state (rk + session are
-/// borrowed from the caller's locals; audio/subtitle ride the CURRENT selection) — so every
-/// (re)start of the item's transcode carries identical params.
-///
-/// `contract` is an ARGUMENT rather than a read of [`quality`], for the same reason it always was
-/// (back when it was four separate fields — `remux`, `no_video_copy`, `ceiling`, `delivery`):
-/// [`build_stream`] runs on the resolve worker and must take it from [`ResolveEnv`], while
-/// [`retranscode`] runs on the main thread and reads the live selection. A read inside here would
-/// be a `static` touched from a worker. Folding the four (now five, with issue #266's
-/// [`AudioEnhancements`](plx_plex::plex::AudioEnhancements)) into one [`EncodeContract`] argument is
-/// what keeps every caller stating the whole shape at once rather than four/five positional bools
-/// and options a reader has to keep straight by position.
-pub(super) fn transcode_spec<'a>(
-    rk: &'a str,
-    session: &'a str,
-    encoder_session: &'a str,
-    offset: plx_plex::plex::TranscodeOffset,
-    aud: i64,
-    sub: i64,
-    contract: plx_plex::plex::EncodeContract,
-) -> plx_plex::plex::TranscodeSpec<'a> {
-    // **The one wire rule for a remux's subtitle.** PMS cannot carry a subtitle in a remux (M4/M7):
-    // any `subtitleStreamID=<id>&subtitles=burn` turns the copy into a re-encode. A remux contract
-    // therefore never names one — whatever subtitle is on screen over it, the app draws it — and
-    // says so (`client_subtitles`) so the server does not fall back to burning the part's own
-    // selection. Every burn is a `remux: false` contract and keeps its id. (A cold start that
-    // CARRIES a burn into a remux-shaped plan asks for it explicitly: [`transcode_spec_carrying_burn`].)
-    let (sub, client_subtitles) = if contract.remux { (0, sub != 0) } else { (sub, false) };
-    transcode_spec_carrying_burn(rk, session, encoder_session, offset, aud, sub, client_subtitles, contract)
 }
 
 /// [`transcode_spec`] without the remux rule: the subtitle id is sent as given. The cold start's

@@ -173,14 +173,6 @@ impl HlsClockState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HlsClockFenceError {
-    Stopping,
-    Overlap,
-    Exhausted,
-    Superseded,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HlsAutomaticTransition {
     QualityUp,
     QualityDown,
@@ -859,37 +851,12 @@ pub struct Shared {
     /// "there is no sound": the pipeline was never asked for any.
     pub dg_load_v: AtomicU8,
     pub dg_load_a: AtomicU8,
-    /// Auto-quality facts written by the demux worker and read only by Stats for Nerds.
-    /// Mode: 0 inactive, 1 progressive Original watchdog, 2 fixed-session HLS controller.
-    pub dg_abr_mode: AtomicU8,
-    /// Current Original source requirement or active HLS rung, in kbit/s.
-    pub dg_abr_kbps: AtomicI64,
-    /// The current HLS master declaration and the last completed segment's measured media rate.
-    /// Both are observations of what PMS actually emitted; `dg_abr_kbps` is the requested ceiling
-    /// and must never be presented as either of these.
-    pub dg_abr_declared_kbps: AtomicI64,
-    pub dg_abr_media_kbps: AtomicI64,
-    /// Latest measured body throughput and normalized content reserve. `-1` means no complete
-    /// measurement exists yet. Production ratio is total segment acquisition / media duration in
-    /// per-mille; it is meaningful for HLS only.
-    pub dg_abr_net_kbps: AtomicI64,
-    pub dg_abr_buffer_ms: AtomicI64,
-    pub dg_abr_ratio_pm: AtomicI64,
-    /// Current controller action plus its candidate rung. A discrete transaction remains visible
-    /// until the next completed segment publishes its steady decision; keeping it beyond that made
-    /// `Action` describe an old commit beside `Reason` from the current model state.
-    pub dg_abr_action: AtomicU8,
-    pub dg_abr_target_kbps: AtomicI64,
     /// Last Original source failure, as `player::ABR_FAILURE_*` plus its HTTP status when one was
     /// observed. These are playback-scoped rather than engine-scoped: HLS→Original failure tears
     /// the Engine down while restoring HLS, and clearing them in `reset_session` would make the
     /// successful rollback erase its own cause before the diagnostics panel could photograph it.
     pub abr_failure_kind: AtomicU8,
     pub abr_failure_status: AtomicI32,
-    /// Consecutive Original windows whose starvation horizon sat inside the unsafe band.
-    /// Wall milliseconds an unsafe Original deficit has held (N13). Was a COUNT of
-    /// 750 ms active-read windows, on a clock that stops under backpressure.
-    pub dg_abr_unsafe_deficit_ms: AtomicI64,
     /// **The controller's own model state**, published beside the measurements above so the
     /// read-out shows what the DECISION was made on rather than what a reader can infer. Every
     /// one is `-1` until the controller has produced it; `crate::abr::ControllerTelemetry` is the
@@ -914,18 +881,6 @@ pub struct Shared {
     /// is load-bearing: a pause, app background or reload gap with no segment observations must
     /// age the carried evidence before a new controller may use it.
     abr_seed: Mutex<Option<AbrSeed>>,
-    pub dg_abr_safe_kbps: AtomicI64,
-    pub dg_abr_optimal_kbps: AtomicI64,
-    pub dg_abr_unc_pm: AtomicI64,
-    pub dg_abr_samples: AtomicI64,
-    pub dg_abr_slope_ms_per_s: AtomicI64,
-    pub dg_abr_starve_secs: AtomicI64,
-    pub dg_abr_pred_pm: AtomicI64,
-    pub dg_abr_risk: AtomicI64,
-    /// Why the last steady-state decision went the way it did — `crate::player::ABR_WHY_*`, `0`
-    /// while nothing has decided anything. The plan's reason code, on the surface a user
-    /// photographs rather than only in the event log.
-    pub dg_abr_why: AtomicU8,
     /// `vp_place` return, and the size it was called with. `i32::MIN` = never called.
     pub dg_place_rv: AtomicI32,
     pub dg_placed_w: AtomicI32,
@@ -962,28 +917,9 @@ impl Shared {
             dg_fed_a_pts: AtomicI64::new(0),
             dg_load_v: AtomicU8::new(0),
             dg_load_a: AtomicU8::new(0),
-            dg_abr_mode: AtomicU8::new(0),
-            dg_abr_kbps: AtomicI64::new(0),
-            dg_abr_declared_kbps: AtomicI64::new(-1),
-            dg_abr_media_kbps: AtomicI64::new(-1),
-            dg_abr_net_kbps: AtomicI64::new(-1),
-            dg_abr_buffer_ms: AtomicI64::new(-1),
-            dg_abr_ratio_pm: AtomicI64::new(-1),
-            dg_abr_action: AtomicU8::new(0),
-            dg_abr_target_kbps: AtomicI64::new(0),
             abr_failure_kind: AtomicU8::new(0),
             abr_failure_status: AtomicI32::new(0),
-            dg_abr_unsafe_deficit_ms: AtomicI64::new(0),
             abr_seed: Mutex::new(None),
-            dg_abr_safe_kbps: AtomicI64::new(-1),
-            dg_abr_optimal_kbps: AtomicI64::new(-1),
-            dg_abr_unc_pm: AtomicI64::new(-1),
-            dg_abr_samples: AtomicI64::new(-1),
-            dg_abr_slope_ms_per_s: AtomicI64::new(0),
-            dg_abr_starve_secs: AtomicI64::new(-1),
-            dg_abr_pred_pm: AtomicI64::new(-1),
-            dg_abr_risk: AtomicI64::new(-1),
-            dg_abr_why: AtomicU8::new(0),
             dg_place_rv: AtomicI32::new(i32::MIN),
             dg_placed_w: AtomicI32::new(0),
             dg_placed_h: AtomicI32::new(0),
@@ -1571,25 +1507,6 @@ impl Shared {
         self.dg_fed_a_pts.store(0, Ordering::Relaxed);
         self.dg_load_v.store(0, Ordering::Relaxed);
         self.dg_load_a.store(0, Ordering::Relaxed);
-        self.dg_abr_mode.store(0, Ordering::Relaxed);
-        self.dg_abr_kbps.store(0, Ordering::Relaxed);
-        self.dg_abr_declared_kbps.store(-1, Ordering::Relaxed);
-        self.dg_abr_media_kbps.store(-1, Ordering::Relaxed);
-        self.dg_abr_net_kbps.store(-1, Ordering::Relaxed);
-        self.dg_abr_buffer_ms.store(-1, Ordering::Relaxed);
-        self.dg_abr_ratio_pm.store(-1, Ordering::Relaxed);
-        self.dg_abr_action.store(0, Ordering::Relaxed);
-        self.dg_abr_target_kbps.store(0, Ordering::Relaxed);
-        self.dg_abr_unsafe_deficit_ms.store(0, Ordering::Relaxed);
-        self.dg_abr_safe_kbps.store(-1, Ordering::Relaxed);
-        self.dg_abr_optimal_kbps.store(-1, Ordering::Relaxed);
-        self.dg_abr_unc_pm.store(-1, Ordering::Relaxed);
-        self.dg_abr_samples.store(-1, Ordering::Relaxed);
-        self.dg_abr_slope_ms_per_s.store(0, Ordering::Relaxed);
-        self.dg_abr_starve_secs.store(-1, Ordering::Relaxed);
-        self.dg_abr_pred_pm.store(-1, Ordering::Relaxed);
-        self.dg_abr_risk.store(-1, Ordering::Relaxed);
-        self.dg_abr_why.store(0, Ordering::Relaxed);
         self.dg_place_rv.store(i32::MIN, Ordering::Relaxed);
         self.dg_placed_w.store(0, Ordering::Relaxed);
         self.dg_placed_h.store(0, Ordering::Relaxed);
@@ -2061,66 +1978,6 @@ impl Shared {
         }
     }
 
-    pub fn begin_hls_candidate_transition(
-        &self,
-        expected_automatic: Option<u64>,
-    ) -> Result<u64, HlsClockFenceError> {
-        let mut clock = self.hls_clock.lock().unwrap_or_else(|e| e.into_inner());
-        while matches!(clock.phase, HlsClockPhase::PlayIssuing { .. }) {
-            clock = self
-                .hls_clock_changed
-                .wait(clock)
-                .unwrap_or_else(|e| e.into_inner());
-        }
-        if clock.phase == HlsClockPhase::Stopping {
-            return Err(HlsClockFenceError::Stopping);
-        }
-        if let Some(expected) = expected_automatic {
-            let Some(owner) = clock.automatic else {
-                return Err(HlsClockFenceError::Superseded);
-            };
-            let phase_ok = match owner.kind {
-                HlsAutomaticTransition::QualityUp | HlsAutomaticTransition::Original => {
-                    clock.phase == HlsClockPhase::Running
-                        && !self.hls_rebuffer_requested.load(Ordering::Acquire)
-                }
-                HlsAutomaticTransition::QualityDown => matches!(
-                    clock.phase,
-                    HlsClockPhase::Running
-                        | HlsClockPhase::PauseIssuing {
-                            hold: ClockHold::Rebuffer,
-                            ..
-                        }
-                        | HlsClockPhase::Held {
-                            hold: ClockHold::Rebuffer,
-                        }
-                ),
-            };
-            if owner.token != expected
-                || owner.phase != HlsAutomaticPhase::Working
-                || owner.user_sequence != clock.user_sequence
-                || clock.user_held
-                || !phase_ok
-            {
-                return Err(HlsClockFenceError::Superseded);
-            }
-            clock
-                .automatic
-                .as_mut()
-                .expect("the validated automatic owner remains present")
-                .phase = HlsAutomaticPhase::CommitAuthorized;
-        }
-        let stable = self.hls_candidate_generation.load(Ordering::Acquire);
-        if stable & 1 != 0 {
-            return Err(HlsClockFenceError::Overlap);
-        }
-        let generation = stable.checked_add(1).ok_or(HlsClockFenceError::Exhausted)?;
-        self.hls_candidate_generation
-            .compare_exchange(stable, generation, Ordering::AcqRel, Ordering::Acquire)
-            .map(|_| generation)
-            .map_err(|_| HlsClockFenceError::Overlap)
-    }
-
     pub fn settle_hls_candidate_transition(&self, generation: u64) -> bool {
         let mut clock = self.hls_clock.lock().unwrap_or_else(|e| e.into_inner());
         // The mutex phase is authoritative. During PauseIssuing the diagnostics mirror is still
@@ -2394,48 +2251,11 @@ pub struct Transport {
     pub seek_reqs: AtomicU32,
 }
 
-/// The instant the user-pause clock reads for a transition or a sample. `Instant::now()`, except
-/// that a host test may pin it for its own thread (`pinned_pause_clock`) so a Pause->Resume
-/// cycle can be given an exact length instead of being slept through.
+/// The instant the user-pause clock reads for a transition or a sample.
 fn pause_clock_now() -> Instant {
-    #[cfg(test)]
-    if let Some(pinned) = pinned_pause_clock::read() {
-        return pinned;
-    }
     Instant::now()
 }
 
-/// A per-thread virtual reading for `pause_clock_now`: time moves only when `advance` is called.
-/// Dropping the guard restores the real clock for the thread.
-#[cfg(test)]
-pub(crate) mod pinned_pause_clock {
-    use std::cell::Cell;
-    use std::time::{Duration, Instant};
-
-    thread_local! {
-        static PINNED: Cell<Option<Instant>> = const { Cell::new(None) };
-    }
-
-    pub(super) fn read() -> Option<Instant> { PINNED.with(Cell::get) }
-
-    pub(crate) struct Pinned;
-
-    impl Pinned {
-        /// Pin this thread's pause clock at the real time now.
-        pub(crate) fn now() -> Self {
-            PINNED.with(|pinned| pinned.set(Some(Instant::now())));
-            Pinned
-        }
-
-        pub(crate) fn advance(&self, by: Duration) {
-            PINNED.with(|pinned| pinned.set(pinned.get().map(|at| at + by)));
-        }
-    }
-
-    impl Drop for Pinned {
-        fn drop(&mut self) { PINNED.with(|pinned| pinned.set(None)); }
-    }
-}
 
 #[derive(Clone, Copy)]
 struct UserPauseClock {
@@ -2453,48 +2273,6 @@ impl UserPauseClock {
         }
     }
 
-    fn elapsed_at(self, now: Instant) -> Duration {
-        self.completed.saturating_add(
-            self.active_since
-                .map_or(Duration::ZERO, |since| now.saturating_duration_since(since)),
-        )
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct UserPauseSnapshot {
-    pub now: Instant,
-    pub elapsed: Duration,
-    pub paused: bool,
-    pub sequence: u64,
-}
-
-/// Per-worker cursor over accepted transport events. A complete Pause→Resume may happen while a
-/// worker is blocked in native queue/network I/O; consuming the monotone sequence plus cumulative
-/// duration makes that interval observable even when both surrounding boolean samples are false.
-#[derive(Clone, Copy, Debug)]
-pub struct UserPauseCursor {
-    sequence: u64,
-    elapsed: Duration,
-}
-
-impl UserPauseCursor {
-    pub fn new(snapshot: UserPauseSnapshot) -> Self {
-        Self {
-            sequence: snapshot.sequence,
-            elapsed: snapshot.elapsed,
-        }
-    }
-
-    pub fn consume_completed(&mut self, snapshot: UserPauseSnapshot) -> Option<Duration> {
-        if snapshot.paused || snapshot.sequence == self.sequence {
-            return None;
-        }
-        let elapsed = snapshot.elapsed.saturating_sub(self.elapsed);
-        self.sequence = snapshot.sequence;
-        self.elapsed = snapshot.elapsed;
-        (!elapsed.is_zero()).then_some(elapsed)
-    }
 }
 
 impl Transport {
@@ -2542,25 +2320,6 @@ impl Transport {
             _ => {}
         }
         self.paused.store(paused, Ordering::Release);
-    }
-
-    /// One synchronized sample for an unpaused-elapsed transaction clock. `Instant` and the
-    /// cumulative accepted-Pause duration are observed under the transition mutex, so a complete
-    /// Pause->Resume inside a blocked network call can never disappear between two bool reads.
-    pub fn pause_clock_sample(&self) -> (Instant, Duration) {
-        let sample = self.pause_state_sample();
-        (sample.now, sample.elapsed)
-    }
-
-    pub fn pause_state_sample(&self) -> UserPauseSnapshot {
-        let clock = self.pause_clock.lock().unwrap_or_else(|e| e.into_inner());
-        let now = pause_clock_now();
-        UserPauseSnapshot {
-            now,
-            elapsed: clock.elapsed_at(now),
-            paused: clock.active_since.is_some(),
-            sequence: clock.sequence,
-        }
     }
 
     pub fn seek_preroll_active(&self) -> bool {
@@ -2626,33 +2385,6 @@ pub enum Stage {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_worker_consumes_a_complete_hidden_pause_cycle_as_one_event() {
-        let transport = Transport::new();
-        let mut cursor = UserPauseCursor::new(transport.pause_state_sample());
-        transport.commit_paused(true);
-        std::thread::sleep(Duration::from_millis(2));
-        transport.commit_paused(false);
-
-        let after = transport.pause_state_sample();
-        assert!(
-            !after.paused,
-            "the surrounding boolean samples are both false"
-        );
-        assert_eq!(after.sequence, 2);
-        assert!(
-            cursor
-                .consume_completed(after)
-                .is_some_and(|elapsed| elapsed >= Duration::from_millis(1)),
-            "the accepted interval must survive a blocked worker",
-        );
-        assert_eq!(
-            cursor.consume_completed(after),
-            None,
-            "an event is consumed exactly once"
-        );
-    }
 
     #[test]
     fn user_hold_is_inside_the_automatic_transition_authority() {
@@ -2743,27 +2475,6 @@ mod tests {
     }
 
     #[test]
-    fn a_retired_actuator_cannot_publish_candidate_media_into_the_next_session() {
-        let shared = Shared::new();
-        let retired = shared
-            .begin_hls_automatic_transition(HlsAutomaticTransition::QualityDown)
-            .expect("first session grants its downshift");
-        shared.reset_hls_clock_for_test();
-        let current = shared
-            .begin_hls_automatic_transition(HlsAutomaticTransition::QualityDown)
-            .expect("next session grants its own downshift");
-        assert_eq!(
-            shared.begin_hls_candidate_transition(Some(retired)),
-            Err(HlsClockFenceError::Superseded),
-        );
-        let candidate = shared
-            .begin_hls_candidate_transition(Some(current))
-            .expect("only the current actuator may enter publication");
-        assert!(shared.settle_hls_candidate_transition(candidate));
-        assert!(shared.finish_hls_automatic_transition(current));
-    }
-
-    #[test]
     fn internal_reprime_waits_for_the_recovery_actuator_transaction() {
         let shared = Shared::new();
         let down = shared
@@ -2808,27 +2519,6 @@ mod tests {
             "a late network result is evidence only after the viewer owns the clock",
         );
         assert!(shared.finish_hls_automatic_transition(original));
-    }
-
-    #[test]
-    fn a_user_clock_transition_revokes_inflight_quality_publication() {
-        let shared = Shared::new();
-        let up = shared
-            .begin_hls_automatic_transition(HlsAutomaticTransition::QualityUp)
-            .expect("running playback grants the upshift lease");
-        let HlsUserPause::Issue(pause) = shared.prepare_hls_user_pause().unwrap() else {
-            panic!("the user Pause remains orthogonal while candidate I/O runs");
-        };
-        assert_eq!(
-            shared.complete_hls_user_pause(pause, true),
-            HlsPauseCompletion::Accepted,
-        );
-        assert_eq!(
-            shared.begin_hls_candidate_transition(Some(up)),
-            Err(HlsClockFenceError::Superseded),
-            "private candidate bytes may not publish after the viewer changed the clock",
-        );
-        assert!(shared.finish_hls_automatic_transition(up));
     }
 
     #[test]
@@ -3112,28 +2802,6 @@ mod tests {
     }
 
     #[test]
-    fn candidate_settlement_rebases_recovery_while_pause_is_still_issuing() {
-        let s = Shared::new();
-        let pause = s.prepare_hls_rebuffer_pause().expect("reserve Pause");
-        s.observe_hls_recovery(500_000, Duration::from_secs(2));
-        assert_eq!(s.hls_recovery().completed, 1);
-
-        let candidate = s
-            .begin_hls_candidate_transition(None)
-            .expect("arm down candidate");
-        assert!(s.settle_hls_candidate_transition(candidate));
-        assert_eq!(
-            s.hls_recovery().completed,
-            0,
-            "new-rung media needs a fresh recovery certificate even before Pause returns"
-        );
-        assert_eq!(
-            s.complete_hls_rebuffer_pause(pause, true),
-            HlsPauseCompletion::Accepted
-        );
-    }
-
-    #[test]
     fn a_paused_seek_reuses_the_physical_hold_and_resumes_acb_only_at_prime() {
         let s = Shared::new();
         let pause = match s.prepare_hls_user_pause() {
@@ -3250,40 +2918,6 @@ mod tests {
             s.complete_hls_prime_play(play, true),
             HlsPlayCompletion::Accepted { resume_acb: true },
             "the eventual internal Play must also finish the viewer's deferred ACB Resume",
-        );
-    }
-
-    #[test]
-    fn candidate_publication_defers_user_resume_until_it_settles() {
-        let s = Shared::new();
-        let pause = match s.prepare_hls_user_pause() {
-            Some(HlsUserPause::Issue(token)) => token,
-            other => panic!("unexpected Pause reservation: {other:?}"),
-        };
-        assert_eq!(
-            s.complete_hls_user_pause(pause, true),
-            HlsPauseCompletion::Accepted
-        );
-        let candidate = s
-            .begin_hls_candidate_transition(None)
-            .expect("arm candidate");
-
-        assert_eq!(s.prepare_hls_user_resume(true), Some(HlsUserResume::Prime));
-        let recovery = s.hls_recovery();
-        assert!(
-            s.reserve_hls_prime_play(HlsPrimeKind::Resume, candidate, recovery)
-                .is_none(),
-            "an active candidate generation must fence ResumePrime",
-        );
-        assert!(s.settle_hls_candidate_transition(candidate));
-
-        let generation = s.hls_candidate_generation.load(Ordering::Acquire);
-        let (play, _) = s
-            .reserve_hls_prime_play(HlsPrimeKind::Resume, generation, recovery)
-            .expect("settlement releases the pending user Play");
-        assert_eq!(
-            s.complete_hls_prime_play(play, true),
-            HlsPlayCompletion::Accepted { resume_acb: true }
         );
     }
 
@@ -3428,16 +3062,6 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .seed_for_reset_test();
-        s.dg_abr_mode.store(2, Ordering::Relaxed);
-        s.dg_abr_kbps.store(2_000, Ordering::Relaxed);
-        s.dg_abr_declared_kbps.store(1_459, Ordering::Relaxed);
-        s.dg_abr_media_kbps.store(1_051, Ordering::Relaxed);
-        s.dg_abr_net_kbps.store(4_000, Ordering::Relaxed);
-        s.dg_abr_buffer_ms.store(2_800, Ordering::Relaxed);
-        s.dg_abr_ratio_pm.store(500, Ordering::Relaxed);
-        s.dg_abr_action.store(5, Ordering::Relaxed);
-        s.dg_abr_target_kbps.store(4_000, Ordering::Relaxed);
-        s.dg_abr_unsafe_deficit_ms.store(1_500, Ordering::Relaxed);
         s.reset_session();
         assert!(
             !s.seen_frame.load(Ordering::Relaxed),
@@ -3469,15 +3093,5 @@ mod tests {
             1,
             "an engine reload must preserve the playback attempt's causal trace",
         );
-        assert_eq!(s.dg_abr_mode.load(Ordering::Relaxed), 0);
-        assert_eq!(s.dg_abr_kbps.load(Ordering::Relaxed), 0);
-        assert_eq!(s.dg_abr_declared_kbps.load(Ordering::Relaxed), -1);
-        assert_eq!(s.dg_abr_media_kbps.load(Ordering::Relaxed), -1);
-        assert_eq!(s.dg_abr_net_kbps.load(Ordering::Relaxed), -1);
-        assert_eq!(s.dg_abr_buffer_ms.load(Ordering::Relaxed), -1);
-        assert_eq!(s.dg_abr_ratio_pm.load(Ordering::Relaxed), -1);
-        assert_eq!(s.dg_abr_action.load(Ordering::Relaxed), 0);
-        assert_eq!(s.dg_abr_target_kbps.load(Ordering::Relaxed), 0);
-        assert_eq!(s.dg_abr_unsafe_deficit_ms.load(Ordering::Relaxed), 0);
     }
 }

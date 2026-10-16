@@ -1899,31 +1899,6 @@ pub fn sample_throughput_result(
     sample_throughput_with_reservation(url, target_bytes, setup_deadline, body_budget, reservation)
 }
 
-/// The same finite measurement while it is the demux worker's current blocking operation.
-///
-/// Publish the probe in teardown's registry *before* checking the AU-lane cancellation supplied
-/// by the caller.  Those two operations close the lost-wake race exactly as a normal media open
-/// does: teardown either signals this reservation, or it aborted the queue first and
-/// `cancelled()` refuses to start the request.  Cold preflight deliberately uses
-/// [`sample_throughput_result`] instead because an outgoing player may still own the registry.
-pub fn sample_active_throughput_result<F>(
-    url: &str,
-    target_bytes: usize,
-    setup_budget: std::time::Duration,
-    body_budget: std::time::Duration,
-    cancelled: F,
-) -> Result<ThroughputSample, ThroughputFailure>
-where
-    F: FnOnce() -> bool,
-{
-    let setup_deadline = sample_setup_deadline(target_bytes, setup_budget, body_budget)?;
-    let reservation = OpenReservation::publish().ok_or(ThroughputFailure::Open(OpenErr::Local))?;
-    if cancelled() {
-        return Err(ThroughputFailure::Open(OpenErr::Aborted));
-    }
-    sample_throughput_with_reservation(url, target_bytes, setup_deadline, body_budget, reservation)
-}
-
 fn sample_setup_deadline(
     target_bytes: usize,
     setup_budget: std::time::Duration,
@@ -3214,70 +3189,6 @@ mod tests {
             .expect("both individually bounded phases should complete");
             assert!(sample.target_reached);
             assert_eq!(sample.bytes, BODY.len() as u64);
-        });
-    }
-
-    /// Runtime Original sampling runs synchronously on the demux worker.  If it used the cold
-    /// preflight's private reservation, engine teardown would abort the queues and then wait for
-    /// this stalled request's entire setup/body budget before the worker could join.  The active
-    /// variant must instead be the exact request reached by teardown's one wake signal.
-    #[test]
-    fn teardown_aborts_a_runtime_source_probe_without_waiting_out_its_budget() {
-        let Some(_gate) = curl_gate() else { return };
-        // The server never answers, so the probe is parked in its setup wait and only teardown's
-        // wake can end it. `Stall` sent headers at once: a 200 to the probe's Range, which the
-        // probe itself refuses as `RangeIgnored` — ending the sample (and retiring its handle)
-        // before teardown ran whenever this thread was late, which a loaded suite made it.
-        with_server(RangeMode::WithholdFrom(1), |port, _, _| {
-            let url = format!("http://127.0.0.1:{port}/f.mkv");
-            let started = std::time::Instant::now();
-            std::thread::scope(|scope| {
-                let worker = scope.spawn(|| {
-                    sample_active_throughput_result(
-                        &url,
-                        BODY.len(),
-                        std::time::Duration::from_secs(5),
-                        std::time::Duration::from_secs(5),
-                        || false,
-                    )
-                });
-                // A FAILURE BOUND, NOT A RUNTIME: the loop returns the moment the worker publishes,
-                // so a passing run never spends this. One second was not one — with an ARM
-                // cross-build loading the machine beside a full `make check`, the worker had not
-                // been scheduled inside it and this read as a teardown regression (2026-09-02);
-                // alone, the same test publishes in ~10 ms. Same shape as route.rs's stop-probe.
-                let published_by = std::time::Instant::now() + std::time::Duration::from_secs(20);
-                while lock_active().is_none() {
-                    assert!(
-                        std::time::Instant::now() < published_by,
-                        "runtime probe never published teardown's wake target"
-                    );
-                    std::thread::yield_now();
-                }
-                // Teardown lands whenever the main thread next runs, not the instant the probe
-                // publishes. A loaded suite deschedules this thread right here; the delay makes
-                // that the case every run, so the probe is already on the wire when it is woken.
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                abort_active();
-                let result = worker.join().expect("probe worker");
-                assert!(
-                    matches!(
-                        result,
-                        Err(ThroughputFailure::Open(OpenErr::Aborted))
-                            | Err(ThroughputFailure::BodyRead { .. })
-                    ),
-                    "teardown must end the sample as an abort, got {result:?}"
-                );
-            });
-            assert!(
-                started.elapsed() < std::time::Duration::from_secs(2),
-                "teardown waited out the runtime probe budget: {:?}",
-                started.elapsed()
-            );
-            assert!(
-                lock_active().is_none(),
-                "the aborted probe must retire its reservation"
-            );
         });
     }
 

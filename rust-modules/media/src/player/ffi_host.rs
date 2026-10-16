@@ -33,10 +33,9 @@
 //!
 //! **Why that is worth having, stated as what it can and cannot decide.** The reachable reserve is
 //! `B_max = lead + queue_bytes / rate`, and every term in it is OURS — `AQ_VIDEO_BYTES`,
-//! `AQ_AUDIO_BYTES`, `MAX_FEED_AHEAD_NS`, `AUDIO_SLACK_NS` — not Starfish's. `abr/sim.rs` models
-//! that analytically and has never once been checked against a running pipeline; this is the only
-//! way to check it without a television. It can also answer whether the queues drain as modelled,
-//! whether a rung transaction costs what `abr: tx` says, and whether backpressure behaves.
+//! `AQ_AUDIO_BYTES`, `MAX_FEED_AHEAD_NS`, `AUDIO_SLACK_NS` — not Starfish's; this is the only way to
+//! check it without a television. It can also answer whether the queues drain as modelled and
+//! whether backpressure behaves.
 //!
 //! It cannot answer anything about LG's decoder: resource-allocation refusals, the ACB video-plane
 //! bind, the Load payload's Dolby declaration, `SOUND_ERROR_019`, frame pacing, or which codecs

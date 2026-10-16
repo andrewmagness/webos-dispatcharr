@@ -88,11 +88,6 @@ pub(super) fn delta_exact(part_kf_pts: i64, anchor_pts_ns: i64, pts_shift: i64, 
     part_kf_pts.saturating_sub(playhead_of(anchor_pts_ns, pts_shift, disp_base))
 }
 
-/// The last keyframe at or before `offset_ns`, from keyframe times in any order.
-pub(super) fn keyframe_at_or_before(keyframes: &[i64], offset_ns: i64) -> Option<i64> {
-    keyframes.iter().copied().filter(|k| *k <= offset_ns).max()
-}
-
 /// `delta` when no keyframe matched: PMS starts a remux at the keyframe at or before `offset`, so
 /// that keyframe is taken to be the remux's first, and the clock is labelled as it would have been.
 pub(super) fn delta_assumed(k_le: i64, anchor_pts_ns: i64, pts_shift: i64, disp_base: i64) -> i64 {
@@ -261,10 +256,6 @@ impl SideIo {
         }
     }
 
-    /// Is this source's stop set? (Test and lifecycle use.)
-    pub(crate) fn stopped(&self) -> bool {
-        self.stop.is_set()
-    }
 }
 
 enum Followed {
@@ -937,19 +928,6 @@ mod tests {
     }
 
     #[test]
-    fn assumed_delta_uses_keyframe_at_or_before_offset() {
-        let kfs = [590_000_000_000, 598_500_000_000, 603_000_000_000, 612_000_000_000];
-        let offset = 600_000_000_000;
-        let k = keyframe_at_or_before(&kfs, offset).expect("a keyframe precedes the offset");
-        assert_eq!(k, 598_500_000_000, "the keyframe AFTER the offset must not be chosen");
-        assert_eq!(keyframe_at_or_before(&kfs, 598_500_000_000), Some(598_500_000_000), "at counts");
-        assert_eq!(keyframe_at_or_before(&kfs, 1), None);
-        assert_eq!(keyframe_at_or_before(&[], offset), None);
-        // the remux's first keyframe is stamped 0 and labelled with disp_base = offset
-        assert_eq!(delta_assumed(k, 0, 0, offset), -1_500_000_000);
-    }
-
-    #[test]
     fn the_anchor_line_is_numbers_and_labels_only() {
         let exact = anchor_line(Some(598_500_000_000), 0, 600_000_000_000, 0, -1_500_000_000, Some(-1_500_000_000), 123, 45);
         assert_eq!(
@@ -982,29 +960,6 @@ mod tests {
     fn open_side(port: u16, stop: &Arc<SideStop>) -> Box<SideIo> {
         SideIo::open(&format!("http://127.0.0.1:{port}/library/parts/1/file.mkv"), stop)
             .unwrap_or_else(|e| panic!("fixture: the side open must succeed: {e:?}"))
-    }
-
-    #[test]
-    fn stop_makes_read_and_seek_fail_closed() {
-        with_counting_listener(|port, accepts, _| {
-            let stop = SideStop::new();
-            let mut io = open_side(port, &stop);
-            assert_eq!(accepts.load(Ordering::Acquire), 1, "fixture: one connection so far");
-            let op = &mut *io as *mut SideIo as *mut c_void;
-            let mut buf = [0u8; 4];
-            assert_eq!(side_read_cb(op, buf.as_mut_ptr(), 4), 4, "fixture: reads work before the stop");
-            stop.trigger();
-            assert!(io.stopped());
-            assert_eq!(side_read_cb(op, buf.as_mut_ptr(), 4), AVERROR_EOF);
-            assert_eq!(side_seek_cb(op, 0, SEEK_SET), -1);
-            assert_eq!(side_seek_cb(op, 2, SEEK_CUR), -1);
-            assert_eq!(
-                accepts.load(Ordering::Acquire),
-                1,
-                "a seek after the stop opened a SECOND connection the stop cannot reach"
-            );
-            assert_eq!(side_seek_cb(op, 0, AVSEEK_SIZE), 8, "a size query is a field read");
-        });
     }
 
     #[test]

@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-16T06:38:26Z",
+ "generated": "2026-10-16T09:18:05Z",
  "metrics": [
   {
    "change30_pct": null,
@@ -41,6 +41,111 @@
    "state30": "new",
    "threshold_abs": 60.0,
    "threshold_pct": 15.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "local",
+   "id": "bench.app",
+   "kind": "local",
+   "label": "Rebuild after editing the app crate",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 3.3,
+   "prev7": null,
+   "shown": true,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 5.0,
+   "threshold_pct": 25.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "local",
+   "id": "bench.screens",
+   "kind": "local",
+   "label": "Rebuild after editing plx_screens",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 4.0,
+   "prev7": null,
+   "shown": true,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 5.0,
+   "threshold_pct": 25.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "local",
+   "id": "bench.ui",
+   "kind": "local",
+   "label": "Rebuild after editing plx_ui",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 15.7,
+   "prev7": null,
+   "shown": true,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 5.0,
+   "threshold_pct": 25.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "local",
+   "id": "bench.leaf",
+   "kind": "local",
+   "label": "Rebuild after editing plx_base",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 66.8,
+   "prev7": null,
+   "shown": true,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 5.0,
+   "threshold_pct": 25.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "local",
+   "id": "bench.tests",
+   "kind": "local",
+   "label": "Unit suite",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 60.4,
+   "prev7": null,
+   "shown": true,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 5.0,
+   "threshold_pct": 25.0,
    "unit": "s"
   },
   {
@@ -294,6 +399,27 @@
    "threshold_abs": 20.0,
    "threshold_pct": 20.0,
    "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "local",
+   "id": "bench.noop",
+   "kind": "local",
+   "label": "No-op build",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 0.5,
+   "prev7": null,
+   "shown": false,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 5.0,
+   "threshold_pct": 25.0,
+   "unit": "s"
   }
  ],
  "regressions": [],
@@ -330,7 +456,38 @@
    "now": 184.0
   }
  ],
- "slowest_local": [],
+ "slowest_local": [
+  {
+   "group": "local",
+   "id": "bench.leaf",
+   "label": "Rebuild after editing plx_base",
+   "now": 66.8
+  },
+  {
+   "group": "local",
+   "id": "bench.tests",
+   "label": "Unit suite",
+   "now": 60.4
+  },
+  {
+   "group": "local",
+   "id": "bench.ui",
+   "label": "Rebuild after editing plx_ui",
+   "now": 15.7
+  },
+  {
+   "group": "local",
+   "id": "bench.screens",
+   "label": "Rebuild after editing plx_screens",
+   "now": 4.0
+  },
+  {
+   "group": "local",
+   "id": "bench.app",
+   "label": "Rebuild after editing the app crate",
+   "now": 3.3
+  }
+ ],
  "thresholds": {
   "bench": {
    "percent": 25.0,

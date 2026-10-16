@@ -1625,11 +1625,6 @@ fn request_terminal_hold() {
     SHARED.hls_rebuffer_requested.store(true, Ordering::Release);
 }
 
-// `SegmentAcquisition` lives in its own module so its payload is not nameable from `ff` — see
-// `ff_acquisition.rs` for why (the bypass a review round found: everything in `ff` could build
-// `Active { stall: None, .. }` by hand even with the role-typed enum in place).
-#[path = "ff_acquisition.rs"]
-mod acquisition;
 #[path = "ff_subs.rs"]
 mod subs;
 #[path = "ff_subside.rs"]
@@ -1637,7 +1632,6 @@ pub(crate) mod subside;
 use subs::{SubKind, SubTracks};
 #[cfg(test)]
 use subs::{decode_bitmap_cue, open_sub_decoder, sub_kind};
-use acquisition::{AcquisitionRuntime};
 
 /// A rollback-reserve deadline is monotone in one direction: a floor downshift that reaches an
 /// actual internal rebuffer may stop protecting the old cursor, but a later user Resume cannot
@@ -1913,24 +1907,6 @@ struct AvioState {
     /// just-in-time production as its own term: for a JIT encoder the wait before the first byte
     /// IS the production cost, and it is otherwise indistinguishable from a slow link.
     first_byte_at: Option<std::time::Instant>,
-    /// Only ABR candidate segments carry a reserve deadline. The active movie and every progressive
-    /// stream retain their transport's normal stall budgets. A floor downshift may promote to
-    /// unbounded-by-reserve while it is in flight; the state latches that transition.
-    reserve_deadline: ReserveDeadlineState,
-    /// Independent wall-clock inactivity for HLS media. Its deadline is composed with the
-    /// reserve projection on every blocking read, but only actual bytes reset it. Progressive
-    /// sources keep `None` and use their transport's native liveness directly.
-    transport_watchdog: Option<TransportWatchdog>,
-    /// Armed for the ACTIVE cursor whenever its reserve is knowable and the internal clock is not
-    /// already held. Its action distinguishes an abort above the ladder floor from a clock-only
-    /// hold at the terminal actuator. Candidate transactions use `reserve_deadline` instead: an
-    /// ordinary candidate owns a playhead-funded clock projected onto each blocking wait, while a
-    /// terminal-floor recovery may omit that reserve clock. A partial PMS response remains
-    /// right-censored and cannot prove an earlier completion time from its prefix rate.
-    ///
-    /// This is the SAME runtime the segment's open and `NotReady` wait consulted, moved here
-    /// unchanged; progressive playback has none. It also latches the abort (`stall_aborted`).
-    acquisition: Option<AcquisitionRuntime>,
     /// Bounded socket/curl overflow while Original is parked in `aq_push`. HLS does not use it:
     /// a segment body is already complete before feed.
     bounce: Vec<u8>,
@@ -2016,36 +1992,6 @@ impl AvioState {
 
     fn bounce_remaining(&self) -> bool {
         self.bounce_pos < self.bounce.len()
-    }
-
-    /// **Credit the acquisition with every body byte already RECEIVED**, not merely read: what
-    /// FFmpeg consumed (`off`), plus the park drain's bounce, plus what the transport holds ahead
-    /// (`Src::body_receipt`). PMS pauses a sized response and then bursts the remainder; once
-    /// that burst is in hand, a hold must not abandon it. An unsized body completes only on the
-    /// transport's proven end. Called before every guard decision `read_cb` makes.
-    ///
-    /// A receipt that took a transfer step received body bytes the later read only copies out, so
-    /// the step's time is counted here, once, as body time — the same accounting those bytes
-    /// would have had had the read itself received them. Nothing else in the query is body work.
-    fn note_received(&mut self) {
-        if self.acquisition.is_none() {
-            return;
-        }
-        let asked = std::time::Instant::now();
-        let receipt = self.src.body_receipt();
-        if receipt.stepped {
-            self.body_active_us = self
-                .body_active_us
-                .saturating_add(elapsed_since(asked).as_micros().max(1) as u64);
-        }
-        let bounced = self.bounce.len().saturating_sub(self.bounce_pos) as i64;
-        let received = self
-            .off
-            .saturating_add(bounced)
-            .saturating_add(receipt.ahead);
-        if let Some(acquisition) = &mut self.acquisition {
-            acquisition.note_body(self.size, received, receipt.finished);
-        }
     }
 
     fn transfer_finished(&self) -> bool {
@@ -2135,20 +2081,13 @@ struct AVIOCtxHead {
     buffer: *mut u8,
 }
 
-/// `read_cb`'s answer once its acquisition runtime has stopped. Teardown ends the operation as it
-/// always has; a latched stall abort is `AVERROR_EOF` with `stall_aborted` for
-/// `classify_hls_avio_operation` to report. A stop with no latched reason cannot come from the
-/// runtime; it is reported as the transport failure it would otherwise be mistaken for.
+/// `read_cb`'s answer once its transport reports a stopped read. Teardown ends the operation as it
+/// always has; any other stop is reported as the transport failure it would otherwise be mistaken
+/// for.
 fn avio_stopped(s: &mut AvioState) -> c_int {
     if unsafe { crate::aq::aq_is_aborted(s.aq) } {
         s.latch_abort();
         s.clear_bounce();
-        return AVERROR_EOF;
-    }
-    if s.acquisition
-        .as_ref()
-        .is_some_and(AcquisitionRuntime::stall_aborted)
-    {
         return AVERROR_EOF;
     }
     s.io_failed = true;
@@ -2180,78 +2119,28 @@ extern "C" fn read_cb(op: *mut c_void, dst: *mut u8, n: c_int) -> c_int {
             if park_read_fails_closed(s.bounce_remaining(), s.io_failed) {
                 return AVERROR_IO;
             }
-            // The abort rule, evaluated where the numbers are — through the same runtime check
-            // the open and the transport waits consult. See `StallGuard`.
-            s.note_received();
-            if let Some(acquisition) = &mut s.acquisition {
-                if plx_base::checkpoint::Checkpoint::check(acquisition)
-                    == plx_base::checkpoint::Flow::Stop
-                {
-                    return avio_stopped(s);
-                }
-            }
-            let rebuffering = SHARED.hls_rebuffering.load(Ordering::Acquire);
-            if s.reserve_deadline.expire_if_due(rebuffering) {
-                return AVERROR_EOF;
-            }
-            let reserve_snapshot = s.reserve_deadline.active(rebuffering);
-            let blocking_deadline = s
-                .transport_watchdog
-                .map(|watchdog| watchdog.effective(reserve_snapshot))
-                .or_else(|| {
-                    reserve_snapshot.map(|at| BlockingDeadline {
-                        at,
-                        owner: BlockingDeadlineOwner::Reserve,
-                    })
-                });
-            let live_deadline = blocking_deadline.map(|deadline| deadline.at);
             // Both sources use the same three-way return — >0 bytes, 0 clean end, <0 error — so
-            // the EOF decision below stays one branch rather than one per transport.
+            // the EOF decision below stays one branch rather than one per transport. A live
+            // stream has no read deadline beyond its transport's own stall budget.
             let read_started = std::time::Instant::now();
-            let mut unarmed = plx_base::checkpoint::NoCheckpoint;
-            let checkpoint: &mut dyn plx_base::checkpoint::Checkpoint = match &mut s.acquisition {
-                Some(acquisition) => acquisition,
-                None => &mut unarmed,
-            };
+            let mut checkpoint = plx_base::checkpoint::NoCheckpoint;
             let r = match &mut s.src {
                 Src::Socket { hs, .. } => plx_net::stream::http_read_until(
                     *hs,
                     dst as *mut c_uchar,
                     n,
-                    live_deadline,
-                    checkpoint,
+                    None,
+                    &mut checkpoint,
                 ),
                 // The null/length guard `stream::http_read` does for itself.
                 Src::Curl(_) if dst.is_null() || n <= 0 => 0,
                 Src::Curl(cs) => cs.read_until(
                     std::slice::from_raw_parts_mut(dst, n as usize),
-                    live_deadline,
-                    checkpoint,
+                    None,
+                    &mut checkpoint,
                 ),
                 Src::Idle => return AVERROR_EOF,
             };
-            let wake =
-                if r == plx_net::stream::HTTP_READ_DEADLINE || r == crate::curlio::READ_DEADLINE {
-                    let current_rebuffering = SHARED.hls_rebuffering.load(Ordering::Acquire);
-                    match (blocking_deadline, s.transport_watchdog.as_ref()) {
-                        (Some(attempted), Some(watchdog)) => Some(observe_hls_deadline(
-                            Some(&mut s.reserve_deadline),
-                            attempted,
-                            watchdog,
-                            current_rebuffering,
-                        )),
-                        (Some(attempted), None) => Some(BlockingWake {
-                            owner: attempted.owner,
-                            reserve_spent: s
-                                .reserve_deadline
-                                .note_transport_deadline(Some(attempted.at), current_rebuffering),
-                            transport_due: false,
-                        }),
-                        _ => None,
-                    }
-                } else {
-                    None
-                };
             // Teardown may have arrived while the transport was blocked. Its wake commonly
             // surfaces as socket EOF or curl failure; classify from the owning AU abort flag
             // before either transport result can become an active-stream error.
@@ -2259,51 +2148,21 @@ extern "C" fn read_cb(op: *mut c_void, dst: *mut u8, n: c_int) -> c_int {
                 s.latch_abort();
                 return AVERROR_EOF;
             }
-            // Every unsuccessful read is SETTLED by a fresh check before it is classified: a
-            // deadline shorter than the checkpoint slice ends the wait without asking again, and a
-            // stopped wait has already latched why. What the transport received during the wait
-            // is credited first, so the fresh check sees the same completion the read would have.
-            if r < 0 {
-                s.note_received();
-                if let Some(acquisition) = &mut s.acquisition {
-                    if acquisition.settle_stopped() {
-                        return avio_stopped(s);
-                    }
-                }
-            }
             if r == plx_net::stream::HTTP_READ_STOPPED || r == crate::curlio::READ_STOPPED {
                 return avio_stopped(s);
             }
-            if let Some(wake) = wake {
-                match classify_hls_deadline(wake) {
-                    Some(HlsExit::PrimeExpired) => return AVERROR_EOF,
-                    Some(_) => {
-                        s.io_failed = true;
-                        return AVERROR_IO;
-                    }
-                    None => {}
-                }
-                // A stale reserve projection is neither evidence nor progress. Retry in this
-                // frame (not recursively) with the same inactivity epoch and a fresh projection.
-                continue;
-            }
             if r < 0 {
-                // A server that drops the connection mid-body (a PMS that reaps the socket while
-                // the viewer is paused, a reset from the LAN) is answered by reopening at the byte
-                // we stopped at. libavformat only heals through `seek_cb` when the demuxer itself
-                // seeks; a plain read failure reaches `av_read_frame` as EIO and ends the session,
-                // which is how pausing for the subtitle menu stopped playback on a webOS 3.4 set.
-                // Stall timeouts (rc=28) stay with the stall guard; only cut transfers heal here.
-                // Direct play only: an HLS segment read carries an acquisition runtime whose
-                // checkpoint and deadlines bound the transfer, but `cs.seek` reopens through
-                // `start()` with neither, and a failed segment is the HLS retry policy's to answer.
-                let direct_play = s.acquisition.is_none();
+                // A server that drops the connection mid-body (a reset from the LAN, a socket
+                // reaped while the viewer is paused) is answered by reopening at the byte we
+                // stopped at. libavformat only heals through `seek_cb` when the demuxer itself
+                // seeks; a plain read failure reaches `av_read_frame` as EIO and ends the session.
+                // Stall timeouts (rc=28) stay with the transport; only cut transfers heal here.
                 if let Src::Curl(cs) = &mut s.src {
                     let cut = cs
                         .body_failure()
                         .is_some_and(|f| matches!(f.rc, 18 | 55 | 56 | 92));
                     let inside = s.off >= 0 && (s.size < 0 || s.off < s.size);
-                    if direct_play && cut && inside && heals < BODY_HEAL_ATTEMPTS {
+                    if cut && inside && heals < BODY_HEAL_ATTEMPTS {
                         heals += 1;
                         if cs.seek(s.off) {
                             continue;
@@ -2316,13 +2175,7 @@ extern "C" fn read_cb(op: *mut c_void, dst: *mut u8, n: c_int) -> c_int {
                 return AVERROR_IO;
             }
             if r == 0 {
-                if let Some(acquisition) = &mut s.acquisition {
-                    acquisition.note_body(s.size, s.off, true);
-                }
                 return AVERROR_EOF;
-            }
-            if let Some(watchdog) = &mut s.transport_watchdog {
-                watchdog.reset();
             }
             s.body_active_us = s
                 .body_active_us
@@ -4005,11 +3858,8 @@ pub fn demux(
                     body_active_us: 0,
                     body_bytes: 0,
                     first_byte_at: None,
-                    reserve_deadline: ReserveDeadlineState::new(None, false),
-                    transport_watchdog: None,
                     // A progressive part is not on a ladder, so there is no cheaper rung to run to
                     // and the abort rule's escape does not exist. R12's terminal case, structurally.
-                    acquisition: None,
                     bounce: Vec::new(),
                     bounce_pos: 0,
                 });

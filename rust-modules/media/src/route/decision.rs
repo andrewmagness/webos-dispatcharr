@@ -658,8 +658,7 @@ pub fn url(ps: &PlaybackSession) -> String {
 pub fn has_url(ps: &PlaybackSession) -> bool {
     !ps.url.is_empty()
 }
-/// Whole-file transport requirement captured by the playback resolve. Diagnostics uses it for
-/// manual Original, where no adaptive controller exists to publish `dg_abr_kbps`.
+/// Whole-file transport requirement captured by the playback resolve.
 pub fn transport_kbps(ps: &PlaybackSession) -> i64 {
     ps.cur_transport_kbps
 }

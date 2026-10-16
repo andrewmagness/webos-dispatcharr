@@ -1209,16 +1209,6 @@ pub fn restore_state_for_test(raw: u8) {
 // ---- diagnostics --------------------------------------------------------------------------
 
 pub use engine::aq_caps;
-/// The two feed-ahead throttles, as milliseconds.
-///
-/// **Not test-only any more, and the reason is the point of N3.** These were `#[cfg(test)]` because
-/// only `abr::sim`'s plant read them, to pin half of `B_max` against the pipeline's own values.
-/// `abr::plant::b_max_est_ms` now computes the reachable reserve inside the CONTROLLER, from these
-/// and `aq_caps()` at run time rather than from a transcription — which is what makes `B*` a
-/// property of the plant instead of a number somebody chose. `sim.rs` still keeps its own copy by
-/// value, deliberately, so the plant grading the controller is not the controller agreeing with
-/// itself.
-
 pub use plx_platform::tv::sink::{VP_ACB, VP_EXPORTED, VP_NONE};
 #[cfg(feature = "hostsim")]
 /// The simulator's clock-sink stop; the television's pipeline has no such control.

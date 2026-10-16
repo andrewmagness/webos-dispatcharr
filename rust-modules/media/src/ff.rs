@@ -1543,11 +1543,9 @@ struct AvioState {
 }
 
 // TEST ONLY: a deterministic stand-in for the two `Instant::elapsed()` calls that measure
-// `body_active_us` — `AvioState::note_received`'s receipt timer and `read_cb`'s read timer. A
-// real scheduler can preempt either interval independently, so a test that compares
-// `body_active_us` to a wall-clock read can flake on a loaded runner even though the accounting
-// is correct (see `ff_stall_guard_tests::transfer_work_a_receipt_takes_is_counted_in_body_time`,
-// pre-seam). Tests push exact durations here and assert exact sums instead. Empty queue (every
+// `body_active_us` — `read_cb`'s read timer. A real scheduler can preempt the interval, so a test
+// that compares `body_active_us` to a wall-clock read can flake on a loaded runner even though the
+// accounting is correct. Tests push exact durations here and assert exact sums instead. Empty queue (every
 // non-test build, and every test that never pushes) falls straight through to the real clock, so
 // this changes no production behaviour.
 #[cfg(any(test, feature = "test-support"))]

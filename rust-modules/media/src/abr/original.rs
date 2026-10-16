@@ -43,8 +43,7 @@ pub fn source_probe_plan(source_kbps: u32, max_budget_ms: u64) -> Option<SourceP
 /// **Cold-start Original admission, and only that.** The measured source prefix must complete and
 /// arrive no slower than the file's average consumption rate.  That is a physical conservation
 /// test: the prefix contributes media at least as quickly as playback removes it.  A finite prefix
-/// is still only evidence about that prefix, so everything after admission remains an observed
-/// trial under [`OriginalModeController`]; no invented multiplier turns it into a capacity claim.
+/// is still only evidence about that prefix; no invented multiplier turns it into a capacity claim.
 pub fn original_sustainable(
     source_kbps: u32,
     measured_kbps: u32,

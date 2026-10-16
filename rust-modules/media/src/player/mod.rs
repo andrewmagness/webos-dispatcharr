@@ -44,8 +44,6 @@ pub mod video_geometry;
 pub mod vp9_hdr; // HDR10 for a VP9 stream: the container's PQ tag, written into the sourceInfo envelope ACB is sent
 
 use plx_base::task::MainThread;
-#[cfg(test)]
-pub(crate) use shared::pinned_pause_clock;
 pub use shared::HlsAutomaticTransition;
 
 /// one rect of an image-subtitle display set — the demuxer builds them, the HUD draws them
@@ -1295,30 +1293,6 @@ pub struct Diag {
     /// exists for a manual Original session, so the diagnostics sweep can keep the same demand
     /// lane in every delivery mode.
     pub source_kbps: i64,
-    pub abr_mode: u8,
-    pub abr_kbps: i64,
-    pub abr_declared_kbps: i64,
-    pub abr_media_kbps: i64,
-    pub abr_net_kbps: i64,
-    pub abr_buffer_ms: i64,
-    pub abr_ratio_pm: i64,
-    pub abr_action: u8,
-    pub abr_target_kbps: i64,
-    pub abr_failure_kind: u8,
-    pub abr_failure_status: i32,
-    /// Wall milliseconds an unsafe Original deficit has held (N13). Was a COUNT of
-    /// 750 ms active-read windows — a clock that stops under backpressure, so the read-out it
-    /// fed said "3 windows" for durations an order of magnitude apart.
-    pub abr_unsafe_deficit_ms: i64,
-    pub abr_safe_kbps: i64,
-    pub abr_optimal_kbps: i64,
-    pub abr_unc_pm: i64,
-    pub abr_samples: i64,
-    pub abr_slope_ms_per_s: i64,
-    pub abr_starve_secs: i64,
-    pub abr_pred_pm: i64,
-    pub abr_risk: i64,
-    pub abr_why: u8,
 }
 
 /// One physical reserve definition for every delivery mode. Direct-file tails already use movie
@@ -1456,27 +1430,6 @@ pub fn diag(ps: &crate::route::PlaybackSession) -> Diag {
         pos_ns: SHARED.playpos_ns.load(Relaxed),
         dur_ns: SHARED.duration_ns.load(Relaxed),
         source_kbps: crate::route::transport_kbps(ps),
-        abr_mode: SHARED.dg_abr_mode.load(Relaxed),
-        abr_kbps: SHARED.dg_abr_kbps.load(Relaxed),
-        abr_declared_kbps: SHARED.dg_abr_declared_kbps.load(Relaxed),
-        abr_media_kbps: SHARED.dg_abr_media_kbps.load(Relaxed),
-        abr_net_kbps: SHARED.dg_abr_net_kbps.load(Relaxed),
-        abr_buffer_ms: SHARED.dg_abr_buffer_ms.load(Relaxed),
-        abr_ratio_pm: SHARED.dg_abr_ratio_pm.load(Relaxed),
-        abr_action: SHARED.dg_abr_action.load(Relaxed),
-        abr_target_kbps: SHARED.dg_abr_target_kbps.load(Relaxed),
-        abr_failure_kind: SHARED.abr_failure_kind.load(Relaxed),
-        abr_failure_status: SHARED.abr_failure_status.load(Relaxed),
-        abr_unsafe_deficit_ms: SHARED.dg_abr_unsafe_deficit_ms.load(Relaxed),
-        abr_safe_kbps: SHARED.dg_abr_safe_kbps.load(Relaxed),
-        abr_optimal_kbps: SHARED.dg_abr_optimal_kbps.load(Relaxed),
-        abr_unc_pm: SHARED.dg_abr_unc_pm.load(Relaxed),
-        abr_samples: SHARED.dg_abr_samples.load(Relaxed),
-        abr_slope_ms_per_s: SHARED.dg_abr_slope_ms_per_s.load(Relaxed),
-        abr_starve_secs: SHARED.dg_abr_starve_secs.load(Relaxed),
-        abr_pred_pm: SHARED.dg_abr_pred_pm.load(Relaxed),
-        abr_risk: SHARED.dg_abr_risk.load(Relaxed),
-        abr_why: SHARED.dg_abr_why.load(Relaxed),
     }
 }
 

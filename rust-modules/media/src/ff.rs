@@ -1514,8 +1514,6 @@ mod subs;
 #[path = "ff_subside.rs"]
 pub(crate) mod subside;
 use subs::{SubKind, SubTracks};
-#[cfg(test)]
-use subs::{open_sub_decoder, sub_kind};
 
 /// AVIO backing state: wraps the demux transport so libavformat reads through it and can seek by
 /// byte offset. Boxed so its address is stable for the C callbacks.

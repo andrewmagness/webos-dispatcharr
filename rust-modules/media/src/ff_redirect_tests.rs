@@ -108,13 +108,6 @@ fn request_line(head: &str) -> &str {
     head.split("\r\n").next().unwrap_or("")
 }
 
-fn hls_resource(port: u16) -> crate::hls::Resource {
-    crate::hls::Resource {
-        origin: plx_plex::plex::Origin::http("127.0.0.1", port as i32),
-        path: "/unused".into(),
-    }
-}
-
 /// A progressive open through the production helper, reduced to where it landed.
 fn progressive_open(port: u16, path: &str) -> Result<(String, i64), String> {
     let mut hs = plx_net::stream::http_stream_boxed();

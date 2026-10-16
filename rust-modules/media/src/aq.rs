@@ -457,8 +457,8 @@ pub fn aq_bytes(q: *mut AuQueue) -> c_long {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, Barrier};
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
 
     /// A full queue parks its producer; headroom granted on top of the base cap lets the same
     /// push through, and taking the headroom away restores the base cap for the next push. This

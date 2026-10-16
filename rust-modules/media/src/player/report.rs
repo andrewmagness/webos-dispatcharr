@@ -464,7 +464,7 @@ pub fn note_load_gate_for(generation: u32, elapsed: LoadElapsedClass) {
 fn requested_quality(delivery: DeliveryClass, selected: QualityClass) -> QualityClass {
     match delivery {
         DeliveryClass::Unknown => QualityClass::Unknown,
-        DeliveryClass::Hls => QualityClass::from_kbps(super::SHARED.dg_abr_kbps.load(Relaxed)),
+        DeliveryClass::Hls => QualityClass::from_kbps(0),
         DeliveryClass::Direct | DeliveryClass::Remux => QualityClass::Original,
         DeliveryClass::Transcode => selected,
     }
@@ -510,12 +510,12 @@ fn error_context(ps: &crate::route::PlaybackSession) -> PlaybackErrorContext {
         delivery,
         selected,
         requested,
-        declared_rate: RateClass::from_kbps(super::SHARED.dg_abr_declared_kbps.load(Relaxed)),
-        media_rate: RateClass::from_kbps(super::SHARED.dg_abr_media_kbps.load(Relaxed)),
+        declared_rate: RateClass::from_kbps(-1),
+        media_rate: RateClass::from_kbps(-1),
         raster: RasterClass::from_height(super::SHARED.video_raster().1),
         pipeline: PipelineClass::from_stage(super::SHARED.dg_stage.load(Relaxed)),
         http: HttpClass::from_status(http_status),
-        buffer: BufferClass::from_ms(super::SHARED.dg_abr_buffer_ms.load(Relaxed)),
+        buffer: BufferClass::from_ms(-1),
         transport,
         transfer_age,
         started: SAW_START.load(Relaxed),
@@ -590,7 +590,7 @@ fn presented_event(ps: &crate::route::PlaybackSession) -> TraceEvent {
     TraceEvent::Presented {
         delivery,
         requested,
-        declared_rate: RateClass::from_kbps(super::SHARED.dg_abr_declared_kbps.load(Relaxed)),
+        declared_rate: RateClass::from_kbps(-1),
         raster: RasterClass::from_height(super::SHARED.video_raster().1),
     }
 }

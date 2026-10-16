@@ -724,19 +724,4 @@ mod tests {
     // this line on a television and the harness parses it on a Mac, and until this contract existed
     // a drift between them was a silent "no samples" — which reads exactly like a total regression.
 
-    /// Canonical retired order-stat verdict. Read by `tests/test_harness.py`; keep the marker.
-    const WIRE_ADMIT: &str = // wire-example
-        "abr: window current=4000kbps verdict=admit have=3/3 eps=250pm clamp=0 bound=1000ms \
-         demand=2600ms supply=6000ms excess=0ms runway=1000ms sus=1 sur=1 reset=0 bytes=1000 dur=2000ms";
-
-    /// Canonical retired filling verdict — every uncomputed number is `-1`, never `0`.
-    const WIRE_FILLING: &str = // wire-example
-        "abr: window current=720kbps verdict=filling have=1/3 eps=250pm clamp=0 bound=-1ms \
-         demand=-1ms supply=-1ms excess=-1ms runway=-1ms sus=0 sur=0 reset=2 bytes=500 dur=2000ms";
-
-    /// Canonical live exact finite-bag verdict.
-    const WIRE_LIVE_EXACT: &str = // wire-example
-        "abr: window current=4000kbps verdict=admit have=1/1 eps=0pm clamp=0 bound=-1ms \
-         demand=1000ms supply=2000ms excess=0ms runway=1000ms sus=1 sur=1 reset=0 bytes=1000 dur=2000ms";
-
 }

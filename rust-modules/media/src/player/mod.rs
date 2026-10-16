@@ -323,6 +323,13 @@ pub fn force_play_result_for_test(result: Option<c_int>) {
     ffi_host::force_play_result_for_test(result);
 }
 
+/// Arm (or disarm) the simulator's clock sink for a test, so a Load is accepted and the pump runs
+/// past it, without the process-wide `dispatcharrtv-clocksink` trigger.
+#[cfg(all(any(test, feature = "test-support"), feature = "hostsim"))]
+pub fn force_clocksink_for_test(on: bool) {
+    ffi_host::force_clocksink_for_test(on);
+}
+
 /// Kodi parity: mirror the ACB PLAYSTATE on transport pause/resume (the pipeline Pause/Play alone
 /// leaves the app-owned sink's ACB state stale). Only once the plane is streaming — `Bound` means
 /// setMediaId/LOADED has happened but setMediaVideoData/window/PLAYING has not, so mirroring a user

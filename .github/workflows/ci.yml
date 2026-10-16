@@ -63,8 +63,7 @@ on:
       # (docs/macos-app-readme.md is only copied into the macOS bundle by `make macapp`, which
       # this workflow does not run; docs/plex-openapi.json and the images are referenced by prose)
       - '!docs/**'
-      # replayed by tools/test_abr_calibrate_plant.py, test_abr_transfer_bound.py and
-      # test_scrub_logs.py (make check): must stay a trigger
+      # replayed by tools/test_scrub_logs.py (make check): must stay a trigger
       - 'docs/measurements/*-logs/*.log'
       - '!.agents/**/*.md'
       - '!rust-modules/**/*.md'
@@ -121,11 +120,6 @@ jobs:
       RUST_NIGHTLY: nightly
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          # FULL history, and it is a correctness requirement rather than a convenience: see the
-          # same comment on host-python. Kept on the Rust jobs too so every host job checks out the
-          # tree the single job did.
-          fetch-depth: 0
 
       # No SDL/GL packages here: clippy and `cargo check` never link a test binary.
       - uses: ./.github/actions/host-rust
@@ -177,8 +171,6 @@ jobs:
       passed: ${{ steps.size.outputs.passed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
 
       # This job LINKS the default `cargo test --lib` binary, so it needs the real desktop SDL/GL
       # libraries (build.rs links them for every host test binary, not only the hostsim one).
@@ -237,8 +229,6 @@ jobs:
       passed: ${{ steps.size.outputs.passed }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
 
       # `--features hostsim` is the configuration `player/ffi_host.rs` exists in — the
       # prime-livelock regression lives there and cannot fail the default pass. The test binary
@@ -269,16 +259,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          # FULL history, and it is a correctness requirement rather than a convenience.
-          # `tools/abr-calibrate-plant.py` derives each measurement capture's chronology from
-          # `git log --diff-filter=A`, because the directory names mix phase and increment
-          # numbering and do not sort chronologically. Under the default `fetch-depth: 1` that
-          # command answers nothing for every capture, they all tie as "uncommitted, therefore
-          # newest", and the census silently picks the wrong log per rung — 10 failures in
-          # `test_abr_calibrate_plant.py` claiming sim.rs disagrees with logs it does agree with.
-          # The tool now refuses a shallow clone outright; this is what stops it having to.
-          fetch-depth: 0
 
       # Neither a Rust toolchain nor SDL: `check-python` never invokes cargo (its self-tests that
       # mention one use fakes) and links nothing. The ~70 gates are ci/check-python-steps.txt, run
@@ -296,9 +276,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          # Full history, for the same reason as host-python.
-          fetch-depth: 0
 
       - name: make check-python-harness
         run: make check-python-harness

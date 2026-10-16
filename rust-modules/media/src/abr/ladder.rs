@@ -1,4 +1,3 @@
-use super::*;
 
 /// Auto's request ladder — **the ACTUATOR set, not a settings menu**.
 ///
@@ -45,44 +44,6 @@ pub const LADDER: [Rung; 13] = [
     Rung::P1080High,
     Rung::Uhd,
 ];
-
-/// **How much reserve the dev rung pin waits for before it transacts UPWARD.** Six segments.
-///
-/// A TOOL constant, not ABR policy: nothing outside [`Controller::pinned_to`] reads it and it
-/// takes no part in any decision an unpinned build makes. It is a deliberately generous harness
-/// gate: a pinned upshift runs inline on the demux worker, spends its exact initial exploration
-/// reserve, and may conditionally use its remaining grant for one ordinary observation when the
-/// first object is setup-bearing. Proposing without disposable reserve made the pin reject and
-/// re-propose forever in the closed-loop plant; the six-segment tool gate keeps that measurement
-/// path out of the livelock without becoming a production ABR threshold.
-///
-/// Applying this upshift-only harness gate downward cost the M4 census four of its seven points
-/// (five in the corpus before it, where `pin_4000` additionally ran at rung 6000 for a separate
-/// reason). On an unshaped LAN `startup_rung` picks the ladder top, so each lower pin was a
-/// downshift asked to accumulate 12 000 ms at a rung whose reachable ceiling was
-/// `B_max(20000) ≈ 5 421 ms`: unsatisfiable by construction. Device-measured 2026-08-26 and
-/// noticed 2026-08-27, the affected pins all remained at 20000 and duplicated its byte lists.
-///
-/// See [`PIN_MIN_RESERVE_SEGMENTS_DOWN`] for what a downshift actually has to afford.
-pub const PIN_MIN_RESERVE_SEGMENTS: i64 = 6;
-
-/// **How much reserve the dev rung pin waits for before it transacts DOWNWARD.** Two segments.
-///
-/// This is another measurement-tool floor, not a claim that a downshift costs exactly `2D`. It lets
-/// the census begin with one nominal media horizon plus room for its control plane. The live media
-/// deadline is derived later from the then-current reserve and the measured whole-acquisition
-/// prediction; it can exceed this precondition, and terminal floor recovery removes the rollback
-/// deadline entirely. Production ABR does not read this constant.
-///
-/// **The deadline makes this figure self-consistent rather than merely expected.** A downshift
-/// warm-up is now bounded by the reserve it is spending, so a pin that waits for two segments
-/// hands the fetch a budget of at most those two segments less the control plane — the gate and
-/// the enforcement are the same quantity read at two moments, which is why neither needs a margin
-/// against the other.
-///
-/// Two segments is 4 000 ms at `D = 2000`, inside `B_max` at every rung including the top, which is
-/// the property the six-segment figure lacked and the whole reason this constant exists separately.
-pub const PIN_MIN_RESERVE_SEGMENTS_DOWN: i64 = 2;
 
 impl Rung {
     pub const fn kbps(self) -> u32 {
@@ -163,15 +124,6 @@ impl Rung {
         }
     }
 
-    /// The ladder entry whose REQUEST is exactly `kbps`, or `None`. Actuator identity by the
-    /// number that goes on the wire as the ceiling, which is stable across catalog re-measurement
-    /// — unlike `planning`/`expected_wire_kbps`, which moves when somebody probes the server, and
-    /// unlike the UI quality enum, which has no mid-1080p points at all
-    /// (`plex::session::PlaybackQuality`). Used only by the dev rung pin (I0-D).
-    pub fn from_request_kbps(kbps: u32) -> Option<Rung> {
-        LADDER.into_iter().find(|r| r.kbps() == kbps)
-    }
-
     pub fn ceiling(self) -> plx_plex::plex::Ceiling {
         let (width, height) = self.raster();
         plx_plex::plex::Ceiling {
@@ -192,14 +144,6 @@ impl Rung {
         LADDER[self.index().saturating_sub(1)]
     }
 
-    /// **R12's terminal case, named.** `below() == self` is the whole test, but it was written out
-    /// at three sites in two files and twice in the negative — `below() != self` for "there IS
-    /// somewhere to run to" reads as its own double negative, and a reader has to re-derive the
-    /// identity-at-the-floor trick each time to see that the three are one predicate.
-    pub fn at_floor(self) -> bool {
-        self.below() == self
-    }
-
     /// Recover the controller's starting rung from the exact ceiling stored in the playback
     /// route. Auto owns only these canonical values; an arbitrary/manual ceiling is not an ABR
     /// state and therefore has no answer here.
@@ -209,30 +153,6 @@ impl Rung {
             .copied()
             .find(|rung| rung.ceiling() == ceiling)
     }
-}
-
-/// **Pin Auto's HLS ladder to one actuator, by request rate** — `dispatcharrtv-abrpin=<kbps>`.
-///
-/// Measurement-only, for step M4 of `docs/adaptive-playback-plan.md`: reading a settled reserve at
-/// a given rung means holding that rung for minutes, and nothing in the app could do that.
-/// the application's `dev::playback_quality_override` cannot serve, for two independent reasons — a non-Auto
-/// quality returns `None` from `route::hls_abr_control` before a controller is ever constructed,
-/// so it measures a different transport path entirely; and [`plx_plex::plex::session::PlaybackQuality`]
-/// has no mid-1080p points, while the ladder this pins has eight of them.
-///
-/// The value is the actuator's REQUEST rate (`Rung::kbps`) — 320, 720, 2000, 4000, 6000, 8000,
-/// 10000, 12000, 14000, 16000, 18000, 20000, 22000 — because that is the number PMS is given and
-/// the one identity in the catalog that does not move when somebody re-measures the server.
-/// An unrecognised or empty value pins nothing, deliberately: a typo must leave Auto alone rather
-/// than silently park playback on the bottom rung for a whole measurement session.
-///
-/// Compiled out with `devtriggers`, so a release build cannot be pinned at all. A typed trigger
-/// (its value is a [`Rung`]), so it is parsed here, beside the one consumer, from the base-layer
-/// `plx_base::devtrig::read` rather than living with the primitives.
-pub fn abr_pin() -> Option<Rung> {
-    let raw = plx_base::devtrig::read("abrpin")?;
-    let kbps: u32 = raw.trim().parse().ok()?;
-    Rung::from_request_kbps(kbps)
 }
 
 /// What PMS actually attached to one fixed-HLS request.  This is deliberately not a [`Rung`]:
@@ -257,36 +177,6 @@ impl ObservedHlsVariant {
         })
     }
 
-    /// A coefficient-free quality comparison. More pixels at fewer declared bits is not ordered;
-    /// a response is strictly better only when neither independent axis regresses and at least one
-    /// improves.
-    pub fn strictly_dominates(self, other: Self) -> bool {
-        self.width >= other.width
-            && self.height >= other.height
-            && self.declared_bps >= other.declared_bps
-            && (self.width > other.width
-                || self.height > other.height
-                || self.declared_bps > other.declared_bps)
-    }
-
-    /// Whether this response is provably smaller than the picture the actuator can request.
-    ///
-    /// If the request box contains the source, an unscaled response must contain the source
-    /// raster. If the source is larger than the box, an aspect-preserving fit must reach at least
-    /// one edge of that box; falling short on both axes is strictly dominated by such a fit. This
-    /// is geometry, not a bitrate tolerance. Unknown source geometry proves nothing and therefore
-    /// fails open.
-    pub fn definitively_underfills(self, rung: Rung, source: (u16, u16)) -> bool {
-        if source.0 == 0 || source.1 == 0 {
-            return false;
-        }
-        let bounds = rung.raster();
-        if source.0 <= bounds.0 && source.1 <= bounds.1 {
-            self.width < source.0 || self.height < source.1
-        } else {
-            self.width < bounds.0 && self.height < bounds.1
-        }
-    }
 }
 
 /// One PMS operating point. `request_kbps` is what goes on the wire as the ceiling; the other two
@@ -437,19 +327,6 @@ impl HlsActuatorCatalog {
         }
     }
 
-    /// **The source raster this catalog was bounded by**, `(0, 0)` for "nobody said" — the same
-    /// reading `limited_to` gives it, and the reading `covers_source` already depends on.
-    ///
-    /// N14 asked for a `source_raster` field on `ModeInputs`, "threaded through `HlsAbrControl` to
-    /// the worker — that one does cross a thread". It does not: `route::auto_catalog` builds this
-    /// catalog from `ps.cur_src`, threaded as `&PlaybackSession`, and `HlsAbrControl` already
-    /// carries the whole catalog to the worker, so the raster has been on the worker's stack all
-    /// along, one accessor away. Adding a parallel field would have been a second copy of one
-    /// fact, free to disagree with the bound it describes.
-    pub fn source_raster(&self) -> (u16, u16) {
-        self.source
-    }
-
     /// Restrict the catalog to rasters this playback can actually use. Both bounds matter and they
     /// are different questions: `device` is what the SoC decodes (`devcaps`, the television's own
     /// table), and `source` is the picture that exists — asking PMS to UPSCALE a 1080p master to
@@ -565,55 +442,4 @@ impl HlsActuatorCatalog {
             .max_by_key(|candidate| candidate.expected_wire_kbps)
     }
 
-    /// Whether one planning actuator fits the conservative delivery and reserve models. This orders
-    /// both the counterfactual HLS alternative in the Original/HLS mode
-    /// comparison and a live HLS experiment after a measured service endpoint. It is deliberately
-    /// not a live commit law:
-    /// a demand-capped response cannot prove unused path capacity, so the controller may still
-    /// excite an unmodelled higher rung after exhausting model-supported candidates, and every
-    /// candidate must still complete its own exact acquisition before commit.
-    pub fn modeled_sustainable(
-        &self,
-        candidate: HlsCandidate,
-        safe_budget_kbps: u32,
-        policy: &AbrPolicy,
-        buffered_ms: i64,
-    ) -> bool {
-        candidate.expected_wire_kbps <= safe_budget_kbps
-            // **N3's refill filter — a THIRD independent constraint, in its own units.** The
-            // budget above is bits per second and this is a reserve: a
-            // candidate that would leave the buffer short of its own target has to leave room to
-            // close that shortfall inside `H`, so the rate it may claim shrinks in proportion.
-            //
-            // The rates handed to it are PLANNING rates. `expected_wire_kbps` is calibrated PMS
-            // output, while the audio lane is still an assumption because no per-lane ES
-            // measurement exists for an actuator that has not run.
-            && {
-                let video_es = candidate
-                    .expected_wire_kbps
-                    .saturating_sub(policy.assumed_audio_kbps);
-                super::plant::refill_admits(
-                    candidate.expected_wire_kbps,
-                    video_es,
-                    policy.assumed_audio_kbps,
-                    buffered_ms,
-                    safe_budget_kbps,
-                    policy,
-                )
-            }
-    }
-
-    /// The highest feasible actuator admitted by [`Self::modeled_sustainable`].
-    pub fn best_sustainable(
-        &self,
-        safe_budget_kbps: u32,
-        policy: &AbrPolicy,
-        buffered_ms: i64,
-    ) -> Option<HlsCandidate> {
-        self.feasible()
-            .filter(|candidate| {
-                self.modeled_sustainable(*candidate, safe_budget_kbps, policy, buffered_ms)
-            })
-            .max_by_key(|candidate| candidate.expected_wire_kbps)
-    }
 }

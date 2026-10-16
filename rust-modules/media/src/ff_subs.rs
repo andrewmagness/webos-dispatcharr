@@ -240,19 +240,6 @@ fn rects_within_budget(
 /// The palette's share of a rect's store cost (`SubRect::bytes`).
 const PALETTE_BYTES: usize = std::mem::size_of::<[[u8; 4]; 256]>();
 
-/// [`decode_bitmap`] then [`SubCue::push`]: the decode-and-store step the demux loop runs for an
-/// image-subtitle packet.
-pub(super) unsafe fn decode_bitmap_cue(
-    dec: *mut AVCodecContext,
-    pkt: *mut AVPacket,
-    track: c_int,
-    st: *mut AVStream,
-) {
-    if let Some(cue) = decode_bitmap(dec, pkt, track, st) {
-        cue.push(0);
-    }
-}
-
 /// One cue produced from one subtitle packet, in the stream's clock (`pts_ns`), not yet delivered.
 pub(super) enum SubCue<'a> {
     /// SRT / WebVTT / mov_text payload (mov_text's length prefix already dropped) for the text store.
@@ -361,10 +348,6 @@ impl SubTracks {
     /// No tracks: what the main demuxer holds while a side reader owns the subtitles.
     pub(super) fn empty() -> Self {
         SubTracks { streams: Vec::new() }
-    }
-
-    pub(super) fn is_empty(&self) -> bool {
-        self.streams.is_empty()
     }
 
     /// The (stream index, kind, decoder) list, in file order.

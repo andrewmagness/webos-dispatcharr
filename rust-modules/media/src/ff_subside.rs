@@ -88,11 +88,6 @@ pub(super) fn delta_exact(part_kf_pts: i64, anchor_pts_ns: i64, pts_shift: i64, 
     part_kf_pts.saturating_sub(playhead_of(anchor_pts_ns, pts_shift, disp_base))
 }
 
-/// The last keyframe at or before `offset_ns`, from keyframe times in any order.
-pub(super) fn keyframe_at_or_before(keyframes: &[i64], offset_ns: i64) -> Option<i64> {
-    keyframes.iter().copied().filter(|k| *k <= offset_ns).max()
-}
-
 /// `delta` when no keyframe matched: PMS starts a remux at the keyframe at or before `offset`, so
 /// that keyframe is taken to be the remux's first, and the clock is labelled as it would have been.
 pub(super) fn delta_assumed(k_le: i64, anchor_pts_ns: i64, pts_shift: i64, disp_base: i64) -> i64 {
@@ -261,10 +256,6 @@ impl SideIo {
         }
     }
 
-    /// Is this source's stop set? (Test and lifecycle use.)
-    pub(crate) fn stopped(&self) -> bool {
-        self.stop.is_set()
-    }
 }
 
 enum Followed {

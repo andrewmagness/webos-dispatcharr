@@ -173,14 +173,6 @@ impl HlsClockState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HlsClockFenceError {
-    Stopping,
-    Overlap,
-    Exhausted,
-    Superseded,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HlsAutomaticTransition {
     QualityUp,
     QualityDown,
@@ -2061,66 +2053,6 @@ impl Shared {
         }
     }
 
-    pub fn begin_hls_candidate_transition(
-        &self,
-        expected_automatic: Option<u64>,
-    ) -> Result<u64, HlsClockFenceError> {
-        let mut clock = self.hls_clock.lock().unwrap_or_else(|e| e.into_inner());
-        while matches!(clock.phase, HlsClockPhase::PlayIssuing { .. }) {
-            clock = self
-                .hls_clock_changed
-                .wait(clock)
-                .unwrap_or_else(|e| e.into_inner());
-        }
-        if clock.phase == HlsClockPhase::Stopping {
-            return Err(HlsClockFenceError::Stopping);
-        }
-        if let Some(expected) = expected_automatic {
-            let Some(owner) = clock.automatic else {
-                return Err(HlsClockFenceError::Superseded);
-            };
-            let phase_ok = match owner.kind {
-                HlsAutomaticTransition::QualityUp | HlsAutomaticTransition::Original => {
-                    clock.phase == HlsClockPhase::Running
-                        && !self.hls_rebuffer_requested.load(Ordering::Acquire)
-                }
-                HlsAutomaticTransition::QualityDown => matches!(
-                    clock.phase,
-                    HlsClockPhase::Running
-                        | HlsClockPhase::PauseIssuing {
-                            hold: ClockHold::Rebuffer,
-                            ..
-                        }
-                        | HlsClockPhase::Held {
-                            hold: ClockHold::Rebuffer,
-                        }
-                ),
-            };
-            if owner.token != expected
-                || owner.phase != HlsAutomaticPhase::Working
-                || owner.user_sequence != clock.user_sequence
-                || clock.user_held
-                || !phase_ok
-            {
-                return Err(HlsClockFenceError::Superseded);
-            }
-            clock
-                .automatic
-                .as_mut()
-                .expect("the validated automatic owner remains present")
-                .phase = HlsAutomaticPhase::CommitAuthorized;
-        }
-        let stable = self.hls_candidate_generation.load(Ordering::Acquire);
-        if stable & 1 != 0 {
-            return Err(HlsClockFenceError::Overlap);
-        }
-        let generation = stable.checked_add(1).ok_or(HlsClockFenceError::Exhausted)?;
-        self.hls_candidate_generation
-            .compare_exchange(stable, generation, Ordering::AcqRel, Ordering::Acquire)
-            .map(|_| generation)
-            .map_err(|_| HlsClockFenceError::Overlap)
-    }
-
     pub fn settle_hls_candidate_transition(&self, generation: u64) -> bool {
         let mut clock = self.hls_clock.lock().unwrap_or_else(|e| e.into_inner());
         // The mutex phase is authoritative. During PauseIssuing the diagnostics mirror is still
@@ -2467,34 +2399,6 @@ pub struct UserPauseSnapshot {
     pub elapsed: Duration,
     pub paused: bool,
     pub sequence: u64,
-}
-
-/// Per-worker cursor over accepted transport events. A complete Pause→Resume may happen while a
-/// worker is blocked in native queue/network I/O; consuming the monotone sequence plus cumulative
-/// duration makes that interval observable even when both surrounding boolean samples are false.
-#[derive(Clone, Copy, Debug)]
-pub struct UserPauseCursor {
-    sequence: u64,
-    elapsed: Duration,
-}
-
-impl UserPauseCursor {
-    pub fn new(snapshot: UserPauseSnapshot) -> Self {
-        Self {
-            sequence: snapshot.sequence,
-            elapsed: snapshot.elapsed,
-        }
-    }
-
-    pub fn consume_completed(&mut self, snapshot: UserPauseSnapshot) -> Option<Duration> {
-        if snapshot.paused || snapshot.sequence == self.sequence {
-            return None;
-        }
-        let elapsed = snapshot.elapsed.saturating_sub(self.elapsed);
-        self.sequence = snapshot.sequence;
-        self.elapsed = snapshot.elapsed;
-        (!elapsed.is_zero()).then_some(elapsed)
-    }
 }
 
 impl Transport {

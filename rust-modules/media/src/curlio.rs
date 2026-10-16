@@ -1899,31 +1899,6 @@ pub fn sample_throughput_result(
     sample_throughput_with_reservation(url, target_bytes, setup_deadline, body_budget, reservation)
 }
 
-/// The same finite measurement while it is the demux worker's current blocking operation.
-///
-/// Publish the probe in teardown's registry *before* checking the AU-lane cancellation supplied
-/// by the caller.  Those two operations close the lost-wake race exactly as a normal media open
-/// does: teardown either signals this reservation, or it aborted the queue first and
-/// `cancelled()` refuses to start the request.  Cold preflight deliberately uses
-/// [`sample_throughput_result`] instead because an outgoing player may still own the registry.
-pub fn sample_active_throughput_result<F>(
-    url: &str,
-    target_bytes: usize,
-    setup_budget: std::time::Duration,
-    body_budget: std::time::Duration,
-    cancelled: F,
-) -> Result<ThroughputSample, ThroughputFailure>
-where
-    F: FnOnce() -> bool,
-{
-    let setup_deadline = sample_setup_deadline(target_bytes, setup_budget, body_budget)?;
-    let reservation = OpenReservation::publish().ok_or(ThroughputFailure::Open(OpenErr::Local))?;
-    if cancelled() {
-        return Err(ThroughputFailure::Open(OpenErr::Aborted));
-    }
-    sample_throughput_with_reservation(url, target_bytes, setup_deadline, body_budget, reservation)
-}
-
 fn sample_setup_deadline(
     target_bytes: usize,
     setup_budget: std::time::Duration,

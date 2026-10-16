@@ -335,39 +335,6 @@ pub fn aq_abort(q: *mut AuQueue) {
     }
 }
 
-/// Run one small publication step only if teardown has not linearized on this queue.
-///
-/// The closure executes while holding the same mutex [`aq_abort`] uses to publish `abort`.  This
-/// is intentionally stronger than an `aq_is_aborted` check followed by the publication: that pair
-/// has a gap in which teardown can win, join the producer, and still let the producer publish a
-/// replacement playback resource.  Keep the closure free of blocking I/O; cleanup belongs after
-/// this function releases the queue lock.
-pub fn aq_if_not_aborted<T>(q: *mut AuQueue, f: impl FnOnce() -> T) -> Option<T> {
-    if q.is_null() {
-        return None;
-    }
-
-    struct Unlock(*mut libc::pthread_mutex_t);
-    impl Drop for Unlock {
-        fn drop(&mut self) {
-            unsafe {
-                libc::pthread_mutex_unlock(self.0);
-            }
-        }
-    }
-
-    unsafe {
-        let mutex = ptr::addr_of_mut!((*q).m);
-        libc::pthread_mutex_lock(mutex);
-        let _unlock = Unlock(mutex);
-        if (*q).abort != 0 {
-            None
-        } else {
-            Some(f())
-        }
-    }
-}
-
 /// Producer: let this queue hold `extra` bytes beyond the cap it was created with, until the next
 /// call. Raising the cap wakes a producer parked on `not_full`, so the grant takes effect even for a
 /// push already waiting. Granting (re)starts a headroom: it cancels a pending

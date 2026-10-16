@@ -47,11 +47,11 @@ use plx_base::task::MainThread;
 #[cfg(test)]
 pub(crate) use shared::pinned_pause_clock;
 pub use shared::HlsAutomaticTransition;
-pub use shared::HlsClockFenceError;
+
 /// one rect of an image-subtitle display set — the demuxer builds them, the HUD draws them
 pub use shared::SubRect;
 pub use plx_data::metadata::track_names::TrackNames;
-pub use shared::UserPauseCursor;
+
 use shared::{
     HlsPauseCompletion, HlsPlayCompletion, HlsUserPause, HlsUserResume, Shared, SubBitmap, SubCue,
     Transport,
@@ -169,18 +169,6 @@ pub const ABR_FAILURE_ORIGINAL_TRANSPORT: u8 = 3;
 pub const ABR_FAILURE_ORIGINAL_NO_BODY: u8 = 4;
 pub const ABR_FAILURE_ORIGINAL_OPEN: u8 = 5;
 
-pub fn note_original_failure(kind: u8, http_status: i32) {
-    SHARED.abr_failure_status.store(http_status.max(0), Relaxed);
-    SHARED.abr_failure_kind.store(kind, Relaxed);
-}
-
-pub fn clear_original_failure() {
-    SHARED.clear_abr_failure();
-}
-/// Why the controller last moved (or declined to) — `crate::abr::HlsReason` as a code, so the
-/// read-out can name the CONSTRAINT that bound rather than only the action it produced. `0` is
-/// "nothing has decided yet", which is a real state at the top of a playback and not a fault.
-pub const ABR_WHY_NONE: u8 = 0;
 pub const ABR_WHY_SAFE_BUDGET: u8 = 1;
 pub const ABR_WHY_UNSAFE_STATE: u8 = 2;
 pub const ABR_WHY_PRODUCTION: u8 = 3;
@@ -1232,7 +1220,7 @@ pub use engine::aq_caps;
 /// property of the plant instead of a number somebody chose. `sim.rs` still keeps its own copy by
 /// value, deliberately, so the plant grading the controller is not the controller agreeing with
 /// itself.
-pub use engine::feed_leads_ms;
+
 pub use plx_platform::tv::sink::{VP_ACB, VP_EXPORTED, VP_NONE};
 #[cfg(feature = "hostsim")]
 /// The simulator's clock-sink stop; the television's pipeline has no such control.

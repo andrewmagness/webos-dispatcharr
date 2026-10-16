@@ -451,37 +451,6 @@ fn attempt_snapshot() -> (AttemptOrigin, AttemptOrdinal) {
     (ledger.origin, ledger.ordinal)
 }
 
-pub fn note_hls_committed_for(
-    generation: u32,
-    direction: crate::abr::Direction,
-    rung: crate::abr::Rung,
-    refresh: bool,
-) {
-    let direction = if refresh {
-        TraceDirection::Refresh
-    } else {
-        match direction {
-            crate::abr::Direction::Up => TraceDirection::Up,
-            crate::abr::Direction::Down => TraceDirection::Down,
-        }
-    };
-    push_trace_for(
-        generation,
-        TraceEvent::HlsCommitted {
-            direction,
-            requested: rung_quality_class(rung),
-        },
-    );
-}
-
-pub fn note_original_probe_for(
-    generation: u32,
-    phase: OriginalProbePhase,
-    outcome: TraceOutcome,
-) {
-    push_trace_for(generation, TraceEvent::OriginalProbe { phase, outcome });
-}
-
 /// Record the native Load-returned gate opening, or issue #74 D.1.4's budget firing first — see
 /// [`LoadElapsedClass`]. Callable off the main thread (the load thread reports the ordinary gate
 /// transition), like every other `_for` breadcrumb here.

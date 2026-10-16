@@ -16,7 +16,7 @@
 // both places this file is read from.
 //
 // `version_is_the_package_or_the_next_minor_dev` below exercises the end-to-end behavior (the
-// emitted `PLX_VERSION` itself, as `plx_plex::plex::identity::version()` reports it once the
+// emitted `PLX_VERSION` itself, as `plx_base::identity::version()` reports it once the
 // application has handed it in); the tests above it are the unit-level half. That test lives here
 // rather than in `plx_plex` because `PLX_VERSION` and `CARGO_PKG_VERSION` are the application
 // crate's, not the layer's.
@@ -138,9 +138,9 @@ mod tests {
     #[test]
     fn version_is_the_package_or_the_next_minor_dev() {
         let pkg = env!("CARGO_PKG_VERSION");
-        plx_plex::plex::identity::set_version(env!("PLX_VERSION"));
-        let v = plx_plex::plex::identity::version();
-        assert!(plx_plex::plex::identity::user_agent().contains(v));
+        plx_base::identity::set_version(env!("PLX_VERSION"));
+        let v = plx_base::identity::version();
+        assert!(plx_base::identity::user_agent().contains(v));
         // The same input `build.rs` decides on: set by the Makefile for `RELEASE=1` and by
         // nothing else, so an ordinary `make check` compiles the developer answer.
         let release = matches!(option_env!("PLX_RELEASE"), Some(s) if !s.is_empty());

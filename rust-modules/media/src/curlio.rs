@@ -795,7 +795,7 @@ impl CurlSource {
         let (origin, _) = plx_plex::plex::origin::split(url);
         let resolve_entry = resolve_entry_for(&origin)?;
         let url_c = CString::new(url).map_err(|_| OpenErr::Local)?;
-        let ua = CString::new(plx_plex::plex::identity::user_agent()).map_err(|_| OpenErr::Local)?;
+        let ua = CString::new(plx_base::identity::user_agent()).map_err(|_| OpenErr::Local)?;
         let multi = unsafe { curl_multi_init() };
         if multi.is_null() {
             return Err(OpenErr::Local);

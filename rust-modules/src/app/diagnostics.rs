@@ -5,7 +5,7 @@
 //! # Where this lives, and why it is not a screen (restructure phase 10)
 //!
 //! It was `ui/stats.rs` and nine `static mut`s. It is `app/` because of what it is WRITTEN FROM —
-//! `player::Diag`, `route`, `plex::identity`, `tv`, `devcaps`, `surface`: application facts, not
+//! `player::Diag`, `route`, `plx_base::identity`, `tv`, `devcaps`, `surface`: application facts, not
 //! a design-system vocabulary — and its state is now one `App` field, [`Diagnostics`]. `ui/` keeps
 //! what it always drew with (`widgets::FieldList` is still the list primitive).
 //!
@@ -418,7 +418,7 @@ fn header(ps: &plx_media::route::PlaybackSession, d: &plx_media::player::Diag, n
     };
     let (_, _, vw, vh) = plx_base::surface::viewport();
     [
-        // via `plex::identity`, not a literal + `env!`: that module exists precisely so the
+        // via `plx_base::identity`, not a literal + `env!`: that module exists precisely so the
         // product name and version cannot disagree between surfaces, and this one is photographed.
         // The firmware CODENAME is dropped — it identifies the release no better than the release
         // number does, and this line has to fit beside it.
@@ -431,8 +431,8 @@ fn header(ps: &plx_media::route::PlaybackSession, d: &plx_media::player::Diag, n
             plx_platform::devcaps::dv::capability().compact_display(),
             &vh.to_string(),
             &os,
-            plx_plex::plex::identity::DISPLAY_NAME,
-            plx_plex::plex::identity::version(),
+            plx_base::identity::DISPLAY_NAME,
+            plx_base::identity::version(),
             &vw.to_string(),
         ),
         playback_line(ps, d, now),

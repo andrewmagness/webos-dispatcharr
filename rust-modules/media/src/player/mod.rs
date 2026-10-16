@@ -528,7 +528,7 @@ pub fn state(ps: &crate::route::PlaybackSession) -> shared::PlaybackState {
 /// menu alone and is force-closed on leaving playback, so a failed session had no way to show them.
 ///
 /// Pure. Every part is a product identity or a closed vocabulary: the version every surface shares
-/// (`plex::identity`), the firmware release, the set (model · board · hw — the rule
+/// (`plx_base::identity`), the firmware release, the set (model · board · hw — the rule
 /// `app::diagnostics::device_rows` states: shared by every unit LG built, saying nothing about a
 /// household) and [`FailureKind::code`], the same string the telemetry channel sends. It never
 /// carries `ErrorShape::detail`, the server's free text, which is the one thing here that could
@@ -545,8 +545,8 @@ fn support_line_of(i: &plx_platform::tv::device::Info, hw: &plx_platform::tv::de
     let set: &str = if set.is_empty() { plx_platform::i18n::msg::settings_login_unknown_device() } else { &set };
     format!(
         "{} {} · {} · {} · {}",
-        plx_plex::plex::identity::DISPLAY_NAME,
-        plx_plex::plex::identity::version(),
+        plx_base::identity::DISPLAY_NAME,
+        plx_base::identity::version(),
         plx_platform::i18n::webos_release_line(i),
         set,
         kind.code()
@@ -2346,7 +2346,7 @@ mod tests {
             line,
             format!(
                 "Dispatcharr TV {} · webOS 4.10.2 · 43LM6300PVB · m3r · tv_pipeline",
-                plx_plex::plex::identity::version()
+                plx_base::identity::version()
             )
         );
         let bare = support_line_of(

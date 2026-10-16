@@ -52,7 +52,7 @@ static RELEASE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 /// env!("PLX_VERSION"))`, composed at compile time in ITS crate, because `ci/check-package.py`
 /// grades the packaged binary for exactly that contiguous string; a `format!` here would leave the
 /// prefix and the number in different places. It is the second statement of `enter_application`,
-/// right behind `plex::identity::set_version`, which `app::boot::seam_order_tests` pins. Idempotent
+/// right behind `plx_base::identity::set_version`, which `app::boot::seam_order_tests` pins. Idempotent
 /// for the same string; a different one is a wiring bug and is refused in a debug build.
 pub fn set_release(release: &'static str) {
     debug_assert!(release.starts_with(RELEASE_PREFIX), "telemetry::set_release takes `dispatcharrtv@<version>`");

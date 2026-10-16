@@ -26,9 +26,6 @@ use plx_machine::machine::{
 };
 use plx_ui::screen::{Mounter, ReturnState, Screen};
 
-/// The one conversion from a catalog row to the plain facts `ui` draws a tile from. It lives here
-/// because a screen may name `registry` but never a sibling screen, and `ui` cannot name the row.
-pub mod tile_facts;
 
 /// The application's effects (spec §3.1).
 pub enum AppFx {

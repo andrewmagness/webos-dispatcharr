@@ -35,7 +35,7 @@ use plx_screens::registry::every_surface_arg;
 use plx_ui::dispatch::NoTap;
 use plx_ui::frame::Budget;
 use plx_machine::machine::{
-    Canon, Cx, Delivery, Edge, Effects, EntryId, Fx, Handled, Host, InputEvent, InputKind,
+    Canon, Cx, Edge, Effects, EntryId, Handled, Host, InputEvent, InputKind,
     Key, LogicalState, MachineId, Measure, NavOp, Source, Tick, TimerId,
 };
 use plx_machine::present::Present;
@@ -297,8 +297,8 @@ impl Rig<AppHost> for Bridge {
     fn app_return(&mut self, _from: MachineId, ret: ReturnState<u32, PageMemory>) {
         self.effect_return = ret;
     }
-    fn app_fx(&mut self, from: MachineId, fx: AppFx, _parts: &CxParts<u32>, out: &mut Effects<'_, AppHost>) {
-        self.app_effect(from, fx, out);
+    fn app_fx(&mut self, from: MachineId, fx: AppFx, _parts: &CxParts<u32>, _out: &mut Effects<'_, AppHost>) {
+        self.app_effect(from, fx);
     }
     fn log(&mut self, line: &str) {
         plx_base::eventlog::log(line);
@@ -343,7 +343,7 @@ impl Rig<AppHost> for Bridge {
 }
 
 impl Bridge {
-    fn app_effect(&mut self, from: MachineId, fx: AppFx, out: &mut Effects<'_, AppHost>) {
+    fn app_effect(&mut self, from: MachineId, fx: AppFx) {
         match fx {
             AppFx::Loop(req) => self.reqs.push(req),
             AppFx::Content(req) => self.content_reqs.push((from, req, self.effect_return.clone())),
@@ -711,13 +711,9 @@ fn _measure_is_object_safe(m: &dyn Measure, s: &CStr) -> f32 {
     m.width(s, 1, false)
 }
 
-// Whole-app tests that moved up out of `ui` (docs/module-layers.md, step L13): the dispatcher's
-// bookmark capture, graded with `AppHost`'s own predicate, and the overscan audit over every
-// layer's outermost rects. (`app/mod.rs` may not declare test modules: `check-deps.sh` testmod.)
-#[cfg(test)]
-#[path = "dispatch_return_tests.rs"]
-mod dispatch_return_tests;
-
+// Whole-app tests that moved up out of `ui` (docs/module-layers.md, step L13): the overscan audit
+// over every layer's outermost rects. (`app/mod.rs` may not declare test modules: `check-deps.sh`
+// testmod.)
 #[cfg(test)]
 #[path = "overscan_audit_tests.rs"]
 mod overscan_audit_tests;

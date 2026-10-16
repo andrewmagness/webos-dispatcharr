@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-16T16:23:43Z",
+ "generated": "2026-10-16T16:25:58Z",
  "metrics": [
   {
    "change30_pct": null,
@@ -32,9 +32,9 @@
    "id": "push_wait",
    "kind": "wait",
    "label": "Wait after merge",
-   "n_now": 20,
+   "n_now": 21,
    "n_prev": 0,
-   "now": 424.0,
+   "now": 422,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -242,9 +242,9 @@
    "id": "sim|Linux simulator build + launch",
    "kind": "job",
    "label": "Simulator CI: Linux simulator build + launch",
-   "n_now": 22,
+   "n_now": 23,
    "n_prev": 0,
-   "now": 220.5,
+   "now": 213,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -263,9 +263,9 @@
    "id": "sim|macOS simulator build + launch",
    "kind": "job",
    "label": "Simulator CI: macOS simulator build + launch",
-   "n_now": 22,
+   "n_now": 23,
    "n_prev": 0,
-   "now": 182.5,
+   "now": 181,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -305,9 +305,9 @@
    "id": "sim|macOS tests against bundled FFmpeg and ASS",
    "kind": "job",
    "label": "Simulator CI: macOS tests against bundled FFmpeg and ASS",
-   "n_now": 22,
+   "n_now": 23,
    "n_prev": 0,
-   "now": 143.5,
+   "now": 141,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -368,9 +368,9 @@
    "id": "sim|Windows launcher syntax",
    "kind": "job",
    "label": "Simulator CI: Windows launcher syntax",
-   "n_now": 22,
+   "n_now": 23,
    "n_prev": 0,
-   "now": 18.0,
+   "now": 18,
    "prev7": null,
    "shown": false,
    "state": "new",
@@ -447,13 +447,13 @@
    "group": "ci",
    "id": "sim|Linux simulator build + launch",
    "label": "Simulator CI: Linux simulator build + launch",
-   "now": 220.5
+   "now": 213
   },
   {
    "group": "ci",
    "id": "sim|macOS simulator build + launch",
    "label": "Simulator CI: macOS simulator build + launch",
-   "now": 182.5
+   "now": 181
   }
  ],
  "slowest_local": [

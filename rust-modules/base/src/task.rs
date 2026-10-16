@@ -45,8 +45,8 @@
 //! of a Plex call is the work that may not run under a frame scope, and holding the token is how a
 //! signature says so. Every route-changing PMS half takes it (`route::flight`'s workers and the
 //! `run_*` steps behind them); the two frame-thread sites left in `ci/allow/blocking.txt` (which
-//! `ci/check-deps.sh`'s `blocking` gate only lets shrink) are the refused-worker fallbacks
-//! `spawn_or_inline` and `route::decision::scrobble_stop`, not PMS halves.
+//! `ci/check-deps.sh`'s `blocking` gate only lets shrink) is the refused-worker fallback
+//! `spawn_or_inline`, not a PMS half.
 //!
 //! [`spawn_small_or_inline`] is the one place the "the OS refused the worker" fallback lives: it
 //! tries a small-stack thread and, if the OS refuses, runs the same work inline under a labelled

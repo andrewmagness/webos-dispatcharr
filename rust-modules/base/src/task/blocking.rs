@@ -59,11 +59,9 @@ pub struct AllowBlocking {
 /// rebase, recovery and resume is a flight whose PMS half runs on a worker (`media::route::flight`),
 /// and the menu-play season load is the season tabs' async `load_season`.
 ///
-/// The ledger's final two entries are both refused-worker fallbacks, not user actions:
+/// The ledger's final entry is a refused-worker fallback, not a user action:
 /// `task::spawn_or_inline` (the OS refused a worker thread, so server-side stop work that must not
-/// be dropped runs inline under the caller's label) and `route::decision::scrobble_stop` (a refused
-/// `spawn_small_keeping` — its old reporter handle and stop fence must stay ordered, which a plain
-/// inline cannot promise).
+/// be dropped runs inline under the caller's label).
 #[track_caller]
 pub fn allow_blocking(reason: &'static BlockingLabel) -> AllowBlocking {
     assert!(!reason.text.is_empty());

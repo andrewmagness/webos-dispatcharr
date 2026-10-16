@@ -2730,17 +2730,6 @@ pub fn audio_ordinal(audio: &[Stream], i: usize) -> i32 {
         .count() as i32
 }
 
-/// The external subtitle the SERVER already has selected for this part and that this client can
-/// draw itself — the one `player::sidecar::restore_server_selection` switches on at a direct-play
-/// landing. ONE definition, because two readers must agree on it: the restore that turns it on,
-/// and `route::subtitle_effect_of`, which the Plex Pass audio enhancement (issue #266 I6) reads to
-/// tell an unaffected sidecar apart from an embedded subtitle a remux would drop (M4/M7). A route
-/// that treated this sidecar as embedded would force a burn (or drop it outright) for a subtitle
-/// the client already draws for itself, unaffected by any remux.
-pub fn server_selected_sidecar(item: &PlayingItem) -> Option<&Stream> {
-    item.subs.iter().find(|s| s.selected && s.sidecar_renderable())
-}
-
 /// Container ordinal of `subs[i]` among the EMBEDDED subtitle streams (all ff.rs enumerates —
 /// sidecars are not in the container), or -1 when `subs[i]` is itself external (nothing to
 /// client-render on direct-play; only a server transcode can burn it).
@@ -5089,7 +5078,6 @@ pub fn pump_season_with_gate(state: &mut MetadataState, adapter: &MetadataAdapte
     }
 }
 
-
 #[cfg(any(test, feature = "test-support"))]
 pub fn pump_season(state: &mut MetadataState, adapter: &MetadataAdapter) -> bool {
     pump_season_with_gate(state, adapter, plx_machine::landgate::fixture_gate())
@@ -5828,7 +5816,6 @@ mod watch_state_tests;
 #[cfg(test)]
 #[path = "metadata_credits_tests.rs"]
 mod credits_tests;
-
 
 #[cfg(test)]
 #[path = "metadata_episode_pages_tests.rs"]

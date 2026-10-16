@@ -296,8 +296,8 @@ pub enum Preview {
     /// The Original remux with a CONVERTED audio: the video is copied untouched, and the track
     /// that will play is one the TV cannot decode (AAC 7.1, TrueHD, DTS-HD…), so the server
     /// converts only that audio. The planner's own "no direct-playable carrier for the intended
-    /// track" answer ([`audio_intent_needs_conversion`]); it is `AutoOriginalCandidate::
-    /// audio_converted` before Play. Never a re-encode, so it carries no Plex Pass claim.
+    /// track" answer ([`audio_intent_needs_conversion`]). Never a re-encode, so it carries no
+    /// Plex Pass claim.
     OriginalAudioConverted,
     /// A real re-encode: the server decodes and re-encodes the video.
     Converts,

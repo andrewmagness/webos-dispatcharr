@@ -161,9 +161,6 @@ pub struct PlaybackSession {
     /// direction matters — claiming "the source cannot be preserved" about a source nobody has
     /// looked at is a worse read-out than saying nothing.
     cur_source_decodable: bool,
-    /// Debug pipeline-tier substitute for PMS's fixed-rendition endpoints. Empty in every
-    /// production plan; see [`arm_auto_fixture`].
-    auto_fixture_base: String,
     /// **Visible mode switches this playback has already shown the viewer**, and when the last one
     /// was. Lives here, on the main thread, because it has to OUTLIVE the demux workers: each
     /// Original↔HLS transition replaces the engine, so a counter held by a worker would reset to
@@ -375,7 +372,6 @@ impl PlaybackSession {
             cur_src: (0, 0, 0),
         cur_transport_kbps: 0,
         cur_source_decodable: true,
-        auto_fixture_base: String::new(),
         auto_switches: 0,
         auto_last_switch: None,
         auto_prior_kbps: 0,
@@ -447,7 +443,6 @@ impl PlaybackSession {
             cur_src,
             cur_transport_kbps,
             cur_source_decodable,
-            auto_fixture_base,
             auto_switches,
             auto_last_switch,
             auto_prior_kbps,
@@ -500,7 +495,6 @@ impl PlaybackSession {
             cur_src: *cur_src,
             cur_transport_kbps: *cur_transport_kbps,
             cur_source_decodable: *cur_source_decodable,
-            auto_fixture_base: auto_fixture_base.clone(),
             auto_switches: *auto_switches,
             auto_last_switch: *auto_last_switch,
             auto_prior_kbps: *auto_prior_kbps,

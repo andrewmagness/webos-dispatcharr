@@ -203,18 +203,6 @@ mod panic_log_tests {
     }
 }
 
-/// **Hand `plex` the two answers it cannot name.** The Plex layer sits beneath `route` and
-/// `telemetry`, so what it needs from them reaches it as hooks installed here, once, first thing in
-/// [`enter_application`] — before anything can load the session:
-///
-/// * `plex::session::install_account_clear_cleanup` — `telemetry::cleanup_after_account_clear`, the
-///   telemetry/consent legacy-file sweep a durable sign-out runs. It exists only where the sweep does
-///   (ARM, not the simulator, not a test build); unset, `plex` reads it as already retired.
-pub(crate) fn install_plex_seams() {
-    #[cfg(all(target_os = "linux", target_arch = "arm", not(feature = "hostsim"), not(test)))]
-    plx_plex::plex::session::install_account_clear_cleanup(plx_telemetry::telemetry::cleanup_after_account_clear);
-}
-
 #[cfg(test)]
 mod seam_order_tests {
     /// `plx_base::identity` reports the version it is handed (`set_version`) and, in a

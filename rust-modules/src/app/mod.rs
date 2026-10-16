@@ -452,15 +452,13 @@ unsafe fn run_and_shutdown(app: &mut App) -> c_int {
 }
 
 fn enter_application(pms_host: *const c_char, pms_port: c_int) -> Result<App,c_int> {
-    // What `plx_plex` reports as `X-Plex-Version` is this build's `PLX_VERSION`, which a
+    // What the app reports as its version is this build's `PLX_VERSION`, which a
     // `cargo:rustc-env` makes visible to this crate only; before anything can build a header.
     plx_base::identity::set_version(env!("PLX_VERSION"));
     // The release every telemetry report carries, composed here because the packaged binary is
     // graded for this exact contiguous string (`ci/check-package.py`); second, before anything can
     // build an envelope or an SDK option.
     plx_telemetry::telemetry::set_release(concat!("dispatcharrtv@", env!("PLX_VERSION")));
-    // The hooks `plex` is handed for what it cannot name; first, so no session load precedes them.
-    install_plex_seams();
     // Telemetry erases the player's in-memory error trace (withdrawal, sign-out, its own boot load
     // below) through a hook that is a no-op while unset. On every boot, before anything can play:
     // a failed preview seals a trace without ever passing `player::report::requested`.

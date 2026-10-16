@@ -179,7 +179,7 @@ pub(super) fn load_in_flight_for_test() -> bool {
 }
 /// **Test-only: force the host clock sink on.** The override reaches tests through a hook here
 /// rather than by widening the visibility of [`FORCE_ENABLED`].
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub(super) fn force_clocksink_for_test(on: bool) {
     FORCE_ENABLED.store(on, Relaxed);
 }

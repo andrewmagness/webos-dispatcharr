@@ -500,6 +500,18 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // flag. Acquire is the matching hand-off; `error_now` can then report the transaction cause
     // instead of racing it into the generic producer bucket.
     if SHARED.demux_io_failed.load(Acquire) {
+        // A live channel's transport failing mid-read is its stream ending: the server or its
+        // upstream dropped. `ended` hands it to the app's reconnect, which tunes the channel
+        // again and gives up after a few; the Error read-out would leave it dead until the viewer
+        // pressed Try Again (the 2026-10-16 TV run: the stream went silent during the probe, the
+        // next read failed, and nothing followed). The open's own failures raise `demux_failed`
+        // too and keep the read-out, which says why the channel cannot be opened.
+        if live_transport_ended(crate::route::is_live(ps), SHARED.demux_failed.load(Acquire)) {
+            if !SHARED.ended.swap(true, Relaxed) {
+                super::log("live: the transport failed → ended");
+            }
+            return;
+        }
         fail_engine();
         return;
     }
@@ -1055,6 +1067,25 @@ mod live_stall_tests {
 
 /// Whether a stream with no duration (`dur <= 0`), its producer at EOF, has presented
 /// (`pres_fed`) to within `tail` of the last video it was fed (`max_fed`).
+/// Whether a failed transport ends the stream (and the app reconnects) rather than failing the
+/// playback: only on a live channel, and only once the stream was open — a failure the open itself
+/// raised (`demux_failed`) is the read-out's to explain.
+fn live_transport_ended(live: bool, open_failed: bool) -> bool {
+    live && !open_failed
+}
+
+#[cfg(test)]
+mod live_transport_tests {
+    use super::live_transport_ended;
+
+    #[test]
+    fn only_an_open_live_stream_ends_on_a_transport_failure() {
+        assert!(live_transport_ended(true, false), "a live stream that dropped: reconnect");
+        assert!(!live_transport_ended(true, true), "a channel that could not be opened: say why");
+        assert!(!live_transport_ended(false, false), "anything that is not live keeps its Error");
+    }
+}
+
 fn drained_without_duration(dur: i64, pres_fed: i64, max_fed: i64, tail: i64) -> bool {
     dur <= 0 && pres_fed != super::engine::PRES_NONE && max_fed > 0 && pres_fed >= max_fed - tail
 }

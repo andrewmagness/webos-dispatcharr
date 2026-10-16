@@ -138,7 +138,6 @@ fn hls_open_plain(
             Ok((path.to_string_lossy().into_owned(), size))
         }
         Ok((Src::Curl(_), size, _)) => Ok(("<curl>".into(), size)),
-        Ok((Src::Idle, _, _)) => Err("idle".into()),
         Err(e) => Err(format!("{e:?}")),
     };
     plx_net::stream::http_close(&mut *hs);
@@ -155,7 +154,6 @@ fn progressive_open(port: u16, path: &str) -> Result<(String, i64), String> {
     let outcome = match opened {
         Ok((Src::Socket { path, .. }, size)) => Ok((path.to_string_lossy().into_owned(), size)),
         Ok((Src::Curl(_), size)) => Ok(("<curl>".into(), size)),
-        Ok((Src::Idle, _)) => Err("idle".into()),
         Err(e) => Err(format!("{e:?}")),
     };
     plx_net::stream::http_close(&mut *hs);
@@ -219,9 +217,6 @@ fn a_seek_reopen_follows_a_relative_302_and_keeps_its_range() {
         body_active_us: 0,
         body_bytes: 0,
         first_byte_at: None,
-        reserve_deadline: ReserveDeadlineState::new(None, false),
-        transport_watchdog: None,
-        acquisition: None,
         bounce: Vec::new(),
         bounce_pos: 0,
     };

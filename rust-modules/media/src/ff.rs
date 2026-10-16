@@ -1490,9 +1490,6 @@ const AVSEEK_SIZE: c_int = 0x10000;
 /// * [`Src::Curl`] is the https path ([`crate::curlio`]), which the demux thread owns outright.
 ///   `ff.rs` never learns curl-multi mechanics: all it can ask is `read`/`seek`/`size`/`status`/
 ///   `abort`, deliberately the same five questions the socket answers.
-/// * [`Src::Idle`] is the placeholder after HLS HTTPS recycles the `CurlSource` into [`HlsNet`].
-///   `avformat_close_input` may still invoke AVIO; this arm refuses I/O instead of dialing a
-///   dummy socket.
 enum Src {
     Socket {
         /// The Engine's stream — NOT owned here. `player::engine` allocates it, publishes it in
@@ -1506,7 +1503,6 @@ enum Src {
     /// `curlio`'s registry instead of a pointer the engine holds. `curlio`'s module doc says why
     /// that is not the accident it looks like.
     Curl(Box<crate::curlio::CurlSource>),
-    Idle,
 }
 
 impl Src {
@@ -1516,11 +1512,6 @@ impl Src {
         match self {
             Src::Socket { hs, .. } => plx_net::stream::http_body_receipt(*hs),
             Src::Curl(cs) => cs.body_receipt(),
-            Src::Idle => plx_net::stream::BodyReceipt {
-                ahead: 0,
-                finished: false,
-                stepped: false,
-            },
         }
     }
 
@@ -1996,7 +1987,6 @@ impl AvioState {
 
     fn transfer_finished(&self) -> bool {
         match &self.src {
-            Src::Idle => true,
             Src::Socket { hs, .. } => plx_net::stream::http_body_done(*hs),
             Src::Curl(cs) => cs.body_complete(),
         }
@@ -2012,9 +2002,6 @@ impl AvioState {
     /// redials on `Transport`. Do not raise CAP.
     fn drain_wire(&mut self) -> bool {
         const CAP: usize = 384 * 1024;
-        if matches!(self.src, Src::Idle) {
-            return false;
-        }
         if unsafe { crate::aq::aq_is_aborted(self.aq) } {
             self.clear_bounce();
             return false;
@@ -2042,7 +2029,6 @@ impl AvioState {
                     plx_net::stream::http_drain_available(*hs, &mut self.bounce[start..])
                 }
                 Src::Curl(cs) => cs.drain_available(&mut self.bounce[start..]),
-                Src::Idle => 0,
             };
             if n > 0 {
                 self.bounce.truncate(start + n as usize);
@@ -2139,7 +2125,6 @@ extern "C" fn read_cb(op: *mut c_void, dst: *mut u8, n: c_int) -> c_int {
                     None,
                     &mut checkpoint,
                 ),
-                Src::Idle => return AVERROR_EOF,
             };
             // Teardown may have arrived while the transport was blocked. Its wake commonly
             // surfaces as socket EOF or curl failure; classify from the owning AU abort flag
@@ -2284,7 +2269,6 @@ extern "C" fn seek_cb(op: *mut c_void, offset: i64, whence: c_int) -> i64 {
             // deliberate: bytes from the head of the file, delivered as though they were the bytes
             // at `target`, are corruption that looks like success.
             Src::Curl(cs) => cs.seek(target),
-            Src::Idle => false,
         };
         if let Some(cs) = hopped_to_tls {
             s.src = Src::Curl(cs);

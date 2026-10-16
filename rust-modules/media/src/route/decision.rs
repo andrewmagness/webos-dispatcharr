@@ -743,8 +743,6 @@ mod live_url_tests {
 struct ActiveHlsRoute {
     url: String,
     rung: crate::abr::Rung,
-    /// Actual master declaration + decoded raster, never inferred from `rung`.
-    observed: Option<(crate::abr::ObservedHlsVariant, u32)>,
 }
 
 pub(super) struct ActiveEncoderState {
@@ -1830,7 +1828,6 @@ fn install_active_hls(value: &str, url: &str, rung: crate::abr::Rung) {
     active.hls = Some(ActiveHlsRoute {
         url: url.to_owned(),
         rung,
-        observed: None,
     });
 }
 

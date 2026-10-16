@@ -2018,6 +2018,53 @@ mod lifecycle_regression_tests {
         plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
     }
 
+    /// **A live stream whose transport fails mid-read tunes the channel again.** The 2026-10-16 TV
+    /// run (and the simulator against `mock_dispatcharr --ts-hang`): the server went silent during
+    /// the probe, the next `av_read_frame` failed (`ff: media transport failed … r=-5`), the demuxer
+    /// ended — and the channel sat dead, because a transport failure published the generic playback
+    /// Error, which only a viewer's Try Again leaves, while the reconnect waits for `ended`. A live
+    /// channel's transport failing is its stream ending, whether or not a picture was shown yet.
+    #[test]
+    fn a_live_transport_failure_reconnects_the_channel() {
+        use plx_media::player::SHARED;
+        use plx_media::route::{LiveChannel, LiveLineup, LiveTune};
+        use std::sync::atomic::Ordering;
+        let _serial = plx_base::testlock::serial();
+        let mut app = app();
+        let mut fr = Frame::begin();
+        // The simulator's clock sink takes the Load, so the pump runs as it does on the set.
+        plx_media::player::force_clocksink_for_test(true);
+        // A server that takes the connection and never answers: the stream opens no further than
+        // the request, as the mock's `--ts-hang` left it, and no open failure is raised under it.
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/stream.ts", silent.local_addr().unwrap());
+        let channels = vec![LiveChannel { id: 1, uuid: "u-1".into(), number: "1".into(), name: String::new(),
+            url, logo: None, programmes: Vec::new() }];
+        let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
+        let tune = LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None };
+        super::super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
+            &mut app.pages, &mut app.bridge);
+        let tick = |app: &mut App, fr: &mut Frame| {
+            for _ in 0..30 {
+                fr.now += 16;
+                frame(app, fr.now);
+                unsafe { playback_tick(app, fr) };
+            }
+        };
+        tick(&mut app, &mut fr);
+        assert_eq!(app.live_reconnect, super::playback::ReconnectBudget::default(), "nothing has failed yet");
+
+        SHARED.demux_io_failed.store(true, Ordering::Release);
+        tick(&mut app, &mut fr);
+        assert_ne!(app.live_reconnect, super::playback::ReconnectBudget::default(),
+            "the failed transport spent a reconnect");
+        assert_ne!(plx_media::player::state(&app.player.session), plx_media::player::PlaybackState::Error,
+            "and the channel is tuning again, not showing the failure read-out");
+        assert_eq!(plx_media::route::live_tune(&app.player.session).map(|t| t.index), Some(0));
+        plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
+        plx_media::player::force_clocksink_for_test(false);
+    }
+
     /// `wayland_released` is a step only when a borrowed surface was actually released (the second
     /// of WILL + DID background finds none), so a reader can tell "released" from "nothing held".
     #[test]

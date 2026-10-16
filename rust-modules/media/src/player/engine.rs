@@ -1449,11 +1449,9 @@ fn start_bufferfeed_inner(
             // `teardown(true) + start_bufferfeed()` (reload_at / reload_transcode /
             // switch_audio_native), which respawns this thread with the new value.
             let acodec = crate::route::stream_acodec(ps);
-            let abr = crate::route::hls_abr_control(ps);
-            let auto_original = crate::route::auto_original_watch(ps);
             SHARED.side_subs_owner.store(side_target.is_some(), Ordering::Release);
-            stream_th = plx_base::task::spawn_off_frame_keeping("demux", move |off| {
-                crate::ff::demux(off, origin, path, acodec, abr, auto_original, aqp, aqap, hsp)
+            stream_th = plx_base::task::spawn_off_frame_keeping("demux", move |_| {
+                crate::ff::demux(origin, path, acodec, aqp, aqap, hsp)
             });
             if stream_th.is_none() {
                 SHARED.side_subs_owner.store(false, Ordering::Release);

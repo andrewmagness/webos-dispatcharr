@@ -8334,12 +8334,9 @@ mod pre_audio_headroom_tests {
 /// (`net/origin.rs`). `hs` is still passed on both paths — it is the Engine's, and it stays
 /// unused (fd = -1, published as `SHARED.hs_ptr`) when the origin turns out to be https.
 pub fn demux(
-    off: &plx_base::task::OffFrame,
     origin: plx_plex::plex::Origin,
     path: String,
     acodec: String,
-    abr: Option<(crate::route::HlsAbrControl, crate::route::WorkerTicket)>,
-    auto_original: Option<crate::route::AutoOriginalWatch>,
     aq: SendPtr<AuQueue>,
     aqa: SendPtr<AuQueue>,
     hs: SendPtr<HttpStream>,
@@ -8360,98 +8357,6 @@ pub fn demux(
     let aq_p = aq.0; // VIDEO lane (also the AVIO abort ptr + EOF marker)
     let aqa_p = aqa.0; // AUDIO lane (es=2) — always a distinct queue on the ff (two-lane) path
     let hs_p = hs.0;
-    if path
-        .split_once('?')
-        .map_or(path.as_str(), |(plain, _)| plain)
-        .to_ascii_lowercase()
-        .ends_with(".m3u8")
-    {
-        crate::player::log("hls: segmented demux start");
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            hls_demux(off, &origin, &path, &acodec, abr, aq_p, aqa_p, hs_p)
-        }));
-        match outcome {
-            Ok(Ok(())) | Ok(Err(HlsExit::Aborted)) => {}
-            Ok(Err(HlsExit::Failed(why))) => {
-                crate::player::log(&format!("hls: demux failed: {why}"));
-                if PUSHED_ANY.load(Ordering::Relaxed) {
-                    SHARED.demux_io_failed.store(true, Ordering::Release);
-                } else {
-                    SHARED.demux_failed.store(true, Ordering::Release);
-                }
-            }
-            Ok(Err(HlsExit::NotReady)) => {
-                crate::player::log("hls: demux failed: playlist resource was not ready");
-                if PUSHED_ANY.load(Ordering::Relaxed) {
-                    SHARED.demux_io_failed.store(true, Ordering::Release);
-                } else {
-                    SHARED.demux_failed.store(true, Ordering::Release);
-                }
-            }
-            Ok(Err(HlsExit::PrimeExpired)) => {
-                crate::player::log("hls: demux failed: unexpected active-stream prime deadline");
-                SHARED.demux_io_failed.store(true, Ordering::Release);
-            }
-            Ok(Err(HlsExit::StallAbort(_))) => {
-                // The abort rule is handled where it fires, inside the segment loop; reaching here
-                // means it escaped one of the candidate paths, which do not arm it.
-                crate::player::log("hls: demux failed: stall abort escaped the segment loop");
-                SHARED.demux_io_failed.store(true, Ordering::Release);
-            }
-            Err(_) => {
-                crate::player::log("hls: demux panicked");
-                SHARED.demux_failed.store(true, Ordering::Release);
-            }
-        }
-        if unproductive_exit_failed(PUSHED_ANY.load(Ordering::Relaxed), unsafe {
-            crate::aq::aq_is_aborted(aq_p)
-        }) {
-            SHARED.demux_failed.store(true, Ordering::Release);
-        }
-        crate::aq::aq_set_eof(aq_p);
-        crate::aq::aq_set_eof(aqa_p);
-        crate::player::log("hls: segmented demux ended");
-        return;
-    }
-    if let Some(watch) = auto_original.as_ref() {
-        // Auto deliberately begins by trying Original. Publish that state before the first
-        // measurement window completes so Stats for Nerds says what the policy is doing instead
-        // of looking inactive during the exact startup interval a user is trying to diagnose.
-        SHARED
-            .dg_abr_mode
-            .store(crate::player::ABR_MODE_ORIGINAL, Ordering::Relaxed);
-        SHARED
-            .dg_abr_kbps
-            .store(i64::from(watch.source_kbps), Ordering::Relaxed);
-        SHARED.dg_abr_net_kbps.store(-1, Ordering::Relaxed);
-        SHARED.dg_abr_buffer_ms.store(-1, Ordering::Relaxed);
-        SHARED.dg_abr_ratio_pm.store(-1, Ordering::Relaxed);
-        SHARED
-            .dg_abr_action
-            .store(crate::player::ABR_ACTION_STEADY, Ordering::Relaxed);
-        SHARED.dg_abr_target_kbps.store(0, Ordering::Relaxed);
-        SHARED.dg_abr_unsafe_deficit_ms.store(0, Ordering::Relaxed);
-    }
-    let make_original_watch = |watch: &crate::route::AutoOriginalWatch| {
-        crate::abr::OriginalModeController::new(
-            watch.source_kbps,
-            crate::abr::AbrPolicy::measured(),
-            watch.catalog,
-            watch.history,
-            watch.features,
-        )
-    };
-    let mut original_context = auto_original;
-    let mut original_watch = original_context.as_ref().and_then(make_original_watch);
-    // Same accepted-event cursor as HLS. Progressive reads and queue pushes can hide an entire
-    // pause cycle, so a local `paused_since` sampled around packets is not a valid clock.
-    let mut original_pause_cursor =
-        crate::player::UserPauseCursor::new(crate::player::TX.pause_state_sample());
-    // **The Original watchdog's WALL clock** (N13). Its persistence rule used to count 750 ms
-    // windows of ACTIVE BODY-READ time, which under backpressure — the healthy full-buffer case —
-    // spans unbounded wall clock, so "six windows" was not a duration at all. One `Instant` for the
-    // whole progressive session, read absolutely, for the reason `advance_to` documents.
-    let mut original_since = std::time::Instant::now();
     // `base()` re-brackets a v6 host, which is what a URL needs; the plaintext arm hands the
     // `Origin` itself to `open_plain_progressive`, which dials its BARE `host()`.
     let url = format!("{}{}", origin.base(), path); // delivery identity; may carry a token, never logged
@@ -8965,27 +8870,6 @@ pub fn demux(
                         // a seek cannot splice old reserve into a new low-rate observation.
                         SHARED.hls_video_tail_ns.store(-1, Ordering::Release);
                         SHARED.hls_audio_tail_ns.store(-1, Ordering::Release);
-                        let ticket_refreshed = original_context.as_mut().is_some_and(
-                            crate::route::AutoOriginalWatch::refresh_ticket_after_seek,
-                        );
-                        if ticket_refreshed {
-                            let watch = original_watch
-                                .as_mut()
-                                .expect("an Auto Original context has its controller");
-                            // A PARTIAL reset, and the split is the point: the link did not change
-                            // because the viewer jumped, so the delivery estimate survives — while the
-                            // buffer, the deficit history and the byte counters all describe a position
-                            // that no longer exists.
-                            watch.on_seek(state.body_bytes, state.body_active_us);
-                            SHARED.dg_abr_net_kbps.store(-1, Ordering::Relaxed);
-                            SHARED.dg_abr_buffer_ms.store(-1, Ordering::Relaxed);
-                            SHARED.dg_abr_unsafe_deficit_ms.store(0, Ordering::Relaxed);
-                            original_since = std::time::Instant::now();
-                        } else {
-                            // The route/engine moved, not merely the playhead. This worker cannot
-                            // adopt that ownership; teardown will replace it.
-                            original_watch = None;
-                        }
                         let ts = av_rescale_q(seek_ns, NS_TB, stream_time_base(vst));
                         // Fence completed renders from the old position before new packets arrive.
                         crate::player::ass_source::seek(ass_generation);
@@ -9208,112 +9092,6 @@ pub fn demux(
                         av_packet_unref(pkt);
                     } else {
                         av_packet_unref(pkt);
-                    }
-                    if !SHARED.seeking.load(Ordering::Relaxed) {
-                        if let Some(watch) = original_watch.as_mut() {
-                            let pause_state = crate::player::TX.pause_state_sample();
-                            if let Some(elapsed) =
-                                original_pause_cursor.consume_completed(pause_state)
-                            {
-                                watch.on_resume(
-                                    u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
-                                );
-                            }
-                            if !pause_state.paused {
-                                let audio_expected = ai >= 0 && FEED_AUDIO.load(Ordering::Relaxed);
-                                if let Some(observation) = watch.observe(
-                                    state.body_bytes,
-                                    state.body_active_us,
-                                    progressive_buffered_ms(audio_expected),
-                                    remaining_playback_ms(),
-                                    original_since.elapsed().as_millis() as u64,
-                                ) {
-                                    SHARED.dg_abr_net_kbps.store(
-                                        i64::from(observation.measured_kbps),
-                                        Ordering::Relaxed,
-                                    );
-                                    SHARED
-                                        .dg_abr_buffer_ms
-                                        .store(observation.buffered_ms, Ordering::Relaxed);
-                                    SHARED
-                                        .dg_abr_unsafe_deficit_ms
-                                        .store(observation.unsafe_deficit_ms, Ordering::Relaxed);
-                                    // The rest of the model, on ONE line each — `shared.rs`'s writer guard
-                                    // greps `dg_<field>.store(` and a rustfmt-split call reads to it as a
-                                    // field nothing writes.
-                                    //
-                                    // Without these, Original mode published a buffer LEVEL and left the
-                                    // slope and the horizon at their reset values, so the panel drew
-                                    // `+0.0 s/s · no deficit` — two sentinels, rendered as measurements,
-                                    // beside a level that was real. Device-observed 2026-08-26.
-                                    let rel = Ordering::Relaxed;
-                                    let horizon =
-                                        observation.horizon_secs.map(i64::from).unwrap_or(-1);
-                                    SHARED
-                                        .dg_abr_slope_ms_per_s
-                                        .store(observation.slope_ms_per_s, rel);
-                                    SHARED.dg_abr_starve_secs.store(horizon, rel);
-                                    SHARED
-                                        .dg_abr_safe_kbps
-                                        .store(i64::from(observation.conservative_kbps), rel);
-                                    if let Some(reason) = observation.fallback {
-                                        // The whole basis of a VISIBLE switch, in one line: the rate, the
-                                        // requirement it was measured against, the reserve, its direction,
-                                        // how many seconds that reserve survives, and which rule fired.
-                                        crate::player::log(&format!(
-                                            // **`held=` and NOT `windows=`.** The value is wall
-                                            // milliseconds now (N13); reusing the old label would make an
-                                            // old log's `windows=2` and a new log's `windows=2` two
-                                            // different quantities under one name — the exact shape the
-                                            // heartbeat's `FPS=`/`loop=` rename exists to prevent.
-                                            "auto: Original -> HLS {reason:?} measured={}kbps safe={}kbps need={}kbps buf={}ms slope={}ms/s starve={} held={}ms target={}kbps",
-                                            observation.measured_kbps,
-                                            observation.conservative_kbps,
-                                            observation.requirement_kbps,
-                                            observation.buffered_ms,
-                                            observation.slope_ms_per_s,
-                                            observation
-                                                .horizon_secs
-                                                .map(|s| s.to_string())
-                                                .unwrap_or_else(|| "none".to_string()),
-                                            observation.unsafe_deficit_ms,
-                                            observation.target.map(|r| r.kbps()).unwrap_or(0),
-                                        ));
-                                        // Hand over the CONSERVATIVE estimate, not the last window's raw
-                                        // rate. The synchronized ticket also binds it to this exact engine,
-                                        // route, media epoch and user contract; stale evidence is discarded
-                                        // without stopping the stream or manufacturing a playback error.
-                                        let publication =
-                                            original_context.as_ref().map(|context| {
-                                                context.request_hls_fallback(
-                                                    observation.conservative_kbps.max(1),
-                                                    SHARED
-                                                        .playpos_ns
-                                                        .load(Ordering::Relaxed)
-                                                        .max(0),
-                                                )
-                                            });
-                                        match publication {
-                                            Some(crate::route::AutomaticIntentResult::Accepted) => {
-                                                break;
-                                            }
-                                            Some(crate::route::AutomaticIntentResult::Busy) => {
-                                                crate::player::log(
-                                                    "auto: Original fallback retained behind another route transition",
-                                                );
-                                            }
-                                            Some(crate::route::AutomaticIntentResult::Stale)
-                                            | None => {
-                                                crate::player::log(
-                                                    "auto: discarded Original fallback from a superseded worker intent",
-                                                );
-                                                original_watch = None;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
                     if crate::aq::aq_is_aborted(aq_p) {
                         break;

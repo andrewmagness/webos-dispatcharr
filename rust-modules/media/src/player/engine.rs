@@ -3864,7 +3864,7 @@ mod replay_after_stop_tests {
         );
         let attempt = crate::route::claim_route_start_attempt(start)
             .expect("a granted transaction must mint one physical Load attempt");
-        assert!(crate::route::settle_route_start(&mut ps, 
+        assert!(crate::route::settle_route_start(
             attempt,
             crate::route::RouteStartResult::Started
         ));

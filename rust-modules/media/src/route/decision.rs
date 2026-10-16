@@ -788,7 +788,7 @@ fn commit_in_place_route_projection(ps: &PlaybackSession, quality_contract: bool
     let subtitle_stream_id = ps.cur_sub_sid;
     let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
     match control.phase {
-        ControlPhase::Stable | ControlPhase::StagingUser(_) | ControlPhase::Completing(_) => {
+        ControlPhase::Stable | ControlPhase::StagingUser(_) => {
             if quality_contract {
                 control.applied_revision = control.desired_revision;
                 control.applied_quality = control.desired_quality;
@@ -853,9 +853,6 @@ enum ControlPhase {
     Prepared(u64),
     /// One exact physical Load attempt is in flight: `(transaction, attempt)`.
     Starting(u64, u64),
-    /// Native start/frame proof committed; transaction-attached user effects are being reduced
-    /// while automatic workers remain fenced. `Stable` is published only after they are queued.
-    Completing(u64),
     Failed(u64),
     Stopping,
 }
@@ -929,10 +926,6 @@ pub(super) struct PlayerControl {
     next_start_attempt: u64,
     start_results: Vec<(RouteStartAttempt, RouteStartResult)>,
     last_start_result: Option<(RouteStartAttempt, RouteStartResult)>,
-    /// Commands staged while an Original trial owns neither a proven candidate nor a restored
-    /// HLS Engine. They belong to the exact rollback transaction and are consumed only after its
-    /// matching native start succeeds.
-    start_deferred: Option<(u64, DeferredOriginalEffects)>,
     timeline: Option<TimelineProjection>,
 }
 
@@ -977,7 +970,6 @@ static PLAYER_CONTROL: std::sync::Mutex<PlayerControl> = std::sync::Mutex::new(P
     next_start_attempt: 0,
     start_results: Vec::new(),
     last_start_result: None,
-    start_deferred: None,
     timeline: None,
 });
 
@@ -1131,7 +1123,7 @@ fn settle_plan_start_in_unit_test(ps: &mut PlaybackSession, start: Option<RouteS
     #[cfg(any(test, feature = "test-support"))]
     if let Some(start) = start {
         if let Some(attempt) = claim_route_start_attempt(start) {
-            let _ = settle_route_start(ps, attempt, RouteStartResult::Started);
+            let _ = settle_route_start(attempt, RouteStartResult::Started);
         }
     }
     #[cfg(not(any(test, feature = "test-support")))]
@@ -1312,10 +1304,6 @@ pub fn abort_route_start(ticket: RouteStartTransaction, result: RouteStartResult
         }
         _ => return false,
     };
-    control.start_deferred = control
-        .start_deferred
-        .take()
-        .filter(|(serial, _)| *serial != ticket.serial);
     control.timeline = None;
     control.phase = phase;
     true
@@ -1325,43 +1313,17 @@ pub fn abort_route_start(ticket: RouteStartTransaction, result: RouteStartResult
 /// remains the applied projection in `Failed`: teardown may already have destroyed the old Engine
 /// and PMS may already have retired its encoder, so restoring the old *description* would fabricate
 /// a live route.
-pub fn settle_route_start(ps: &mut PlaybackSession, ticket: RouteStartAttempt, result: RouteStartResult) -> bool {
-    let deferred = {
-        let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        if control.phase != ControlPhase::Starting(ticket.serial, ticket.attempt) {
-            return false;
-        }
-        control.last_start_result = Some((ticket, result));
-        match result {
-            RouteStartResult::Started => {
-                let effects = control
-                    .start_deferred
-                    .take()
-                    .filter(|(serial, _)| *serial == ticket.serial)
-                    .map(|(_, effects)| effects);
-                if effects.is_some() {
-                    control.phase = ControlPhase::Completing(ticket.serial);
-                } else {
-                    control.phase = ControlPhase::Stable;
-                }
-                effects
-            }
-            RouteStartResult::NoRoute | RouteStartResult::StartFailed => {
-                control.start_deferred = control
-                    .start_deferred
-                    .take()
-                    .filter(|(serial, _)| *serial != ticket.serial);
-                control.timeline = None;
-                control.phase = ControlPhase::Failed(ticket.serial);
-                None
-            }
-        }
-    };
-    if let Some(effects) = deferred {
-        apply_deferred_original_effects(ps, effects);
-        let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        if control.phase == ControlPhase::Completing(ticket.serial) {
-            control.phase = ControlPhase::Stable;
+pub fn settle_route_start(ticket: RouteStartAttempt, result: RouteStartResult) -> bool {
+    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
+    if control.phase != ControlPhase::Starting(ticket.serial, ticket.attempt) {
+        return false;
+    }
+    control.last_start_result = Some((ticket, result));
+    match result {
+        RouteStartResult::Started => control.phase = ControlPhase::Stable,
+        RouteStartResult::NoRoute | RouteStartResult::StartFailed => {
+            control.timeline = None;
+            control.phase = ControlPhase::Failed(ticket.serial);
         }
     }
     true
@@ -1415,7 +1377,7 @@ pub fn drain_route_start_results(ps: &mut PlaybackSession) {
         std::mem::take(&mut control.start_results)
     };
     for (ticket, result) in results {
-        let _ = settle_route_start(ps, ticket, result);
+        let _ = settle_route_start(ticket, result);
     }
 }
 
@@ -1426,7 +1388,7 @@ pub fn fail_current_engine() {
     let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
     let serial = match control.phase {
         ControlPhase::Preparing(serial) | ControlPhase::Prepared(serial) | ControlPhase::Starting(serial, _) => serial,
-        ControlPhase::Stable | ControlPhase::Completing(_) => {
+        ControlPhase::Stable => {
             control.next_action = next_generation(control.next_action);
             control.next_action
         }
@@ -1436,7 +1398,6 @@ pub fn fail_current_engine() {
     control.engine_epoch = next_generation(control.engine_epoch);
     control.media_epoch = next_generation(control.media_epoch);
     control.pending_auto = None;
-    control.start_deferred = None;
     control.timeline = None;
     control.clear_flight();
     control.phase = ControlPhase::Failed(serial);
@@ -1548,7 +1509,6 @@ pub fn reset_player_control_for_test(ps: &PlaybackSession) {
     control.clear_flight();
     control.start_results.clear();
     control.last_start_result = None;
-    control.start_deferred = None;
     control.timeline = None;
 }
 
@@ -1772,24 +1732,6 @@ pub fn arm_auto_fixture(
     ));
     settle_plan_start_in_unit_test(ps, prepare_playback_landing(ps, true));
     Some(url)
-}
-
-#[derive(Default)]
-pub struct DeferredOriginalEffects {
-    quality: Option<Quality>,
-    audio: Option<CarriedAudio>,
-    reconcile: bool,
-}
-
-impl DeferredOriginalEffects {
-
-}
-
-pub struct OriginalRollback {
-    pub offset_ns: i64,
-}
-
-impl OriginalRollback {
 }
 
 /// true while this playback is a server transcode (a live transcode session exists). Cheap
@@ -2902,7 +2844,6 @@ fn route_transition_owns_player() -> bool {
             | ControlPhase::Prepared(_)
             | ControlPhase::Starting(_, _)
             | ControlPhase::StagingUser(_)
-            | ControlPhase::Completing(_)
     )
 }
 
@@ -3551,21 +3492,6 @@ pub fn commit_audio_selection(ps: &mut PlaybackSession, audio: CarriedAudio) {
     }
     // the rebuild now loading is this pick's: the read-out says "Switching audio…"
     crate::player::note_audio_pick();
-}
-
-/// Apply commands which were attached to one exact Original trial, after either the candidate or
-/// its rollback Engine has really started. Consuming the value makes cross-trial leakage
-/// impossible; dropping it on terminal start failure is the explicit cancellation edge.
-pub fn apply_deferred_original_effects(ps: &mut PlaybackSession, mut effects: DeferredOriginalEffects) {
-    if let Some(q) = effects.quality.take() {
-        apply_quality_choice(ps, q);
-    }
-    if let Some(audio) = effects.audio.take() {
-        commit_audio_selection(ps, audio);
-    }
-    if effects.reconcile {
-        reconcile_enhancement(ps, false);
-    }
 }
 
 /// Atomically publish the main-thread session fields a newly spawned timeline reporter may read.

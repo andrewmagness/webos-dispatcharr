@@ -53,21 +53,3 @@ pub fn original_sustainable(
     source_kbps > 0 && complete && measured_kbps >= source_kbps
 }
 
-/// **Retired by N13.** Kept as `#[cfg(test)]` because two tests derive their expectations from it,
-/// which is the point: the new duration must be *the same rule on the right clock*, and a test that
-/// says so has to be able to name the old one.
-///
-/// Six windows of [`ORIGINAL_WINDOW_US`] ACTIVE BODY-READ time was the rule, and its own two doc
-/// comments disagreed about the unit — "about four and a half seconds of real transfer" in one
-/// place and "about nine seconds" of wall clock in another, for the same counter. Under
-/// backpressure, the healthy full-buffer case, a 750 ms active window spans unbounded wall time, so
-/// the second reading was not merely imprecise: the rule named no duration at all.
-///
-/// `AbrPolicy::sustained_unsafe_deficit_ms` carries the same 4 500 ms onto the WALL clock. The
-/// conversion is deliberately 1:1 in the number and **is not 1:1 in the world** — under
-/// backpressure the wall interval is longer, so the new rule is at least as patient as the old one
-/// and usually more so. Which is the safe direction (it delays a visible switch, never hastens
-/// one), and the observed ratio is an M2 measurement this project has not taken.
-#[cfg(any(test, feature = "test-support"))]
-pub const ORIGINAL_DEFICIT_WINDOWS: u8 = 6;
-

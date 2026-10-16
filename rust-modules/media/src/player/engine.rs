@@ -1643,108 +1643,6 @@ pub fn arm_seek(target_ns: i64) {
     SHARED.playpos_ns.store(t, Ordering::Relaxed); // instant HUD feedback until frames land
 }
 
-/// Resume/seek AT the first Load. A direct-play item seeks the demuxer (av_seek via arm_seek).
-/// A TRANSCODE item's stream is 0-based and NOT seekable (no byte-index, Content-Length=-1), so
-/// av_seek fails — instead restart the encode at `&offset=secs` and display content time via
-/// disp_base. Call BEFORE start_bufferfeed, AFTER route::play_movie has run the decision (so the
-/// transcode session + flavor are set). Used for viewOffset resume.
-///
-/// **There is one entry point, [`begin_resume`] / [`land_resume`], and it is a flight** (the cold
-/// resume of a freshly resolved play, and the foreground restore of a parked one): a transcode's
-/// rebuild at the saved position is planned on the frame thread and its PMS half runs on a worker.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[must_use = "resume preparation is an external route effect and must be settled"]
-pub enum ResumeOutcome {
-    Prepared,
-    NoRoute,
-    RebuildRejected,
-}
-
-/// What [`begin_resume`] did.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[must_use = "a pending resume owes a start when it lands"]
-pub enum ResumeStart {
-    /// Decided on the spot (no rebuild is owed): the caller starts the Load (or fails the start)
-    /// now.
-    Settled(ResumeOutcome),
-    /// A flight owns the rebuild at the saved position (`route::dispatch_resume_rebase`): the start
-    /// stays owed, `player::state` answers `Resolving` (via `route::resume_flight_outstanding`), and [`land_resume`] delivers the
-    /// outcome the caller starts the Load on.
-    Pending,
-}
-
-/// The part of a resume that never reaches PMS.
-enum ResumePrelude {
-    Settled(ResumeOutcome),
-    /// A transcode with a saved position: its encode must restart at the offset.
-    Rebuild,
-}
-
-fn resume_prelude(ps: &mut crate::route::PlaybackSession, resume_ns: i64) -> ResumePrelude {
-    if resume_ns <= 0 {
-        return ResumePrelude::Settled(ResumeOutcome::Prepared);
-    }
-    if crate::route::url(ps).is_empty() {
-        return ResumePrelude::Settled(ResumeOutcome::NoRoute);
-    }
-    if !crate::route::is_transcoding(ps) {
-        arm_seek(resume_ns); // direct-play: av_seek the file at the first open
-        return ResumePrelude::Settled(ResumeOutcome::Prepared);
-    }
-    ResumePrelude::Rebuild
-}
-
-/// The transcode half of a resume, once its encode restarts at the offset (0-based): `disp_base`
-/// carries the offset so the HUD reads content time.
-fn note_transcode_resumed(resume_ns: i64) {
-    SHARED.disp_base.store(resume_ns, Ordering::Relaxed);
-    SHARED.playpos_ns.store(resume_ns, Ordering::Relaxed);
-    log(&format!(
-        "resume(transcode): restart at offset {}s",
-        resume_ns / 1_000_000_000
-    ));
-}
-
-/// Prepare a resume at `resume_ns`: a cold start (a play whose plan just landed) or a foreground
-/// restore (the parked session's start transaction is `Stable`/`Prepared`/`Failed`, or an Original
-/// trial's own `Prepared` one for a session suspended mid-trial, which the flight flies over without
-/// touching the trial's rollback; an `Idle` one has no URL and answers `NoRoute` here, never
-/// reaching the rebuild). No Engine exists. Everything but a transcode settles on the spot; a transcode's
-/// rebuild at the saved position is a FLIGHT — planned here on the frame thread, the PMS half on a
-/// worker — and answers [`ResumeStart::Pending`]. The frame never reaches the server.
-pub fn begin_resume(ps: &mut crate::route::PlaybackSession, resume_ns: i64) -> ResumeStart {
-    match resume_prelude(ps, resume_ns) {
-        ResumePrelude::Settled(outcome) => ResumeStart::Settled(outcome),
-        ResumePrelude::Rebuild => match crate::route::dispatch_resume_rebase(ps, resume_ns) {
-            crate::route::RecoveryDispatch::Flying { .. } => ResumeStart::Pending,
-            // Nothing to rebuild or the worker could not start: a refusal.
-            crate::route::RecoveryDispatch::Refused => ResumeStart::Settled(ResumeOutcome::RebuildRejected),
-        },
-    }
-}
-
-/// Drain a pending resume's landing, once a frame while [`crate::route::resume_flight_outstanding`].
-/// `None` while the worker is still running, or when the flight went stale (a Back, a teardown, a
-/// newer play request: the landing is discarded and its replacement stopped — here, by the stale
-/// reap this runs first, since a flight with no Engine has no pump to do it — and whoever ended the
-/// flight owns what happens next). `Some` is the outcome of the rebuild: the
-/// route is installed and `Prepared` (the caller starts the Load), or the rebuild was refused and
-/// the transaction is `Failed`.
-pub fn land_resume(ps: &mut crate::route::PlaybackSession) -> Option<ResumeOutcome> {
-    crate::route::discard_stale_flight_landing();
-    if !crate::route::resume_flight_outstanding() {
-        return None;
-    }
-    let landing = crate::route::take_ready_recovery_flight(ps)?;
-    Some(match landing.verdict {
-        crate::route::RecoveryVerdict::Install => {
-            note_transcode_resumed(landing.offset_ns);
-            ResumeOutcome::Prepared
-        }
-        crate::route::RecoveryVerdict::Refused => ResumeOutcome::RebuildRejected,
-    })
-}
-
 /// Direct-play seek = tear down the pipeline and start a FRESH Load at `target_ns`. The old
 /// flush()+refeed path left a STALE GStreamer segment (decompiled ground truth: the no-arg
 /// StarfishMediaAPIs::flush() → CustomPipeline::flush() is a degenerate gst_element_seek to
@@ -1814,18 +1712,6 @@ fn start_side_reader(target: &crate::route::SideReaderTarget) {
     }
 }
 
-fn reload_transcode_start(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, offset_ns: i64) -> Option<BufferfeedStartOutcome> {
-    let ticket = prepare_reload_transaction()?;
-    log(&format!(
-        "reload_transcode: fresh Load at offset {}s",
-        offset_ns / 1_000_000_000
-    ));
-    teardown(ps, pa, true); // keep the session; reload mode
-    SHARED.disp_base.store(offset_ns, Ordering::Relaxed); // transcode is 0-based at content=offset
-    SHARED.playpos_ns.store(offset_ns, Ordering::Relaxed);
-    Some(start_bufferfeed_for(ps, pa, ticket))
-}
-
 pub fn reload_at(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, target_ns: i64) -> ReloadOutcome {
     if crate::route::url(ps).is_empty() {
         log("reload_at: no url (ignored)");
@@ -1844,57 +1730,6 @@ pub fn reload_at(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter
     reload_start_outcome(ps, pa, ticket)
 }
 
-/// NATIVE audio-track switch (direct-play, NO transcode): select the Nth audio stream from the
-/// same MKV and reload the direct-play pipeline at the current position (route::stream_acodec
-/// was already set to the chosen track's codec, so the fresh Load configures the right audio
-/// decoder). desired_audio_idx persists across the reload, so the demuxer keeps feeding the
-/// chosen stream and the choice survives later seeks.
-pub fn switch_audio_native(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, audio_idx: i32, pos_ns: i64) -> ReloadOutcome {
-    SHARED.desired_audio_idx.store(audio_idx, Ordering::Relaxed);
-    log(&format!(
-        "switch_audio_native: audio_idx={audio_idx} at {}s",
-        pos_ns / 1_000_000_000
-    ));
-    reload_at(ps, pa, pos_ns) // fresh direct-play Load at the current position, new audio stream
-}
-
-/// Reload the pipeline for a MODE/CODEC change — an audio-track switch on a direct-play HEVC
-/// item forces a transcode (H264/AC3), so the pipeline must be re-Loaded with the H264 payload
-/// (feeding H264 into the H265-configured pipeline stalls). Unlike reload_at, the transcode
-/// start.mkv is already 0-based at `&offset`, so no av_seek — just set disp_base to the offset.
-/// route::retranscode has already set the URL + session + STREAM_VCODEC=h264 before this call.
-pub fn reload_transcode(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, offset_ns: i64) -> ReloadOutcome {
-    if crate::route::url(ps).is_empty() {
-        // The other abandonment path with the same hole: `request_seek` armed the spinner and
-        // nothing here would ever disarm it. See `player::abandon_seek`.
-        crate::player::abandon_seek();
-        log("reload_transcode: no url (ignored)");
-        settle_missing_route_start();
-        return ReloadOutcome::NoRoute;
-    }
-    match reload_transcode_start(ps, pa, offset_ns) {
-        Some(outcome) if outcome.accepted() => ReloadOutcome::Started,
-        Some(BufferfeedStartOutcome::Failed) | None => ReloadOutcome::StartFailed,
-        // `start_bufferfeed_for` always creates a fresh attempt, but keep the conversion total if
-        // that implementation changes.
-        Some(BufferfeedStartOutcome::AlreadyRunning) => ReloadOutcome::Started,
-        Some(BufferfeedStartOutcome::Launched(_)) => unreachable!("accepted handled above"),
-    }
-}
-
-/// The same reload edge as [`reload_transcode`], retaining the exact physical Load token for the
-/// foreground state machine. Used only after a synchronous Original-open failure has restored its
-/// HLS candidate; ordinary callers keep the coarser [`ReloadOutcome`].
-pub fn reload_transcode_tracked(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter, offset_ns: i64) -> BufferfeedStartOutcome {
-    if crate::route::url(ps).is_empty() {
-        crate::player::abandon_seek();
-        log("reload_transcode_tracked: no url (ignored)");
-        settle_missing_route_start();
-        return BufferfeedStartOutcome::Failed;
-    }
-    reload_transcode_start(ps, pa, offset_ns).unwrap_or(BufferfeedStartOutcome::Failed)
-}
-
 /// Stop playback: unblock+join threads, unload+destruct the pipeline, release the
 /// video plane, reset all state so a fresh start_bufferfeed() can restart.
 pub fn stop_bufferfeed(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::PlayerAdapter) {
@@ -1909,23 +1744,6 @@ pub fn suspend_bufferfeed(ps: &mut crate::route::PlaybackSession, pa: &mut super
     teardown(ps, pa, true);
 }
 
-/// Retire a failed foreground Engine only if it still owns the exact Load the foreground reducer
-/// observed. A later route action may have replaced it between `player::pump` and the app poll;
-/// tearing down unconditionally there would destroy the healthy replacement.
-pub fn suspend_bufferfeed_if_attempt(
-    ps: &mut crate::route::PlaybackSession,
-    pa: &mut super::adapter::PlayerAdapter,
-    attempt: crate::route::RouteStartAttempt,
-) -> bool {
-    let owns_attempt = pa.engine()
-        .map(|engine| engine.route_start == attempt)
-        .unwrap_or(false);
-    if owns_attempt {
-        teardown(ps, pa, true);
-    }
-    owns_attempt
-}
-
 /// The teardown body. `for_reload` = this is a direct-play seek reload (reload_at), NOT a real
 /// stop: preserve the playback session so start_bufferfeed can restart the SAME item — skip
 /// the "stopped" timeline scrobble, the server transcode stop, and the URL clear.
@@ -1934,21 +1752,12 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // resource and Session projection. A real stop must retire that ownership exactly once;
     // returning here used to leak the candidate forever while the reducer remained Failed.
     if !pa.is_live() {
-        // An Engine-less flight (a resume, or a rollback no Engine waits on) has no Engine to take down with it, and an app-switch suspend
-        // keeps the session for the foreground restore, which reserves its own start transaction:
-        // drop the flight as a live Engine's suspend would (`Stable`, landing discarded, only its
-        // replacement stopped). A full stop below clears it itself.
-        if for_reload && crate::route::engineless_flight_outstanding() {
-            crate::route::begin_engine_teardown(true);
-        }
         if !for_reload {
             crate::route::scrobble_stop(ps, None, None);
             crate::route::begin_engine_teardown(false);
-            crate::route::drop_original_recovery(ps);
             crate::route::clear_url(ps);
             SHARED.reset_session();
             TX.reset();
-            super::claim_hold::clear();
             // Nothing here is asynchronous, so the fence `begin_engine_teardown` just raised is
             // already spent. Publish the completed stop rather than latching `Stopping` — see
             // `route::finish_engine_teardown`.
@@ -2119,7 +1928,6 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     } else {
         SHARED.reset_session();
         TX.reset();
-        super::claim_hold::clear();
     }
     if !for_reload {
         // **The carried link estimate dies with the PLAYBACK, not with the engine** (I8). A reload
@@ -2130,11 +1938,6 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         // The failure is retained across the rollback reload only; a new playback must not carry
         // another item's PMS response into its diagnostics.
         SHARED.clear_abr_failure();
-        // A deferred Original recovery outlives nothing: the playback it belonged to is over, so
-        // there is no frame left that could confirm it and no route left to roll back to. The
-        // encoder it was holding is still running on the server, which is why this RETIRES rather
-        // than forgets — see `route::drop_original_recovery`.
-        crate::route::drop_original_recovery(ps);
         crate::route::clear_url(ps); // the transcode stop rode out with `scrobble_stop` above
     } else if let Some(t) = eng.report_th.take() {
         // A reload posts no `stopped`, so there is nothing to order against: detach. Its own
@@ -4724,15 +4527,6 @@ mod replay_after_stop_tests {
     }
 }
 
-/// Test-only: an Engine parked at `Stage::Streaming` on the host sink, for the pump-level rigs
-/// that live outside this module (`pump::flight_tests`).
-#[cfg(all(test, feature = "hostsim"))]
-pub(super) fn streaming_engine_for_test(native_epoch: u32) -> Engine {
-    let mut eng = prime_livelock_tests::engine_after_reload();
-    eng.native_epoch = native_epoch;
-    eng
-}
-
 /// issue #74 D.1 regression tests. Real v0.6.0 dispatches every Starfish/ACB verb through
 /// `sf_ready_object()` alone (`src/starfish.c`), which went live at `SMP_SET_READY(1)` BEFORE the
 /// real, blocking `sf_load` call (`g_load_with_context`) returned — nothing waited for that
@@ -5421,42 +5215,6 @@ mod load_in_flight_tests {
         );
     }
 
-    /// upstream Sentry issue 15: the Auto Original's Load passes its budget, the HLS recovery reloads while
-    /// the Load is still inside `sf_load`, the reload's teardown parks that Load (clearing
-    /// `load_timed_out` with the rest of the session) and the start is refused. The failure was
-    /// published with no cause, so the report said `unspecified`; the cause is the timeout.
-    #[test]
-    fn a_recovery_reload_refused_for_an_abandoned_load_still_reports_the_timeout() {
-        let mut ps = crate::route::PlaybackSession::IDLE;
-        let _serial = plx_base::testlock::serial();
-        SHARED.reset_session();
-        crate::route::reset_player_control_for_test(&ps);
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let _cleanup = Cleanup;
-        let _release = ReleaseLoadOnDrop;
-        let mut pa = crate::player::adapter::PlayerAdapter::new(unsafe {
-            plx_base::task::MainThread::assume()
-        });
-        crate::route::set_url(&mut ps, "http://127.0.0.1:1/hls/start.m3u8");
-        install_engine_with_timed_out_load(&mut ps, &mut pa);
-
-        // `land_recovery_flight`'s own two calls: the reload (whose teardown parks the
-        // still-running Load) and the settle that publishes the outcome.
-        let started = crate::player::pump::settle_reload(
-            reload_transcode(&mut ps, &mut pa, 0),
-            "test HLS recovery",
-        );
-        assert!(!started, "the recovery start must be refused while the Load is outstanding");
-        assert!(pa.has_abandoned_load(), "PRECONDITION FAILED: the Load must still be parked");
-        assert_eq!(crate::player::state(&ps), crate::player::PlaybackState::Error);
-        assert_eq!(
-            crate::player::error_now(&ps).kind,
-            crate::player::FailureKind::LoadTimeout,
-            "the refusal must keep the timeout as its cause, not report `unspecified`"
-        );
-    }
-
     /// The fresh-start half of the same hole: a Retry or Back+Play while the parked Load is still
     /// inside `sf_load` is refused with no Engine to publish anything, so the player sat in Idle
     /// and drew nothing: no read-out, no report, no Try Again. The refusal stays (a second native
@@ -5492,7 +5250,7 @@ mod load_in_flight_tests {
         assert_eq!(shape.kind, crate::player::FailureKind::LoadTimeout);
         let actions = crate::player::failure_actions(
             shape.kind,
-            crate::player::FailureContext { forced: false, can_retry: true, repair_idle: true, live: false },
+            crate::player::FailureContext { repair_idle: true },
         );
         assert!(
             actions.contains(&crate::player::FailureAction::TryAgain),
@@ -5515,61 +5273,6 @@ mod load_in_flight_tests {
         );
     }
 
-    /// The latch's other edge: a start refused for the parked Load sets `native_start_refused`,
-    /// and a RELOAD that then starts (the foreground restore's rollback landing after the Load was
-    /// reaped: `land_engineless_rollback` -> `reload_transcode_tracked`) goes through
-    /// `start_bufferfeed_for`, not `start_bufferfeed_tracked`, which is where the flag used to be
-    /// cleared. The flag outlived the refusal and, once the flight ended, `state()` answered Error
-    /// over playing video and `report::tick` sent a bogus `load_timeout`.
-    #[test]
-    fn a_reload_that_starts_after_a_refused_fresh_start_does_not_keep_the_refusals_error() {
-        let mut ps = crate::route::PlaybackSession::IDLE;
-        let _serial = plx_base::testlock::serial();
-        SHARED.reset_session();
-        crate::route::reset_player_control_for_test(&ps);
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let _cleanup = Cleanup;
-        let _release = ReleaseLoadOnDrop;
-        let mut pa = crate::player::adapter::PlayerAdapter::new(unsafe {
-            plx_base::task::MainThread::assume()
-        });
-        install_engine_with_timed_out_load(&mut ps, &mut pa);
-        stop_bufferfeed(&mut ps, &mut pa);
-        assert!(pa.has_abandoned_load(), "PRECONDITION FAILED: the Load must be parked");
-        crate::route::set_url(&mut ps, "http://127.0.0.1:1/hls/start.m3u8");
-        crate::route::set_stream_acodec(&mut ps, "aac");
-
-        // The resumed foreground's `PlayerForegroundActuator::start_load`.
-        assert_eq!(
-            start_bufferfeed_tracked(&mut ps, &mut pa),
-            BufferfeedStartOutcome::Failed,
-            "PRECONDITION FAILED: the fresh start must be refused for the parked Load"
-        );
-        assert!(ps.native_start_refused, "PRECONDITION FAILED: the refusal must be recorded");
-
-        // The parked Load returns and is reaped; the rollback's reload then starts.
-        crate::player::ffi_host::release_load_for_test();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !reap_abandoned_load(&mut pa) {
-            assert!(std::time::Instant::now() < deadline, "the returned Load was never released");
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        let reload = reload_transcode_tracked(&mut ps, &mut pa, 0);
-        assert!(
-            matches!(reload, BufferfeedStartOutcome::Launched(_)),
-            "PRECONDITION FAILED: the reload must start once the Load is reaped ({reload:?})"
-        );
-        assert!(pa.is_live(), "the reload must have built an Engine");
-
-        assert_ne!(
-            crate::player::state(&ps),
-            crate::player::PlaybackState::Error,
-            "a reload that started kept the refused fresh start's Error over live video \
-             (and report::tick would send a bogus load_timeout)"
-        );
-        stop_bufferfeed(&mut ps, &mut pa);
-    }
 }
 
 /// **The webOS 10.3.1 refusal, replayed.** `docs/webos10-lab-report.md` §3.2 records the exact

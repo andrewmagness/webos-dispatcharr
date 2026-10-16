@@ -756,9 +756,7 @@ pub fn failure_action_label(a: plx_media::player::FailureAction) -> &'static std
     use plx_platform::i18n::msg;
     use plx_media::player::FailureAction as A;
     match a {
-        A::PlayAutomatically => msg::widgets_failure_play_auto_c(),
         A::TryAgain => msg::browse_action_retry_c(),
-        A::ChangeQuality => msg::widgets_failure_change_quality_c(),
         A::Repair => msg::widgets_repair_action_c(),
         A::Back => msg::settings_back_c(),
     }
@@ -1352,22 +1350,18 @@ mod tests {
     }
 
     fn readout_of(e: &plx_media::player::ErrorShape) -> FailureReadout {
-        let cx = plx_media::player::FailureContext { forced: true, can_retry: true, repair_idle: true, live: false };
+        let cx = plx_media::player::FailureContext { repair_idle: true };
         FailureReadout::of(e, plx_media::player::failure_actions(e.kind, cx), "0.7.0 · webOS 4.5 · code".into())
     }
 
-    /// **Say it once.** Under Force the reason IS the route's verdict (what happened and why), no
-    /// note repeats it, the row is *Switch to Auto and play* · *Back* (no *Details*), and the
-    /// support facts are the dim footer — which the draw really paints, below the row.
+    /// A dropped channel's read-out offers *Try again* · *Back*, and the support facts are the dim
+    /// footer — which the draw really paints, below the row.
     #[test]
-    fn the_forced_readout_says_what_and_why_once_and_draws_the_diagnostics_as_the_footer() {
+    fn the_readout_offers_try_again_and_draws_the_diagnostics_as_the_footer() {
         use plx_media::player::FailureAction as A;
-        let verdict = plx_media::route::PlayVerdict::Forced(plx_media::route::ForcedFailure::Video).text().to_owned();
-        let e = plx_media::player::failtest_policy_shape_for_test(&verdict);
+        let e = plx_media::player::interrupted_shape_for_test();
         let r = readout_of(&e);
-        assert_eq!(r.reason(), verdict.as_str());
-        assert_eq!(r.note(), None, "the verdict already names the cause");
-        assert_eq!(r.actions(), &[A::PlayAutomatically, A::Back]);
+        assert_eq!(r.actions(), &[A::TryAgain, A::Back]);
         assert_eq!(r.footer(), "0.7.0 · webOS 4.5 · code");
         let log = plx_ui::draw_census::capture(|| {
             r.draw(plx_ui::Painter::recording(), 0, &plx_ui::fixture::FixtureMeasure);
@@ -1382,8 +1376,7 @@ mod tests {
     #[test]
     fn the_diagnostics_footer_sits_below_the_row_inside_the_safe_bottom_band() {
         use plx_base::fontcov::advances::ShippedMeasure;
-        let verdict = plx_media::route::PlayVerdict::Forced(plx_media::route::ForcedFailure::Video).text().to_owned();
-        let e = plx_media::player::failtest_policy_shape_for_test(&verdict);
+        let e = plx_media::player::interrupted_shape_for_test();
         let r = readout_of(&e);
         let row_bottom = r.frames(&ShippedMeasure).iter().flatten().map(|f| f.y + f.h).fold(0.0, f32::max);
         assert!(row_bottom > 0.0, "the row was laid out");
@@ -1403,9 +1396,8 @@ mod tests {
         use plx_ui::fit::HEADROOM;
         use plx_platform::i18n::{language_on_this_thread_for_test, Preference};
         use plx_media::player::FailureAction as A;
-        let rows: [&[A]; 3] = [
-            &[A::PlayAutomatically, A::TryAgain, A::Back],
-            &[A::TryAgain, A::ChangeQuality, A::Back],
+        let rows: [&[A]; 2] = [
+            &[A::TryAgain, A::Back],
             &[A::Repair, A::Back],
         ];
         let mut out = Vec::new();

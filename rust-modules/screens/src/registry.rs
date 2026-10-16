@@ -132,9 +132,6 @@ pub enum PlayerReq {
     RepairSandbox,
     /// The failure read-out's *Try again*: tune the failed channel again.
     RetryPlayback,
-    /// The failure read-out's fix for Force Direct Play: set the Direct Play preference to Auto
-    /// and play again under it.
-    PlayAutomatically,
     /// A transport key: `true` = the key was PLAY, `false` = PAUSE; a PLAYPAUSE toggle is neither
     /// and is carried as `None`.
     Transport(Option<bool>),
@@ -171,7 +168,7 @@ pub const PAGE_MEMORY_SHAPE: &str = "PageMemory{None}";
 
 /// Effects cross the screen/loop boundary; screens do not poll one another's pending latches.
 pub enum ContentReq {
-    Play { play: PlayIntent, resume_ns: i64 },
+    Play { play: PlayIntent },
 }
 
 /// **The play a page decided on, for the loop to start** (spec §2.2, phase 9).

@@ -170,10 +170,7 @@ impl PlayerScreen {
         let Some(action) = readout.actions().get(idx).copied() else { return };
         self.failure_sel = idx;
         match action {
-            A::PlayAutomatically => Self::ask(fx, PlayerReq::PlayAutomatically),
-            // A live failure offers Try again (`player::failure_actions`); a quality change has
-            // nothing to choose from on a channel, so it retries too.
-            A::TryAgain | A::ChangeQuality => Self::ask(fx, PlayerReq::RetryPlayback),
+            A::TryAgain => Self::ask(fx, PlayerReq::RetryPlayback),
             A::Repair => {
                 if ps.repair_status == plx_platform::tv::sandbox::State::Idle && !self.repair_alert.visible() {
                     self.repair_scroll = 0;

@@ -264,9 +264,6 @@ impl Bridge {
         &mut self.stores.metadata
     }
 
-    pub(crate) fn metadata_view(&self) -> plx_data::metadata::MetadataView<'_> {
-        self.stores.metadata_view()
-    }
 
 
 

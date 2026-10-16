@@ -34,7 +34,6 @@ pub(crate) struct DevFlags {
 /// `&mut App`, exactly as they read `App`'s own fields.
 #[derive(Default)]
 pub(crate) struct Scenarios {
-    pub(crate) marker_tried: bool,
     pub(crate) auto_tried: bool,
     pub(crate) replay_left: u32,
     pub(crate) seek_tried: bool,
@@ -42,11 +41,6 @@ pub(crate) struct Scenarios {
     pub(crate) seek_script_at: u32,
     pub(crate) seek_gap_ms: u32,
     pub(crate) seek_script_last: i64,
-    pub(crate) quality_script: Vec<plx_plex::plex::session::PlaybackQuality>,
-    pub(crate) quality_script_at: u32,
-    pub(crate) quality_gap_ms: u32,
-    pub(crate) quality_tried: bool,
-    pub(crate) quality_playing_since: Option<u32>,
     pub(crate) pause_tried: bool,
     /// An armed Pause edge: (due at, hold ms, the media position it also waits for).
     pub(crate) pause_script: Option<(u32, Option<u32>, Option<u32>)>,
@@ -174,47 +168,6 @@ pub(crate) fn arm_noidle() {
     }
 }
 
-/// `/tmp/dispatcharrtv-audioenh=off|boost|loudness` — force the PERSISTED Boost Dialog / Normalize
-/// Loudness preference (issue #266) at boot, harness-only.
-///
-/// Every other boot override here (`dev::playback_quality_override`, `arm_glassload`, …) is
-/// deliberately in-memory-only, so a test can never mutate a real person's saved preference. This
-/// one is the one exception, and on purpose: `player::set_audio_enhancements` is the SAME call a
-/// person's own track-menu pick makes (it both updates the live route and re-persists through the
-/// storage worker), and an on-device harness case needs the persisted value itself pinned before
-/// boot, not just the in-memory copy — one case proves the cold-start "a saved preference turns an
-/// otherwise-direct-playable route into a remux" path (`route::plan`'s cold-start audio branch) by
-/// booting with the preference already ON, and the very next boot must not inherit whatever a
-/// FAILED previous case's toggle left behind. A toggle-based reset cannot promise that: if the
-/// pick never lands, the preference is stuck at whatever the last successful toggle set it to.
-/// Forcing the value at boot, every time, is what makes a case's starting preference a property of
-/// the manifest instead of of history — the same argument `run_case`'s per-case viewOffset reset
-/// already makes for resume position.
-///
-/// `off` clears both flags; `boost`/`loudness` sets exactly one (never both — no case here needs
-/// both at once, and a value this test-only can grow a second name later without breaking the
-/// existing ones). An unrecognised value is ignored rather than guessed at.
-pub(crate) fn arm_audio_enhancements() {
-    let Some(v) = plx_base::devtrig::read("audioenh") else { return };
-    let a = match v.trim() {
-        "off" => plx_plex::plex::AudioEnhancements::NONE,
-        "boost" => plx_plex::plex::AudioEnhancements { boost_dialog: true, normalize_loudness: false },
-        "loudness" => plx_plex::plex::AudioEnhancements { boost_dialog: false, normalize_loudness: true },
-        #[allow(unused_variables)]
-        other => {
-            #[cfg(feature = "devtriggers")]
-            plx_base::eventlog::log(&format!("audioenh: unrecognised value {other:?} — ignored"));
-            return;
-        }
-    };
-    plx_media::player::set_audio_enhancements(a);
-    #[cfg(feature = "devtriggers")]
-    plx_base::eventlog::log(&format!(
-        "audioenh: forced boost_dialog={} normalize_loudness={} by /tmp/dispatcharrtv-audioenh",
-        a.boost_dialog, a.normalize_loudness,
-    ));
-}
-
 /// `/tmp/dispatcharrtv-nobudget` — the frame budget's A/B CONTROL LEG (spec §8.1, phase 11).
 ///
 /// Present, admission is what it was before phase 11: the `Poster` quota of three per frame and
@@ -291,7 +244,6 @@ fn autoplay_arm(app: &mut App, fr: &mut Frame) {
             plx_media::route::clear_url(&mut app.player.session);
             crate::app::playback::start_playback(&mut app.player.session,
                 &mut app.adapters.player,
-                0,
                 crate::app::playback::Origin::Here,
                 None,
                 &mut app.pages,
@@ -349,37 +301,6 @@ fn autoseek_arm(app: &mut App, fr: &mut Frame) {
     }
 }
 
-fn qualityswitch_arm(app: &mut App, fr: &mut Frame) {
-    if !app.scenarios.quality_tried {
-        const QUALITY_SWITCH_OBSERVE_MS: u32 = 12_000;
-        let playing = matches!(app.route(), AppArg::Player)
-            && crate::app::playback::dur() > 0
-            && plx_media::player::is_playing(&app.player.session);
-        if !playing {
-            app.scenarios.quality_playing_since = None;
-        } else {
-            let since = *app.scenarios.quality_playing_since.get_or_insert(fr.now);
-            if fr.now.wrapping_sub(since) >= QUALITY_SWITCH_OBSERVE_MS {
-                app.scenarios.quality_tried = true;
-                if let Some((gap, qs)) = super::quality_switch_script() {
-                    app.scenarios.quality_gap_ms = gap;
-                    app.scenarios.quality_script_at = fr.now.wrapping_sub(gap);
-                    app.scenarios.quality_script = qs;
-                }
-            }
-        }
-    }
-    if !app.scenarios.quality_script.is_empty()
-        && matches!(app.route(), AppArg::Player)
-        && script_step_due(fr.now, app.scenarios.quality_script_at, app.scenarios.quality_gap_ms)
-    {
-        let q = app.scenarios.quality_script.remove(0);
-        app.scenarios.quality_script_at = fr.now;
-        plx_base::eventlog::log(&format!("quality: switch → {} ({} left)", super::quality_wire_name(q), app.scenarios.quality_script.len()));
-        plx_media::route::set_quality(&mut app.player.session, q);
-    }
-}
-
 fn autopause_arm(app: &mut App, fr: &mut Frame) {
     if !app.scenarios.pause_tried && matches!(app.route(), AppArg::Player) && fr.now.wrapping_sub(app.t0) > 6000 {
         app.scenarios.pause_tried = true;
@@ -418,33 +339,6 @@ fn autopause_arm(app: &mut App, fr: &mut Frame) {
                 plx_base::eventlog::log("autopause: Resume accepted");
                 app.scenarios.pause_resume_at = None;
             }
-        }
-    }
-}
-
-fn marker_arm(app: &mut App, _fr: &mut Frame) {
-    if !app.scenarios.marker_tried && matches!(app.route(), AppArg::Player) && plx_media::player::is_playing(&mut app.player.session) {
-        match plx_base::devtrig::read("marker") {
-            Some(s) => {
-                let want = if s.eq_ignore_ascii_case("intro") {
-                    plx_data::metadata::MarkerKind::Intro
-                } else {
-                    plx_data::metadata::MarkerKind::Credits
-                };
-                let meta = app.bridge.metadata_view();
-                let markers = meta.playing_markers();
-                if !markers.is_empty() {
-                    app.scenarios.marker_tried = true;
-                    if let Some(m) = markers.iter().find(|m| m.kind == want) {
-                        let t = (m.start_ms - 5_000).max(0) * 1_000_000;
-                        plx_base::eventlog::log(&format!("marker trigger: seek to {}s (5s before {:?})", t / 1_000_000_000, want));
-                        crate::app::playback::request_seek(t);
-                    } else {
-                        plx_base::eventlog::log(&format!("marker trigger: item has no {want:?} marker"));
-                    }
-                }
-            }
-            None => app.scenarios.marker_tried = true,
         }
     }
 }
@@ -501,9 +395,7 @@ pub(crate) unsafe fn each_frame(app: &mut App, fr: &mut Frame) -> bool {
     autoplay_arm(app, fr);
     screenshot::clockstop_arm(app, fr);
     autoseek_arm(app, fr);
-    qualityswitch_arm(app, fr);
     autopause_arm(app, fr);
-    marker_arm(app, fr);
     if crate::app::bridge::player(&app.pages).is_some() {
         plx_media::player::failure_fixture(&mut app.player.session);
     }

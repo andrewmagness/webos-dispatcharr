@@ -409,8 +409,7 @@ fn account_opens_the_server_page_and_back_leaves_the_app() {
 
 fn tuned(out: &[Stamped<GuideHost>]) -> Option<&LiveTune> {
     match content_req(out)? {
-        ContentReq::Play { play: PlayIntent::Live(tune), resume_ns: 0 } => Some(tune),
-        _ => None,
+        ContentReq::Play { play: PlayIntent::Live(tune) } => Some(tune),
     }
 }
 

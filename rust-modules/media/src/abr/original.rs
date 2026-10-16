@@ -40,51 +40,6 @@ pub fn source_probe_plan(source_kbps: u32, max_budget_ms: u64) -> Option<SourceP
     })
 }
 
-/// A runtime Original failure is not an unknown-link bootstrap: the direct transfer has just
-/// measured the link. Start the replacement at the best actuator that measurement sustains, so a
-/// 4 Mbit/s cap enters at 2 Mbit/s/720p rather than needlessly flashing the 240p emergency floor.
-///
-/// `catalog` carries this playback's feasibility bounds, so the answer can never be a raster the
-/// device or the source cannot supply.
-pub fn original_fallback_rung(
-    measured_kbps: u32,
-    catalog: &HlsActuatorCatalog,
-    _policy: &AbrPolicy,
-) -> Rung {
-    catalog
-        .best_for_budget(measured_kbps)
-        .or_else(|| catalog.feasible().next())
-        .map(|candidate| candidate.rung)
-        .unwrap_or(Rung::P240)
-}
-
-/// The HLS entry point when an admitted Original request is refused before it produces a body.
-///
-/// This is deliberately not [`original_fallback_rung`] with a fabricated zero measurement.  No
-/// transfer took place, so the refusal says nothing about link capacity.  Reuse the exact rung
-/// [`bootstrap`] already computed while it still had the right evidence: Remote's completed source
-/// probe, or Local's explicit unknown-link fallback.  In particular, the source bitrate is demand,
-/// not capacity; turning a 28 Mbps file into a 28 Mbps connection claim would repeat the modelling
-/// error this seam exists to remove.
-///
-/// The carried rung is still checked against the live catalog.  A stale/impossible value falls
-/// back to the ordinary unknown-link bootstrap selection instead of bypassing device/source bounds.
-pub fn original_open_fallback_rung(
-    bootstrap_rung: Option<Rung>,
-    catalog: &HlsActuatorCatalog,
-    policy: &AbrPolicy,
-) -> Rung {
-    let fallback = catalog
-        .best_for_budget(policy_startup_floor_kbps(policy))
-        .or_else(|| catalog.feasible().next())
-        .map(|candidate| candidate.rung)
-        .unwrap_or(Rung::P480);
-    bootstrap_rung
-        .and_then(|rung| catalog.feasible().find(|candidate| candidate.rung == rung))
-        .map(|candidate| candidate.rung)
-        .unwrap_or(fallback)
-}
-
 /// **Cold-start Original admission, and only that.** The measured source prefix must complete and
 /// arrive no slower than the file's average consumption rate.  That is a physical conservation
 /// test: the prefix contributes media at least as quickly as playback removes it.  A finite prefix

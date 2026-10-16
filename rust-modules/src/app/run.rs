@@ -692,41 +692,17 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
         // Revoke our borrowed SDL proxies before another frame can use them while backgrounded.
         // SDL owns their lifetime; foreground must query its current window again.
         release_borrowed_window(plx_platform::tv::window::release);
-        // A second background while the foreground restore waits on its flight (the resume's rebuild,
-        // an Original rollback): drop the flight — its landing is discarded and only the replacement
-        // it registered is stopped — and park the session back where the first suspend left it.
-        // The suspend below would otherwise be refused (`awaiting_load`) and the flight would run
-        // on, landing a Load on a backgrounded window.
-        if super::lifecycle::park_pending_foreground_flight(
-            &mut app.player.lifecycle,
-            &mut app.player.session,
-            &mut app.adapters.player,
-        ) {
-            plx_machine::idle::invalidate();
-        }
         // Playback owns its resolve and Engine before the queued Player page mounts. Page
         // presence only governs the screen-local cleanup below, never resource suspension.
-        if (plx_media::route::play_pending()
-                || app.adapters.player.is_live()
-                || plx_media::route::has_url(&app.player.session))
-            && !app.player.lifecycle.awaiting_load()
-        {
-            // INTENDED, not published: this snapshot is the only thing the foreground
-            // restore has, and `suspend_bufferfeed` below drops the pending seek target
-            // with the session — so a background that lands while a seek is still
-            // resolving would otherwise save (and restore to) the spot the user just
-            // seeked AWAY from, with nothing left to correct it. See `intended_pos`.
-            let saved_ns = intended_pos(&mut app.player.session);
-            let clock = super::lifecycle::clock_for_suspend_now(&app.player.lifecycle);
-            app.player.lifecycle.suspend(saved_ns, clock);
+        if app.adapters.player.is_live() || plx_media::route::has_url(&app.player.session) {
+            // A channel is not resumed at a position: the foreground tunes it again at the live
+            // edge. The stream stops now, which also frees the server's stream slot.
+            app.player.parked = true;
             // The OS took the screen; whatever the pointer was doing, its button-up is never
             // going to arrive here.
             app.ptr.button_down = false;
             close_player_overlays(&mut app.pages);
             plx_media::player::suspend_bufferfeed(&mut app.player.session, &mut app.adapters.player);
-            // Also retire the resolve generation: its worker may finish after backgrounding,
-            // including before the accepted start's Player page has ever mounted.
-            plx_media::route::cancel_play(&mut app.player.session);
             // **The PAGE STACK is deliberately not touched**, which is the whole of what a park
             // is: the OS is taking the screen away, not the user navigating, and the foreground
             // arm below reloads straight back into the player. It USED to write
@@ -747,7 +723,7 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
         // WILL/DID ENTER FOREGROUND
         log(&format!(
             "LIFECYCLE: foreground (wasPlaying={})",
-            app.player.lifecycle.awaiting_load() as i32
+            app.player.parked as i32
         ));
         // The other half of the park (§12.1): `ScreenEvent::Resume` down the tree and
         // `Navigation.suspended` cleared. On BOTH edges, matching the suspend above — webOS sends
@@ -763,18 +739,7 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
             // Reacquire only on DID foreground, before playback restoration and rendering.
             restore_window(app.win);
             plx_machine::idle::invalidate();
-            let activation = drive_foreground(
-                &mut app.player.lifecycle,
-                &mut app.player.session,
-                ForegroundInput::DidForeground,
-                &mut PlayerForegroundActuator {
-                    pa: &mut app.adapters.player,
-                    repause_at: &mut app.repause_at,
-                },
-            );
-            if matches!(activation, ForegroundActivation::Launched) {
-                finish_foreground_launch(app);
-            }
+            resume_parked(app);
             window_step(plx_telemetry::telemetry::window::Stage::ForegroundDone, Some(playing));
         }
     } else if et == SDL_KEYDOWN || et == SDL_KEYUP {
@@ -991,29 +956,13 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
         } else if matches!(key, Key::Pause) {
             key_pause(&mut app.adapters.player, app.last_input, &mut app.pages);
         } else if matches!(key, Key::Play) {
-            key_play(&mut app.player.session,
-                &mut app.adapters.player,
-                app.last_input,
-                &mut app.player.lifecycle,
-                &mut app.repause_at,
-                &mut app.ptr,
-                &mut app.pages,
-                &mut app.bridge,
-            );
+            key_play(&mut app.adapters.player, &mut app.pages);
         } else if matches!(key, Key::PlayPause) {
             // ONE key, both directions. `key_play`/`key_pause` are each half of the
             // toggle, so this arm picks; off the player route `key_play` is what starts
             // playback, which is the right answer for a PLAYPAUSE press on a card.
             if paused() || super::bridge::player(&app.pages).is_none() {
-                key_play(&mut app.player.session,
-                    &mut app.adapters.player,
-                    app.last_input,
-                    &mut app.player.lifecycle,
-                    &mut app.repause_at,
-                    &mut app.ptr,
-                    &mut app.pages,
-                    &mut app.bridge,
-                );
+                key_play(&mut app.adapters.player, &mut app.pages);
             } else {
                 key_pause(&mut app.adapters.player, app.last_input, &mut app.pages);
             }
@@ -1229,19 +1178,27 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
     }
 }
 
-/// A foreground Load launched — straight from the DID edge, or from the frame that landed a flight
-/// the restore was waiting on (`poll_foreground_flight`): mount the player and pin its transport.
-fn finish_foreground_launch(app: &mut App) {
-    // The park kept the page, so this is ordinarily a no-op; it is written out
-    // because a foreground that finds the player gone has to put it back rather
-    // than resume a session with nothing on screen.
+/// The DID foreground of a parked stream: tune the channel again at the live edge (the reconnect
+/// a dropped stream gets), or restart a dev URL playback from its start. The park kept the page,
+/// so the player is ordinarily still on top; a foreground that finds it gone puts it back.
+fn resume_parked(app: &mut App) {
+    if !std::mem::take(&mut app.player.parked) {
+        return;
+    }
+    if let Some(tune) = plx_media::route::live_tune(&app.player.session).cloned() {
+        log("live: foreground re-tune");
+        super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
+            &mut app.pages, &mut app.bridge);
+    } else {
+        plx_media::player::start_bufferfeed(&mut app.player.session, &mut app.adapters.player);
+    }
     super::bridge::show_page(&mut app.pages, AppArg::Player);
 }
 
 /// Permission to advance playback is independent of the retained page stack. WILL foreground
 /// does not reopen WindowActivity; a parked session must first claim its foreground Load.
 fn playback_may_run(app: &App) -> bool {
-    app.window_activity.allow_present(true) && !app.player.lifecycle.awaiting_load()
+    app.window_activity.allow_present(true)
 }
 
 /// The playback side of an iteration before the tick: the engine pump, the foreground load
@@ -1269,41 +1226,6 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             app.present.note(plx_machine::present::PresentEvent::VideoPlane(bound));
             app.pages.present.note(plx_machine::present::PresentEvent::VideoPlane(bound));
             app.bridge.publish_video_plane(bound);
-        }
-        // A late landing of a flight nobody waits on any more (a Back, a suspend, a newer request
-        // ended it while its worker ran) is reaped here, every frame: a flight with no Engine has no
-        // pump to do it, and the landing's replacement encoder runs on the server until it is.
-        plx_media::route::discard_stale_flight_landing();
-        if app.window_activity.allow_present(true) && app.player.lifecycle.flight_pending() {
-            // The foreground restore waits on a flight (its resume's rebuild or an Original
-            // rollback): the lifecycle machine drains it, not the pump (there is no Engine) and not
-            // the cold-resume drain (`playback_may_run` is false while the restore is parked).
-            let activation = poll_foreground_flight(
-                &mut app.player.lifecycle,
-                &mut app.player.session,
-                &mut PlayerForegroundActuator {
-                    pa: &mut app.adapters.player,
-                    repause_at: &mut app.repause_at,
-                },
-            );
-            plx_machine::idle::invalidate();
-            if matches!(activation, ForegroundActivation::Launched) {
-                finish_foreground_launch(app);
-            }
-        } else if playback_may_run(app) {
-            // An Original rollback no foreground machine owns (`start_original_trial_reload`'s
-            // Load failed before an Engine existed): its landing reloads onto the restored HLS.
-            plx_media::player::drain_engineless_rollback(&mut app.player.session, &mut app.adapters.player);
-        }
-        if playback_may_run(app) {
-            let _ = poll_foreground_load(
-                &mut app.player.lifecycle,
-                &mut app.player.session,
-                &mut PlayerForegroundActuator {
-                    pa: &mut app.adapters.player,
-                    repause_at: &mut app.repause_at,
-                },
-            );
         }
         // **Unconditional, and NOT inside the `is_started` block above.** `player::state()`
         // derives two of its answers outside the pump entirely — `Resolving` while a plan is in
@@ -1404,19 +1326,6 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             hide_cursor();
             app.ptr.cur_hidden = true;
         }
-        // re-pause after a resume the INSTANT the seek's frame is on screen. `frames()` counts
-        // real "frame presented" callbacks (reset on seek), so >= 1 means the target frame is
-        // already composited — re-freezing then shows it with the shortest possible play-blip
-        // (a paused scrub must briefly Play to decode the frame; buffer-feed has no preroll).
-        if resume_pend()
-            && matches!(app.route(), AppArg::Player)
-            && plx_media::player::seek_preroll_active()
-            && seek_pending() < 0
-            && frames() >= 1
-            && playpos() + 15 * 1_000_000_000 >= app.repause_at
-        {
-            plx_media::player::finish_paused_seek(&mut app.adapters.player);
-        }
 }
 
 /// Results and requests that land BEFORE nav commit: the OK arm and the press machine, the
@@ -1494,80 +1403,6 @@ pub(crate) unsafe fn update(app: &mut App, fr: &mut Frame) {
         crate::lab::update(fr.now);
         #[cfg(feature = "threadcheck")]
         plx_ui::runtime_warning::update(false);
-        // Async play resolve: install the worker's plan and start the engine. Permission comes
-        // from the window/playback lifecycle, independently of which screen is mounted.
-        // A fresh accepted resolve owns a different playback from any parked foreground retry.
-        // Retire that old owner at this transaction boundary; a same-session Prepared retry does
-        // not set play_pending and remains owned by drive_foreground.
-        if app.window_activity.allow_present(true) && plx_media::route::play_pending() {
-            app.player.lifecycle.replace_with_new_playback();
-        }
-        land_play_then_observe(
-            app,
-            |app| {
-                if !playback_may_run(app) {
-                    return;
-                }
-                // A cold resume's rebuild landed (`player::land_resume`): the Load the pending play
-                // was holding for starts now.
-                if let Some(outcome) = plx_media::player::land_resume(&mut app.player.session) {
-                    plx_machine::idle::invalidate();
-                    finish_landed_play(app, matches!(outcome, plx_media::player::ResumeOutcome::Prepared));
-                }
-                if let Some(r) = plx_media::route::pump_play(&mut app.player.session, app.bridge.metadata_mut()) {
-                    plx_machine::idle::invalidate();
-                    // A transcode with a saved position rebuilds at that offset on a worker (`begin_resume`):
-                    // the play stays pending, the spinner stays up, and the drain at the top of this landing
-                    // starts the Load when the flight lands.
-                    match if r <= 0 {
-                        plx_media::player::ResumeStart::Settled(plx_media::player::ResumeOutcome::Prepared)
-                    } else {
-                        plx_media::player::begin_resume(&mut app.player.session, r)
-                    } {
-                        plx_media::player::ResumeStart::Pending => {}
-                        plx_media::player::ResumeStart::Settled(outcome) => finish_landed_play(
-                            app,
-                            matches!(outcome, plx_media::player::ResumeOutcome::Prepared),
-                        ),
-                    }
-                }
-            },
-            // `pump_play` can install a refused `/decision` after the earlier report
-            // observation but before this frame draws the Error screen. Observe again at that
-            // exact publication boundary; latches make a healthy/no-change frame idempotent.
-            |app| plx_media::player::report::tick(&app.player.session),
-        );
-}
-
-/// What a landed play does once its resume is settled: the Load, and the off-route backstop. Reached
-/// from the frame that lands a plan whose resume settled on the spot, and from the frame that lands
-/// a cold resume's flight (`player::land_resume`) — the same step, taken after the rebuild landed.
-fn finish_landed_play(app: &mut App, resume_prepared: bool) {
-    if !resume_prepared {
-        if let Some(transaction) = plx_media::route::pending_route_start() {
-            let _ = plx_media::route::reject_route_start_preparation(transaction);
-        }
-    }
-    // A live engine with the route anywhere but Player is unrecoverable BY THE USER —
-    // every transport key and the EOS teardown are route-gated — so repair the
-    // invariant here rather than trust that no path can violate it. The one that
-    // could is cancelled above; this is the backstop, and it is the cheaper half.
-    if resume_prepared {
-        let started = plx_media::player::start_bufferfeed(
-            &mut app.player.session,
-            &mut app.adapters.player,
-        );
-        if started && !matches!(app.route(), AppArg::Player) {
-            log("pump_play: engine started off-route → restoring AppArg::Player");
-            // The page is being taken off screen by a LANDING, not by a navigation. It
-            // carried a `forward_leave(app.route())` teardown here until phase 12; every
-            // arm of that table was `None` and the pages it named are owned screens that
-            // drop what they loaded on the container's own `Unmount` — including
-            // Search's keyboard (`SearchScreen::step`), which is the case this line was
-            // written for.
-            super::bridge::show_page(&mut app.pages, AppArg::Player);
-        }
-    }
 }
 
 /// The draw phase, entered only on a presenting frame: `clear_opaque_region` at entry, the
@@ -2020,11 +1855,6 @@ pub(crate) unsafe fn shutdown(
     if is_started() {
         plx_media::player::stop_bufferfeed(ps, pa);
     }
-    // The stop scrobble is posted off-thread now, and this process is about to die with any
-    // worker still running — so THIS is the one place its result has to be waited for, or the
-    // resume point the user just earned is silently dropped. Same cost the old inline call
-    // paid, except now it is paid once at exit instead of on every BACK out of a movie.
-    plx_media::route::drain_scrobble();
     crate::capture::shutdown();
     crate::app::adapters::poster::shutdown();
     SDL_Quit();
@@ -2058,7 +1888,6 @@ mod lifecycle_regression_tests {
                     plx_base::task::MainThread::assume()
                 }),
             },
-            repause_at: -1,
             live_reconnect: super::playback::ReconnectBudget::default(),
             ok_armed: Default::default(),
             last_route_reported: Default::default(),
@@ -2151,6 +1980,42 @@ mod lifecycle_regression_tests {
                 "foreground_done",
             ],
         );
+    }
+
+    /// **An app switch parks a stream and the foreground starts it again.** A channel is not
+    /// resumed at a position: background stops the stream (freeing the server's slot) and marks the
+    /// player parked; the DID foreground clears the park and starts playback afresh, at the live
+    /// edge for a channel. With nothing playing there is nothing to park.
+    #[test]
+    fn an_app_switch_parks_the_stream_and_the_foreground_restarts_it() {
+        let _serial = plx_base::testlock::serial();
+        let mut app = app();
+        let mut fr = Frame::begin();
+        for et in [0x103, 0x104] {
+            event(&mut app, &mut fr, et);
+        }
+        assert!(!app.player.parked, "nothing was playing, so nothing is parked");
+        for et in [0x105, 0x106] {
+            event(&mut app, &mut fr, et);
+        }
+
+        use plx_media::route::{LiveChannel, LiveLineup, LiveTune};
+        let channels = vec![LiveChannel { id: 1, uuid: "u-1".into(), number: "1".into(), name: String::new(),
+            url: "http://127.0.0.1:9/stream.ts".into(), logo: None, programmes: Vec::new() }];
+        let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
+        let tune = LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None };
+        assert!(plx_media::route::request_live(&mut app.player.session, tune, 0));
+        for et in [0x103, 0x104] {
+            event(&mut app, &mut fr, et);
+        }
+        assert!(app.player.parked, "a background with a stream parks it");
+        event(&mut app, &mut fr, 0x105);
+        assert!(app.player.parked, "the WILL edge restarts nothing");
+        event(&mut app, &mut fr, 0x106);
+        assert!(!app.player.parked, "the DID foreground spends the park");
+        assert!(app.adapters.player.is_live(), "and tunes the channel again");
+        assert_eq!(plx_media::route::live_tune(&app.player.session).map(|t| t.index), Some(0));
+        plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
     }
 
     /// `wayland_released` is a step only when a borrowed surface was actually released (the second

@@ -216,13 +216,6 @@ thread_local! {
     static TEST_SYNCS: std::cell::RefCell<Vec<Option<i32>>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
-/// The changes `sync` was asked for on this thread since the last call (host tests of the route):
-/// `Some(ordinal)` = draw this track, `None` = draw nothing.
-#[cfg(test)]
-pub(crate) fn take_test_syncs() -> Vec<Option<i32>> {
-    TEST_SYNCS.with(|l| std::mem::take(&mut *l.borrow_mut()))
-}
-
 #[cfg_attr(test, allow(dead_code))]
 fn kick_worker() {
     if SYNC_WORKER.swap(true, Ordering::AcqRel) {

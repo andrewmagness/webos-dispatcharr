@@ -221,53 +221,9 @@ fn enabled() -> bool {
 }
 
 fn now_ms() -> i64 {
-    #[cfg(test)]
-    if let Some(pinned) = pinned_clock::read() {
-        return pinned;
-    }
     i64::from(super::vclock_ms())
 }
 
-/// A per-thread virtual reading for [`now_ms`], so a test that grades the clock's POSITION is not
-/// graded on how many real milliseconds its own statements took. The sink clock adds the wall time
-/// since it last started running, in whole milliseconds, so a test that starts it at an exact
-/// offset and pauses it one statement later reads that offset only when no millisecond boundary
-/// falls between the two: a loaded runner makes one fall there often enough to be a flake
-/// (`claim_hold`'s "stopped AT the claim offset" read 1 ms high). Pinned, time moves only when
-/// [`pinned_clock::Pinned::advance`] says so; dropping the guard restores the real clock. The
-/// pin starts at the real reading, so it shares the ticker thread's time base.
-#[cfg(test)]
-pub(super) mod pinned_clock {
-    use std::cell::Cell;
-
-    thread_local! {
-        static PINNED: Cell<Option<i64>> = const { Cell::new(None) };
-    }
-
-    pub(super) fn read() -> Option<i64> {
-        PINNED.with(Cell::get)
-    }
-
-    pub(crate) struct Pinned;
-
-    impl Pinned {
-        /// Pin this thread's sink clock at the real time now.
-        pub(crate) fn now() -> Self {
-            PINNED.with(|p| p.set(Some(i64::from(super::super::vclock_ms()))));
-            Pinned
-        }
-
-        pub(crate) fn advance_ms(&self, by: i64) {
-            PINNED.with(|p| p.set(p.get().map(|at| at + by)));
-        }
-    }
-
-    impl Drop for Pinned {
-        fn drop(&mut self) {
-            PINNED.with(|p| p.set(None));
-        }
-    }
-}
 /// The rebase `sf_on_event` applies to a reported position (`playpos = fed - pts_shift +
 /// disp_base`), inverted: the fed PTS at which the app will read `media_ns`.
 fn media_to_fed(media_ns: i64) -> i64 {
@@ -381,22 +337,6 @@ pub(super) fn reset_native_lifecycle_for_test() {
     *HOLD_LOAD.0.lock().unwrap_or_else(|e| e.into_inner()) = false;
     HOLD_LOAD.1.notify_all();
     Clock::rewind();
-}
-
-/// Start the sink clock running at `base_ns` in the fed-PTS space with plenty of fed media ahead,
-/// so a test can watch whether it advances. Test-only: production starts it through `sf_play`.
-#[cfg(test)]
-pub(super) fn clock_run_for_test(base_ns: i64) {
-    Clock::rewind();
-    BASE_NS.store(base_ns, Relaxed);
-    FED_MAX_NS.store(i64::MAX / 2, Relaxed);
-    RESUMED_AT_MS.store(now_ms(), Relaxed);
-    PLAYING.store(true, Relaxed);
-}
-/// The sink clock's position and whether it is running. Test-only.
-#[cfg(test)]
-pub(super) fn clock_state_for_test() -> (i64, bool) {
-    (Clock::position_ns(), PLAYING.load(Relaxed))
 }
 
 impl Clock {

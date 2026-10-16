@@ -7,7 +7,6 @@
 //! Rust: plx_media::player).
 #![allow(non_upper_case_globals)]
 use std::os::raw::{c_char, c_int, c_uint, c_void};
-use std::sync::atomic::Ordering::Relaxed;
 
 // ---- constants (SDL 2.0.4 + GLES2 + app) ----
 const SDL_INIT_VIDEO: u32 = 0x20;
@@ -259,7 +258,6 @@ pub(crate) struct App {
     /// through. One so far: the Player's, which holds the native session that was
     /// `player::engine::ENGINE` together with the main-thread token that confines it.
     pub(crate) adapters: Adapters,
-    repause_at: i64,
     /// How many times a live channel's ended stream has been reconnected lately.
     pub(crate) live_reconnect: playback::ReconnectBudget,
     pub(crate) ok_armed: bool,
@@ -485,7 +483,6 @@ pub(crate) fn run_application(pms_host: *const c_char, pms_port: c_int) -> c_int
     let mut app = match enter_application(pms_host,pms_port) { Ok(app) => app, Err(code) => return code };
     unsafe { run_and_shutdown(&mut app) }
 }
-
 
 // **Four `#[cfg(test)] mod` blocks stood here** and D8 gives each one the home of the thing it
 // grades, so that `run_application`'s module reads as the entry point it is (`ci/check-deps.sh`'s

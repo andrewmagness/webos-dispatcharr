@@ -207,13 +207,10 @@ mod panic_log_tests {
 /// `telemetry`, so what it needs from them reaches it as hooks installed here, once, first thing in
 /// [`enter_application`] — before anything can load the session:
 ///
-/// * `plex::session::install_auto_quality_ready` — `route::auto_quality_ready`, the gate a fresh
-///   session record's default quality is seeded from (unset, `plex` reads `true`, the gate's value);
 /// * `plex::session::install_account_clear_cleanup` — `telemetry::cleanup_after_account_clear`, the
 ///   telemetry/consent legacy-file sweep a durable sign-out runs. It exists only where the sweep does
 ///   (ARM, not the simulator, not a test build); unset, `plex` reads it as already retired.
 pub(crate) fn install_plex_seams() {
-    plx_plex::plex::session::install_auto_quality_ready(plx_media::route::auto_quality_ready);
     #[cfg(all(target_os = "linux", target_arch = "arm", not(feature = "hostsim"), not(test)))]
     plx_plex::plex::session::install_account_clear_cleanup(plx_telemetry::telemetry::cleanup_after_account_clear);
 }
@@ -487,15 +484,6 @@ pub(crate) unsafe fn boot(
     construct(pms_host, pms_port, mt)
 }
 
-/// **Boot's restore**: the live player cells, through the one `route::restore_all`. Split out of
-/// [`construct`] so the cells it sets can be graded without an SDL window. Restored before any
-/// route can resolve a stream; the dev quality override is honoured.
-pub(super) fn restore_player_preferences(session: &plx_plex::plex::session::Session) {
-    plx_media::route::restore_all(session, plx_media::route::Overrides {
-        quality: crate::dev::playback_quality_override(),
-    });
-}
-
 pub(crate) unsafe fn construct(
     _pms_host: *const c_char, _pms_port: c_int, mt: plx_base::task::MainThread,
 ) -> Result<App, c_int> {
@@ -680,9 +668,6 @@ pub(crate) unsafe fn construct(
     super::adapters::poster::init();
     crate::capture::init();
 
-    // The player's own preferences are not stored anywhere by this app: a fresh record's defaults
-    // are what every playback resolves under.
-    let session = plx_plex::plex::session::Session::default();
     // dev: /tmp/dispatcharrtv-toast=<text> — asks the TV's notification service for a system toast,
     // once plain and once as the app, and logs each full outcome (`toast-probe …`).
     #[cfg(feature = "devtriggers")]
@@ -702,13 +687,6 @@ pub(crate) unsafe fn construct(
     let pages = plx_ui::dispatch::Dispatcher::with_transition(Box::new(
         plx_ui::containers::transition::PageDip::new(),
     ));
-    restore_player_preferences(&session);
-    // dev: /tmp/dispatcharrtv-audioenh=off|boost|loudness — force the PERSISTED enhancement
-    // preference right after it was restored from whatever the install actually has saved, so a
-    // harness case's starting preference never depends on what an earlier run's pick left behind.
-    // Unlike every other boot override on this page, this one calls the real persisting setter —
-    // see `dev::scenarios::arm_audio_enhancements`'s own doc for why.
-    crate::dev::scenarios::arm_audio_enhancements();
     // Every ordinary boot lands on Setup, which reads the stored Dispatcharr account itself —
     // showing the form when there is none and handing over to the Guide when there is.
     log("boot: Dispatcharr setup");
@@ -817,7 +795,6 @@ pub(crate) unsafe fn construct(
     let adapters = super::Adapters {
         player: plx_media::player::adapter::PlayerAdapter::new(mt),
     };
-    let repause_at = 0i64;
     // ui::press click state: a grid-card OK is deferred (press-in on down, activate on the
     // spring-back after key-up) so `ok_armed` marks "a press is in flight, commit it from the
     // per-frame loop when press::take_commit fires". Only ever set on Home's grid.
@@ -876,7 +853,6 @@ pub(crate) unsafe fn construct(
         diagnostics: crate::app::diagnostics::Diagnostics::default(),
         player,
         adapters,
-        repause_at,
         live_reconnect: super::playback::ReconnectBudget::default(),
         ok_armed,
         last_route_reported,

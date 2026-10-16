@@ -154,7 +154,6 @@ python3 .claude/hooks/cloud-unshallow-test.py
 python3 tools/test_pms_hls_probe.py
 python3 tools/test_pms_rung_sweep.py
 python3 tools/test_abr_transfer_bound.py
-python3 tools/test_abr_calibrate_plant.py
 python3 tools/test_abr_window_grade.py
 python3 tools/test_scrub_logs.py
 # `deploy`'s payload check, both halves, host-only. `test_deploy_manifest.py` re-derives

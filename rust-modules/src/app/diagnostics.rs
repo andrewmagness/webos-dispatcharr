@@ -237,7 +237,7 @@ fn kick() {
 const SAMPLE_MS: u32 = 500;
 /// The pipeline column's fixed schema: a row may say a value is unknown, but it may not be deleted
 /// and slide unrelated evidence into its place — two photographs must be comparable by y.
-const LEFT_ROWS: usize = 13;
+const LEFT_ROWS: usize = 12;
 /// The support-panel budget its host assertions price. Playback uses [`LEFT_ROWS`]; the
 /// pre-playback device card uses only the rows it actually has.
 #[cfg(test)]
@@ -557,15 +557,6 @@ fn device_rows() -> Vec<Field> {
             .fault(dv.capability == plx_platform::devcaps::dv::DvCapability::Unknown),
     );
 
-    // The same row the pipeline block leads with, minus the direct-play/transcode half that has no
-    // meaning yet: it answers "did the server ever reply", which IS the failure when nothing plays.
-    v.push(Field::new(
-        plx_platform::i18n::msg::browse_diagnostics_field_server(),
-        server_line(
-            &plx_plex::plex::serverinfo::version(),
-            plx_plex::plex::serverinfo::subscription(),
-        ),
-    ));
     v
 }
 
@@ -604,7 +595,6 @@ fn rows(ps: &plx_media::route::PlaybackSession, d: &plx_media::player::Diag, pre
 
 fn pipeline_rows(ps: &plx_media::route::PlaybackSession, d: &plx_media::player::Diag, prev: (i64, i64, u32), now: u32) -> Vec<Field> {
     let mut v = Vec::with_capacity(LEFT_ROWS);
-    v.push(Field::new(plx_platform::i18n::msg::browse_diagnostics_field_connection(), connection_line(ps)));
     v.push(Field::new(plx_platform::i18n::msg::browse_diagnostics_field_route(), route_line(ps)));
 
     let mut video = chain(
@@ -769,26 +759,6 @@ fn fps_milli_str(fps_milli: i64) -> String {
             .trim_end_matches('0')
             .to_string()
     }
-}
-
-fn connection_line(ps: &plx_media::route::PlaybackSession) -> String {
-    let sid = plx_media::route::cur_sid(ps);
-    let Some(client) = plx_plex::plex::client_for(sid) else {
-        return plx_platform::i18n::msg::browse_diagnostics_standalone().to_string();
-    };
-    let tier = match client.link() {
-        Some(plx_plex::plex::probe::Location::Local) => "LAN",
-        Some(plx_plex::plex::probe::Location::Remote) => plx_platform::i18n::msg::browse_diagnostics_remote(),
-        Some(plx_plex::plex::probe::Location::Relay) => plx_platform::i18n::msg::browse_diagnostics_relay(),
-        None => plx_platform::i18n::msg::browse_diagnostics_unknown_link(),
-    };
-    format!(
-        "{tier} · PMS {}",
-        server_line(
-            &plx_plex::plex::serverinfo::version_of(sid),
-            plx_plex::plex::serverinfo::subscription_of(sid),
-        )
-    )
 }
 
 fn route_line(ps: &plx_media::route::PlaybackSession) -> String {
@@ -1034,37 +1004,6 @@ fn chain(src: String, sent: String, payload: &str) -> String {
         format!("{src} → {payload}")
     } else {
         format!("{src} → {sent} → {payload}")
-    }
-}
-
-/// The Server row's value: "<release> · Plex Pass" / "<release> · no Plex Pass", or
-/// "not yet queried" while the `GET /` worker has not landed (an empty version IS that state —
-/// `serverinfo` stores the two fields together).
-///
-/// A server that answered but never named its subscription (a PMS predating the field) shows its
-/// release alone: the row must not claim a Pass state the server did not state. Pure so every arm
-/// is host-testable without touching the process-global store.
-fn server_line(version: &str, sub: plx_plex::plex::serverinfo::Subscription) -> String {
-    use plx_plex::plex::serverinfo::Subscription as S;
-    if version.is_empty() {
-        return plx_platform::i18n::msg::browse_diagnostics_not_queried().to_string();
-    }
-    let v = short_version(version);
-    match sub {
-        S::Yes => plx_platform::i18n::msg::browse_diagnostics_plex_pass(v),
-        S::No => plx_platform::i18n::msg::browse_diagnostics_no_plex_pass(&v),
-        S::Unknown => v.to_string(),
-    }
-}
-
-/// The PMS release triplet ("1.43.3.10861-cd85035e7" → "1.43.3"). The build/hash carry no support
-/// signal the release does not, while the shorter stable form keeps the Connection row directly
-/// comparable and leaves its Pass verdict visible. The event log retains the full string.
-fn short_version(version: &str) -> &str {
-    let numeric = version.split('-').next().unwrap_or(version);
-    match numeric.match_indices('.').nth(2) {
-        Some((i, _)) => &numeric[..i],
-        None => numeric,
     }
 }
 
@@ -2071,52 +2010,6 @@ mod tests {
         );
         // and nothing known yet must not render as blank gaps around arrows
         assert_eq!(chain(String::new(), String::new(), "—"), "— → —");
-    }
-
-    /// The Server row's three arms (issue #22's blind spot made visible). A free server is a FACT
-    /// the row states plainly — the fault-tone assertion lives with the row builder test below —
-    /// and a server that never named its subscription must not be assigned one either way.
-    #[test]
-    fn the_server_row_states_the_pass_tristate_without_guessing() {
-        use plx_plex::plex::serverinfo::Subscription as S;
-        assert_eq!(
-            server_line("1.43.3.10861-cd85035e7", S::Yes),
-            "1.43.3 · Plex Pass"
-        );
-        assert_eq!(
-            server_line("1.43.3.10861-cd85035e7", S::No),
-            "1.43.3 · no Plex Pass"
-        );
-        // fetch never landed: version and subscription are stored together, so empty = unqueried
-        assert_eq!(server_line("", S::Unknown), "not yet queried");
-        // answered, but a PMS old enough not to carry the field: the release alone, no claim
-        assert_eq!(server_line("0.9.12.4", S::Unknown), "0.9.12");
-    }
-
-    /// The truncation exists for the elide (see [`short_version`]) and must survive whatever
-    /// shape a server's version string takes — a short form must pass through, never panic.
-    #[test]
-    fn the_version_triplet_survives_every_shape() {
-        assert_eq!(short_version("1.43.3.10861-cd85035e7"), "1.43.3");
-        assert_eq!(short_version("1.43.3"), "1.43.3");
-        assert_eq!(short_version("1.43"), "1.43");
-        assert_eq!(short_version("1.43-beta.2.1"), "1.43");
-    }
-
-    /// A free server reads as a fact, never a fault: the danger tint is reserved for rows that say
-    /// "something broke", and `no Plex Pass` is the server working exactly as sold. (The value
-    /// itself depends on the process-global store this test deliberately does not touch — the
-    /// tone is a property of the ROW, fixed at build time, so it is assertable regardless.)
-    #[test]
-    fn the_server_row_is_never_a_fault() {
-        let ps = plx_media::route::PlaybackSession::IDLE;
-        // Topology and server capability are facts on the stable Connection row, never failures.
-        let d = plx_media::player::Diag::default();
-        let row = rows(&ps, &d, (0, 0, 0), 1_000)
-            .into_iter()
-            .find(|f| f.key == "Connection")
-            .expect("Connection row");
-        assert_ne!(row.tone, plx_ui::widgets::Tone::Fault);
     }
 
     #[test]

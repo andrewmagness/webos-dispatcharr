@@ -226,22 +226,6 @@
     "value": "webOS unknown — os_info.json unreadable",
     "description": "Diagnostics panel: unknown os"
   },
-  "browse.diagnostics.standalone": {
-    "value": "standalone · no PMS",
-    "description": "Diagnostics panel: standalone"
-  },
-  "browse.diagnostics.remote": {
-    "value": "remote",
-    "description": "Diagnostics panel: remote"
-  },
-  "browse.diagnostics.relay": {
-    "value": "relay",
-    "description": "Diagnostics panel: relay"
-  },
-  "browse.diagnostics.unknown_link": {
-    "value": "link unknown",
-    "description": "Diagnostics panel: unknown link"
-  },
   "browse.diagnostics.progressive": {
     "value": "progressive",
     "description": "Diagnostics panel: progressive"
@@ -945,14 +929,6 @@
   "browse.diagnostics.field.dolby_vision": {
     "value": "Dolby Vision",
     "description": "Row label in the playback diagnostics read-out (the brand name of the HDR format; keep it untranslated). It is right-aligned into a narrow gutter at the dense diagnostic size, so it must stay short (about 12 characters)."
-  },
-  "browse.diagnostics.field.server": {
-    "value": "Server",
-    "description": "Row label in the playback diagnostics read-out (the Plex Media Server version). It is right-aligned into a narrow gutter at the dense diagnostic size, so it must stay short (about 12 characters)."
-  },
-  "browse.diagnostics.field.connection": {
-    "value": "Connection",
-    "description": "Row label in the playback diagnostics read-out (how the app reaches the server). It is right-aligned into a narrow gutter at the dense diagnostic size, so it must stay short (about 12 characters)."
   },
   "browse.diagnostics.field.route": {
     "value": "AppArg",

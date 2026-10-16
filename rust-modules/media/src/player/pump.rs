@@ -568,7 +568,6 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // Content-Length and nothing to seek to.
     if stream
         && t >= 0
-        && !crate::route::original_recovery_pending()
         && !(eng.flushed && eng.rebase_pending) // coalesce: don't stack in-place seeks
         && eng.stage >= Stage::Playing
         && SHARED.duration_ns.load(Relaxed) > 0

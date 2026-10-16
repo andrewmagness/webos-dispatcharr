@@ -505,9 +505,6 @@ pub fn seen_frame() -> bool {
 pub fn duration_ns() -> i64 {
     SHARED.duration_ns.load(Relaxed)
 }
-pub fn seek_pending() -> i64 {
-    TX.seek_to_ns.load(Relaxed)
-}
 /// **The codecs a failed live channel should be declared with**, when that is why it failed: the
 /// demuxer refused the stream because it is not what the Load declared, and what it found is
 /// something a Load can declare. `None` otherwise (still starting, playing, failed for another
@@ -2893,71 +2890,6 @@ mod tests {
             .hls_rebuffering
             .load(std::sync::atomic::Ordering::Acquire));
         assert!(!TX.paused.load(std::sync::atomic::Ordering::Acquire));
-    }
-
-    #[test]
-    fn an_abandoned_paused_seek_keeps_user_pause_and_closes_only_its_feed_override() {
-        let _guard = plx_base::testlock::serial();
-        TX.reset();
-        TX.commit_paused(true);
-        TX.resume_pend
-            .store(true, std::sync::atomic::Ordering::Release);
-        assert!(TX.begin_paused_seek());
-        // Test setup only: avoid looking like a second production arm site to the source-level
-        // invariant in tests/test_harness.py.
-        SHARED
-            .seeking
-            .swap(true, std::sync::atomic::Ordering::AcqRel);
-
-        abandon_seek();
-
-        assert!(TX.paused.load(std::sync::atomic::Ordering::Acquire));
-        assert!(!TX.seek_preroll_active());
-        assert!(!TX.resume_pend.load(std::sync::atomic::Ordering::Acquire));
-        TX.reset();
-    }
-
-    /// **A seek that is given up on must not leave the spinner armed forever.**
-    ///
-    /// `request_seek` sets `SHARED.seeking`, and the ONLY place that cleared it was the successful
-    /// prime→Play. `pump::set_state` publishes `PlaybackState::Seeking` from that flag ahead of
-    /// every other arm — deliberately, since the frames on the panel during a seek are the
-    /// pre-seek ones — so a leaked flag means a permanent spinner, a playhead frozen at the target
-    /// and `is_playing()` false, while the pipeline plays on underneath. Device-measured: 84
-    /// seconds of exactly that, through 37 segment acquisitions and four rung commits.
-    ///
-    /// Differential: against the code before `abandon_seek` existed there was nothing to call, and
-    /// both assertions below fail on the state `request_seek` leaves.
-    ///
-    /// Takes the crate lock because `SHARED` is a process-wide global and other modules' tests
-    /// read the playback state.
-    #[test]
-    fn an_abandoned_seek_disarms_the_spinner_and_the_frozen_playhead() {
-        let _guard = plx_base::testlock::serial();
-        let was_seeking = SHARED.seeking.load(Relaxed);
-        let was_display = SHARED.seek_display_ns.load(Relaxed);
-
-        request_seek(40_000_000_000);
-        assert!(
-            SHARED.seeking.load(Relaxed),
-            "the requester arms the spinner"
-        );
-        assert_eq!(
-            seek_display_ns(),
-            40_000_000_000,
-            "and freezes the playhead at the target"
-        );
-
-        abandon_seek();
-        assert!(!SHARED.seeking.load(Relaxed), "giving up must disarm it");
-        assert_eq!(
-            seek_display_ns(),
-            -1,
-            "a stale target would keep the playhead frozen"
-        );
-
-        SHARED.seeking.store(was_seeking, Relaxed);
-        SHARED.seek_display_ns.store(was_display, Relaxed);
     }
 
     /// Issue #22: the error must NAME an audio-only stream, and name the right party. On a

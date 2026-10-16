@@ -29,15 +29,6 @@ use super::*;
 // player's. `App::modal_repeat` still reaches it through this re-export.
 pub(crate) use plx_screens::registry::RepeatGate;
 
-
-#[inline]
-pub(crate) fn resume_pend() -> bool {
-    plx_media::player::TX.resume_pend.load(Relaxed)
-}
-#[inline]
-pub(crate) fn set_resume_pend(v: bool) {
-    plx_media::player::TX.resume_pend.store(v, Relaxed)
-}
 #[inline]
 pub(crate) fn dur() -> i64 {
     plx_media::player::duration_ns()
@@ -45,29 +36,6 @@ pub(crate) fn dur() -> i64 {
 #[inline]
 pub(crate) fn playpos() -> i64 {
     plx_media::player::playpos_ns()
-}
-/// The playhead the user INTENDED, which is not always the one being published. While a seek is
-/// still resolving (request → reopen → prime → Play) `playpos()` keeps reporting the PRE-seek spot,
-/// so anything that snapshots "where are we?" inside that window snapshots the position the user
-/// just left. The rule — an in-flight seek target wins, else the published position — was open-coded
-/// at each reader that remembered it (the scrub seed below; the HUD's frozen playhead in
-/// `appkit/player_hud.rs`) and simply MISSING at the one that did not: the OS-background save took a bare
-/// `playpos()`, so backgrounding right after a seek stored the pre-seek spot and the foreground
-/// restore replayed from there — and teardown clears the pending target, so nothing self-corrected.
-/// Use this at every reader that means "where the user is"; keep the raw `playpos()` only where the
-/// PUBLISHED position is the point (the re-pause gate, which is already behind `seek_pending() < 0`,
-/// and the heartbeat's `pos=`, which the harness grades real playback progress from).
-#[inline]
-pub(crate) fn intended_pos(ps: &plx_media::route::PlaybackSession) -> i64 {
-    plx_media::player::intended_pos_ns(ps)
-}
-#[inline]
-pub(crate) fn frames() -> i32 {
-    plx_media::player::frames()
-}
-#[inline]
-pub(crate) fn seek_pending() -> i64 {
-    plx_media::player::seek_pending()
 }
 #[inline]
 pub(crate) fn request_seek(x: i64) {
@@ -85,7 +53,6 @@ pub(crate) fn is_started() -> bool {
 // decide things that have shipped wrong (the teardown rule below, twice), and a `Route` that only
 // exists inside the run loop's body is a decision no host test can reach. The loop still owns every
 // VALUE — `route` is a local, the trail is a local.
-
 
 /// **How often a live channel may be reconnected on its own.** A channel's stream ending is not
 /// the end of the programme: the connection dropped, or the server restarted its upstream, and the
@@ -246,7 +213,6 @@ pub(super) trait PlaybackResources {
         pa: &mut plx_media::player::adapter::PlayerAdapter) -> bool;
 }
 
-
 pub(super) struct LivePlaybackResources;
 
 impl PlaybackResources for LivePlaybackResources {
@@ -288,8 +254,6 @@ pub(super) fn start_playback_with<R: PlaybackResources>(
 pub(crate) fn close_player_overlays(_pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>) {
     crate::app::diagnostics::close(); // a diagnostics panel must not survive into the next session
 }
-
-
 
 pub(crate) fn player_requests(
     repair: &mut plx_media::player::machine::RepairAttempt,
@@ -406,8 +370,6 @@ pub(crate) fn finish_playback(
     false
 }
 
-
-
 // (`key_player_failed` stood here — the arm `app/run.rs` reached for a key arriving while a
 // terminal read-out owned the frame: OK opened the quality ladder, BACK closed the `…` popover if
 // one was up and otherwise left the playback, everything else was swallowed. Restructure phase 12
@@ -427,12 +389,10 @@ pub(crate) fn finish_playback(
 /// adapter, the route and the trail in scope arrive back here as `PlayerReq`, drained by
 /// [`player_requests`].)
 
-
 // (`key_player_updown` stood here — UP/DOWN walking the HUD's ring, or spending the press on
 // REVEALING a hidden transport. Ported to `PlayerScreen::key_updown` in phase 9 and DELETED with
 // its caller in phase 12 (PX-PLAYER): the loop kept calling this on the screen's own `hud`/`scrub`
 // while the screen answered the same key through the dispatcher.)
-
 
 /// PAUSE — the dedicated transport key, which only ever pauses (PLAY is its other half).
 pub(crate) fn key_pause(

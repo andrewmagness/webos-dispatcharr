@@ -215,11 +215,8 @@ fn plan_track(
 /// playable or whether PMS must container-remux it while copying the video.
 #[derive(Clone)]
 pub(super) struct AutoOriginalCandidate {
-    pub(super) url: String,
     pub(super) probe_part: String,
     pub(super) direct: bool,
-    pub(super) vcodec: String,
-    pub(super) fps: f64,
     pub(super) dovi: plx_data::metadata::Dovi,
     pub(super) dv_decision: plx_data::metadata::DvDecision,
     /// The audio track this candidate carries. `None` = server default, facts unknown (issue
@@ -1721,7 +1718,7 @@ pub(super) fn build_stream(off: &plx_base::task::OffFrame, rk: &str, part: &str,
     {
         let aidx = audio_sel.as_ref().map_or(-1, |(idx, _, _)| *idx);
         let direct = directplay;
-        let fps = if direct {
+        let _fps = if direct {
             plan.playing.as_ref().map(|p| p.video_fps).unwrap_or(0.0)
         } else {
             0.0
@@ -1736,11 +1733,8 @@ pub(super) fn build_stream(off: &plx_base::task::OffFrame, rk: &str, part: &str,
         };
         let subtitle_ordinal = direct.then(|| sub_pick.map(|(_, ord)| ord)).flatten();
         plan.auto_original = Some(AutoOriginalCandidate {
-            url: client.direct_play_url(part, &session).to_url(),
             probe_part: part.to_owned(),
             direct,
-            vcodec: vcodec.to_string(),
-            fps,
             dovi: if direct {
                 dovi
             } else {

@@ -834,16 +834,6 @@ pub enum RouteStartResult {
     StartFailed,
 }
 
-/// Native half of an Original handoff.  A successful `sf_load` only proves that the payload was
-/// accepted; the old HLS route cannot be retired until the new source produces a decoded frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum OriginalTrialPhase {
-    Prepared(u64),
-    Starting(u64, u64),
-    AwaitingFrame(u64),
-    Failed(u64),
-}
-
 /// The part of [`Session`] which describes bytes already accepted as the live route.
 ///
 /// User controls are allowed to stage a different projection in `Session` while their PMS/native
@@ -942,13 +932,6 @@ fn commit_in_place_route_projection(ps: &PlaybackSession, quality_contract: bool
             }
             control.applied_projection = Some(projection);
         }
-        ControlPhase::OriginalTrial(_) if !quality_contract => {
-            // A client-rendered subtitle edit belongs to the candidate being graded, not to the
-            // retained HLS rollback route. First-frame confirmation will publish this snapshot.
-            if let Some(pending) = control.pending_original.as_mut() {
-                pending.candidate_projection = projection;
-            }
-        }
         _ => return,
     }
     if let Some(timeline) = control.timeline.as_mut() {
@@ -1012,7 +995,6 @@ enum ControlPhase {
     /// Native start/frame proof committed; transaction-attached user effects are being reduced
     /// while automatic workers remain fenced. `Stable` is published only after they are queued.
     Completing(u64),
-    OriginalTrial(OriginalTrialPhase),
     Failed(u64),
     Stopping,
 }
@@ -1025,11 +1007,6 @@ enum ResolveFallback {
     Idle,
     Stable,
     Failed(u64),
-    /// An Original trial's own transaction (`OriginalTrial(Prepared(serial))`), handed back by an
-    /// Engine-less recovery flight a newer request superseded. The trial's snapshot
-    /// (`pending_original`) was never touched, and its candidate projection is the session's, so a
-    /// cancelled resolve restores the PHASE only (no applied projection over the candidate's).
-    Trial(u64),
 }
 
 /// The synchronized authority for route ownership and route-changing intents. `Session` remains
@@ -1108,7 +1085,6 @@ pub(super) struct PlayerControl {
     /// HLS Engine. They belong to the exact rollback transaction and are consumed only after its
     /// matching native start succeeds.
     start_deferred: Option<(u64, DeferredOriginalEffects)>,
-    pending_original: Option<PendingOriginal>,
     timeline: Option<TimelineProjection>,
 }
 
@@ -1156,7 +1132,6 @@ static PLAYER_CONTROL: std::sync::Mutex<PlayerControl> = std::sync::Mutex::new(P
     start_results: Vec::new(),
     last_start_result: None,
     start_deferred: None,
-    pending_original: None,
     timeline: None,
 });
 
@@ -1302,8 +1277,7 @@ fn begin_playback_request() -> bool {
         | ControlPhase::Prepared(_)
         | ControlPhase::Starting(_, _)
         | ControlPhase::StagingUser(_)
-        | ControlPhase::Completing(_)
-        | ControlPhase::OriginalTrial(_) => return false,
+        | ControlPhase::Completing(_) => return false,
     };
     control.desired_revision = next_generation(control.desired_revision);
     control.desired_quality = quality();
@@ -1418,7 +1392,6 @@ fn cancel_playback_request(ps: &mut PlaybackSession, _playable: bool) {
         ResolveFallback::Idle => ControlPhase::Idle,
         ResolveFallback::Stable => ControlPhase::Stable,
         ResolveFallback::Failed(serial) => ControlPhase::Failed(serial),
-        ResolveFallback::Trial(serial) => ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial)),
     };
 }
 
@@ -1533,10 +1506,6 @@ pub fn pending_route_start() -> Option<RouteStartTransaction> {
         ControlPhase::Preparing(serial)
         | ControlPhase::Prepared(serial)
         | ControlPhase::Starting(serial, _) => Some(RouteStartTransaction { serial }),
-        ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial))
-        | ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(serial, _)) => {
-            Some(RouteStartTransaction { serial })
-        }
         _ => None,
     }
 }
@@ -1551,10 +1520,6 @@ pub fn begin_route_start() -> Option<RouteStartTransaction> {
         ControlPhase::Preparing(serial)
         | ControlPhase::Prepared(serial)
         | ControlPhase::Starting(serial, _) => Some(RouteStartTransaction { serial }),
-        ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial))
-        | ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(serial, _)) => {
-            Some(RouteStartTransaction { serial })
-        }
         ControlPhase::Stable => {
             control.next_action = next_generation(control.next_action);
             let serial = control.next_action;
@@ -1593,12 +1558,6 @@ pub fn prepare_route_start(ticket: RouteStartTransaction) -> bool {
         {
             true
         }
-        ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial))
-        | ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(serial, _))
-            if serial == ticket.serial =>
-        {
-            true
-        }
         _ => false,
     }
 }
@@ -1609,25 +1568,15 @@ pub fn claim_route_start_attempt(
     ticket: RouteStartTransaction,
 ) -> Option<RouteStartAttempt> {
     let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    let original = match control.phase {
-        ControlPhase::Prepared(serial) if serial == ticket.serial => false,
-        ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial))
-            if serial == ticket.serial =>
-        {
-            true
-        }
-        _ => return None,
-    };
+    if control.phase != ControlPhase::Prepared(ticket.serial) {
+        return None;
+    }
     control.next_start_attempt = control
         .next_start_attempt
         .checked_add(1)
         .expect("native Load attempt identity exhausted");
     let attempt = control.next_start_attempt;
-    control.phase = if original {
-        ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(ticket.serial, attempt))
-    } else {
-        ControlPhase::Starting(ticket.serial, attempt)
-    };
+    control.phase = ControlPhase::Starting(ticket.serial, attempt);
     Some(RouteStartAttempt {
         serial: ticket.serial,
         attempt,
@@ -1652,12 +1601,6 @@ pub fn abort_route_start(ticket: RouteStartTransaction, result: RouteStartResult
         {
             ControlPhase::Failed(serial)
         }
-        ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial))
-        | ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(serial, _))
-            if serial == ticket.serial =>
-        {
-            ControlPhase::OriginalTrial(OriginalTrialPhase::Failed(serial))
-        }
         _ => return false,
     };
     control.start_deferred = control
@@ -1672,23 +1615,16 @@ pub fn abort_route_start(ticket: RouteStartTransaction, result: RouteStartResult
 /// Publish the native half of one prepared route. An ordinary failed candidate deliberately
 /// remains the applied projection in `Failed`: teardown may already have destroyed the old Engine
 /// and PMS may already have retired its encoder, so restoring the old *description* would fabricate
-/// a live route. An Original failure remains `OriginalTrialPhase::Failed` with the retained HLS
-/// rollback projection until the explicit rollback edge.
+/// a live route.
 pub fn settle_route_start(ps: &mut PlaybackSession, ticket: RouteStartAttempt, result: RouteStartResult) -> bool {
     let deferred = {
         let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        let ordinary = control.phase == ControlPhase::Starting(ticket.serial, ticket.attempt);
-        let original = control.phase
-            == ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(
-                ticket.serial,
-                ticket.attempt,
-            ));
-        if !ordinary && !original {
+        if control.phase != ControlPhase::Starting(ticket.serial, ticket.attempt) {
             return false;
         }
         control.last_start_result = Some((ticket, result));
-        match (ordinary, result) {
-            (true, RouteStartResult::Started) => {
+        match result {
+            RouteStartResult::Started => {
                 let effects = control
                     .start_deferred
                     .take()
@@ -1701,23 +1637,13 @@ pub fn settle_route_start(ps: &mut PlaybackSession, ticket: RouteStartAttempt, r
                 }
                 effects
             }
-            (true, RouteStartResult::NoRoute | RouteStartResult::StartFailed) => {
+            RouteStartResult::NoRoute | RouteStartResult::StartFailed => {
                 control.start_deferred = control
                     .start_deferred
                     .take()
                     .filter(|(serial, _)| *serial != ticket.serial);
                 control.timeline = None;
                 control.phase = ControlPhase::Failed(ticket.serial);
-                None
-            }
-            (false, RouteStartResult::Started) => {
-                control.phase =
-                    ControlPhase::OriginalTrial(OriginalTrialPhase::AwaitingFrame(ticket.serial));
-                None
-            }
-            (false, RouteStartResult::NoRoute | RouteStartResult::StartFailed) => {
-                control.phase =
-                    ControlPhase::OriginalTrial(OriginalTrialPhase::Failed(ticket.serial));
                 None
             }
         }
@@ -1753,18 +1679,9 @@ pub fn classify_live_engine_start(existing: RouteStartAttempt) -> LiveEngineStar
         {
             LiveEngineStartRelation::CurrentAttempt
         }
-        ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(serial, attempt))
-            if serial == existing.serial && attempt == existing.attempt =>
-        {
-            LiveEngineStartRelation::CurrentAttempt
-        }
         ControlPhase::Preparing(serial)
         | ControlPhase::Prepared(serial)
         | ControlPhase::Starting(serial, _) => {
-            LiveEngineStartRelation::Conflict(RouteStartTransaction { serial })
-        }
-        ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial))
-        | ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(serial, _)) => {
             LiveEngineStartRelation::Conflict(RouteStartTransaction { serial })
         }
         _ => LiveEngineStartRelation::NoPendingRoute,
@@ -1805,12 +1722,6 @@ pub fn fail_current_engine() {
             control.next_action
         }
         ControlPhase::StagingUser(serial) => serial,
-        ControlPhase::OriginalTrial(trial) => match trial {
-            OriginalTrialPhase::Prepared(serial)
-            | OriginalTrialPhase::Starting(serial, _)
-            | OriginalTrialPhase::AwaitingFrame(serial)
-            | OriginalTrialPhase::Failed(serial) => serial,
-        },
         ControlPhase::Failed(_) | ControlPhase::Idle | ControlPhase::Stopping => return,
         ControlPhase::Resolving => return,
     };
@@ -1861,15 +1772,6 @@ pub fn begin_engine_teardown(for_reload: bool) {
                 // Return the transaction to Prepared so a retry mints a fresh attempt; the old
                 // result no longer matches even when both attempts open the same candidate URL.
                 ControlPhase::Prepared(serial)
-            }
-            ControlPhase::OriginalTrial(OriginalTrialPhase::Starting(serial, _)) => {
-                ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial))
-            }
-            ControlPhase::OriginalTrial(OriginalTrialPhase::AwaitingFrame(serial)) => {
-                // Frame proof belongs to the Engine being destroyed. The Original candidate and
-                // rollback snapshot remain valid, but a replacement Load must prove presentation
-                // again before either resource may be committed or retired.
-                ControlPhase::OriginalTrial(OriginalTrialPhase::Prepared(serial))
             }
             phase => phase,
         };
@@ -1941,7 +1843,6 @@ pub fn reset_player_control_for_test(ps: &PlaybackSession) {
     control.start_results.clear();
     control.last_start_result = None;
     control.start_deferred = None;
-    control.pending_original = None;
     control.timeline = None;
 }
 
@@ -3009,11 +2910,8 @@ pub fn arm_auto_fixture(
         s.cur_auto_original_watched = true;
         s.auto_bootstrap_rung = Some(crate::abr::Rung::P480);
         s.auto_original = Some(AutoOriginalCandidate {
-            url: original_url.to_owned(),
             probe_part: original_url.to_owned(),
             direct: true,
-            vcodec: "h264".into(),
-            fps: 0.0,
             dovi: plx_data::metadata::Dovi::NONE,
             dv_decision: plx_data::metadata::DvDecision::NONE,
             audio: Some(CarriedAudio {
@@ -3078,59 +2976,6 @@ pub fn arm_auto_fixture(
     Some(url)
 }
 
-/// The route as it stood the instant before an Original recovery overwrote it, kept so the
-/// recovery can be UNDONE.
-///
-/// **A recovery is not proven by the evidence that authorised it.** The demux worker probes the
-/// source file and the probes clear the requirement; that is a claim about a byte range fetched
-/// seconds ago, not about the fresh open the pipeline is about to perform. Device, 2026-08-29:
-/// this server had already answered **503** to an Original probe forty seconds earlier while the
-/// HLS segments beside it kept succeeding, and when the viewer then asked for Original by hand the
-/// open failed the same way. The recovery had already cleared `tsession`, cleared the active
-/// encoder and asked the server to stop the encoder — so the working stream the viewer had been
-/// watching no longer existed, and the pump had nothing to do but raise the failure read-out.
-///
-/// So the two irreversible client steps are DEFERRED behind this: the explicit server-side stop,
-/// and retiring the route snapshot. [`confirm_original_recovery`] performs them once the new source
-/// has actually delivered frames; [`rollback_original_recovery`] restores that snapshot if it
-/// never does. Restoration makes no claim about PMS's cursor until a new HLS response arrives.
-struct PendingOriginal {
-    /// Applied reducer state to restore if the unproven native Load never produces a frame.
-    previous_applied_revision: u64,
-    previous_applied_quality: Quality,
-    previous_applied_projection: Option<AppliedRouteProjection>,
-    /// Complete candidate projection at the instant the trial starts. A later user command may
-    /// stage fields in Session while native frames are pending; first-frame commit must not bless
-    /// those still-unapplied edits along with the candidate.
-    candidate_projection: AppliedRouteProjection,
-    /// The HLS encoder the recovery replaced. The client has not explicitly stopped it; PMS-side
-    /// cursor continuity is deliberately not inferred from that fact.
-    encoder: String,
-    /// The new server encoder to retire if this handoff never produces a decoded frame. Empty for
-    /// direct play, which opens the raw Part and creates no universal-transcoder replacement.
-    replacement_encoder: String,
-    /// Where to resume the restored route. Kept here rather than read back from `playpos_ns`
-    /// because `teardown(for_reload=true)` zeroes that on the way into the reload being graded, so
-    /// by the time the failure is detected the playhead no longer remembers where the film was.
-    offset_secs: i64,
-    /// The route as it stood the instant before this recovery overwrote it. Restored verbatim
-    /// through [`install_route_projection`] on rollback, except `subtitle_sid`/`auto_original`:
-    /// a client-side edit made while the trial owned the route is not part of what rollback
-    /// undoes (it travels with `candidate_projection` instead — see
-    /// `commit_in_place_route_projection`), so the restore site puts those two fields back the
-    /// way it found them.
-    previous: AppliedRouteProjection,
-    /// User commands made while neither the candidate nor its rollback route is yet authoritative.
-    /// They travel with this exact transaction and are applied only after a replacement Engine is
-    /// proven; a terminal failure drops them rather than leaking them into a later trial.
-    deferred_quality: Option<Quality>,
-    deferred_audio: Option<CarriedAudio>,
-    /// Issue #266: the enhancement preference changed while this trial owned the route. The
-    /// reconcile it asked for runs against whichever route the trial settles on — the candidate
-    /// or its rollback — never against the unproven half-state in between.
-    deferred_reconcile: bool,
-}
-
 #[derive(Default)]
 pub struct DeferredOriginalEffects {
     quality: Option<Quality>,
@@ -3147,58 +2992,6 @@ pub struct OriginalRollback {
 }
 
 impl OriginalRollback {
-}
-
-fn take_pending_original() -> Option<PendingOriginal> {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    control.pending_original.take()
-}
-
-/// Is an Original recovery still waiting to be proven? The pump asks before spending a frame on
-/// either half below.
-pub fn original_recovery_pending() -> bool {
-    PLAYER_CONTROL
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .pending_original
-        .is_some()
-}
-
-/// **Abandon the way back without taking it**, for the paths that make it meaningless: a new item,
-/// a teardown, or a quality change that supersedes the recovery. The encoder is retired, because
-/// the route it belonged to is gone either way and leaving it running is a session leaked on
-/// somebody's server.
-pub fn drop_original_recovery(ps: &PlaybackSession) {
-    if let Some(pending) = take_pending_original() {
-        // The only caller is real teardown, immediately after `scrobble_stop` took the active
-        // identity. During a direct handoff that identity is the trial's own session: a live
-        // hls encoder's id (== `pending.encoder`, so scrobble owns its one full stop/resource
-        // close) or, from a remux or burn, a fresh id recorded as `replacement_encoder`. During a
-        // remux handoff it is the new replacement. Either way, when `replacement_encoder` is set,
-        // scrobble closes that one and this branch still owes the held old encoder
-        // (`pending.encoder`).
-        if !pending.replacement_encoder.is_empty() {
-            retire_replaced_encoder(ps, pending.encoder);
-        }
-    }
-}
-
-fn retire_replaced_encoder(ps: &PlaybackSession, encoder: String) {
-    if encoder.is_empty() || !ps.auto_fixture_base.is_empty() {
-        return;
-    }
-    let Some(client) = cur_client(ps) else { return };
-    plx_base::task::spawn_small_or_inline(
-        "abr-original-stop",
-        const { &plx_base::task::BlockingLabel::new("encoder stop (worker thread refused)") },
-        move || {
-            let ok = client.transcode_stop(&encoder);
-            crate::player::log(&format!(
-                "abr: retired superseded encoder after Original handoff ok={}",
-                ok as i32
-            ));
-        },
-    );
 }
 
 /// true while this playback is a server transcode (a live transcode session exists). Cheap
@@ -4800,7 +4593,6 @@ fn route_transition_owns_player() -> bool {
             | ControlPhase::Starting(_, _)
             | ControlPhase::StagingUser(_)
             | ControlPhase::Completing(_)
-            | ControlPhase::OriginalTrial(_)
     )
 }
 
@@ -5821,13 +5613,6 @@ pub fn enhancement_step(ps: &PlaybackSession) -> EnhancementStep {
 /// enhancement still performs the pick's own reload. A pending Original trial owns the route:
 /// the reconcile is deferred to whichever route that trial settles on.
 pub fn reconcile_enhancement(ps: &PlaybackSession, legacy_reloads: bool) -> bool {
-    {
-        let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(pending) = control.pending_original.as_mut() {
-            pending.deferred_reconcile = true;
-            return false;
-        }
-    }
     if enhancement_step(ps) == EnhancementStep::NotInvolved {
         return false;
     }
@@ -5940,11 +5725,8 @@ impl Default for EnhTestFixture {
 #[cfg(any(test, feature = "test-support"))]
 fn test_original_candidate(subtitle_ordinal: Option<i32>) -> AutoOriginalCandidate {
     AutoOriginalCandidate {
-        url: "https://example.invalid/source.mkv".into(),
         probe_part: "https://example.invalid/source.mkv".into(),
         direct: true,
-        vcodec: "hevc".into(),
-        fps: 23.976,
         dovi: plx_data::metadata::Dovi::NONE,
         dv_decision: plx_data::metadata::DvDecision::NONE,
         audio: Some(CarriedAudio {
@@ -6051,18 +5833,6 @@ pub fn enhancement_test_session(route: EnhTestFixture) -> (PlaybackSession, Serv
 pub fn commit_audio_selection(ps: &mut PlaybackSession, audio: CarriedAudio) {
     if forced_direct_play(ps) && !audio_track_direct_plays(ps, &audio.codec, audio.channels) {
         ps.play_verdict = Some(PlayVerdict::Forced(ForcedFailure::AudioNeedsConversion));
-        return;
-    }
-    if original_recovery_pending() {
-        if let Some(pending) = PLAYER_CONTROL
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .pending_original
-            .as_mut()
-        {
-            pending.deferred_audio = Some(audio);
-        }
-        crate::player::log("audio: deferred until pending Original handoff commits or rolls back");
         return;
     }
     // Audio always changes the decoder/server route contract, even when the eventual route stays
@@ -6283,7 +6053,7 @@ fn timeline_snapshot(
     }
     if !matches!(
         control.phase,
-        ControlPhase::Stable | ControlPhase::OriginalTrial(OriginalTrialPhase::AwaitingFrame(_))
+        ControlPhase::Stable
     ) {
         return None;
     }

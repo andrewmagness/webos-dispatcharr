@@ -1755,7 +1755,6 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         if !for_reload {
             crate::route::scrobble_stop(ps, None, None);
             crate::route::begin_engine_teardown(false);
-            crate::route::drop_original_recovery(ps);
             crate::route::clear_url(ps);
             SHARED.reset_session();
             TX.reset();
@@ -1939,11 +1938,6 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         // The failure is retained across the rollback reload only; a new playback must not carry
         // another item's PMS response into its diagnostics.
         SHARED.clear_abr_failure();
-        // A deferred Original recovery outlives nothing: the playback it belonged to is over, so
-        // there is no frame left that could confirm it and no route left to roll back to. The
-        // encoder it was holding is still running on the server, which is why this RETIRES rather
-        // than forgets — see `route::drop_original_recovery`.
-        crate::route::drop_original_recovery(ps);
         crate::route::clear_url(ps); // the transcode stop rode out with `scrobble_stop` above
     } else if let Some(t) = eng.report_th.take() {
         // A reload posts no `stopped`, so there is nothing to order against: detach. Its own
@@ -5221,42 +5215,6 @@ mod load_in_flight_tests {
         );
     }
 
-    /// upstream Sentry issue 15: the Auto Original's Load passes its budget, the HLS recovery reloads while
-    /// the Load is still inside `sf_load`, the reload's teardown parks that Load (clearing
-    /// `load_timed_out` with the rest of the session) and the start is refused. The failure was
-    /// published with no cause, so the report said `unspecified`; the cause is the timeout.
-    #[test]
-    fn a_recovery_reload_refused_for_an_abandoned_load_still_reports_the_timeout() {
-        let mut ps = crate::route::PlaybackSession::IDLE;
-        let _serial = plx_base::testlock::serial();
-        SHARED.reset_session();
-        crate::route::reset_player_control_for_test(&ps);
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let _cleanup = Cleanup;
-        let _release = ReleaseLoadOnDrop;
-        let mut pa = crate::player::adapter::PlayerAdapter::new(unsafe {
-            plx_base::task::MainThread::assume()
-        });
-        crate::route::set_url(&mut ps, "http://127.0.0.1:1/hls/start.m3u8");
-        install_engine_with_timed_out_load(&mut ps, &mut pa);
-
-        // `land_recovery_flight`'s own two calls: the reload (whose teardown parks the
-        // still-running Load) and the settle that publishes the outcome.
-        let started = crate::player::pump::settle_reload(
-            reload_transcode(&mut ps, &mut pa, 0),
-            "test HLS recovery",
-        );
-        assert!(!started, "the recovery start must be refused while the Load is outstanding");
-        assert!(pa.has_abandoned_load(), "PRECONDITION FAILED: the Load must still be parked");
-        assert_eq!(crate::player::state(&ps), crate::player::PlaybackState::Error);
-        assert_eq!(
-            crate::player::error_now(&ps).kind,
-            crate::player::FailureKind::LoadTimeout,
-            "the refusal must keep the timeout as its cause, not report `unspecified`"
-        );
-    }
-
     /// The fresh-start half of the same hole: a Retry or Back+Play while the parked Load is still
     /// inside `sf_load` is refused with no Engine to publish anything, so the player sat in Idle
     /// and drew nothing: no read-out, no report, no Try Again. The refusal stays (a second native
@@ -5315,61 +5273,6 @@ mod load_in_flight_tests {
         );
     }
 
-    /// The latch's other edge: a start refused for the parked Load sets `native_start_refused`,
-    /// and a RELOAD that then starts (the foreground restore's rollback landing after the Load was
-    /// reaped: `land_engineless_rollback` -> `reload_transcode_tracked`) goes through
-    /// `start_bufferfeed_for`, not `start_bufferfeed_tracked`, which is where the flag used to be
-    /// cleared. The flag outlived the refusal and, once the flight ended, `state()` answered Error
-    /// over playing video and `report::tick` sent a bogus `load_timeout`.
-    #[test]
-    fn a_reload_that_starts_after_a_refused_fresh_start_does_not_keep_the_refusals_error() {
-        let mut ps = crate::route::PlaybackSession::IDLE;
-        let _serial = plx_base::testlock::serial();
-        SHARED.reset_session();
-        crate::route::reset_player_control_for_test(&ps);
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let _cleanup = Cleanup;
-        let _release = ReleaseLoadOnDrop;
-        let mut pa = crate::player::adapter::PlayerAdapter::new(unsafe {
-            plx_base::task::MainThread::assume()
-        });
-        install_engine_with_timed_out_load(&mut ps, &mut pa);
-        stop_bufferfeed(&mut ps, &mut pa);
-        assert!(pa.has_abandoned_load(), "PRECONDITION FAILED: the Load must be parked");
-        crate::route::set_url(&mut ps, "http://127.0.0.1:1/hls/start.m3u8");
-        crate::route::set_stream_acodec(&mut ps, "aac");
-
-        // The resumed foreground's `PlayerForegroundActuator::start_load`.
-        assert_eq!(
-            start_bufferfeed_tracked(&mut ps, &mut pa),
-            BufferfeedStartOutcome::Failed,
-            "PRECONDITION FAILED: the fresh start must be refused for the parked Load"
-        );
-        assert!(ps.native_start_refused, "PRECONDITION FAILED: the refusal must be recorded");
-
-        // The parked Load returns and is reaped; the rollback's reload then starts.
-        crate::player::ffi_host::release_load_for_test();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !reap_abandoned_load(&mut pa) {
-            assert!(std::time::Instant::now() < deadline, "the returned Load was never released");
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        let reload = reload_transcode_tracked(&mut ps, &mut pa, 0);
-        assert!(
-            matches!(reload, BufferfeedStartOutcome::Launched(_)),
-            "PRECONDITION FAILED: the reload must start once the Load is reaped ({reload:?})"
-        );
-        assert!(pa.is_live(), "the reload must have built an Engine");
-
-        assert_ne!(
-            crate::player::state(&ps),
-            crate::player::PlaybackState::Error,
-            "a reload that started kept the refused fresh start's Error over live video \
-             (and report::tick would send a bogus load_timeout)"
-        );
-        stop_bufferfeed(&mut ps, &mut pa);
-    }
 }
 
 /// **The webOS 10.3.1 refusal, replayed.** `docs/webos10-lab-report.md` §3.2 records the exact

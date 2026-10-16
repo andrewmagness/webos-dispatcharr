@@ -1145,30 +1145,6 @@ fn a_long_pause_turns_the_estimate_into_a_weak_prior() {
 }
 
 #[test]
-fn measured_runtime_fallback_avoids_an_unnecessarily_low_bootstrap() {
-    let policy = AbrPolicy::measured();
-    let catalog = hd_catalog();
-    let rung = |measured| original_fallback_rung(measured, &hd_catalog(), &policy);
-    assert_eq!(rung(512), Rung::P240);
-    assert_eq!(rung(4_000), catalog.best_for_budget(4_000).unwrap().rung);
-    assert_eq!(rung(7_000), catalog.best_for_budget(7_000).unwrap().rung);
-    assert_eq!(
-        rung(30_000),
-        Rung::P1080High,
-        "a fast link is not a reason to hold back"
-    );
-    assert_eq!(
-        rung(1),
-        Rung::P240,
-        "below every candidate, take the floor rather than refusing to move",
-    );
-    assert_eq!(
-        Rung::from_ceiling(Rung::P720Low.ceiling()),
-        Some(Rung::P720Low)
-    );
-}
-
-#[test]
 fn realtime_current_acquisition_requires_a_candidate_measurement() {
     let mut controller = bootstrap_controller();
     let Decision::Prime(proposal) = controller.observe_next(sample(20_000, 1_000, 10_000)) else {
@@ -7564,8 +7540,6 @@ fn a_committed_rung_change_prices_the_next_upshift_until_the_price_decays() {
         "+6 still does not clear 7 — the price decayed, it was not deleted",
     );
 }
-
-
 
 /// **The two readings of the quality curve are one curve.**
 ///

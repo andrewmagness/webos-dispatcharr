@@ -7,11 +7,8 @@
 //! there is still no network to hide behind. [`queue`] is the framing and caps, pure; [`spool`] is
 //! the file those bytes live in and the one owner every read and write goes through; [`sender`] is
 //! the socket, and the place the credential split decides which project this build reports to.
-//! [`incident`] is the closed onboarding-failure schema, sent either as a standing report or — to
-//! somebody who was never asked, or said Yes before it existed — as a one-off on an explicit press,
-//! whose bounded transport is [`oneoff`]. Either one's Report ID is watched in [`delivery`], which
-//! the flush, the spool and the one-off fallback all settle, so the screen can say "sent" only once
-//! a server accepted it. [`classes`] is the closed vocabulary [`playback`] serialises, owned here so
+//! A report's ID is watched in [`delivery`], which the flush and the spool settle, so a screen can
+//! say "sent" only once a server accepted it. [`classes`] is the closed vocabulary [`playback`] serialises, owned here so
 //! the player classifies INTO it rather than this layer naming the player; [`transition`] is what a
 //! consent change does to the resources this module keeps.
 //!
@@ -24,7 +21,6 @@ pub mod classes;
 pub mod consent;
 pub mod crashreport;
 pub mod delivery;
-pub mod incident;
 pub mod oneoff;
 pub mod persistence;
 pub mod native;

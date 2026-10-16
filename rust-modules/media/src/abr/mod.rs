@@ -78,16 +78,6 @@ pub use original::*;
 pub use viability::*;
 pub use window::*;
 
-/// **Every tunable in one place, and every field answers "what product behaviour is this?"** —
-/// which is the test a number has to pass to live here at all. What this type replaced was a
-/// scatter of `3 good samples`, `8 cooldown samples`, `2 bad windows` and a bare `1_100`, none of
-/// which said what it was for, so none of them could be argued with.
-/// **Operational ceiling on how long a source probe may run.** Its ordinary deadline is derived
-/// from the duration represented by the finite source object; this cap binds only when the minimum
-/// byte sample for a tiny source represents longer. [`source_probe_plan`] is the one derivation
-/// consumed by both the gate and transfer, so affordability cannot drift from execution.
-pub const PROBE_BUDGET_MS: u64 = 4_000;
-
 #[derive(Clone, Copy, Debug)]
 pub struct AbrPolicy {
     /// Retired order-statistic calibration retained for offline corpus comparisons; see
@@ -221,15 +211,6 @@ pub struct AbrPolicy {
     /// the safe direction (the wall interval is longer under backpressure, so the new rule is at
     /// least as patient), and the observed ratio is an M2 measurement nobody has taken.
     pub sustained_unsafe_deficit_ms: i64,
-    /// **Operational maximum for a source probe, ms.**
-    ///
-    /// [`source_probe_plan`] derives the useful deadline from the duration represented by the
-    /// exact target bytes and caps it here. Both `route::probe_original` and
-    /// `OriginalRecovery::probe_due` consume that same plan, so the gate and transfer cannot drift.
-    /// The gate additionally preserves `max(R_s,D_next)`, the larger of the HLS stress-replay
-    /// boundary and the exact next parsed media object; charging only the probe used to leave the
-    /// following acquisition unfunded.
-    pub probe_budget_ms: u64,
 }
 
 impl AbrPolicy {
@@ -264,10 +245,7 @@ impl AbrPolicy {
             risk_weight: 2,
             server_cost_weight: 4,
             sustained_unsafe_deficit_ms: 4_500,
-            // Operational cap; `source_probe_plan` derives the actual transfer deadline.
-            probe_budget_ms: PROBE_BUDGET_MS,
         }
     }
 }
-
 

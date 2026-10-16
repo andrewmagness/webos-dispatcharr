@@ -655,7 +655,6 @@ pub struct Shared {
     pub ass_renderer: super::ass::Runtime,
     pub sub_bitmaps: Mutex<Vec<SubBitmap>>, // image-sub cues (every image track while subs are on)
 
-
     // demux (D) -> main (M)
     pub file_size: AtomicI64, // g_file_size
     /// The DECODED FRAME SIZE, published by the demuxer once the video stream is known.

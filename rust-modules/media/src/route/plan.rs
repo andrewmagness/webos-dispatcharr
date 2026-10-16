@@ -146,55 +146,9 @@ impl CarriedAudio {
 #[derive(Clone)]
 pub(super) struct AutoOriginalCandidate {
     pub(super) probe_part: String,
-    pub(super) direct: bool,
     pub(super) dovi: plx_data::metadata::Dovi,
-    pub(super) dv_decision: plx_data::metadata::DvDecision,
-    /// The audio track this candidate carries. `None` = server default, facts unknown (issue
-    /// #266 fails closed on it: no enhancement is ever offered without a known, capable track).
-    pub(super) audio: Option<CarriedAudio>,
-    /// The carried audio is a track the TV cannot direct-play, picked while this candidate was
-    /// standing. The candidate still describes a direct-playable Part (video, DV, fps, subtitle
-    /// facts are all true of it), but the audio now carried must be converted by the server, so
-    /// returning to Original means a remux naming that track, not the Part. Only
-    /// [`retarget_audio`](Self::retarget_audio) writes it; a later direct-playable pick clears it.
-    pub(super) audio_converted: bool,
 }
 
-impl AutoOriginalCandidate {
-    /// Whether this candidate's route feeds the Part itself: direct, and with an audio the TV can
-    /// decode. The reader of `direct` that means "may play the Part with this audio".
-    pub(super) fn feeds_part(&self) -> bool {
-        self.direct && !self.audio_converted
-    }
-
-    /// Follow a mid-play audio pick on a Direct or Remux route (issue #266). These two methods are
-    /// the ONLY writers of the candidate's audio and subtitle halves once it is installed.
-    ///
-    /// Why retarget instead of dropping, as the HLS family does: on Direct/Remux the candidate is
-    /// also the way BACK from an enhanced remux (`EnhancementReleased`), so it must describe the
-    /// track the viewer is hearing now — a release that restored the capture-time track would
-    /// undo their pick. On HLS the candidate is only a recovery target and the old drop stays.
-    ///
-    /// The track is taken as a unit (sid, ordinal, codec, channels, capability, immersive), so the
-    /// release's Load payload can never pair one track's ordinal with another's codec. `immersive`
-    /// survives only on a candidate that feeds the Part, for `carried_track`'s reason.
-    ///
-    /// A direct candidate given a track the TV cannot decode is KEPT, marked `audio_converted`:
-    /// the server copies the video and converts only that audio, which is a remux, not a
-    /// re-encode. `false` means no copy is legal at all — an unusable Dolby Vision base layer
-    /// forbids copying the video — and the caller drops the candidate.
-    pub(super) fn retarget_audio(&mut self, a: &CarriedAudio, direct_plays: bool) -> bool {
-        if self.dovi.base_layer_unusable() && !direct_plays {
-            return false;
-        }
-        self.audio_converted = self.direct && !direct_plays;
-        let mut carried = a.clone();
-        carried.immersive &= self.feeds_part();
-        self.audio = Some(carried);
-        true
-    }
-
-}
 
 pub use plx_plex::plex::session::{PlaybackQuality as Quality, DeckPress, DirectPlayMode, NextEpisodeMode, SkipInterval, SubtitleSize, SubtitlePosition};
 
@@ -253,153 +207,6 @@ pub enum SubtitleEffect {
     /// An embedded (in-container) subtitle direct play renders from the demuxed stream — an
     /// enhanced remux DROPS it (M4); only a forced re-encode with `subtitles=burn` keeps it (M7).
     Embedded,
-}
-
-/// Everything [`enhancement_availability`] reads, gathered by the caller from whichever side of
-/// the playback it stands on (the resolve worker's locals, or the live session). Borrowed so the
-/// predicate can never be handed a copy that has drifted from the thing it describes.
-#[derive(Clone, Copy)]
-pub(super) struct EnhancementFacts<'a> {
-    /// The server's Plex Pass state (`serverinfo::subscription_of`), captured at the request.
-    pub(super) pass: plx_plex::plex::serverinfo::Subscription,
-    /// The frozen non-enhanced Original route. `None` = Original was never feasible here (forced
-    /// direct play, a fixed rung, relay, a non-Original MDE…), which is I5's whole exclusion list.
-    pub(super) base: Option<&'a AutoOriginalCandidate>,
-    /// The audio track the route carries. `None` = server default, facts unknown: treated the same
-    /// as "not analyzed yet" — a plain reason, never a silent absence (Plex Pass is already Yes).
-    pub(super) carried: Option<&'a CarriedAudio>,
-    /// What a subtitle on screen, if any, does to the offer (I6).
-    pub(super) subtitle_effect: SubtitleEffect,
-    /// This playback's server already refused or ignored the params once.
-    pub(super) refused: bool,
-}
-
-/// What the enhancement, once offered, actually asks the server for — the one fork the menu, the
-/// resolve and the recovery path must never disagree about.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum EnhancementRoute {
-    /// The ordinary uncapped progressive-MKV remux: no subtitle on screen, or an external one the
-    /// client draws itself.
-    Remux,
-    /// The same remux, for a declared Dolby Vision source whose base layer IS self-displayable
-    /// (P7/P8, `!dovi.base_layer_unusable()`). A remux never carries `DolbyHdrInfo` — the
-    /// declaration rides the direct play only (`fill_direct_plan`'s own doc) — so this is the SAME
-    /// wire shape as [`Self::Remux`]; only the menu's wording differs (Dolby Vision turns off).
-    RemuxDropsDolbyVision,
-    /// A forced re-encode carrying `subtitleStreamID=<id>&subtitles=burn` (M7): the only shape that
-    /// keeps an EMBEDDED subtitle in view once the audio enhancement is on.
-    Burn,
-}
-
-/// Why the toggle is disabled (drawn, dim, with a reason) rather than hidden or enabled. Distinct
-/// from [`EnhancementAvailability::Hidden`], which — per the owner's decision — is reserved for the
-/// ONE reason that stays a silent absence: no Plex Pass.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum DisabledReason {
-    /// The carried track has no `canNormalizeLoudness` yet (or the track itself is unknown) — the
-    /// server has not analyzed this audio.
-    NotAnalyzed,
-    /// A Dolby Vision base layer that is not self-displayable (P5, `dovi.base_layer_unusable()`):
-    /// no copy of it is ever made, so there is nothing the enhancement's remux could decorate.
-    DolbyVisionUnusable,
-    /// A declared Dolby Vision source with an embedded subtitle on screen: M7 measured PMS copying
-    /// the DV video regardless of a burn request and silently dropping the subtitle — neither half
-    /// of the ask is honoured, so it is never sent.
-    DolbyVisionSubtitle,
-    /// The live route is not Direct or Remux (a fixed quality rung, HLS, a relay…), or no Original
-    /// candidate was ever computed for it (I5's exclusion list) — the enhanced route is always an
-    /// uncapped Original.
-    NotOriginalQuality,
-    /// This playback's server already refused or ignored the params once.
-    ServerRefused,
-}
-
-/// **What state is the Plex Pass audio enhancement in for a route of family `target`?** One
-/// predicate for every caller — the resolve, recovery, and the menu — so "what the toggle looks
-/// like" and "what the resolve does" can never disagree. Per the owner's decision, [`Hidden`] is
-/// reserved for the ONE absence that stays silent (no Plex Pass); every other gate that used to
-/// hide the rows now reports a [`DisabledReason`] instead.
-///
-/// [`Hidden`]: EnhancementAvailability::Hidden
-pub(super) fn enhancement_availability(f: &EnhancementFacts, target: RouteFamily) -> EnhancementAvailability {
-    use plx_plex::plex::serverinfo::Subscription;
-    use EnhancementAvailability::{Disabled, Hidden, Offered};
-    // I1/I2: `Unknown` fails closed exactly like `No` — an unknown server is not assumed to hold a
-    // subscription it may not have, and with it hidden the app's URLs are byte-identical to a
-    // build without the feature. The ONE state that stays a silent absence.
-    if f.pass != Subscription::Yes {
-        return Hidden;
-    }
-    if f.refused {
-        return Disabled(DisabledReason::ServerRefused);
-    }
-    // I5: Direct or Remux only, and only when an Original candidate was actually computed for it
-    // (forced direct play, a fixed rung, relay, a non-Original MDE… all read the same to a viewer:
-    // "only at Original quality").
-    if !matches!(target, RouteFamily::Direct | RouteFamily::Remux) {
-        return Disabled(DisabledReason::NotOriginalQuality);
-    }
-    let Some(base) = f.base else {
-        return Disabled(DisabledReason::NotOriginalQuality);
-    };
-    // I7: an unusable Dolby Vision base layer is never copied at all — nothing to decorate.
-    if base.dovi.base_layer_unusable() {
-        return Disabled(DisabledReason::DolbyVisionUnusable);
-    }
-    let dv_declared = base.dv_decision.presentation.declared().is_some();
-    // M7: a declared DV source burning an embedded subtitle is refused by the server itself
-    // (video copied regardless, subtitle silently dropped) — never attempted.
-    if dv_declared && f.subtitle_effect == SubtitleEffect::Embedded {
-        return Disabled(DisabledReason::DolbyVisionSubtitle);
-    }
-    // A known, capable carried track. `canNormalizeLoudness` is PMS 1.43.4's own per-stream
-    // statement that it has the loudness analysis the DSP needs; unknown or absent reads the same
-    // to a viewer as "not analyzed yet".
-    let analyzed = f.carried.is_some_and(|a| a.can_normalize_loudness);
-    if !analyzed {
-        return Disabled(DisabledReason::NotAnalyzed);
-    }
-    Offered(match (dv_declared, f.subtitle_effect) {
-        (_, SubtitleEffect::Embedded) => EnhancementRoute::Burn,
-        (true, SubtitleEffect::None | SubtitleEffect::Sidecar) => EnhancementRoute::RemuxDropsDolbyVision,
-        (false, SubtitleEffect::None | SubtitleEffect::Sidecar) => EnhancementRoute::Remux,
-    })
-}
-
-/// **What the menu draws for the toggle**, and (via [`EnhancementAvailability::Offered`]'s payload)
-/// what turning it on would actually ask the server for. See [`enhancement_availability`].
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum EnhancementAvailability {
-    /// No Plex Pass — absent from the menu; no hint, no upsell (I1/I2).
-    Hidden,
-    /// Visible, toggle enabled.
-    Offered(EnhancementRoute),
-    /// Visible, toggle inert (dim), with a plain-language reason.
-    Disabled(DisabledReason),
-}
-
-/// The concrete route the enhancement would take here, or `None` when it is not offered — Hidden
-/// and every `Disabled` reason collapse to `None` for this projection, since the resolve only ever
-/// needs to know "should this be asked for", never why not.
-pub(super) fn enhancement_route(f: &EnhancementFacts, target: RouteFamily) -> Option<EnhancementRoute> {
-    match enhancement_availability(f, target) {
-        EnhancementAvailability::Offered(route) => Some(route),
-        EnhancementAvailability::Hidden | EnhancementAvailability::Disabled(_) => None,
-    }
-}
-
-/// The ONLY source of `EncodeContract::audio`: the viewer's preference where the enhancement is
-/// offered, `NONE` everywhere else. Every contract that reaches the wire passes through here, so
-/// a preference can never leak onto a route the predicate refused.
-pub(super) fn desired_audio(
-    pref: plx_plex::plex::AudioEnhancements,
-    offered: bool,
-) -> plx_plex::plex::AudioEnhancements {
-    if offered {
-        pref
-    } else {
-        plx_plex::plex::AudioEnhancements::NONE
-    }
 }
 
 /// The two verdict NUMBERS of a `/decision` body — `generalDecisionCode` and `transcodeDecisionCode`
@@ -496,14 +303,6 @@ pub struct UpNext {
     pub thumb: String,
     pub dur_ms: i64,
     pub resume_ms: i64,
-}
-
-pub(super) fn audio_direct_plays(mode: DirectPlayMode, codec: &str, channels: i64) -> bool {
-    if mode == DirectPlayMode::Forced {
-        plx_plex::plex::DP_AUDIO_CODECS.split(',').any(|c| c.eq_ignore_ascii_case(codec))
-    } else {
-        plx_plex::plex::is_dp_audio_track(codec, channels)
-    }
 }
 
 /// The detail page's "how this plays" answer, BEFORE anything is played — the same FOUR gates

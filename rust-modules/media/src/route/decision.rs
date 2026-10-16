@@ -133,11 +133,6 @@ pub struct PlaybackSession {
     /// the pump for a fresh transcode when the answer actually changed). Nothing measures a link
     /// or moves a rung on its own — the adaptive switch is not here.
     cur_contract: plx_plex::plex::EncodeContract,
-    /// What the last successful transcode decision actually did with the Plex Pass audio DSP
-    /// (issue #266) — distinct from `cur_contract.audio`, which is what the accepted decision
-    /// carried. Installed by `apply_plan` from `Plan::enhancement`; reset to `Off` by a new
-    /// request. See `route::decision::EnhancementOutcome`.
-    cur_enhancement: EnhancementOutcome,
     /// What the resolve measured the playing source at — `(kbps, w, h)`, `0` where nobody said.
     /// The input [`set_quality`] re-runs [`quality_policy`] on when a rung is picked mid-film, so
     /// that decision is made from the same numbers `build_stream` used rather than from a guess.
@@ -382,27 +377,6 @@ pub struct PlaybackSession {
     now_ms: u32,
 }
 
-/// What the server actually did with a requested Plex Pass audio enhancement (issue #266) — as
-/// opposed to `EncodeContract::audio`, which is what was ASKED for. Distinguishing "on and
-/// working" from "the server ignored it" matters because PMS 1.43.4 does both: measurement M2
-/// (`/tmp/plx266/measurements.md`) found an AC3 2.0 source where the params changed the decision
-/// (a real DSP transcode) beside an AAC 5.1 source where the audio was transcoded to AC3 either
-/// way, params or not — so "the decision shows a transcode" alone cannot tell the two apart.
-///
-/// Graded by `build_stream` (`classify_outcome`, or `Refused` from its fallback) and installed by
-/// `apply_plan` beside `cur_contract` — written only after a decision, never at the selection (I9).
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub(super) enum EnhancementOutcome {
-    #[default]
-    Off,
-    /// Remux, the audio decision was a transcode, and the source codec is in the profile's own
-    /// copy list — the params demonstrably did something.
-    Applied,
-    /// The server refused the params outright, or silently ignored them (audio came back `copy`
-    /// despite the ask) — an old or non-conforming PMS.
-    Refused,
-}
-
 impl PlaybackSession {
     /// Nothing playing: what the module holds before the first play, and the value the static is
     /// born as. Every String empty, every id 0 or `UNSET`, both HUD buffers NUL.
@@ -420,8 +394,7 @@ impl PlaybackSession {
         play_verdict: None,
         resolve_failed: false,
         cur_contract: plx_plex::plex::EncodeContract::original(false, plx_plex::plex::AudioEnhancements::NONE),
-        cur_enhancement: EnhancementOutcome::Off,
-        cur_src: (0, 0, 0),
+            cur_src: (0, 0, 0),
         cur_transport_kbps: 0,
         cur_source_decodable: true,
         cur_auto_original_watched: false,
@@ -495,7 +468,6 @@ impl PlaybackSession {
             play_verdict,
             resolve_failed,
             cur_contract,
-            cur_enhancement,
             cur_src,
             cur_transport_kbps,
             cur_source_decodable,
@@ -551,7 +523,6 @@ impl PlaybackSession {
             play_verdict: play_verdict.clone(),
             resolve_failed: *resolve_failed,
             cur_contract: *cur_contract,
-            cur_enhancement: *cur_enhancement,
             cur_src: *cur_src,
             cur_transport_kbps: *cur_transport_kbps,
             cur_source_decodable: *cur_source_decodable,
@@ -777,9 +748,6 @@ pub enum RouteStartResult {
 enum ControlPhase {
     Idle,
     Stable,
-    /// A user edit has crossed the desired-contract boundary but has not yet either committed
-    /// in-place or entered `pending_user`. Automatic publication is Busy throughout this window.
-    StagingUser(u64),
     /// Candidate preparation is in flight while the old Engine/route is still recoverable.
     Preparing(u64),
     /// Candidate preparation committed but no physical Load attempt currently owns it.
@@ -923,103 +891,6 @@ fn retarget_automatic_intent(
     }
 }
 
-/// Cross one explicit desired-contract boundary while holding [`PLAYER_CONTROL`]. An automatic
-/// handoff which was already accepted remains labelled with the *applied* ticket that produced it:
-/// its producer may have stopped after publication, and relabelling that evidence as the new
-/// desire is precisely the PMS-refusal race this split exists to prevent. Seek is different: it
-/// changes the target carried by that same accepted handoff and is handled explicitly below.
-fn advance_user_contract_locked(control: &mut PlayerControl) {
-    control.desired_revision = next_generation(control.desired_revision);
-}
-
-/// Fence an outgoing worker before the main thread publishes any part of a new user contract.
-/// Quality and track setters call this before changing their durable/session projection; the
-/// later route-action request deliberately crosses a second boundary when it enters the action
-/// queue, because either boundary can also be reached independently.
-struct UserEditGuard {
-    serial: Option<u64>,
-}
-
-impl Drop for UserEditGuard {
-    fn drop(&mut self) {
-        let Some(serial) = self.serial.take() else {
-            return;
-        };
-        let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        if control.phase == ControlPhase::StagingUser(serial) {
-            // Every projection/pending-intent write happened before this edge. Workers can now
-            // observe the complete edit, never the half between a persisted checkmark and action.
-            control.phase = ControlPhase::Stable;
-        }
-    }
-}
-
-fn begin_user_contract_boundary() -> UserEditGuard {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    advance_user_contract_locked(&mut control);
-    let serial = if control.phase == ControlPhase::Stable {
-        control.next_action = next_generation(control.next_action);
-        let serial = control.next_action;
-        control.phase = ControlPhase::StagingUser(serial);
-        Some(serial)
-    } else {
-        None
-    };
-    UserEditGuard { serial }
-}
-
-fn merge_user_route_intent(
-    pending: Option<UserRouteIntent>,
-    incoming: UserRouteIntent,
-    preserve_original_recovery: bool,
-) -> UserRouteIntent {
-    use UserRouteIntent::{AdaptiveReload, NativeAudioReload, RecoverOriginal, Retranscode};
-    match (pending, incoming) {
-        (_, RecoverOriginal(cause)) => RecoverOriginal(cause),
-        (Some(RecoverOriginal(cause)), Retranscode) if preserve_original_recovery => {
-            RecoverOriginal(cause)
-        }
-        (Some(RecoverOriginal(_)), newer) => newer,
-        (Some(Retranscode), NativeAudioReload | AdaptiveReload)
-        | (Some(NativeAudioReload | AdaptiveReload), Retranscode) => Retranscode,
-        (Some(NativeAudioReload), AdaptiveReload) | (Some(AdaptiveReload), NativeAudioReload) => {
-            NativeAudioReload
-        }
-        (_, newer) => newer,
-    }
-}
-
-/// Queue the latest explicit route contract. Unlike an automatic request it survives pre-roll and
-/// an Original trial. Multiple user changes coalesce to the newest desired contract; their durable
-/// fields already live in `Session`, so one later rebuild applies the whole projection.
-pub fn request_user_route_intent(ps: &PlaybackSession, intent: UserRouteIntent) {
-    queue_user_route_intent(ps, intent, false);
-}
-
-/// [`request_user_route_intent`], optionally marking that the queued intent stands in for a
-/// track pick's own reload (issue #266's `displaced_pick`). One lock for both writes, so a claim
-/// can never take the intent without the marker that explains it.
-fn queue_user_route_intent(ps: &PlaybackSession, intent: UserRouteIntent, displaced_pick: bool) {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    control.displaced_pick |= displaced_pick;
-    // Setters already crossed an early boundary before publishing their projection. Queueing the
-    // resulting route action is a second, independently reachable boundary: callers such as the
-    // automatic-recovery UI can request an action directly, and both paths must fence old tickets.
-    advance_user_contract_locked(&mut control);
-    // Subtitle Off is the one Retranscode which does not invalidate an in-flight Original
-    // recovery. The candidate is updated to carry `None`, and a failed Original open necessarily
-    // rebases the restored HLS route (`dispatch_rollback_rebase`), which reads the current subtitle id.
-    // Audio, subtitle On, and a fixed/Auto quality pick invalidate either the candidate or the
-    // `Original` selection before reaching this merge, so their newer actions still win.
-    let preserve_original_recovery =
-        quality() == Quality::Original && ps.auto_original.is_some();
-    control.pending_user = Some(merge_user_route_intent(
-        control.pending_user.take(),
-        intent,
-        preserve_original_recovery,
-    ));
-}
-
 /// Record a desired seek without pretending it has already changed the physical media timeline.
 /// Automatic publication is Busy while this obligation is pending; an already accepted handoff
 /// is retargeted because its producer may already have stopped. Only [`commit_user_seek`] advances
@@ -1047,14 +918,6 @@ pub fn commit_user_seek() -> bool {
         retarget_automatic_intent(automatic, ticket, None);
     }
     true
-}
-
-pub fn cancel_user_route_intent(intent: UserRouteIntent) {
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    if control.pending_user == Some(intent) {
-        control.pending_user = None;
-        control.displaced_pick = false;
-    }
 }
 
 /// Return the pending route-start transaction while the reducer is between preparation and a
@@ -1249,7 +1112,6 @@ pub fn fail_current_engine() {
             control.next_action = next_generation(control.next_action);
             control.next_action
         }
-        ControlPhase::StagingUser(serial) => serial,
         ControlPhase::Failed(_) | ControlPhase::Idle | ControlPhase::Stopping => return,
     };
     control.engine_epoch = next_generation(control.engine_epoch);
@@ -1473,10 +1335,6 @@ pub fn install_transcode_for_test(ps: &mut PlaybackSession, remux: bool, hls: bo
         plx_plex::plex::TranscodeDelivery::ProgressiveMkv
     };
 }
-/// the subtitle stream id currently burned into the transcode (0 = none).
-pub fn cur_sub_sid(ps: &PlaybackSession) -> i64 {
-    ps.cur_sub_sid
-}
 /// ratingKey of the currently-playing item (for /:/timeline progress reports).
 pub fn cur_rk(ps: &PlaybackSession) -> String {
     ps.cur_rk.clone()
@@ -1508,28 +1366,9 @@ pub fn swap_cur_sid_for_test(ps: &mut PlaybackSession, sid: ServerId) -> ServerI
 fn cur_client(ps: &PlaybackSession) -> Option<&'static plx_plex::plex::Client> {
     plx_plex::plex::client_for(cur_sid(ps))
 }
-/// Projection: the wire id of the carried audio track, `0` for "server default / none" — the
-/// pre-#266 shape of this accessor, kept so every existing caller that only ever wanted the id
-/// keeps compiling against `cur_audio` unchanged.
-pub fn cur_audio_sid(ps: &PlaybackSession) -> i64 {
-    ps.cur_audio.as_ref().map_or(0, |a| a.sid)
-}
-/// The currently-playing item's Part id. Written once per item by `build_stream` from its own
-/// `part` argument. In-playback callers (audio switch, subtitle toggle, retranscode) want this;
-/// `build_stream` must pass its freshly-derived local instead, since this is not yet updated
-/// for the item being started.
-fn cur_part_id(ps: &PlaybackSession) -> i64 {
-    ps.cur_part_id
-}
 /// The stable app-owned playback generation (and the first encoder's PMS session id).
 pub fn sess(ps: &PlaybackSession) -> String {
     ps.sess.clone()
-}
-pub fn pq_id(ps: &PlaybackSession) -> String {
-    ps.pq_id.clone()
-}
-pub fn pq_item_id(ps: &PlaybackSession) -> String {
-    ps.pq_item_id.clone()
 }
 /// The streamed item's Media video/audio codec, so the player picks the H265 Load payload for a
 /// native HEVC direct-play and the matching audio codec.
@@ -1577,11 +1416,6 @@ pub fn stream_immersive(ps: &PlaybackSession) -> bool {
     // This pipeline's Atmos path is E-AC3 JOC.  AAC/AC3 are ordinary output even if a stale
     // source flag exists, so neither diagnostics nor Load may repeat that source-only claim.
     s.stream_acodec.eq_ignore_ascii_case("eac3") && s.stream_immersive
-}
-/// Override the audio codec used to build the Load payload — set by a native audio-track
-/// switch to the chosen track's codec before the direct-play reload.
-pub fn set_stream_acodec(ps: &mut PlaybackSession, codec: &str) {
-    { let s = &mut *ps; s.stream_acodec = codec.to_owned() }
 }
 /// Record the streamed item's video+audio codec pair in one write (the Load-payload source of
 /// truth) for route-policy tests that install a synthetic live HLS response.
@@ -1730,29 +1564,6 @@ pub fn set_stream_declaration_for_test(
 pub fn is_remux(ps: &PlaybackSession) -> bool {
     ps.cur_contract.remux
 }
-/// The Plex Pass DSP the live route was ASKED for (issue #266) — `cur_contract.audio`, gated to
-/// what the server DEMONSTRABLY applied: `NONE` unless `cur_enhancement` is `Applied`
-/// (`Unverified`/`Refused`/`Off` say nothing was provably added to this stream, so a caller
-/// quoting the params must not claim them). Read by the diagnostics Audio row's suffix, which used
-/// to read the unfiltered ask and gate it on `cur_enhancement_label(ps) == Some("applied")` itself.
-pub fn applied_audio_enhancements(ps: &PlaybackSession) -> plx_plex::plex::AudioEnhancements {
-    if ps.cur_enhancement == EnhancementOutcome::Applied {
-        ps.cur_contract.audio
-    } else {
-        plx_plex::plex::AudioEnhancements::NONE
-    }
-}
-/// **Narrow diagnostics accessor** — deliberately not `pub fn cur_enhancement`, which would
-/// widen [`EnhancementOutcome`] itself past `pub(super)` for one read-only caller. `None` for
-/// `Off` (nothing to report); otherwise the wire word `app::diagnostics::route_line` appends as
-/// `enh=<word>`.
-pub fn cur_enhancement_label(ps: &PlaybackSession) -> Option<&'static str> {
-    match ps.cur_enhancement {
-        EnhancementOutcome::Off => None,
-        EnhancementOutcome::Applied => Some("applied"),
-        EnhancementOutcome::Refused => Some("refused"),
-    }
-}
 /// Did this playback forbid the server a video stream COPY? Read by the seek and audio-switch
 /// rebuilds so the constraint survives them — see [`PlaybackSession::cur_contract`].
 fn is_no_video_copy(ps: &PlaybackSession) -> bool {
@@ -1794,110 +1605,6 @@ use plx_base::cbuf::set as set_c; // shared fixed-C-buffer write (the session's 
 
 pub fn forced_direct_play(ps: &PlaybackSession) -> bool {
     ps.direct_play_mode == DirectPlayMode::Forced
-}
-
-pub fn audio_track_direct_plays(ps: &PlaybackSession, codec: &str, channels: i64) -> bool {
-    audio_direct_plays(ps.direct_play_mode, codec, channels)
-}
-
-/// Select the audio + subtitle streams server-side for the current part before a
-/// transcode. The transcoder encodes the part's SELECTED audio and, when a subtitle id is
-/// non-zero, BURNS that subtitle (query-param subtitleStreamID does NOT suppress a
-/// default-selected sub, only the PUT does). The direct-play profile advertises text and
-/// client-rendered bitmap codecs; burn is still the remux/re-encode path when we PUT a
-/// positive subtitle id. We PUT subtitleStreamID=0 to keep subs OFF (no burn), or the chosen
-/// id to burn it; audioStreamID only when the user switched (else keep default).
-///
-/// Never `0` for a subtitle the app draws itself: PMS discards a DOWNLOADED subtitle the moment the
-/// selection moves off it (docs/pms-api.md, 2026-10-06), so `0` means the viewer chose Off or nothing
-/// is selected; "do not burn" is the transcode wire's `subtitles=none` alone.
-///
-/// `sid` names the server that owns `part` — the resolve worker passes the id it was given, and the
-/// in-playback callers pass [`cur_sid`]. A `Part.id` is server-local, so a PUT sent to the wrong
-/// one either 404s or, worse, re-selects streams on a stranger's part that happens to share the
-/// number.
-pub(super) fn put_selection(_off: &plx_base::task::OffFrame, sid: ServerId, part: i64, aud: i64, sub: i64) {
-    if part <= 0 {
-        return;
-    }
-    let c = match plx_plex::plex::client_for(sid) {
-        Some(c) => c,
-        None => return,
-    };
-    let st = c.select_streams(&plx_plex::plex::StreamSelection {
-        part_id: part,
-        audio_stream_id: aud,
-        subtitle_stream_id: sub,
-    });
-    crate::player::log(&format!(
-        "select streams: part={part} audio={aud} sub={sub} -> HTTP {st}"
-    ));
-}
-
-struct QueuedSelection {
-    sid: ServerId,
-    part: i64,
-    aud: i64,
-    sub: i64,
-}
-
-/// The pending selection PUTs and whether a worker is draining them. One lock covers both, so the
-/// worker deciding to exit and a `queue_put_selection` deciding whether to spawn one cannot
-/// interleave: either the push lands before the worker's final empty check, or it sees the worker
-/// already gone and spawns its own.
-struct SelectionQueue {
-    pending: std::collections::VecDeque<QueuedSelection>,
-    worker_running: bool,
-}
-
-static SELECTION_QUEUE: std::sync::Mutex<SelectionQueue> =
-    std::sync::Mutex::new(SelectionQueue { pending: std::collections::VecDeque::new(), worker_running: false });
-
-fn selection_queue() -> std::sync::MutexGuard<'static, SelectionQueue> {
-    SELECTION_QUEUE.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Same PUT as [`put_selection`], run on a worker instead of the frame thread
-/// (`commit_audio_selection`/`commit_subtitle_selection` are both reached from
-/// `app/playback.rs::commit_track` inside the run-loop's `FrameScope`). Requests are drained
-/// strictly FIFO by one serial worker at a time, never in parallel — PMS applies whichever PUT it
-/// receives last, so two picks made in quick succession (audio, then subtitle) must land on the
-/// server in the order the viewer made them, not in whatever order two independent threads happen
-/// to finish their requests.
-pub(super) fn queue_put_selection(sid: ServerId, part: i64, aud: i64, sub: i64) {
-    if part <= 0 {
-        return;
-    }
-    let spawn = {
-        let mut queue = selection_queue();
-        queue.pending.push_back(QueuedSelection { sid, part, aud, sub });
-        !std::mem::replace(&mut queue.worker_running, true)
-    };
-    if spawn {
-        spawn_selection_worker();
-    }
-}
-
-fn spawn_selection_worker() {
-    let spawned = plx_base::task::spawn_off_frame("put-selection", |off| loop {
-        let req = {
-            let mut queue = selection_queue();
-            let Some(req) = queue.pending.pop_front() else {
-                // Nothing left: retire under the same lock the push takes, so a racing
-                // `queue_put_selection` either pushed before this check or spawns a fresh worker.
-                queue.worker_running = false;
-                break;
-            };
-            req
-        };
-        put_selection(off, req.sid, req.part, req.aud, req.sub);
-    });
-    if !spawned {
-        // The OS refused the thread. Drop the running flag so a later `queue_put_selection` gets a
-        // chance to retry, rather than leaving every future selection stranded in the queue behind
-        // a flag nobody will ever clear.
-        selection_queue().worker_running = false;
-    }
 }
 
 /// The queued next episode. Main-thread only, and — like `metadata::playing()` (via
@@ -1995,7 +1702,6 @@ fn route_transition_owns_player() -> bool {
         ControlPhase::Preparing(_)
             | ControlPhase::Prepared(_)
             | ControlPhase::Starting(_, _)
-            | ControlPhase::StagingUser(_)
     )
 }
 
@@ -2101,29 +1807,6 @@ pub(super) fn live_family(ps: &PlaybackSession) -> RouteFamily {
         RouteFamily::Remux
     } else {
         RouteFamily::Other
-    }
-}
-
-/// The offer's inputs, read from the live session alone — no metadata store: the carried track's
-/// capability was frozen into `cur_audio` when it was picked, and the candidate carries its own
-/// DV facts.
-pub(super) fn facts(ps: &PlaybackSession) -> EnhancementFacts<'_> {
-    EnhancementFacts {
-        pass: plx_plex::plex::serverinfo::subscription_of(cur_sid(ps)),
-        base: ps.auto_original.as_ref(),
-        carried: ps.cur_audio.as_ref(),
-        subtitle_effect: subtitle_effect_of(ps),
-        refused: ps.cur_enhancement == EnhancementOutcome::Refused,
-    }
-}
-
-/// What the picked subtitle does to the route: nothing, a sidecar the client draws itself, or an
-/// embedded track the server would have to burn to keep. Two session fields, read in place.
-fn subtitle_effect_of(ps: &PlaybackSession) -> SubtitleEffect {
-    match ps.cur_sub_sid {
-        0 => SubtitleEffect::None,
-        _ if ps.cur_sub_sidecar || side_subs_allowed(ps) => SubtitleEffect::Sidecar,
-        _ => SubtitleEffect::Embedded,
     }
 }
 
@@ -2236,17 +1919,6 @@ fn enhancement_family(ps: &PlaybackSession) -> RouteFamily {
     }
 }
 
-/// The [`EnhancementRoute`] a live `Retranscode` would ask for right now — `None` when the
-/// enhancement is not offered at all. `want_live`/`audio_enhancements_offered_live` collapse this
-/// to a bool for the menu's toggle; `enhancement_step` needs the flavour too, since a subtitle
-/// change can flip Remux↔Burn without changing the boost/loudness preference at all.
-fn want_route_live(ps: &PlaybackSession) -> Option<EnhancementRoute> {
-    if !enhancement_quality() {
-        return None;
-    }
-    enhancement_route(&facts(ps), enhancement_family(ps))
-}
-
 /// Whether the quality preference admits an Original-family route at all — Auto (which may run
 /// Original) or Original itself. A fixed rung is a bitrate cap, and the enhanced route is not.
 fn enhancement_quality() -> bool {
@@ -2272,304 +1944,7 @@ fn enhanced_remux_contract(
     }
 }
 
-/// What a claimed `Retranscode` must do about the enhancement.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum EnhancementStep {
-    /// The enhancement has nothing to change: today's rebuild (or the displaced pick's own
-    /// legacy reload) runs.
-    NotInvolved,
-    /// Rebuild as this remux — on with new params, or a remux candidate's plain remux.
-    Remux(plx_plex::plex::EncodeContract),
-    /// The enhancement is no longer wanted and the candidate direct-plays: return to it.
-    ReleaseToDirect,
-}
-
-/// **Pure over session state.** See the table in the plan's §3: a wanted enhancement that differs
-/// from the applied one (in preference OR in route flavour — M7's Remux↔Burn) builds the enhanced
-/// remux; an applied one no longer wanted returns to the candidate (direct, or its plain remux);
-/// everything else — including no candidate at all — is not the enhancement's business.
-pub fn enhancement_step(ps: &PlaybackSession) -> EnhancementStep {
-    // Under a fixed rung the rebuild is the quality refresh's own (a capped re-encode, which
-    // drops the params by family); a release to the uncapped candidate would erase that cap.
-    if !enhancement_quality() {
-        return EnhancementStep::NotInvolved;
-    }
-    let want_route = want_route_live(ps);
-    let want = desired_audio(crate::player::audio_enhancements(), want_route.is_some());
-    let applied = ps.cur_contract.audio;
-    let want_burn = matches!(want_route, Some(EnhancementRoute::Burn));
-    let applied_burn = live_is_own_burn(ps);
-    // A subtitle change while enhanced can leave the boost/loudness preference untouched and still
-    // need a rebuild: turning off a burned subtitle must drop the route from Burn back to a plain
-    // enhanced remux (M7), which `want == applied` alone would miss.
-    if want.any() && (want != applied || want_burn != applied_burn) {
-        return EnhancementStep::Remux(enhanced_remux_contract(want, want_burn));
-    }
-    if applied.any() && !want.any() {
-        return match ps.auto_original.as_ref() {
-            Some(candidate) if candidate.feeds_part() => EnhancementStep::ReleaseToDirect,
-            // An embedded subtitle still on screen is kept by the plain burn, never dropped by a
-            // plain remux (which cannot carry it, M4/M7).
-            Some(_) => EnhancementStep::Remux(enhanced_remux_contract(
-                plx_plex::plex::AudioEnhancements::NONE,
-                subtitle_effect_of(ps) == SubtitleEffect::Embedded,
-            )),
-            None => EnhancementStep::NotInvolved,
-        };
-    }
-    EnhancementStep::NotInvolved
-}
-
-/// **Bring the route in line with the enhancement preference.** Returns `true` when it queued the
-/// `Retranscode` that will do so — the caller then skips its own legacy reload, and
-/// `legacy_reloads` records that it did (`displaced_pick`), so a claim that cannot honour the
-/// enhancement still performs the pick's own reload. A pending Original trial owns the route:
-/// the reconcile is deferred to whichever route that trial settles on.
-pub fn reconcile_enhancement(ps: &PlaybackSession, legacy_reloads: bool) -> bool {
-    if enhancement_step(ps) == EnhancementStep::NotInvolved {
-        return false;
-    }
-    queue_user_route_intent(ps, UserRouteIntent::Retranscode, legacy_reloads);
-    true
-}
-
-/// **Test-only session builder for the Audio tab's enhancement rows (issue #266 PR 4).** Every
-/// `PlaybackSession` field is private to this module by design (see `PlaybackSession::IDLE`'s own
-/// doc), so `appkit::track_menu`'s tests — which live outside `route` and see only this module's
-/// `pub` surface — cannot build one field-by-field the way this module's own tests do.
-/// This is the one door: it drives every input `audio_enhancements_offered_live`/
-/// `displayed_audio_enhancements` read (I1-I7), registers a throwaway server carrying the given
-/// Plex Pass tristate, and returns the session plus that server's id so the caller can
-/// `plx_plex::plex::reset_servers_for_test()` when done. Caller holds `plx_base::testlock::serial()`.
-#[cfg(any(test, feature = "test-support"))]
-pub struct EnhTestFixture {
-    pub pass: plx_plex::plex::serverinfo::Subscription,
-    /// `None` = still direct-playing (Direct family). `Some(true)` = a progressive-MKV remux
-    /// (Remux family — a plain Original remux, or an already-applied enhancement). `Some(false)`
-    /// = any other transcode shape (Other family — HLS, a fixed rung, a relay: I5 excludes all of
-    /// them identically, so one shape stands for the group).
-    pub remux: Option<bool>,
-    /// `auto_original` present at all — `false` reproduces I5's forced-direct-play/fixed-rung/
-    /// relay/non-Original-MDE exclusion, which is exactly "no candidate was ever computed".
-    pub base_present: bool,
-    /// The base route's own Dolby Vision declaration (I7).
-    pub dv_declared: bool,
-    /// The base route's own [`plx_data::metadata::Dovi::base_layer_unusable`] (Profile 5 / P7 with an
-    /// enhancement layer) — a source the offer must refuse regardless of `dv_declared`, since a
-    /// declaration only ever accompanies a USABLE base layer.
-    pub dv_base_unusable: bool,
-    /// `None` = server default audio, facts unknown (fails closed). `Some(capable)` = a known
-    /// carried track with or without `canNormalizeLoudness`.
-    pub carried_capable: Option<bool>,
-    /// What is on screen (M7/I6): none, an external sidecar the client draws itself, or an
-    /// embedded track the server would have to burn to keep — the same [`SubtitleEffect`]
-    /// `facts(ps)` reads off `cur_sub_sid`/`cur_sub_sidecar`.
-    pub subtitle_effect: SubtitleEffect,
-    /// This playback's server already refused or ignored the params once.
-    pub refused: bool,
-    /// The contract's own `audio` — what the live route has actually applied.
-    pub applied: plx_plex::plex::AudioEnhancements,
-    /// The applied route is a Burn (M7) — `cur_contract.remux` is `false` even though this is the
-    /// enhancement's OWN route, exactly as [`live_is_own_burn`] reads it. Ignored unless `applied`
-    /// carries a preference and `remux` is `Some(true)` (a Burn is still `ProgressiveMkv`).
-    pub applied_burn: bool,
-    /// Force `displayed_audio_enhancements`'s in-flight branch (a user edit queued, not yet
-    /// settled), so it reads `want_live` instead of `cur_contract.audio`.
-    pub in_flight: bool,
-    /// An EMBEDDED subtitle the side reader may draw: a local link, a real Part path and a known
-    /// Part bitrate, with the client able to draw it. Only meaningful with
-    /// `subtitle_effect: Embedded` on a remux.
-    pub side_reader: bool,
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl Default for EnhTestFixture {
-    fn default() -> Self {
-        Self {
-            pass: plx_plex::plex::serverinfo::Subscription::Yes,
-            remux: Some(true),
-            base_present: true,
-            dv_declared: false,
-            dv_base_unusable: false,
-            carried_capable: Some(true),
-            subtitle_effect: SubtitleEffect::None,
-            refused: false,
-            applied: plx_plex::plex::AudioEnhancements::NONE,
-            applied_burn: false,
-            in_flight: false,
-            side_reader: false,
-        }
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-fn test_original_candidate() -> AutoOriginalCandidate {
-    AutoOriginalCandidate {
-        probe_part: "https://example.invalid/source.mkv".into(),
-        direct: true,
-        dovi: plx_data::metadata::Dovi::NONE,
-        dv_decision: plx_data::metadata::DvDecision::NONE,
-        audio: Some(CarriedAudio {
-            sid: 42,
-            ordinal: 1,
-            codec: "eac3".into(),
-            channels: 6,
-            can_normalize_loudness: false,
-            immersive: true,
-        }),
-        audio_converted: false,
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn enhancement_test_session(route: EnhTestFixture) -> (PlaybackSession, ServerId) {
-    let sid = plx_plex::plex::register_for_test("enh-menu-test", "127.0.0.1", 1, "token", "enh-menu-client");
-    plx_plex::plex::serverinfo::store_for_test(sid, route.pass, "1.43.4");
-
-    let mut ps = PlaybackSession::IDLE;
-    ps.cur_sid = sid;
-    ps.cur_sub_sid = if route.subtitle_effect == SubtitleEffect::None { 0 } else { 999 };
-    ps.cur_sub_sidecar = route.subtitle_effect == SubtitleEffect::Sidecar;
-    ps.cur_sub_client_drawable = ps.cur_sub_sidecar;
-    ps.cur_enhancement = if route.refused {
-        EnhancementOutcome::Refused
-    } else if route.applied.any() {
-        EnhancementOutcome::Applied
-    } else {
-        EnhancementOutcome::Off
-    };
-    ps.cur_contract = plx_plex::plex::EncodeContract {
-        remux: matches!(route.remux, Some(true)) && !(route.applied_burn && route.applied.any()),
-        delivery: plx_plex::plex::TranscodeDelivery::ProgressiveMkv,
-        no_video_copy: false,
-        ceiling: None,
-        audio: route.applied,
-    };
-    ps.tsession = if route.remux.is_some() { "enh-menu-test-session".to_owned() } else { String::new() };
-    ps.cur_audio = route.carried_capable.map(|capable| CarriedAudio {
-        sid: 501,
-        ordinal: 1,
-        codec: "ac3".into(),
-        channels: 2,
-        can_normalize_loudness: capable,
-        immersive: false,
-    });
-    ps.auto_original = route.base_present.then(|| AutoOriginalCandidate {
-        direct: route.remux.is_none(),
-        dovi: if route.dv_base_unusable {
-            plx_data::metadata::Dovi { present: true, profile: 5, bl_compat: 0, ..plx_data::metadata::Dovi::NONE }
-        } else {
-            plx_data::metadata::Dovi::NONE
-        },
-        dv_decision: if route.dv_declared {
-            plx_data::metadata::DvDecision {
-                capability: plx_platform::devcaps::dv::DvCapability::Supported,
-                presentation: plx_data::metadata::DvPresentation::Declare(plx_data::metadata::DolbyHdrInfo {
-                    profile_id: 8,
-                    track_type: "single",
-                    encryption_type: "clear",
-                }),
-            }
-        } else {
-            plx_data::metadata::DvDecision::NONE
-        },
-        audio: ps.cur_audio.clone(),
-        ..test_original_candidate()
-    });
-
-    if route.side_reader {
-        ps.cur_sub_client_drawable = true;
-        ps.cur_sub_ordinal = 0;
-        ps.cur_transport_kbps = 7_400;
-        if let Some(candidate) = ps.auto_original.as_mut() {
-            candidate.probe_part = "/library/parts/1/1/file.mkv".into();
-        }
-        if let Some(client) = plx_plex::plex::client_for(sid) {
-            client.set_link(plx_plex::plex::probe::Location::Local);
-        }
-    }
-
-    if route.in_flight {
-        let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        control.pending_user = Some(UserRouteIntent::Retranscode);
-        control.phase = ControlPhase::StagingUser(control.next_action);
-    }
-
-    (ps, sid)
-}
-
 // ---- selection commits: playback POLICY for the in-player track menu. The menu only reports
 // what row was picked; whether that means a native stream switch, a server re-transcode, or a
 // burn refresh is decided HERE, next to the codec sets and the transcode state it depends on. ----
-
-/// Commit an audio-track pick: NATIVE switch (feed the chosen stream from the same direct-play
-/// file — no transcode, keeps 4K HEVC) when the item direct-plays AND the target codec is
-/// direct-playable; else a server re-transcode with that stream selected. `audio.ordinal` is the
-/// CONTAINER audio ordinal (the menu converts its row via metadata::audio_ordinal); `audio` itself
-/// is the frozen `CarriedAudio` snapshot (issue #266) the menu built via `CarriedAudio::from_stream`.
-pub fn commit_audio_selection(ps: &mut PlaybackSession, audio: CarriedAudio) {
-    if forced_direct_play(ps) && !audio_track_direct_plays(ps, &audio.codec, audio.channels) {
-        ps.play_verdict = Some(PlayVerdict::Forced(ForcedFailure::AudioNeedsConversion));
-        return;
-    }
-    // Audio always changes the decoder/server route contract, even when the eventual route stays
-    // direct. Fence the old worker before publishing the selected stream or invalidating its
-    // Original candidate; the queued reload below crosses its own action boundary afterwards.
-    let _edit = begin_user_contract_boundary();
-    // A standing Burn is wire-shaped `Other`, but it is an Original-family route: the pick must
-    // retarget the candidate the release returns to, exactly as on a remux.
-    let family = enhancement_family(ps);
-    let direct_plays = audio_track_direct_plays(ps, &audio.codec, audio.channels);
-    match family {
-        // The recovery declaration captures one exact source/audio pairing. Once the user changes
-        // that pairing while HLS is live, do not later resurrect the old track behind their back.
-        // A new playback (or selecting Auto again from Original) can establish a fresh candidate.
-        RouteFamily::Other => {
-            if matches!(
-                cur_delivery(ps),
-                plx_plex::plex::TranscodeDelivery::FixedHls { .. }
-            ) {
-                ps.auto_original = None;
-            }
-        }
-        // Issue #266: on the Original family the candidate is also the way back from an enhanced
-        // remux, so it follows the pick instead (see `AutoOriginalCandidate::retarget_audio`).
-        RouteFamily::Direct | RouteFamily::Remux => {
-            if let Some(candidate) = ps.auto_original.as_mut() {
-                if !candidate.retarget_audio(&audio, direct_plays) {
-                    ps.auto_original = None;
-                }
-            }
-        }
-    }
-    let stream_id = audio.sid;
-    let native = family == RouteFamily::Direct && direct_plays;
-    let (ordinal, codec) = (audio.ordinal, audio.codec.clone());
-    { let s = &mut *ps; s.cur_audio = Some(audio); s.selection_known = true };
-    if native {
-        // record the pick: the timeline then reports the stream that actually plays, and a
-        // later transcode event (subtitle burn refresh / transcode seek) keeps this track.
-        // persist the USER's pick server-side (official-client behavior): /status/sessions'
-        // selected-stream display keys on the part selection, not the timeline report. Only
-        // user picks persist — the start-of-play auto-pick (eng preference) reports only. Reached
-        // from `app/playback.rs::commit_track` inside the run-loop's `FrameScope`, so this PUT runs
-        // on the serial selection worker instead of blocking the frame thread.
-        queue_put_selection(cur_sid(ps), cur_part_id(ps), cur_audio_sid(ps), cur_sub_sid(ps));
-    }
-    // The new track may change what the enhancement offer says (capability, candidate). If the
-    // route must change for that, the reconcile's Retranscode REPLACES this pick's own reload and
-    // is marked as owing it, so a refused enhancement still switches the track.
-    if reconcile_enhancement(ps, true) {
-        // the reconcile's Retranscode owes this pick its reload
-        crate::player::note_audio_pick();
-        return;
-    }
-    if native {
-        crate::player::request_audio_track(ps, ordinal, &codec);
-    } else {
-        crate::player::request_audio_switch(ps, stream_id);
-    }
-    // the rebuild now loading is this pick's: the read-out says "Switching audio…"
-    crate::player::note_audio_pick();
-}
 

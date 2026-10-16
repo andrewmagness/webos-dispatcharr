@@ -142,14 +142,6 @@ impl AttemptLedger {
         self.origin = origin;
     }
 
-    /// The playback in force opens its engine again, for `origin`. Another playback's note (a stale
-    /// generation, or none) changes nothing.
-    fn reopen(&mut self, generation: u32, origin: AttemptOrigin) {
-        if generation != 0 && self.generation == generation {
-            self.ordinal = self.ordinal.next();
-            self.origin = origin;
-        }
-    }
 }
 
 fn ledger() -> std::sync::MutexGuard<'static, AttemptLedger> {
@@ -319,11 +311,6 @@ pub fn selected_quality_class(q: crate::route::Quality) -> QualityClass {
     }
 }
 
-/// The wire class of an ABR controller rung, for the same reason as [`selected_quality_class`].
-pub fn rung_quality_class(rung: crate::abr::Rung) -> QualityClass {
-    QualityClass::from_kbps(i64::from(rung.kbps()))
-}
-
 /// The delivery of the route this playback INSTALLED. A refused or unresolved plan installs none
 /// (`tsession` stays empty and `cur_contract` describes an attempt that never ran), so reading the
 /// route would label it `Direct` — the tag upstream Sentry issue 14 showed on every `decision_refused`
@@ -418,31 +405,6 @@ pub fn install_trace_eraser() {
 
 pub fn note_seek_for(generation: u32) {
     push_trace_for(generation, TraceEvent::SeekRequested);
-}
-
-pub fn note_delivery_requested_for(
-    generation: u32,
-    delivery: DeliveryClass,
-    requested: QualityClass,
-    reason: DeliveryReason,
-    origin: AttemptOrigin,
-) {
-    note_attempt_for(generation, origin);
-    push_trace_for(
-        generation,
-        TraceEvent::DeliveryRequested {
-            delivery,
-            requested,
-            reason,
-        },
-    );
-}
-
-/// A new engine open of this playback is decided, for `origin`. The generation guard is the
-/// trace's own: a late note from a previous Play's worker changes nothing. Not consent-gated: the
-/// ledger holds a count and a cause, never a history.
-pub fn note_attempt_for(generation: u32, origin: AttemptOrigin) {
-    ledger().reopen(generation, origin);
 }
 
 /// Why the open now in force was made and which open of the session it is.
@@ -1360,68 +1322,6 @@ mod tests {
         assert_eq!(error_context(&ps).pipeline_error, 0, "the latch does not outlive its session");
     }
 
-    /// **upstream Sentry issue V.** A playback that was running, then switched quality to Original, and
-    /// whose Original open failed used to report the SESSION: `delivery` the old route, `started`
-    /// true. The report now also names the attempt that failed: the route it was opening, and
-    /// whether that open ever put a picture up. Driven through the real per-frame observer, with
-    /// error reporting consented (the attempt is part of the in-memory trace, which exists only
-    /// then).
-    #[test]
-    fn a_failed_quality_switch_to_original_names_the_attempted_route_and_the_unstarted_attempt() {
-        use plx_telemetry::telemetry::consent::{self, Consent};
-        let _g = plx_base::testlock::serial();
-        let previous = consent::current();
-        let mut enabled = Consent::default();
-        enabled.errors = true;
-        enabled.asked_version = consent::POLICY_VERSION;
-        consent::install(enabled);
-
-        // The route the session had: HLS.
-        let mut ps = crate::route::PlaybackSession::default();
-        crate::route::install_transcode_for_test(&mut ps, false, true);
-        let generation = requested(&ps, plx_plex::plex::ServerId::UNSET, AttemptOrigin::Fresh);
-        let set = |state: S| {
-            crate::player::SHARED.pb_state.store(state as u8, Relaxed);
-            tick(&ps);
-        };
-        set(S::Connecting);
-        set(S::Playing);
-        assert!(SAW_START.load(Relaxed), "the session played");
-        let playing = error_context(&ps);
-        assert!(playing.started && playing.attempt_started, "a picture is up on this attempt");
-        assert_eq!(
-            (playing.attempt_origin, playing.attempt_ordinal),
-            (AttemptOrigin::Fresh, AttemptOrdinal::FIRST),
-            "the Play the viewer pressed is the first open, and says so",
-        );
-
-        // The viewer picks Original: the new route is requested, and its open begins.
-        note_delivery_requested_for(
-            generation,
-            DeliveryClass::Direct,
-            QualityClass::Original,
-            DeliveryReason::OriginalRecovery,
-            AttemptOrigin::QualityChange,
-        );
-        set(S::Connecting);
-        set(S::Error);
-
-        let ctx = error_context(&ps);
-        assert_eq!(ctx.delivery.code(), "hls", "the session's route is still reported, for continuity");
-        assert!(ctx.started, "the session did play");
-        assert_eq!(ctx.attempted_delivery.code(), "original_direct", "the route that was being opened");
-        assert!(!ctx.attempt_started, "the Original open never showed a picture");
-        assert_eq!(ctx.attempt_origin.code(), "quality_change", "the viewer asked for Original");
-        assert_eq!(ctx.attempt_ordinal.code(), "2", "the second open of this playback");
-
-        crate::player::SHARED.pb_state.store(S::Idle as u8, Relaxed);
-        LAST.store(S::Idle as u8, Relaxed);
-        SAW_START.store(false, Relaxed);
-        SAW_FAIL.store(false, Relaxed);
-        clear_error_trace();
-        consent::install(previous.unwrap_or_default());
-    }
-
     /// The sealed trace the shared slot now holds.
     fn trace_steps() -> Vec<TraceStep> {
         super::super::SHARED
@@ -1542,72 +1442,6 @@ mod tests {
                 seen,
                 ["1", "2", "3", "4", "5", "6", "7", "8", "9", "9+", "9+", "9+", "9+"],
             );
-        });
-    }
-
-    /// **A recovery that also fails is ONE failure to the viewer, and one report.** The first open
-    /// fails, the app starts a recovery on its own (the HUD reads Resolving through the flight, so
-    /// the failure is not published), and the recovery's open fails too. The attempt latch means one
-    /// report; the report names the open that failed last, which is the recovery's, the second.
-    /// When the recovery cannot even start, the first open's failure stands, as itself.
-    #[test]
-    fn a_recovery_that_also_fails_emits_one_report_and_names_the_recovery() {
-        let _g = plx_base::testlock::serial();
-        consented(|| {
-            let ps = crate::route::PlaybackSession::default();
-            let sid = plx_plex::plex::ServerId::UNSET;
-            let before = plx_telemetry::telemetry::playback::report_calls_for_test();
-            let generation = requested(&ps, sid, AttemptOrigin::Fresh);
-            observe(&ps, S::Connecting);
-            // The first open failed; the recovery flight flies (Resolving), lands, and reopens.
-            observe(&ps, S::Resolving);
-            note_delivery_requested_for(
-                generation,
-                DeliveryClass::Hls,
-                QualityClass::Unknown,
-                DeliveryReason::OriginalOpenRollback,
-                AttemptOrigin::Recovery,
-            );
-            observe(&ps, S::Connecting);
-            observe(&ps, S::Error);
-            // The error read-out is republished on the frames that follow.
-            observe(&ps, S::Error);
-            let ctx = error_context(&ps);
-            assert_eq!((ctx.attempt_origin.code(), ctx.attempt_ordinal.code()), ("recovery", "2"));
-            assert_eq!(
-                plx_telemetry::telemetry::playback::report_calls_for_test() - before,
-                1,
-                "one report for the one failure the viewer saw",
-            );
-
-            // The flight refused: no second open was ever decided, so the first open is what failed.
-            clear_error_trace();
-            requested(&ps, sid, AttemptOrigin::Fresh);
-            observe(&ps, S::Connecting);
-            observe(&ps, S::Error);
-            let refused = error_context(&ps);
-            assert_eq!((refused.attempt_origin.code(), refused.attempt_ordinal.code()), ("fresh", "1"));
-        });
-    }
-
-    /// A late note from an earlier Play's worker (a stale generation) must not rewrite the cause or
-    /// the count of the playback now in force.
-    #[test]
-    fn a_stale_generation_note_does_not_touch_the_attempt() {
-        let _g = plx_base::testlock::serial();
-        consented(|| {
-            let ps = crate::route::PlaybackSession::default();
-            let sid = plx_plex::plex::ServerId::UNSET;
-            let old = requested(&ps, sid, AttemptOrigin::Fresh);
-            let current = requested(&ps, sid, AttemptOrigin::Fresh);
-            assert_ne!(old, current);
-            note_attempt_for(old, AttemptOrigin::AutoHandoff);
-            note_attempt_for(0, AttemptOrigin::AutoHandoff);
-            let ctx = error_context(&ps);
-            assert_eq!((ctx.attempt_origin.code(), ctx.attempt_ordinal.code()), ("fresh", "1"));
-            note_attempt_for(current, AttemptOrigin::AutoHandoff);
-            let ctx = error_context(&ps);
-            assert_eq!((ctx.attempt_origin.code(), ctx.attempt_ordinal.code()), ("auto_handoff", "2"));
         });
     }
 
@@ -1846,145 +1680,6 @@ mod tests {
             2,
             "new request plus its own transition only"
         );
-    }
-
-    #[test]
-    fn privacy_buckets_are_pinned_at_every_boundary() {
-        use crate::abr::Rung;
-        use crate::route::Quality;
-
-        for (quality, want) in [
-            (Quality::Auto, QualityClass::Auto),
-            (Quality::Original, QualityClass::Original),
-            (Quality::P1080High, QualityClass::M20),
-            (Quality::P1080, QualityClass::M8),
-            (Quality::P720, QualityClass::M4),
-            (Quality::P720Low, QualityClass::M2),
-            (Quality::P480, QualityClass::K720),
-        ] {
-            assert_eq!(
-                selected_quality_class(quality),
-                want,
-                "selected {quality:?}"
-            );
-        }
-        for (rung, want) in [
-            (Rung::P240, QualityClass::K320),
-            (Rung::P480, QualityClass::K720),
-            (Rung::P720Low, QualityClass::M2),
-            (Rung::P720, QualityClass::M4),
-            (Rung::P1080M6, QualityClass::M6),
-            (Rung::P1080, QualityClass::M8),
-            (Rung::P1080M10, QualityClass::M10),
-            (Rung::P1080M12, QualityClass::M12),
-            (Rung::P1080M14, QualityClass::M14),
-            (Rung::P1080M16, QualityClass::M16),
-            (Rung::P1080M18, QualityClass::M18),
-            (Rung::P1080High, QualityClass::M20),
-            (Rung::Uhd, QualityClass::M22),
-        ] {
-            assert_eq!(rung_quality_class(rung), want, "rung {rung:?}");
-            assert_eq!(QualityClass::from_kbps(i64::from(rung.kbps())), want);
-        }
-        assert_eq!(QualityClass::from_kbps(5_500), QualityClass::Unknown);
-
-        assert_eq!(TraceAge::from_ms(-1), TraceAge::Under1s);
-        for (ms, want) in [
-            (999, TraceAge::Under1s),
-            (1_000, TraceAge::S1To3),
-            (2_999, TraceAge::S1To3),
-            (3_000, TraceAge::S3To10),
-            (9_999, TraceAge::S3To10),
-            (10_000, TraceAge::S10To30),
-            (29_999, TraceAge::S10To30),
-            (30_000, TraceAge::S30To120),
-            (119_999, TraceAge::S30To120),
-            (120_000, TraceAge::Over2m),
-        ] {
-            assert_eq!(TraceAge::from_ms(ms), want, "age {ms}");
-        }
-        for (kbps, want) in [
-            (0, RateClass::Unknown),
-            (1, RateClass::Under1m),
-            (999, RateClass::Under1m),
-            (1_000, RateClass::M1To3),
-            (2_999, RateClass::M1To3),
-            (3_000, RateClass::M3To6),
-            (5_999, RateClass::M3To6),
-            (6_000, RateClass::M6To12),
-            (11_999, RateClass::M6To12),
-            (12_000, RateClass::M12To20),
-            (19_999, RateClass::M12To20),
-            (20_000, RateClass::Over20m),
-        ] {
-            assert_eq!(RateClass::from_kbps(kbps), want, "rate {kbps}");
-        }
-        for (height, want) in [
-            (0, RasterClass::Unknown),
-            (1, RasterClass::Sd),
-            (576, RasterClass::Sd),
-            (577, RasterClass::Hd),
-            (720, RasterClass::Hd),
-            (721, RasterClass::Fhd),
-            (1_080, RasterClass::Fhd),
-            (1_081, RasterClass::Uhd),
-        ] {
-            assert_eq!(RasterClass::from_height(height), want, "height {height}");
-        }
-        for (ms, want) in [
-            (-1, BufferClass::Unknown),
-            (0, BufferClass::Empty),
-            (1, BufferClass::Under3s),
-            (2_999, BufferClass::Under3s),
-            (3_000, BufferClass::S3To10),
-            (9_999, BufferClass::S3To10),
-            (10_000, BufferClass::S10To30),
-            (29_999, BufferClass::S10To30),
-            (30_000, BufferClass::Over30s),
-        ] {
-            assert_eq!(BufferClass::from_ms(ms), want, "buffer {ms}");
-        }
-        for (stage, want) in [
-            (0, PipelineClass::Loading),
-            (1, PipelineClass::Playing),
-            (2, PipelineClass::Bound),
-            (3, PipelineClass::Streaming),
-            (4, PipelineClass::Loading),
-        ] {
-            assert_eq!(PipelineClass::from_stage(stage), want, "stage {stage}");
-        }
-        // The transport inputs the demuxer publishes (issue #504): the libcurl code, the age of the
-        // transfer in ms and whether the reopen after it was refused.
-        for (rc, age_ms, reopen_failed, want) in [
-            (0, -1, false, (TransportClass::None, TransferAgeClass::Unknown)),
-            (56, 60_012, false, (TransportClass::RecvError, TransferAgeClass::S30To90)),
-            (18, 4_999, false, (TransportClass::Partial, TransferAgeClass::Under5s)),
-            (28, 300_000, false, (TransportClass::Timeout, TransferAgeClass::Over300s)),
-            (56, 60_012, true, (TransportClass::ReopenFailed, TransferAgeClass::S30To90)),
-            (0, -1, true, (TransportClass::ReopenFailed, TransferAgeClass::Unknown)),
-            (9_999, 12_000, false, (TransportClass::Other, TransferAgeClass::S5To30)),
-        ] {
-            assert_eq!(
-                transport_classes(rc, age_ms, reopen_failed),
-                want,
-                "rc {rc} age {age_ms} reopen_failed {reopen_failed}"
-            );
-        }
-        for (status, want) in [
-            (0, HttpClass::None),
-            (199, HttpClass::Other),
-            (200, HttpClass::Success),
-            (299, HttpClass::Success),
-            (300, HttpClass::Other),
-            (399, HttpClass::Other),
-            (400, HttpClass::ClientError),
-            (499, HttpClass::ClientError),
-            (500, HttpClass::ServerError),
-            (599, HttpClass::ServerError),
-            (600, HttpClass::Other),
-        ] {
-            assert_eq!(HttpClass::from_status(status), want, "HTTP {status}");
-        }
     }
 
     /// **A codec name the table does not know becomes `other`, never itself.** The wire vocabulary

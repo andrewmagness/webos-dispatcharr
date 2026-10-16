@@ -187,13 +187,6 @@ pub use engine::{
 pub use pump::pump;
 pub use shared::PlaybackState;
 
-/// The viewer picked an audio track and the stream is being rebuilt for it: `route::
-/// commit_audio_selection` calls this once its rebuild is queued. See [`shared::Shared::audio_switch`].
-pub fn note_audio_pick() {
-    SHARED.audio_pick_ms.store(i64::from(vclock_ms()), Relaxed);
-    SHARED.audio_switch.store(shared::AudioSwitch::Picked as u8, Relaxed);
-}
-
 /// Is the rebuild now loading the one an audio-track pick asked for? A pick that is still waiting
 /// for its reload counts only inside [`shared::AUDIO_PICK_WINDOW_MS`]; once the reload has begun
 /// it counts until the session's first frame.
@@ -1348,48 +1341,6 @@ pub fn diag(ps: &crate::route::PlaybackSession) -> Diag {
     }
 }
 
-/// request an audio-track switch (Plex audioStreamID); the pump forces a fresh
-/// transcode with that source audio at the current position next tick.
-pub fn request_audio_switch(ps: &crate::route::PlaybackSession, _sid: i64) {
-    crate::route::request_user_route_intent(ps, crate::route::UserRouteIntent::Retranscode);
-    SHARED.sub_cues.lock().unwrap().clear(); // the fresh transcode carries no embedded subs
-}
-/// request a NATIVE audio-track switch (direct-play, NO transcode): feed the 0-based `audio_idx`
-/// audio stream from the same MKV with codec `codec`. The pump reloads direct-play at the current
-/// position next tick (switch_audio_native). Used when the item direct-plays and the target track
-/// is a direct-playable codec (aac/ac3/eac3).
-pub fn request_audio_track(ps: &mut crate::route::PlaybackSession, audio_idx: i32, codec: &str) {
-    stage_native_audio(ps, audio_idx, codec);
-    crate::route::request_user_route_intent(ps, crate::route::UserRouteIntent::NativeAudioReload);
-}
-/// Everything a native audio switch needs BEFORE its direct-play reload, without queueing one:
-/// the Load payload codec, the demuxer's stream index, and the old track's embedded cues gone.
-/// A claimed action that owes a displaced pick its reload (issue #266) stages it here and runs
-/// the reload itself, so no second intent is queued mid-claim.
-pub fn stage_native_audio(ps: &mut crate::route::PlaybackSession, audio_idx: i32, codec: &str) {
-    crate::route::set_stream_acodec(ps, codec); // the reload's Load payload uses this audio codec
-    SHARED.desired_audio_idx.store(audio_idx, Relaxed);
-    SHARED.sub_cues.lock().unwrap().clear();
-}
-/// request a re-transcode at the current position with the CURRENT audio + subtitle —
-/// used when a subtitle is (de)selected while already transcoding, so the server
-/// re-burns (or drops) it. No-op-ish if not transcoding (the caller gates on that).
-pub fn request_transcode_refresh(ps: &crate::route::PlaybackSession) {
-    crate::route::request_user_route_intent(ps, crate::route::UserRouteIntent::Retranscode);
-    SHARED.sub_cues.lock().unwrap().clear(); // burned/absent in the fresh transcode
-}
-
-/// Restart the current stream at the current movie position so a fresh demux worker captures a
-/// newly-enabled adaptive controller. This mailbox does not itself mutate the route or ask PMS for
-/// another encode; the main-thread pump owns the eventual same-position restart.
-pub fn request_adaptive_reload(ps: &crate::route::PlaybackSession) {
-    crate::route::request_user_route_intent(ps, crate::route::UserRouteIntent::AdaptiveReload);
-}
-
-pub fn cancel_adaptive_reload() {
-    crate::route::cancel_user_route_intent(crate::route::UserRouteIntent::AdaptiveReload);
-}
-
 /// Whether a route change has scheduled an encoder rebuild. Test-visible so route policy can be
 /// graded independently of the pump's frame timing.
 #[cfg(any(test, feature = "test-support"))]
@@ -1412,34 +1363,10 @@ pub fn reset_route_requests_for_test(ps: &crate::route::PlaybackSession) {
     crate::route::reset_player_control_for_test(ps);
 }
 
-/// Request the main-thread HLS→Original pipeline replacement. Used by an explicit Original pick;
-/// the adaptive worker publishes through the same synchronized route-intent controller after its
-/// source probes pass.
-pub fn request_original_recovery(ps: &crate::route::PlaybackSession) {
-    crate::route::request_user_route_intent(
-        ps,
-        crate::route::UserRouteIntent::RecoverOriginal(crate::route::RecoveryCause::ManualOriginal),
-    );
-    SHARED.sub_cues.lock().unwrap().clear();
-}
-
 // ---- client-rendered subtitles (direct-play only; a transcode carries no subs) ----
 /// selected subtitle track index (-1 = off); the demuxer reads this per block.
 pub fn desired_sub_idx() -> i32 {
     SHARED.desired_sub_idx.load(Relaxed)
-}
-/// select a subtitle track by index (-1 = off). Does NOT clear the cue store: the demuxer
-/// pushes cues for EVERY text track regardless of selection, so the buffered region's cues for
-/// the newly-selected track are already present and the switch shows immediately. Clearing here
-/// would reintroduce the ~10-20s buffer-gap delay (the demuxer runs well ahead of the playhead).
-/// A new item / transcode re-point clears the store via reset_session / the pump.
-pub fn request_subtitle(idx: i32) {
-    SHARED.desired_sub_idx.store(idx, Relaxed);
-    if idx < 0 {
-        // subs Off: free the image-cue store now (the demuxer also stops decoding new
-        // bitmap cues while off — see ff.rs's desired_sub_idx gate)
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-    }
 }
 /// The tone client-rendered subtitles are drawn in. A [`crate::route::LiveCell`] rather than a field
 /// of [`SHARED`] because it OUTLIVES a playback — it is a preference, not session state
@@ -3257,36 +3184,4 @@ mod audio_switch_tests {
         assert_eq!(busy_caption_with(S::Resolving, true), S::Resolving.caption());
     }
 
-    #[test]
-    fn a_pick_names_the_rebuild_through_the_reload_until_the_first_frame() {
-        let _g = plx_base::testlock::serial();
-        reset();
-        assert!(!audio_switching(), "no pick, no switch: a seek's reload is Buffering");
-        note_audio_pick();
-        assert!(audio_switching(), "the pick's rebuild is flying");
-        SHARED.reset_session_for_reload();
-        assert!(audio_switching(), "the reload keeps the pick's meaning");
-        let epoch = SHARED.begin_native_session().expect("session");
-        sf_on_event(epoch, 0, 7_000_000_000, std::ptr::null());
-        assert!(!audio_switching(), "the first picture ends the switch");
-        // a later seek-style reload is no longer a switch
-        SHARED.reset_session_for_reload();
-        assert!(!audio_switching());
-        SHARED.retire_native_session(epoch);
-        reset();
-    }
-
-    #[test]
-    fn a_pick_whose_rebuild_never_came_expires_and_a_new_item_forgets_it() {
-        let _g = plx_base::testlock::serial();
-        reset();
-        note_audio_pick();
-        SHARED.audio_pick_ms.store(i64::from(vclock_ms()) - shared::AUDIO_PICK_WINDOW_MS - 1, Relaxed);
-        assert!(!audio_switching(), "a refused rebuild must not name a later one");
-        note_audio_pick();
-        assert!(audio_switching());
-        SHARED.reset_session();
-        assert!(!audio_switching(), "a full reset (new item, teardown) ends it");
-        reset();
-    }
 }

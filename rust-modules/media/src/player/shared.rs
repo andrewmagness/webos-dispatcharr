@@ -435,8 +435,7 @@ impl SubBitmap {
 pub enum PlaybackState {
     /// no engine
     Idle = 0,
-    /// the route/plan resolve is in flight — DERIVED in `player::state()` from `route::play_pending()`,
-    /// and held through a cold resume's rebuild (`route::resume_flight_outstanding()`) after the plan landed
+    /// the route/plan resolve is in flight — DERIVED in `player::state()` from `route::play_pending()`
     Resolving = 1,
     /// engine started, pipeline not yet loaded — the HTTP GET + Starfish `Load` window
     Connecting = 2,
@@ -451,8 +450,7 @@ pub enum PlaybackState {
 }
 
 /// How long a viewer's audio pick may stand as "the reason for the next rebuild" before the
-/// rebuild is assumed to have been refused. A retranscode claim's flight takes 1-15 s
-/// (`player::claim_hold`).
+/// rebuild is assumed to have been refused.
 pub const AUDIO_PICK_WINDOW_MS: i64 = 30_000;
 
 /// See [`Shared::audio_switch`].

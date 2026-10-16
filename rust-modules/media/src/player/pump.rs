@@ -420,7 +420,7 @@ fn fail_engine() {
 
 /// Settle a synchronous native reload effect.  A failed `start_bufferfeed` used to be only a log:
 /// callers had already advanced the route reducer and then returned, leaving no Engine to publish
-/// the failure and (for Original) an `OriginalTrial` which could never receive its first frame.
+/// the failure.
 pub(super) fn settle_reload(outcome:super::engine::ReloadOutcome, operation: &str) -> bool {
     if outcome == super::engine::ReloadOutcome::Started {
         return true;

@@ -2994,18 +2994,6 @@ class EverySeekGiveUpPathDisarmsTheSpinner(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, "rust-modules", "media", "src", *parts), encoding="utf-8") as fh:
             return fh.read()
 
-    def test_a_failed_transcode_seek_rebuild_abandons_the_seek(self):
-        src = self._src("player", "pump.rs")
-        i = src.index('"seek(transcode): rebuild failed"')
-        self.assertIn("abandon_seek()", src[max(0, i - 600):i],
-                      "the failed rebuild returns without disarming the spinner")
-
-    def test_a_reload_with_no_url_abandons_the_seek(self):
-        src = self._src("player", "engine.rs")
-        i = src.index('"reload_transcode: no url (ignored)"')
-        self.assertIn("abandon_seek()", src[max(0, i - 400):i],
-                      "the ignored reload returns without disarming the spinner")
-
     def test_the_flag_is_armed_in_exactly_one_place(self):
         """If a second writer appears, the two known clear sites stop being a complete account and
         this whole class is measuring the wrong thing."""

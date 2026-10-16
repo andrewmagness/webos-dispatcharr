@@ -232,8 +232,8 @@ fn now_ms() -> i64 {
 /// graded on how many real milliseconds its own statements took. The sink clock adds the wall time
 /// since it last started running, in whole milliseconds, so a test that starts it at an exact
 /// offset and pauses it one statement later reads that offset only when no millisecond boundary
-/// falls between the two: a loaded runner makes one fall there often enough to be a flake
-/// (`claim_hold`'s "stopped AT the claim offset" read 1 ms high). Pinned, time moves only when
+/// falls between the two: a loaded runner makes one fall there often enough to be a flake.
+/// Pinned, time moves only when
 /// [`pinned_clock::Pinned::advance`] says so; dropping the guard restores the real clock. The
 /// pin starts at the real reading, so it shares the ticker thread's time base.
 #[cfg(test)]

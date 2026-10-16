@@ -571,11 +571,8 @@ pub fn loading(ps: &crate::route::PlaybackSession) -> bool {
     state(ps).is_busy()
 }
 /// true only while the pipeline is actually presenting frames — not resolving, connecting,
-/// buffering or seeking. app.rs gates the heartbeat's `pos=` field on this: on a **direct-play**
-/// resume `begin_resume` only arms the seek (it does not seed `playpos_ns`, unlike the transcode
-/// branch), so the position reads 0 until the first decoded frame lands at the resume offset.
-/// Logging that pre-roll 0 would show the harness a 0→600 step and read as 600s of "climb"
-/// inside one second — a false PASS on `min_timeline_climb_s`.
+/// buffering or seeking. app.rs gates the heartbeat's `pos=` field on this, so a pre-roll 0 is
+/// never logged as playback.
 pub fn is_playing(ps: &crate::route::PlaybackSession) -> bool {
     matches!(state(ps), shared::PlaybackState::Playing)
 }
@@ -1501,8 +1498,7 @@ pub fn seek_display_ns() -> i64 {
 /// The playhead the user INTENDS, which is not always the one being published: while a seek is
 /// still resolving (request → reopen → prime → Play) `playpos_ns` keeps reporting the PRE-seek
 /// spot, so anything snapshotting "where are we?" inside that window snapshots the position the
-/// user just left. The rule — an in-flight seek target wins, then an outstanding recovery flight's
-/// own offset (a resume that has not landed has published nothing), else the published position — used to
+/// user just left. The rule — an in-flight seek target wins, else the published position — used to
 /// be open-coded at each reader that remembered it and was simply MISSING at the one that did not
 /// (the OS-background save; see `app::intended_pos`). This is that rule, once.
 ///

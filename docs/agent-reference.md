@@ -1192,10 +1192,9 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   on both edges because it is idempotent and webOS promises nothing about their order); the player
   is still the top entry, because the park moved nothing, so the `show_page(Player)` beside the
   reload is ordinarily a no-op and is written out only so that a foreground finding the player gone
-  puts it back rather than resuming a session with nothing on screen. It then
-  tracks one exact Load attempt at a time,
-  follows reducer-approved superseding or rollback attempts, retries an exact failure without
-  repeating route preparation, and applies the saved clock only after `Started`. In-app
+  puts it back rather than resuming a session with nothing on screen. A channel is not resumed at
+  a position: the background stops the stream (`Player.parked`) and `0x106` tunes the same channel
+  again at the live edge (`resume_parked`, the reconnect path). In-app
   Home/Settings are *overlays* and do **not** fire these — only a real OS app-switch does. Preserve
   the suspend/reload pairing if you touch playback or routing.
 - **Crash forensics has two layers.** With error-report consent and a compiled Sentry endpoint,

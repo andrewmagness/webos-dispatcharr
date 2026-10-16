@@ -172,29 +172,7 @@ fn append_guarded(r: &Record, allowed: impl FnOnce() -> bool, tenure: Option<u64
         }
         Some(appended)
     };
-    #[cfg(any(test, feature = "test-support"))]
-    after_append_for_test();
     result
-}
-
-#[cfg(any(test, feature = "test-support"))]
-thread_local! {
-    // A deterministic scheduler boundary: the spool lock is released, but its caller has not
-    // resumed. A flush can already read and settle the appended record at this point.
-    static AFTER_APPEND: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(super) fn on_append_for_test(f: impl FnOnce() + 'static) {
-    AFTER_APPEND.with(|slot| *slot.borrow_mut() = Some(Box::new(f)));
-}
-
-#[cfg(any(test, feature = "test-support"))]
-fn after_append_for_test() {
-    let f = AFTER_APPEND.with(|slot| slot.borrow_mut().take());
-    if let Some(f) = f {
-        f();
-    }
 }
 
 fn append_locked(r: &Record) -> bool {

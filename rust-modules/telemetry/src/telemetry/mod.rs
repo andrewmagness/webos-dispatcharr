@@ -21,7 +21,6 @@ pub mod classes;
 pub mod consent;
 pub mod crashreport;
 pub mod delivery;
-pub mod oneoff;
 pub mod persistence;
 pub mod native;
 pub mod window;

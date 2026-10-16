@@ -3,8 +3,7 @@
 //! watch marks — and [`TileFacts`], the plain value the application fills from its catalog row.
 //! The widgets that draw a tile ask a `&dyn Tile` or read a [`TileFacts`] and never a Plex type,
 //! which is the boundary the layer gate (§2.1, `docs/module-layers.md`) holds: `ui` names no
-//! application type, so a caller above it (a screen) converts its row INTO these facts
-//! (`screens::registry::tile_facts::of` is the one converter for a `pms::PmsMovie`) rather than
+//! application type, so a caller above it (a screen) converts its row INTO these facts rather than
 //! the library reaching into the row. [`TileFacts`] is itself a [`Tile`]. Phase 3a:
 //! `widgets::poster_mark` reads through [`Tile`].
 //!

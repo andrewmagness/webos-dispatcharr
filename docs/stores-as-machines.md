@@ -1,5 +1,11 @@
 # Stores as machines — restructure phase 4
 
+> **History.** The Plex data stores this document describes (Browse, Hubs, Metadata, Person,
+> Search, ViewState, Collection, SubtitleSearch) and the app's `StoreCmd`/`StoreWork` plumbing have
+> been removed: Dispatcharr TV reads no Plex library. What remains of `plx_data` is the Dolby
+> Vision facts the player reads (`data/src/metadata.rs`). Read the rest as the record of a design
+> that no longer runs.
+
 R2B-E endpoint recovery: each store's own owner `run` method returns a `StoreOutcome` containing the
 existing `changed` verdict and a bounded, deduplicated set of endpoint requests in
 first-observation order. Hubs failure/refetch/retry, ViewState's hub refetch and Browse all

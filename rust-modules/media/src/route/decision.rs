@@ -14,8 +14,7 @@
 
 use plx_plex::plex::ServerId;
 use std::os::raw::c_char;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 use super::plan::*;
 use super::prefs::*;
 
@@ -399,9 +398,6 @@ pub(super) enum EnhancementOutcome {
     /// Remux, the audio decision was a transcode, and the source codec is in the profile's own
     /// copy list — the params demonstrably did something.
     Applied,
-    /// The audio would have been transcoded anyway (PMS M2's AAC 5.1 case) — asked for, delivered,
-    /// but not provably BECAUSE of the ask.
-    Unverified,
     /// The server refused the params outright, or silently ignored them (audio came back `copy`
     /// despite the ask) — an old or non-conforming PMS.
     Refused,
@@ -694,21 +690,6 @@ mod live_url_tests {
         super::super::LiveTune { lineup: std::sync::Arc::new(lineup), index, previous: None, at: 0, codecs: None }
     }
 
-    #[test]
-    fn a_tune_installs_the_channel_its_lineup_and_its_declaration() {
-        let mut ps = PlaybackSession::IDLE;
-        assert!(!request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 1), 50), "no stream, no tune");
-        assert!(live_tune(&ps).is_none());
-        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 0), 50));
-        assert!(is_live(&ps));
-        assert_eq!(url(&ps), "http://192.0.2.1:9191/a");
-        assert_eq!((stream_vcodec(&ps).as_str(), stream_acodec(&ps).as_str()), ("h264", "aac"));
-        assert_eq!(live_tune(&ps).map(|t| (t.index, t.at)), Some((0, 50)), "stamped with the tune's second");
-        assert!(ps.publication().tune.is_some(), "the page reads it from the publication");
-        assert!(!play_pending(), "nothing to resolve: the start ritual Loads at once");
-        clear_url(&mut ps);
-        assert!(live_tune(&ps).is_none(), "teardown forgets the channel");
-    }
 }
 
 /// Thread-safe active PMS resource identity. While transcoding it names the coupled physical
@@ -799,95 +780,12 @@ pub enum RouteStartResult {
     StartFailed,
 }
 
-/// The part of [`Session`] which describes bytes already accepted as the live route.
-///
-/// User controls are allowed to stage a different projection in `Session` while their PMS/native
-/// effect is being built, because `Session` is main-thread-confined.  They are not allowed to make
-/// that proposal look applied after the effect is refused.  `PlayerControl` therefore retains this
-/// complete value at every commit and restores it on `Rejected`/`Cancelled`; no individual setter
-/// has to remember which neighbouring fields form one decoder/server contract.
-#[derive(Clone)]
-pub(super) struct AppliedRouteProjection {
-    url: String,
-    tsession: String,
-    contract: plx_plex::plex::EncodeContract,
-    enhancement: EnhancementOutcome,
-    auto_original_watched: bool,
-    auto_original: Option<AutoOriginalCandidate>,
-    audio: Option<CarriedAudio>,
-    subtitle_sid: i64,
-    subtitle_sidecar: bool,
-    subtitle_client_drawable: bool,
-    /// Which of the Part's subtitle streams the app reads and draws (`cur_sub_ordinal`). It names
-    /// the track `subtitle_sid` selects, so it is restored with it: a rejected pick must not leave
-    /// the rolled-back route reading the rejected track.
-    subtitle_ordinal: i32,
-    /// The app's own drawing is retired for this playback (`side_subs_refused`). Part of the route
-    /// because it decides the stream's shape (a burn): a rebuild the server rejects restores the
-    /// route it was raised against, and with it the drawing the rejected rebuild was to replace.
-    side_subs_refused: bool,
-    stream_vcodec: String,
-    pub(super) stream_acodec: String,
-    stream_fps: f64,
-    stream_dovi: plx_data::metadata::Dovi,
-    stream_dv_decision: plx_data::metadata::DvDecision,
-    stream_immersive: bool,
-}
-
-fn route_projection(ps: &PlaybackSession) -> AppliedRouteProjection {
-    let s = &*ps;
-    AppliedRouteProjection {
-        url: s.url.clone(),
-        tsession: s.tsession.clone(),
-        contract: s.cur_contract,
-        enhancement: s.cur_enhancement,
-        auto_original_watched: s.cur_auto_original_watched,
-        auto_original: s.auto_original.clone(),
-        audio: s.cur_audio.clone(),
-        subtitle_sid: s.cur_sub_sid,
-        subtitle_sidecar: s.cur_sub_sidecar,
-        subtitle_client_drawable: s.cur_sub_client_drawable,
-        subtitle_ordinal: s.cur_sub_ordinal,
-        side_subs_refused: s.side_subs_refused,
-        stream_vcodec: s.stream_vcodec.clone(),
-        stream_acodec: s.stream_acodec.clone(),
-        stream_fps: s.stream_fps,
-        stream_dovi: s.stream_dovi,
-        stream_dv_decision: s.stream_dv_decision,
-        stream_immersive: s.stream_immersive,
-    }
-}
-
-fn install_route_projection(ps: &mut PlaybackSession, projection: &AppliedRouteProjection) {
-    { let s = &mut *ps; {
-        s.url = projection.url.clone();
-        s.tsession = projection.tsession.clone();
-        s.cur_contract = projection.contract;
-        s.cur_enhancement = projection.enhancement;
-        s.cur_auto_original_watched = projection.auto_original_watched;
-        s.auto_original = projection.auto_original.clone();
-        s.cur_audio = projection.audio.clone();
-        s.cur_sub_sid = projection.subtitle_sid;
-        s.cur_sub_sidecar = projection.subtitle_sidecar;
-        s.cur_sub_client_drawable = projection.subtitle_client_drawable;
-        s.cur_sub_ordinal = projection.subtitle_ordinal;
-        s.side_subs_refused = projection.side_subs_refused;
-        s.stream_vcodec = projection.stream_vcodec.clone();
-        s.stream_acodec = projection.stream_acodec.clone();
-        s.stream_fps = projection.stream_fps;
-        s.stream_dovi = projection.stream_dovi;
-        s.stream_dv_decision = projection.stream_dv_decision;
-        s.stream_immersive = projection.stream_immersive;
-    } };
-}
-
 /// Commit a contract change which requires no PMS/native route replacement.  This is still a
 /// reducer event: otherwise a later rejected action restores the older snapshot and silently
 /// undoes the already-visible quality/subtitle choice.
 fn commit_in_place_route_projection(ps: &PlaybackSession, quality_contract: bool) {
-    let projection = route_projection(ps);
-    let audio_stream_id = projection.audio.as_ref().map_or(0, |a| a.sid);
-    let subtitle_stream_id = projection.subtitle_sid;
+    let audio_stream_id = ps.cur_audio.as_ref().map_or(0, |a| a.sid);
+    let subtitle_stream_id = ps.cur_sub_sid;
     let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
     match control.phase {
         ControlPhase::Stable | ControlPhase::StagingUser(_) | ControlPhase::Completing(_) => {
@@ -895,7 +793,6 @@ fn commit_in_place_route_projection(ps: &PlaybackSession, quality_contract: bool
                 control.applied_revision = control.desired_revision;
                 control.applied_quality = control.desired_quality;
             }
-            control.applied_projection = Some(projection);
         }
         _ => return,
     }
@@ -946,7 +843,6 @@ struct TimelineSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ControlPhase {
     Idle,
-    Resolving,
     Stable,
     /// A user edit has crossed the desired-contract boundary but has not yet either committed
     /// in-place or entered `pending_user`. Automatic publication is Busy throughout this window.
@@ -965,13 +861,6 @@ enum ControlPhase {
 }
 
 impl ControlPhase {
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ResolveFallback {
-    Idle,
-    Stable,
-    Failed(u64),
 }
 
 /// The synchronized authority for route ownership and route-changing intents. `Session` remains
@@ -993,9 +882,6 @@ pub(super) struct PlayerControl {
     /// Quality policy which owns the physical worker. A refused Fixed/Original request leaves this
     /// unchanged, so an already-accepted Auto handoff is never relabelled as the failed desire.
     applied_quality: Quality,
-    /// Last complete `Session` projection whose external effect committed.  A refused proposal is
-    /// rolled back to this value as one transition rather than by a collection of field fixes.
-    applied_projection: Option<AppliedRouteProjection>,
     next_action: u64,
     pending_user: Option<UserRouteIntent>,
     /// Issue #266: the pending user intent stands in for a track pick's reload (see
@@ -1037,9 +923,6 @@ pub(super) struct PlayerControl {
     /// landing), so [`recovery_flight_offset_ns`] is the only place the position survives for a
     /// suspend that snapshots it while the flight is still flying (`player::intended_pos_ns`).
     flight_offset_ns: Option<i64>,
-    /// Exact phase hidden by an asynchronous resolve. URL presence cannot distinguish a retained
-    /// live route from a failed candidate which still owns cleanup state.
-    resolve_fallback: Option<ResolveFallback>,
     /// Native Load results cross back from the media thread here. The main thread drains them only
     /// after the Engine is installed, so a fast `sf_load` cannot publish Stable in front of its
     /// own Engine slot. Tokens make late results harmless rather than requiring queue erasure.
@@ -1080,7 +963,6 @@ static PLAYER_CONTROL: std::sync::Mutex<PlayerControl> = std::sync::Mutex::new(P
     desired_quality: Quality::Original,
     applied_revision: 1,
     applied_quality: Quality::Original,
-    applied_projection: None,
     next_action: 0,
     pending_user: None,
     displaced_pick: false,
@@ -1092,7 +974,6 @@ static PLAYER_CONTROL: std::sync::Mutex<PlayerControl> = std::sync::Mutex::new(P
     flight_resume: None,
     flight_engineless: None,
     flight_offset_ns: None,
-    resolve_fallback: None,
     next_start_attempt: 0,
     start_results: Vec::new(),
     last_start_result: None,
@@ -1205,21 +1086,14 @@ fn merge_user_route_intent(
 /// a playable plan lands in `Prepared`. Claiming a physical `Load` moves it to `Starting`, and only
 /// settling that exact attempt through [`settle_route_start`] may publish `Stable`. In particular,
 /// installing a URL is not evidence that the television accepted it.
-fn prepare_playback_landing(ps: &PlaybackSession, playable: bool) -> Option<RouteStartTransaction> {
-    let projection = playable.then(|| route_projection(ps));
+fn prepare_playback_landing(_ps: &PlaybackSession, playable: bool) -> Option<RouteStartTransaction> {
     let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    // Normal landings arrive from `Resolving`, whose request already captured the preference.
-    // Fixture/direct-plan installs deliberately bypass that async request; in that case the
-    // current durable picker is the only desired contract and must own the installed worker.
-    if control.phase != ControlPhase::Resolving {
-        control.desired_quality = quality();
-    }
+    control.desired_quality = quality();
     control.engine_epoch = next_generation(control.engine_epoch);
     control.media_epoch = next_generation(control.media_epoch);
     if playable {
         control.applied_revision = control.desired_revision;
         control.applied_quality = control.desired_quality;
-        control.applied_projection = projection;
     }
     control.pending_auto = None;
     if !playable {
@@ -1244,10 +1118,8 @@ fn prepare_playback_landing(ps: &PlaybackSession, playable: bool) -> Option<Rout
         serial
     } else {
         control.phase = ControlPhase::Idle;
-        control.resolve_fallback = None;
         return None;
     };
-    control.resolve_fallback = None;
     Some(RouteStartTransaction { serial })
 }
 
@@ -1264,44 +1136,6 @@ fn settle_plan_start_in_unit_test(ps: &mut PlaybackSession, start: Option<RouteS
     }
     #[cfg(not(any(test, feature = "test-support")))]
     let _ = (ps, start);
-}
-
-/// Settle a resolve which will never produce a landing (cancelled or failed to spawn). Restore the
-/// exact phase hidden by `Resolving`: URL presence cannot distinguish a live Stable route from a
-/// failed candidate which merely retains its cleanup projection. A late worker cannot apply
-/// because PLAY_GEN owns that separate mailbox.
-fn cancel_playback_request(ps: &mut PlaybackSession, _playable: bool) {
-    let (fallback, restore) = {
-        let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-        if control.phase != ControlPhase::Resolving {
-            return;
-        }
-        let fallback = control.resolve_fallback.unwrap_or(ResolveFallback::Idle);
-        let restore = matches!(
-            fallback,
-            ResolveFallback::Stable | ResolveFallback::Failed(_)
-        )
-        .then(|| control.applied_projection.clone())
-        .flatten();
-        (fallback, restore)
-    };
-    // request_play publishes the incoming item's track/reset projection before its worker runs.
-    // Restore the retained route while Resolving still blocks workers; Stable must be the last
-    // publication, never a window in front of a hybrid Session.
-    if let Some(applied) = restore {
-        install_route_projection(ps, &applied);
-    }
-    let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
-    if control.phase != ControlPhase::Resolving {
-        return;
-    }
-    control.pending_auto = None;
-    control.resolve_fallback = None;
-    control.phase = match fallback {
-        ResolveFallback::Idle => ControlPhase::Idle,
-        ResolveFallback::Stable => ControlPhase::Stable,
-        ResolveFallback::Failed(serial) => ControlPhase::Failed(serial),
-    };
 }
 
 /// Queue the latest explicit route contract. Unlike an automatic request it survives pre-roll and
@@ -1598,7 +1432,6 @@ pub fn fail_current_engine() {
         }
         ControlPhase::StagingUser(serial) => serial,
         ControlPhase::Failed(_) | ControlPhase::Idle | ControlPhase::Stopping => return,
-        ControlPhase::Resolving => return,
     };
     control.engine_epoch = next_generation(control.engine_epoch);
     control.media_epoch = next_generation(control.media_epoch);
@@ -1693,7 +1526,7 @@ pub fn pending_user_route_intent(intent: UserRouteIntent) -> bool {
 
 #[cfg(any(test, feature = "test-support"))]
 pub fn reset_player_control_for_test(ps: &PlaybackSession) {
-    let projection = route_projection(ps);
+    let _ = ps;
     let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
     control.engine_epoch = next_generation(control.engine_epoch);
     control.media_epoch = next_generation(control.media_epoch);
@@ -1701,7 +1534,6 @@ pub fn reset_player_control_for_test(ps: &PlaybackSession) {
     control.desired_quality = quality();
     control.applied_revision = control.desired_revision;
     control.applied_quality = control.desired_quality;
-    control.applied_projection = Some(projection);
     advance_route(&mut control.active);
     control.active.id.clear();
     control.active.hls = None;
@@ -1714,7 +1546,6 @@ pub fn reset_player_control_for_test(ps: &PlaybackSession) {
     control.pending_seek_ns = None;
     control.phase = ControlPhase::Stable;
     control.clear_flight();
-    control.resolve_fallback = None;
     control.start_results.clear();
     control.last_start_result = None;
     control.start_deferred = None;
@@ -1769,18 +1600,9 @@ fn sync_active_hls_to_session(ps: &mut PlaybackSession) -> Option<(WorkerTicket,
     // audio/subtitle/quality contract in Session; cloning Session wholesale here would falsely
     // bless that proposal merely because an older HLS worker changed rung underneath it.
     let active = {
-        let mut control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
+        let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
         let hls = control.active.hls.clone()?;
         let ticket = worker_ticket_of(&control);
-        let mut applied = control
-            .applied_projection
-            .clone()
-            .unwrap_or_else(|| route_projection(ps));
-        applied.url = hls.url.clone();
-        applied.tsession = ticket.encoder().to_owned();
-        applied.contract.ceiling = Some(hls.rung.ceiling());
-        applied.contract.remux = false;
-        control.applied_projection = Some(applied.clone());
         (ticket, hls)
     };
     { let s = &mut *ps; {
@@ -1896,7 +1718,6 @@ pub fn arm_auto_fixture(
                 ..CarriedAudio::named(0, -1)
             }),
             audio_converted: false,
-            subtitle_ordinal: None,
         });
         s.auto_fixture_base = hls_base.trim_end_matches('/').to_owned();
     } };
@@ -2361,7 +2182,6 @@ pub fn cur_enhancement_label(ps: &PlaybackSession) -> Option<&'static str> {
     match ps.cur_enhancement {
         EnhancementOutcome::Off => None,
         EnhancementOutcome::Applied => Some("applied"),
-        EnhancementOutcome::Unverified => Some("unverified"),
         EnhancementOutcome::Refused => Some("refused"),
     }
 }
@@ -3011,51 +2831,6 @@ pub fn with_queue<R>(ps: &PlaybackSession, f: impl FnOnce(&[plx_plex::plex::Queu
     f(&ps.queue)
 }
 
-static PLAY_GEN: AtomicU32 = AtomicU32::new(0);
-static PLAY_BUSY: AtomicBool = AtomicBool::new(false);
-
-struct PlayLanding {
-    gen: u32,
-    trace_generation: u32,
-    /// Desired route contract captured before ResolveEnv was projected on the main thread.
-    contract_revision: u64,
-    plan: Plan,
-    rk: String,
-}
-static PLAY_SLOT: Mutex<Option<PlayLanding>> = Mutex::new(None);
-/// Resume intents are tagged with the resolve generation that owns them.  A BACK/cancel or a
-/// later Play can therefore never donate an old movie's position to the next landing.
-static PLAY_RESUME: Mutex<Option<(u32, i64)>> = Mutex::new(None);
-
-fn retire_plan_resources(resources: AbandonedPlanResources) {
-    let Some(client) = plx_plex::plex::client_for(resources.sid) else {
-        return;
-    };
-    // Thread creation failure is rarer than cancellation and must not turn into a permanent
-    // server allocation, so a refused worker stops them inline. The normal path keeps this
-    // network work off the main thread.
-    plx_base::task::spawn_small_or_inline(
-        "resolve-abandoned-stop",
-        const { &plx_base::task::BlockingLabel::new("abandoned plan stop (worker thread refused)") },
-        move || {
-            for identity in resources.identities {
-                let _ = client.transcode_stop(&identity);
-            }
-        },
-    );
-}
-
-/// Retire every exact PMS identity created by a resolve that will never be installed.
-///
-/// A cold Remote probe can admit a Streaming Resource under `Plan::sess` before the plan owns an
-/// engine, and a transcode plan additionally owns `Plan::tsession`. Generation cancellation only
-/// decides whether the UI may install the value; it does not make either server object disappear.
-fn retire_abandoned_plan(plan: Plan) {
-    if let Some(resources) = abandoned_plan_resources(&plan) {
-        retire_plan_resources(resources);
-    }
-}
-
 /// Trace generation owned by the plan that is actually installed. It deliberately remains the
 /// outgoing generation while the next plan resolves, because that engine is still alive; its
 /// workers carry the same token and are ignored by the newly reset report trace.
@@ -3063,13 +2838,6 @@ static ACTIVE_TRACE_GENERATION: AtomicU32 = AtomicU32::new(0);
 
 pub fn playback_trace_generation() -> u32 {
     ACTIVE_TRACE_GENERATION.load(Ordering::SeqCst)
-}
-
-/// True while a resolve is in flight. The HUD's `PlaybackState::Resolving` is this OR a cold resume's
-/// rebuild after the plan landed ([`resume_flight_outstanding`], when this is already false): ask
-/// `player::state()`, not this, whether a start is still owed.
-pub fn play_pending() -> bool {
-    PLAY_BUSY.load(Ordering::SeqCst)
 }
 
 /// The server an item on a browsing surface came from. MAIN THREAD.
@@ -3130,8 +2898,7 @@ fn route_transition_owns_player() -> bool {
     let control = PLAYER_CONTROL.lock().unwrap_or_else(|e| e.into_inner());
     matches!(
         control.phase,
-        ControlPhase::Resolving
-            | ControlPhase::Preparing(_)
+        ControlPhase::Preparing(_)
             | ControlPhase::Prepared(_)
             | ControlPhase::Starting(_, _)
             | ControlPhase::StagingUser(_)
@@ -3160,21 +2927,9 @@ pub fn item_sid(sid: ServerId) -> ServerId {
     }
 }
 
-/// Supersede an in-flight resolve (BACK during a load). The landing is dropped by generation.
+/// Leaving the player retires a refusal verdict with it.
 pub fn cancel_play(ps: &mut PlaybackSession) {
-    PLAY_GEN.fetch_add(1, Ordering::SeqCst);
-    PLAY_BUSY.store(false, Ordering::SeqCst);
-    let abandoned = PLAY_SLOT.lock().unwrap_or_else(|e| e.into_inner()).take();
-    *PLAY_RESUME.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    // …and the refusal, because this is the statement that the withdrawn RESOLVE is over. Do not
-    // clear the playback trace here: background suspend calls this to prevent a late plan landing,
-    // then resumes the same playback without a new `requested`; only the true exit ritual ends the
-    // attempt and clears it.
     clear_play_verdict(ps);
-    cancel_playback_request(ps, has_url(ps));
-    if let Some(landing) = abandoned {
-        retire_abandoned_plan(landing.plan);
-    }
 }
 
 /// **Is the live session the Original remux's SHAPE**, whatever subtitle is on screen: a standing
@@ -3592,9 +3347,6 @@ pub struct EnhTestFixture {
     pub subtitle_effect: SubtitleEffect,
     /// This playback's server already refused or ignored the params once.
     pub refused: bool,
-    /// The server never answered (an unreachable decision — `classify_outcome`'s `Unverified`).
-    /// Takes precedence over `applied.any()` alone, but `refused` wins if both are set.
-    pub unverified: bool,
     /// The contract's own `audio` — what the live route has actually applied.
     pub applied: plx_plex::plex::AudioEnhancements,
     /// The applied route is a Burn (M7) — `cur_contract.remux` is `false` even though this is the
@@ -3622,7 +3374,6 @@ impl Default for EnhTestFixture {
             carried_capable: Some(true),
             subtitle_effect: SubtitleEffect::None,
             refused: false,
-            unverified: false,
             applied: plx_plex::plex::AudioEnhancements::NONE,
             applied_burn: false,
             in_flight: false,
@@ -3632,7 +3383,7 @@ impl Default for EnhTestFixture {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-fn test_original_candidate(subtitle_ordinal: Option<i32>) -> AutoOriginalCandidate {
+fn test_original_candidate() -> AutoOriginalCandidate {
     AutoOriginalCandidate {
         probe_part: "https://example.invalid/source.mkv".into(),
         direct: true,
@@ -3647,7 +3398,6 @@ fn test_original_candidate(subtitle_ordinal: Option<i32>) -> AutoOriginalCandida
             immersive: true,
         }),
         audio_converted: false,
-        subtitle_ordinal,
     }
 }
 
@@ -3663,8 +3413,6 @@ pub fn enhancement_test_session(route: EnhTestFixture) -> (PlaybackSession, Serv
     ps.cur_sub_client_drawable = ps.cur_sub_sidecar;
     ps.cur_enhancement = if route.refused {
         EnhancementOutcome::Refused
-    } else if route.unverified {
-        EnhancementOutcome::Unverified
     } else if route.applied.any() {
         EnhancementOutcome::Applied
     } else {
@@ -3706,7 +3454,7 @@ pub fn enhancement_test_session(route: EnhTestFixture) -> (PlaybackSession, Serv
             plx_data::metadata::DvDecision::NONE
         },
         audio: ps.cur_audio.clone(),
-        ..test_original_candidate(None)
+        ..test_original_candidate()
     });
 
     if route.side_reader {

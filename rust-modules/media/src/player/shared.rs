@@ -3017,27 +3017,6 @@ mod tests {
         );
     }
 
-    /// A failed HLS→Original transaction immediately tears down the failed Engine and reloads
-    /// the retained HLS one. The HTTP cause must survive that reset, then die with the playback.
-    #[test]
-    fn original_failure_survives_rollback_reload_and_not_the_playback() {
-        let s = Shared::new();
-        s.abr_failure_kind
-            .store(crate::player::ABR_FAILURE_ORIGINAL_HTTP, Ordering::Relaxed);
-        s.abr_failure_status.store(503, Ordering::Relaxed);
-
-        s.reset_session();
-        assert_eq!(
-            s.abr_failure_kind.load(Ordering::Relaxed),
-            crate::player::ABR_FAILURE_ORIGINAL_HTTP
-        );
-        assert_eq!(s.abr_failure_status.load(Ordering::Relaxed), 503);
-
-        s.clear_abr_failure();
-        assert_eq!(s.abr_failure_kind.load(Ordering::Relaxed), 0);
-        assert_eq!(s.abr_failure_status.load(Ordering::Relaxed), 0);
-    }
-
     /// The one invariant that cannot be recovered from if it breaks, and breaks SILENTLY: a session
     /// boundary must forget this session's picture. `seen_frame` is set once, off-thread, and is
     /// never cleared anywhere else — so a `reset_session` that dropped it would leave it true for

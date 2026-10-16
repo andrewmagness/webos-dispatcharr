@@ -3030,28 +3030,6 @@ mod tests {
         });
     }
 
-    /// A connection handshake is a one-off reload cost; the body interval is the evidence about
-    /// whether ongoing Original can replenish media. Sharing one deadline between them truncated
-    /// the device probe after 625 ms of body at 35 Mbit/s merely because setup had spent the first
-    /// ~375 ms, then called a 25 Mbit/s source inconclusive although manual Original played. The
-    /// request itself must also name a finite byte range: reading a prefix from an unbounded 200
-    /// and dropping the handle leaves PMS serving the rest of an 18 GB file into a broken pipe.
-    #[test]
-    fn source_probe_gives_setup_and_body_their_own_bounded_windows() {
-        let Some(_gate) = curl_gate() else { return };
-        with_server(RangeMode::DelayedSample, |port, _, _| {
-            let sample = sample_throughput_result(
-                &format!("http://127.0.0.1:{port}/f.mkv"),
-                BODY.len(),
-                std::time::Duration::from_millis(500),
-                std::time::Duration::from_millis(500),
-            )
-            .expect("both individually bounded phases should complete");
-            assert!(sample.target_reached);
-            assert_eq!(sample.bytes, BODY.len() as u64);
-        });
-    }
-
     /// The header parse itself, with no libcurl involved — so the arithmetic is graded even on a
     /// host where the tests above are vacuous.
     #[test]

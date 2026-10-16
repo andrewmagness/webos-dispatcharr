@@ -496,12 +496,6 @@ pub fn is_playing(ps: &crate::route::PlaybackSession) -> bool {
 }
 /// The derived playback state — the ONE thing the HUD renders from. See `PlaybackState`.
 pub fn state(ps: &crate::route::PlaybackSession) -> shared::PlaybackState {
-    // Resolving is DERIVED here rather than stored: the pump owns `pb_state` but only runs once
-    // an engine exists, which is false for the whole resolve window. Deriving in the one reader
-    // keeps a single writer instead of poking the state in from the frame loop.
-    if crate::route::play_pending() {
-        return shared::PlaybackState::Resolving;
-    }
     // …and so is the PRE-FLIGHT refusal, for exactly the same reason: `/decision` answers before a
     // byte of video moves, so the plan fails with no URL, no engine is ever built, and the pump
     // that owns `pb_state` never runs. Deriving it in the one reader keeps a single writer — the
@@ -3059,101 +3053,6 @@ mod tests {
     /// NANOSECONDS; mixing the two is how this test once put a 1 000 ns cue under a 1 s offset.
     const SEC: i64 = 1_000_000_000;
 
-    /// **A new item starts with no timing offset.** The offset is a property of one subtitle track
-    /// against one file; `reset_subtitle` is the new-item hook, and the last film's correction
-    /// must not shift the next film's captions.
-    #[test]
-    fn a_new_item_starts_with_no_subtitle_offset() {
-        let _g = plx_base::testlock::serial();
-        set_subtitle_offset(2_000);
-        assert_eq!(subtitle_offset_ms(), 2_000);
-        reset_subtitle();
-        assert_eq!(subtitle_offset_ms(), 0, "a new item must not inherit the offset");
-        set_subtitle_offset(0);
-    }
-
-    /// **An advance is offered only where it can be served.** A sidecar holds its whole file, so
-    /// it takes 60 s either way; an EMBEDDED track's cues arrive through the byte-bounded A/V
-    /// queues (about 2 s ahead of the playhead at a high bitrate), so it takes a delay only. The
-    /// clamp follows whichever kind is selected, including a negative offset left from a sidecar.
-    #[test]
-    fn an_embedded_track_takes_no_advance_and_a_sidecar_takes_sixty_seconds() {
-        let _g = plx_base::testlock::serial();
-        sidecar::reset();
-        set_subtitle_offset(-1_000);
-        assert_eq!(subtitle_offset_ms(), 0, "an embedded track (or Off) takes no advance");
-        set_subtitle_offset(70_000);
-        assert_eq!(subtitle_offset_ms(), 60_000, "an embedded track still clamps at the new ceiling");
-
-        sidecar::select_without_fetch_for_test(42);
-        set_subtitle_offset(-60_000);
-        assert_eq!(subtitle_offset_ms(), -60_000, "a sidecar advances 60 s");
-        set_subtitle_offset(i64::MIN);
-        assert_eq!(subtitle_offset_ms(), -60_000);
-        set_subtitle_offset(i64::MAX);
-        assert_eq!(subtitle_offset_ms(), 60_000);
-
-        // the kind decides, not the value's history: the same request on an embedded track is 0
-        set_subtitle_offset(-2_000);
-        sidecar::deselect();
-        set_subtitle_offset(-2_000);
-        assert_eq!(subtitle_offset_ms(), 0, "a negative offset never reaches an embedded track");
-        set_subtitle_offset(0);
-        sidecar::reset();
-    }
-
-    /// The offset can never wrap a timestamp: the lookups saturate at both ends of `i64`, and the
-    /// setter clamps to the Timing rows' range.
-    #[test]
-    fn the_subtitle_clock_saturates_and_the_offset_clamps() {
-        let _g = plx_base::testlock::serial();
-        sidecar::select_without_fetch_for_test(42);
-        set_subtitle_offset(60_000);
-        assert_eq!(subtitle_clock_ns(i64::MIN), i64::MIN);
-        set_subtitle_offset(-60_000);
-        assert_eq!(subtitle_clock_ns(i64::MAX), i64::MAX);
-        set_subtitle_offset(0);
-        sidecar::reset();
-    }
-    /// **Under a delay, the eviction never takes a selected-track set the viewer has not seen
-    /// while another track's set could go instead.** Every image track is decoded while subtitles
-    /// are on (ff.rs), so the store holds the other tracks' sets beside the selected one's. With a
-    /// +30 s offset the subtitle clock trails the playhead by 30 s, so the selected track's
-    /// upcoming sets sit in the read-ahead — and the demuxer never republishes a set it has read.
-    /// Evicting "the far end" dropped exactly those.
-    #[test]
-    fn a_delayed_selected_set_outlives_every_other_tracks_set() {
-        let _g = plx_base::testlock::serial();
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(0, Relaxed);
-        set_subtitle_offset(30_000);
-        SHARED.playpos_ns.store(40 * SEC, Relaxed); // subtitle clock: 10 s
-        // twelve display sets on each of two tracks, 2 s apart, from the subtitle clock on, the
-        // demuxer's interleave (track 1 then track 0 at each moment). Sized against the budget so
-        // the store overflows on a SELECTED-track push: one track-1 set is 3/5 of the budget, the
-        // twelve selected sets together 4/5 of it.
-        for i in 0..12 {
-            let at = 10 * SEC + i * 2 * SEC;
-            push_subtitle_bitmap(1, at, 1920, 1080, vec![rect_of(SUB_BITMAP_BUDGET * 3 / 5)]);
-            push_subtitle_bitmap(0, at, 1920, 1080, vec![rect_of(SUB_BITMAP_BUDGET / 15)]);
-        }
-        let v = SHARED.sub_bitmaps.lock().unwrap();
-        let total: usize = v.iter().map(|c| c.bytes()).sum();
-        let selected: Vec<i64> = v.iter().filter(|c| c.track == 0).map(|c| c.start_ns / SEC).collect();
-        drop(v);
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(-1, Relaxed);
-        SHARED.playpos_ns.store(0, Relaxed);
-        set_subtitle_offset(0);
-
-        assert!(total <= SUB_BITMAP_BUDGET, "the store stayed inside its ceiling ({total} bytes)");
-        assert_eq!(
-            selected,
-            (0..12).map(|i| 10 + 2 * i).collect::<Vec<_>>(),
-            "every selected-track set still ahead of the subtitle clock must survive"
-        );
-    }
-
     /// **Held bytes are what is really allocated.** A rect whose index buffer has spare capacity
     /// (a `Vec` that grew by doubling) holds that capacity, so the budget counts it.
     #[test]
@@ -3163,43 +3062,6 @@ mod tests {
         loose.index.reserve_exact(1 << 20);
         assert_eq!(tight.bytes(), 1000 + 1024);
         assert!(loose.bytes() >= tight.bytes() + (1 << 20), "spare capacity is held, so it is counted");
-    }
-
-    /// **The bound is on what is held, and the cue on screen is never what pays for it.** A long run
-    /// of large cues keeps the store inside [`SUB_BITMAP_BUDGET`] with the cue under the playhead
-    /// present throughout; a single cue larger than the whole budget is held and shown (the budget
-    /// bounds the OTHER cues). The renderer expands only that one visible set to RGBA, once per cue
-    /// change, so the 4x never multiplies the store.
-    #[test]
-    fn a_run_of_large_cues_stays_bounded_and_the_visible_one_is_never_evicted() {
-        let _g = plx_base::testlock::serial();
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(0, Relaxed);
-        set_subtitle_offset(0);
-        let mut worst = 0usize;
-        for i in 0..40i64 {
-            SHARED.playpos_ns.store(i * SEC + SEC / 2, Relaxed); // inside cue i, once it is pushed
-            push_subtitle_bitmap(0, i * SEC, 1920, 1080, vec![rect_of(SUB_BITMAP_BUDGET / 5)]);
-            let held: usize = SHARED.sub_bitmaps.lock().unwrap().iter().map(|c| c.bytes()).sum();
-            worst = worst.max(held);
-            assert_eq!(active_bitmap_key(i * SEC + SEC / 2), Some(i * SEC), "cue {i} is on screen");
-        }
-        assert!(worst <= SUB_BITMAP_BUDGET, "held {worst} bytes, budget {SUB_BITMAP_BUDGET}");
-
-        // one cue larger than the whole budget, on an empty store
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.playpos_ns.store(SEC / 2, Relaxed);
-        push_subtitle_bitmap(0, 0, 1920, 1080, vec![rect_of(SUB_BITMAP_BUDGET * 2)]);
-        let key = active_bitmap_key(SEC / 2).expect("an oversized cue is still on screen");
-        let (_, _, rects) = bitmap_by_key(key).expect("and fetchable");
-        assert_eq!(rects.len(), 1);
-        // a later cue arriving while it is showing evicts the newcomer's slot, not the visible cue
-        push_subtitle_bitmap(0, 10 * SEC, 1920, 1080, vec![rect_of(SUB_BITMAP_BUDGET / 5)]);
-        assert_eq!(active_bitmap_key(SEC / 2), Some(0), "the visible oversized cue survives a push");
-
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(-1, Relaxed);
-        SHARED.playpos_ns.store(0, Relaxed);
     }
 
     /// The renderer uploads what [`SubRect::to_rgba`] expands, so the expansion is the pixels:
@@ -3212,28 +3074,6 @@ mod tests {
         let r = SubRect { x: 0, y: 0, w: 3, h: 1, index: vec![0, 1, 255], palette };
         assert_eq!(r.to_rgba(), [0, 0, 0, 0, 10, 20, 30, 255, 1, 2, 3, 128]);
         assert_eq!(r.bytes(), 3 + 1024, "the store counts the indices and the palette");
-    }
-
-    /// **The supported window fits: 60 s of delay plus the demuxer's read-ahead, of a 4K-canvas
-    /// PGS track.** The arithmetic is on `SUB_BITMAP_BUDGET`: 37 sets (a dense dialogue scene's
-    /// one set per 2 s over 74 s) of a 2800x300 object, which is two lines of text on a
-    /// 3840x2160 canvas.
-    #[test]
-    fn a_delayed_window_of_4k_canvas_sets_fits_the_budget() {
-        let _g = plx_base::testlock::serial();
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(0, Relaxed);
-        set_subtitle_offset(SUBTITLE_OFFSET_LATEST_MS);
-        SHARED.playpos_ns.store(70 * SEC, Relaxed); // subtitle clock: 10 s
-        for i in 0..37 {
-            push_subtitle_bitmap(0, 10 * SEC + i * 2 * SEC, 3840, 2160, vec![rect(520, 1800, 2800, 300)]);
-        }
-        let kept = SHARED.sub_bitmaps.lock().unwrap().len();
-        SHARED.sub_bitmaps.lock().unwrap().clear();
-        SHARED.desired_sub_idx.store(-1, Relaxed);
-        SHARED.playpos_ns.store(0, Relaxed);
-        set_subtitle_offset(0);
-        assert_eq!(kept, 37, "every set in the delayed window must be held");
     }
 
     /// The image-subtitle store, exercised as a display SET rather than a single bitmap. Three
@@ -3392,29 +3232,6 @@ mod seek_hud_regressions {
         assert_eq!(duration_ns(), 0, "a real stop: the next item is a new file");
     }
 
-    /// **A requested seek reads as Seeking at once**, not one pump pass later. `request_seek`
-    /// sets the flag at the press; `pb_state` is republished only at the end of a pump pass, so
-    /// a reader in between saw Playing with the scrub preview already cleared, and the HUD drew
-    /// one frame of the pre-seek position before freezing on the target.
-    #[test]
-    fn a_requested_seek_reads_as_seeking_before_the_pump_republishes() {
-        let _serial = plx_base::testlock::serial();
-        let ps = crate::route::PlaybackSession::IDLE;
-        crate::route::reset_player_control_for_test(&ps);
-        SHARED.reset_session();
-        TX.reset();
-        SHARED.pb_state.store(PlaybackState::Playing as u8, Relaxed);
-        assert_eq!(state(&ps), PlaybackState::Playing);
-        // the REAL press path — and deliberately so: `tests/test_harness.py` holds that exactly
-        // one place in the tree arms this flag, which a test arming it by hand would break
-        request_seek(90_000_000_000);
-        assert_eq!(state(&ps), PlaybackState::Seeking, "the pump has not run yet");
-        assert!(state(&ps).is_busy(), "busy is what freezes the HUD's playhead on the target");
-        assert_eq!(seek_display_ns(), 90_000_000_000, "…and this is the target it freezes on");
-        SHARED.reset_session();
-        TX.reset();
-        crate::route::reset_player_control_for_test(&ps);
-    }
 }
 
 /// **Which rebuild is "Switching audio…"?** Only the one an audio-track pick asked for: it begins

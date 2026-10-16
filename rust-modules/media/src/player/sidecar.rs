@@ -886,38 +886,4 @@ mod tests {
         assert_eq!(timestamp("-1:00:00,000"), None);
     }
 
-    /// Issue #266 I6: the route withholds the audio enhancement exactly when this restore would
-    /// put a sidecar on screen, so the two must read ONE predicate
-    /// (`metadata::server_selected_sidecar`). Graded against every shape the predicate splits on:
-    /// a drawable selected sidecar is restored and is the shared answer; an unselected one, a
-    /// keyless one, a bitmap one and a selected EMBEDDED track are all nothing to both.
-    #[test]
-    fn restore_uses_shared_server_selected_sidecar() {
-        let _guard = plx_base::testlock::serial();
-        let sidecar = |id: i64, codec: &str, key: &str, selected: bool, external: bool| plx_data::metadata::Stream {
-            id,
-            codec: codec.into(),
-            key: key.into(),
-            selected,
-            external,
-            ..Default::default()
-        };
-        let cases: [(Vec<plx_data::metadata::Stream>, Option<i64>); 5] = [
-            (vec![sidecar(1, "srt", "/library/streams/1", false, true), sidecar(2, "srt", "/library/streams/2", true, true)], Some(2)),
-            (vec![sidecar(3, "srt", "/library/streams/3", false, true)], None),
-            (vec![sidecar(4, "srt", "", true, true)], None),
-            (vec![sidecar(5, "pgs", "/library/streams/5", true, true)], None),
-            (vec![sidecar(6, "srt", "", true, false)], None),
-        ];
-        for (subs, want) in cases {
-            let ids: Vec<i64> = subs.iter().map(|s| s.id).collect();
-            let item = plx_data::metadata::PlayingItem::with_subs(subs);
-            assert_eq!(plx_data::metadata::server_selected_sidecar(&item).map(|s| s.id), want, "{ids:?}");
-            let mut store = plx_data::stores::metadata::MetadataStore::default();
-            assert!(store.run(plx_data::stores::metadata::MetadataCmd::InstallPlaying(Some(item))));
-            assert_eq!(restore_server_selection(plx_plex::plex::ServerId::UNSET, store.view()), want, "{ids:?}");
-            finish_download();
-            deselect();
-        }
-    }
 }

@@ -1438,9 +1438,9 @@ mod tests {
 
     /// The route line's `enh=<word>` suffix mirrors the server's own verdict — absent entirely
     /// while the enhancement is Off (an ordinary playback's route line is byte-for-byte
-    /// unchanged), and naming `refused`/`unverified` distinctly from `applied` otherwise.
+    /// unchanged), and naming `refused` distinctly from `applied` otherwise.
     #[test]
-    fn route_line_shows_refused_and_unverified() {
+    fn route_line_shows_refused_and_applied() {
         let _g = plx_base::testlock::serial();
         let asked = plx_plex::plex::AudioEnhancements { boost_dialog: true, normalize_loudness: false };
 
@@ -1463,14 +1463,6 @@ mod tests {
             assert!(route_line(&ps).contains("enh=refused"));
         }
 
-        {
-            let ps = EnhTestSession::new(EnhTestFixture {
-                applied: asked,
-                unverified: true,
-                ..Default::default()
-            });
-            assert!(route_line(&ps).contains("enh=unverified"));
-        }
     }
     use plx_ui::consts::{SCR_H, SCR_W};
 

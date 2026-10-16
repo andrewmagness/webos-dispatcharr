@@ -8,8 +8,6 @@
 //! `Instant::now`/`SystemTime::now`/`.elapsed()`; a function that needs wall time is not pure and
 //! belongs in `decision.rs`.
 
-use plx_plex::plex::ServerId;
-
 use super::decision::{
     ActiveEncoderState, PlayerControl,
     };
@@ -160,7 +158,6 @@ pub(super) struct AutoOriginalCandidate {
     /// returning to Original means a remux naming that track, not the Part. Only
     /// [`retarget_audio`](Self::retarget_audio) writes it; a later direct-playable pick clears it.
     pub(super) audio_converted: bool,
-    pub(super) subtitle_ordinal: Option<i32>,
 }
 
 impl AutoOriginalCandidate {
@@ -555,112 +552,6 @@ pub struct UpNext {
     pub resume_ms: i64,
 }
 
-/// Everything `resolve` DECIDES, as owned data. No `static mut`, no `SHARED`, no ACB/Starfish —
-/// so it is `Send` and the resolve can run on a worker. `apply_plan` (main thread) is the ONLY
-/// code that installs it. Adding a field here is how you add a resolve output; writing a static
-/// from the worker is how you reintroduce the races the audit found.
-#[derive(Default)]
-pub struct Plan {
-    pub direct_play_mode: DirectPlayMode,
-    /// The server this plan was resolved against — copied straight from [`ResolveEnv::sid`], so
-    /// what `apply_plan` installs as `cur_sid` is the id the request captured and not a re-read of
-    /// whatever became current while the worker ran. `UNSET` only on the default `Plan` a panicking
-    /// resolve lands, which carries no URL either and so never starts an engine.
-    pub sid: ServerId,
-    pub url: String,
-    pub tsession: String,
-    pub sess: String,
-    pub part_id: i64,
-    pub pq_id: String,
-    pub pq_item_id: String,
-    pub machine_id: String, // "" = leave the cached one alone
-    pub vcodec: String,
-    pub acodec: String,
-    /// The SOURCE file's codecs, kept beside the ones above because on a transcode those are the
-    /// server's OUTPUT. "hevc → h264" is the whole server-side transform, and it is invisible if
-    /// only one half is recorded. Equal to `vcodec`/`acodec` for a direct play and for a remux.
-    pub src_vcodec: String,
-    pub src_acodec: String,
-    pub fps: f64,
-    /// The direct-played file's Dolby Vision layering, for the Load payload's `DolbyHdrInfo`
-    /// node. Set on the DIRECT-PLAY branch only, beside `fps` and for the same reason: the
-    /// transcode branch's payload describes the server's OUTPUT, which is not this file.
-    pub dovi: plx_data::metadata::Dovi,
-    /// The direct-play declaration resolved from one cached capability snapshot. Payload builds,
-    /// reloads and recovery consume this stored answer; remux/transcode leave it at `NONE`.
-    pub dv_decision: plx_data::metadata::DvDecision,
-    /// Does the direct-played audio track carry Dolby Atmos, for the Load payload's
-    /// `contents.immersive` node. Set on the DIRECT-PLAY branch only, for the same reason `dovi`
-    /// is: it describes the FILE's own elementary stream.
-    pub immersive: bool,
-    /// The encode's flavor/delivery/ceiling/audio-DSP shape — see [`plx_plex::plex::EncodeContract`].
-    /// Was four independent fields (`remux`, `delivery`, `no_video_copy`, `ceiling`) until issue
-    /// #266 needed a fifth that only ever means anything alongside `remux == true`; one value
-    /// installed as [`Session::cur_contract`] is what lets a seek or a track switch rebuild the
-    /// exact same query instead of four/five fields that could drift out of the coupling that
-    /// matters (`no_video_copy` only under re-encode, `ceiling` only under re-encode, `audio` only
-    /// under remux — see the field docs on `EncodeContract` itself).
-    pub contract: plx_plex::plex::EncodeContract,
-    /// The audio track this plan carries, installed as `Session::cur_audio` (the one source of the
-    /// timeline's `audioStreamID`). `CarriedAudio::from_stream` of the fetched stream the route
-    /// names; [`CarriedAudio::named`] (id only, every fact unknown) when the route names an id
-    /// whose stream was never read; `None` when it names no track (server default).
-    pub audio: Option<CarriedAudio>,
-    /// What the server did with the requested audio enhancement (`contract.audio`), installed as
-    /// `Session::cur_enhancement`: `Off` unless an enhanced decision was asked for.
-    pub(super) enhancement: super::decision::EnhancementOutcome,
-    /// What this plan MEASURED the source at — `(kbps, w, h)`, any of them `0` for "nobody said".
-    /// Carried so [`set_quality`] can re-ask [`quality_policy`] for the item already playing when
-    /// the user picks a different rung, instead of guessing. See [`Session::cur_src`].
-    pub src_measure: (i64, i64, i64),
-    /// Whole-file wire rate used by Auto's runtime Original watchdog (video + audio).
-    pub transport_kbps: i64,
-    /// `video_direct_plays` for this source — see [`Session::cur_source_decodable`].
-    ///
-    /// **`bool::default()` is the wrong default and it is not a style point.** `false` is the
-    /// claim "this television cannot decode the source", which the quality menu renders as a line
-    /// of copy; `build_stream` has an exit that returns before the gate runs at all. So the
-    /// initializer sets `true` explicitly and the gate overwrites it, which makes every exit carry
-    /// something that was either measured or honestly absent.
-    pub source_decodable: bool,
-    /// This plan admitted Original specifically on a measured direct Remote link.
-    pub auto_original_watched: bool,
-    /// What the startup probe measured, kept so the live estimator can be SEEDED with it instead
-    /// of starting from nothing — and so a later mode transition can hand the next worker the same
-    /// evidence. `0` when this plan never probed (Local, Relay, a fixed rung, or Original).
-    pub auto_prior_kbps: u32,
-    /// Bootstrap's already-decided HLS contingency, retained even when the immediate route is
-    /// Original. See [`Session::auto_bootstrap_rung`].
-    pub auto_bootstrap_rung: Option<crate::abr::Rung>,
-    /// A measured Remote can begin on HLS and later recover. Preserve the exact no-video-encode
-    /// source declaration even when this plan's immediate output is H264/AAC HLS.
-    pub(super) auto_original: Option<AutoOriginalCandidate>,
-    /// demuxer stream ordinal to feed (direct-play, non-default track). None = leave as-is.
-    pub feed_audio_ordinal: Option<i32>,
-    /// the subtitle selected for this part or by the show preference (0 = none/off), so the
-    /// menu checkmark and the timeline report agree with what is on screen — and a later
-    /// transcode of this item burns the subtitle the user was already watching.
-    pub sub_sid: i64,
-    /// client-renderer ordinal for that subtitle (`metadata::sub_render_ordinal`). None = subs off.
-    pub sub_render_ordinal: Option<i32>,
-    /// The subtitle-language preference this play resolved under — the SHOW's own pref if it set
-    /// one, else the ACCOUNT's — as a BCP-47 code, for the Subtitles menu's "yours" grouping
-    /// (`metadata::sub_layout::sub_sections`). `ui/` sees only this code, never a Plex account type.
-    pub sub_pref_lang: Option<String>,
-    /// the playing item's track store, fetched off-thread and installed by apply_plan
-    pub playing: Option<plx_data::metadata::PlayingItem>,
-    /// The server's PRE-FLIGHT refusal (see [`refusal`]), when `/decision` said it can neither
-    /// direct play nor convert this item. A plan carrying one has an EMPTY `url` by construction —
-    /// that is how it fails, on the same path as every other unresolvable plan — and the sentence
-    /// rides along so the read-out can quote the server instead of guessing. `None` on every other
-    /// plan, including one that simply failed to reach the server.
-    pub verdict: Option<PlayVerdict>,
-    /// the episode queued after this one, straight off the `continuous=1` PlayQueue
-    pub up_next: Option<UpNext>,
-    /// that same PlayQueue's whole returned window, projected on the worker (see `queue`)
-    pub queue: Vec<plx_plex::plex::QueueRow>,
-}
-
 pub(super) fn audio_direct_plays(mode: DirectPlayMode, codec: &str, channels: i64) -> bool {
     if mode == DirectPlayMode::Forced {
         plx_plex::plex::DP_AUDIO_CODECS.split(',').any(|c| c.eq_ignore_ascii_case(codec))
@@ -716,27 +607,4 @@ pub enum Preview {
 // that possible broke the seek path and was reverted (docs/async-model-decision.md). That costs
 // nothing here: the freeze is fixed by getting the resolve OFF the loop, and a worker lingering
 // in the background is invisible once the UI has already moved on.
-
-pub(super) struct AbandonedPlanResources {
-    pub(super) sid: ServerId,
-    pub(super) identities: Vec<String>,
-}
-
-pub(super) fn abandoned_plan_resources(plan: &Plan) -> Option<AbandonedPlanResources> {
-    let mut identities = Vec::with_capacity(2);
-    if !plan.tsession.is_empty() {
-        identities.push(plan.tsession.clone());
-    }
-    if !plan.sess.is_empty() && !identities.iter().any(|id| id == &plan.sess) {
-        identities.push(plan.sess.clone());
-    }
-    if identities.is_empty() {
-        None
-    } else {
-        Some(AbandonedPlanResources {
-            sid: plan.sid,
-            identities,
-        })
-    }
-}
 

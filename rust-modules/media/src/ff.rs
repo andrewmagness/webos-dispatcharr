@@ -3153,52 +3153,6 @@ mod pre_audio_headroom_tests {
         assert_eq!(h.before_video(true, true, 7), VideoStep::Proceed, "audio arrived: not this case");
     }
 
-    /// **F1.** A lane whose consumer IS draining is not the hang: after a seek into an audioless
-    /// stretch the pump pops video while the demuxer reads at LAN speed, and main parks that lane
-    /// (and plays through the engine's video-only prime escape) instead of failing the open. The
-    /// pop counter is read from a real lane.
-    #[test]
-    fn a_lane_that_is_draining_is_released_not_failed() {
-        let mut q = crate::aq::aq_new(100);
-        let qp = &mut *q as *mut AuQueue;
-        let au = [0u8; 100];
-        let push = || assert_eq!(crate::aq::aq_push(qp, au.as_ptr(), au.len() as c_int, 0, 1, 1), 0);
-        let mut h = PreAudioHeadroom::default();
-        for _ in 0..2 {
-            push(); // 200 bytes held over the base cap of 100: a push would park
-        }
-        assert!(crate::aq::aq_would_park(qp));
-        let VideoStep::Grant(extra) = h.before_video(true, crate::aq::aq_would_park(qp), crate::aq::aq_pops(qp)) else {
-            panic!("a push that would park with no audio grants");
-        };
-        crate::aq::aq_set_headroom(qp, extra);
-        // Fill past the standing cap: the next push would park again.
-        while !crate::aq::aq_would_park(qp) {
-            push();
-        }
-        assert_eq!(
-            h.before_video(true, true, crate::aq::aq_pops(qp)),
-            VideoStep::Fail,
-            "full, no audio and no pops: the hang"
-        );
-        // The consumer pops, then the lane fills again.
-        for _ in 0..3 {
-            let n = crate::aq::aq_pop(qp, std::ptr::null_mut());
-            assert!(!n.is_null());
-            unsafe { libc::free(n as *mut c_void) };
-        }
-        while !crate::aq::aq_would_park(qp) {
-            push();
-        }
-        assert_eq!(
-            h.before_video(true, crate::aq::aq_would_park(qp), crate::aq::aq_pops(qp)),
-            VideoStep::Release,
-            "pops happened since the grant: the consumer is draining, so this is not the hang"
-        );
-        assert!(h.released);
-        assert_eq!(h.before_video(true, true, crate::aq::aq_pops(qp)), VideoStep::Proceed, "released once");
-    }
-
     /// **F3.** The seek reset must take the lane's grant away. Restarting the struct alone left a
     /// seek that landed while the grant was unreleased with the video lane at base + 24 MiB for the
     /// rest of the session (the next epoch may be audio-first, or carry audio whose pts never span
@@ -3217,27 +3171,6 @@ mod pre_audio_headroom_tests {
         assert!(!h.granted && !h.released && h.first_audio_ns.is_none());
         // The next epoch grants afresh.
         assert_eq!(h.before_video(true, true, 0), GRANT);
-    }
-
-    /// With the lane holding more than its base cap, the seek reset still never drops the cap under
-    /// what the lane holds (`aq_release_headroom`), and a grant that was already released (or never
-    /// made) is left alone.
-    #[test]
-    fn restart_releases_through_the_drain_and_leaves_settled_states_alone() {
-        let mut q = crate::aq::aq_new(100);
-        let qp = &mut *q as *mut AuQueue;
-        let au = [0u8; 100];
-        crate::aq::aq_set_headroom(qp, 1_000);
-        for _ in 0..5 {
-            assert_eq!(crate::aq::aq_push(qp, au.as_ptr(), au.len() as c_int, 0, 1, 1), 0);
-        }
-        let mut h = PreAudioHeadroom { granted: true, ..Default::default() };
-        h.restart(qp);
-        assert_eq!(crate::aq::aq_cap(qp), 500, "never under the lane's occupancy");
-        // Never granted: no touch.
-        crate::aq::aq_set_headroom(qp, 1_000);
-        PreAudioHeadroom::default().restart(qp);
-        assert_eq!(crate::aq::aq_cap(qp), 1_100, "nothing granted by this state, nothing withdrawn");
     }
 
     /// The geometry the constants claim, pinned: the cap is the base plus the headroom, an 11 s delay

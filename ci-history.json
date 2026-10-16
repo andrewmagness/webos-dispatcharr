@@ -1,4 +1,4 @@
-{"updated":"2026-10-16T17:09:15Z",
+{"updated":"2026-10-16T17:10:55Z",
 "ci":[
 {"id":38635451190,"at":"2026-10-14T20:50:33Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"host unit tests (hostsim)":678,"host python/shell/C gates":242,"host harness tests":273,"host lint + type-checks":303,"host unit tests (default features)":876,"host checks (NOT a device gate)":4},"failed":["cross-build (armv7) + artifact assertions"]},
 {"id":38637798632,"at":"2026-10-14T21:07:46Z","sha":"72966a388","title":"Setup: example addresses from the documentation range, not a LAN one","pr":1,"event":"pull_request","conclusion":"success","attempt":1,"jobs":{"host harness tests":161,"host unit tests (default features)":507,"host lint + type-checks":151,"host unit tests (hostsim)":332,"host python/shell/C gates":150,"cross-build (armv7) + artifact assertions":404,"host checks (NOT a device gate)":4}},
@@ -118,7 +118,8 @@
 {"id":38635451860,"at":"2026-10-14T20:50:34Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":14},"failed":["ARM build + gates / build + verify"]},
 {"id":38637798819,"at":"2026-10-14T21:07:46Z","sha":"72966a388","title":"Setup: example addresses from the documentation range, not a LAN one","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":14},"failed":["ARM build + gates / build + verify"]},
 {"id":38791369139,"at":"2026-10-15T19:07:59Z","sha":"1398e2bbe","title":"Merge remote-tracking branch 'origin/main' into remove-plex-harness","pr":17,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":11},"failed":["ARM build + gates / build + verify"]},
-{"id":38796804886,"at":"2026-10-15T19:47:59Z","sha":"912234a0b","title":"tests: a neutral QR layout address; drop the upstream 0.6.6 DB8 record test","pr":18,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":23},"failed":["ARM build + gates / build + verify"]}
+{"id":38796804886,"at":"2026-10-15T19:47:59Z","sha":"912234a0b","title":"tests: a neutral QR layout address; drop the upstream 0.6.6 DB8 record test","pr":18,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":23},"failed":["ARM build + gates / build + verify"]},
+{"id":38937001335,"at":"2026-10-16T17:05:30Z","sha":"32b0df155","title":"make install: end the appinstalld subscription instead of hanging on it","pr":31,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":12},"failed":["ARM build + gates / build + verify"]}
 ],
 "cancelled":{"2026-10-15":{"push":1,"pull_request":0},"2026-10-16":{"push":2,"pull_request":0}},
 "daily":[]}

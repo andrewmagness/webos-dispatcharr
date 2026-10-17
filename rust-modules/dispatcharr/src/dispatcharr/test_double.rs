@@ -67,6 +67,14 @@ impl Seen {
 /// A plaintext HTTP/1.1 double: `route(method, path)` answers `(status, body)`; every request is
 /// recorded. One connection per request (`Connection: close`).
 pub fn spawn(route: impl Fn(&str, &str) -> (u16, String) + Send + 'static) -> (Server, Arc<Mutex<Vec<Seen>>>) {
+    spawn_dated(None, route)
+}
+
+/// [`spawn`], with every response carrying `Date: <date>` when `date` is given.
+pub fn spawn_dated(
+    date: Option<&'static str>,
+    route: impl Fn(&str, &str) -> (u16, String) + Send + 'static,
+) -> (Server, Arc<Mutex<Vec<Seen>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -107,8 +115,9 @@ pub fn spawn(route: impl Fn(&str, &str) -> (u16, String) + Send + 'static) -> (S
             let body = String::from_utf8_lossy(&buf[head_end..]).into_owned();
             let (status, reply) = route(&method, &path);
             log.lock().unwrap().push(Seen { method, path, headers, body });
+            let date_line = date.map(|d| format!("Date: {d}\r\n")).unwrap_or_default();
             let response = format!(
-                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n{date_line}Content-Length: {}\r\nConnection: close\r\n\r\n{reply}",
                 reply.len()
             );
             let _ = stream.write_all(response.as_bytes());

@@ -414,3 +414,43 @@ fn the_guide_reads_map_the_doubles_lineup() {
     assert_eq!(grid.path, "/api/epg/grid/?start=2026-10-14T11:00:00Z&end=2026-10-15T00:00:00Z");
     assert_eq!(grid.header("x-api-key"), Some("K"));
 }
+
+// ---- the server's clock --------------------------------------------------------------------
+
+/// **A television whose clock is years off asks for the right day anyway.** On the dev set
+/// (2026-10-17) the clock read 2021-01-01 and the guide came back with no programme on any of 63
+/// channels, because "now" came from that clock. After any request to a server whose `Date` is
+/// far from the device clock, "now" is the server's.
+#[test]
+fn now_follows_a_server_whose_clock_is_far_from_the_devices() {
+    if !curl_ready() {
+        return;
+    }
+    let _serial = plx_base::testlock::serial();
+    super::clock::reset_for_test();
+    // Five years after this host's clock, whatever that is: the far side of every tolerance.
+    let (server, _) = super::test_double::spawn_dated(Some("Mon, 17 Oct 2033 08:25:21 GMT"), |_, _| {
+        (200, SUMMARY.to_owned())
+    });
+    let account = Account { server, api_key: "K".into() };
+    account.channels().unwrap();
+    let server_now = plx_net::net::parse_http_date("Mon, 17 Oct 2033 08:25:21 GMT").unwrap();
+    let now = super::api::unix_now();
+    assert!((now - server_now).abs() <= 5, "now={now} server={server_now}: the guide would ask for the device's day");
+    super::clock::reset_for_test();
+}
+
+/// A server that agrees with the device clock changes nothing, and one that sends no `Date`
+/// leaves "now" as the device's.
+#[test]
+fn now_is_the_device_clock_when_the_server_agrees_or_is_silent() {
+    if !curl_ready() {
+        return;
+    }
+    let _serial = plx_base::testlock::serial();
+    super::clock::reset_for_test();
+    let (server, _) = spawn(|_, _| (200, SUMMARY.to_owned()));
+    Account { server, api_key: "K".into() }.channels().unwrap();
+    assert!((super::api::unix_now() - super::clock::device_now()).abs() <= 1);
+    super::clock::reset_for_test();
+}

@@ -56,43 +56,37 @@ Now build:
 make                  # -> pkg/dispatcharrtv
 ```
 
-### With a TV but no Plex account or token
+### With a TV but no Dispatcharr server
 
-The build needs no private data, and neither does driving the TV: the app can run against the
-synthetic `tests/mock_pms.py`, which accepts any non-empty token.
+The build needs no private data, and neither does driving the TV: the app can sign in to the
+synthetic `tests/mock_dispatcharr.py`, which serves a generated lineup, guide and logos (and, with
+`--ts FILE`, an MPEG-TS for every channel).
 
 ```bash
 mkdir -p ~/.config/dispatcharrtv     # ONCE per machine: every checkout and worktree reads these (tools/tv-config.sh)
 echo '<tv-host>' > ~/.config/dispatcharrtv/tv-host   # the TV's address, one line
 echo '<tv-mac>'  > ~/.config/dispatcharrtv/tv-mac    # optional: only Wake-on-LAN needs it (cached from ARP once the TV is up)
-printf '#define PMS_HOST  "<this-mac-lan-ip>"\n#define PMS_PORT  32499\n' > src/config.local.h   # gitignored; no PMS_TOKEN
-make                             # PMS_HOST/PMS_PORT are compiled in; nothing else is read from config.local.h
-python3 tests/mock_pms.py --host <this-mac-lan-ip> --port 32499   # same address as PMS_HOST; the default binds loopback only
-tools/tv-session.sh up --guest --mock --screen home       # debug flavor only; deploys and md5-verifies the binary, boots the synthetic identity
+make && make deploy                                   # take the TV lock first (tv-lock skill)
+python3 tests/mock_dispatcharr.py --host <this-machine-lan-ip> --port 9192   # the default binds loopback only
+printf '%s\n' http://<this-machine-lan-ip>:9192 admin admin > <runtime root>/dispatcharrtv-dispatcharr   # on the TV; dev builds only
 ```
 
 The TV address and MAC are per-USER, not per-checkout: `${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dispatcharrtv}`,
 so a fresh worktree needs nothing seeded for them and no setup hook (a copied file would go stale). A
 `.tv-host` / `.tv-mac` in a checkout (or in the main checkout) still works and takes precedence, as a
-per-checkout override. `src/config.local.h` is the one gitignored file that is still per-checkout, so a
-fresh worktree has none. `up` deploys
-the built binary itself; `make FLAVOR=debug install` is needed only on a TV that has never had
-the debug build. `--mock` makes `--guest` use `tools/mock-guest.py`, which refuses any server that
-is not the synthetic mock, instead of resolving a managed user through plex.tv. Take the TV lock
-first (`tv-lock` skill).
+per-checkout override. `make -s print-rundir` names the install's runtime root;
+`make FLAVOR=debug install` is needed only on a TV that has never had the debug build.
 
-The default mock answers 3 Home hubs; `mock_pms.py --home-hubs N` serves N, counting Continue
-Watching (so N-1 shelves plus Continue Watching), for work on Home with many rows. To measure
-Home, add `--arm framedrop=25` to `up`: the event log then gets `FRAMEDROP` detail lines for
-frames over 25 ms.
+**A sign-in stores an account.** On a set that already holds the owner's Dispatcharr account, move
+`dispatcharr.json` (and `dispatcharr-prefs.json`) in the app directory aside first and restore them
+afterwards — owner uid 6030, mode 600, from a trap so a failure still restores them (the
+television-safety rule in `AGENTS.md`). `tests/run.py` does that itself for its clip cases.
 
-Without a TV, `make check` and `make sim` need no account either. `./tests/run.py --fps --mock`
-runs the fps scenes that declare a `mock` block (`grep '"mock"' tests/manifest.json` lists them) against the mock
-with no `PMS_TOKEN`, no `tests/manifest.local.json` and no plex.tv call: it starts and stops
-`tests/mock_pms.py` itself on `PMS_HOST`/`PMS_PORT` with each scene's arguments (stop a mock you
-started by hand first), boots the same synthetic guest as `up --guest --mock`, and keeps the panel
-and sound off. `./tests/run.py --server` (and plain `--fps`) still call `read_token()` and read
-`tests/manifest.local.json`, so they cannot target the mock. `tests/run.py` does not deploy the binary, so deploy the build you mean to measure first (`make deploy` under the TV lock, or `tools/tv-session.sh up`, which deploys when stale; for FPS or frame pacing build with `ARM_PROFILE=release`, e.g. `make ARM_PROFILE=release deploy`, because a bare `make deploy` ships the no-LTO `tvdev` build, which `--fps*` and `tools/profile-graphics` refuse to grade; see `docs/agent-reference.md` "ARM_PROFILE") — a stress run once measured an older binary this way.
+Without a TV, `make check` and `make sim` need no account either; the simulator signs in to the
+same mock. `tests/run.py` does not deploy the binary, so deploy the build you mean to test first;
+for FPS or frame pacing build with `ARM_PROFILE=release` (`make ARM_PROFILE=release deploy`),
+because a bare `make deploy` ships the no-LTO `tvdev` build, which `tools/profile-graphics`
+refuses to grade (see `docs/agent-reference.md` "ARM_PROFILE").
 
 That's the whole setup. The sections below explain what each piece is, how to
 verify it, and how to fix it when it goes wrong — read them when the fast path

@@ -7,11 +7,6 @@ Host tests, no TV, no network: the television is a fake command runner. What is 
   the installed binary: `tvdev` is refused with a message naming `make ARM_PROFILE=release`,
   `release` is accepted, and a missing or garbled record is `unrecorded` and accepted (a binary
   deployed before the record existed or installed from a package is always a release build);
-* `tests/run.py`: `do_build(timing=True)` puts `ARM_PROFILE=release` on BOTH make goals and
-  `do_build()` for a functional run does not; `require_release_binary` exits on `tvdev` and returns
-  the label otherwise; the FPS path builds with `timing=True`, checks the deployed binary and
-  records the profile in its summary and in the graphics-profile bundle; the two functional paths
-  still build with the fast default;
 * `make deploy` writes the record; `tools/profile-graphics` and `tools/tv-sched-trace.sh` call the
   guard.
 """
@@ -84,67 +79,22 @@ class Guard(unittest.TestCase):
 
 
 class HarnessBuild(unittest.TestCase):
-    def build_goals(self, **kw):
+    def test_the_harness_build_keeps_the_fast_default(self):
+        """`tests/run.py`'s cases are functional, so its `--build` stays on `tvdev`."""
         calls = []
 
         def fake_make(target_args, timeout, capture=True):
             calls.append(list(target_args))
             return types.SimpleNamespace(returncode=0)
         with mock.patch.object(run, "make", fake_make), contextlib.redirect_stdout(io.StringIO()):
-            run.do_build("tv.example", **kw)
-        return calls
-
-    def test_a_timing_build_asks_for_the_lto_profile_on_every_goal(self):
-        calls = self.build_goals(timing=True)
+            run.do_build("tv.example")
         self.assertEqual([c[0] for c in calls], ["all", "deploy"])
         for call in calls:
-            self.assertIn("ARM_PROFILE=release", call)
-
-    def test_a_functional_build_keeps_the_fast_default(self):
-        for call in self.build_goals():
             self.assertFalse([a for a in call if a.startswith("ARM_PROFILE")], call)
-
-    def release_check(self, record):
-        with mock.patch.object(run, "make_query", return_value="/apps/x"), \
-                mock.patch.object(run, "FLAVOUR", "debug"), mock.patch.object(run, "APPID", "com.example.debug"), \
-                contextlib.redirect_stdout(io.StringIO()):
-            return run.require_release_binary("tv.example", runner=fake_tv(record))
-
-    def test_a_deployed_tvdev_binary_stops_a_timing_run(self):
-        with self.assertRaises(SystemExit) as cm:
-            self.release_check("tvdev\n")
-        self.assertIn("make ARM_PROFILE=release", str(cm.exception))
-
-    def test_release_and_unrecorded_binaries_are_graded_and_labelled(self):
-        self.assertEqual(self.release_check("release\n"), "release")
-        self.assertEqual(self.release_check(None), "unrecorded")
 
 
 class Wiring(unittest.TestCase):
     """Source-level pins for the call sites that a unit test cannot reach without a television."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.run_py = read("tests", "run.py")
-
-    def test_the_fps_path_builds_for_timing_checks_and_records(self):
-        start = self.run_py.index("if args.fps or args.fps_player:")
-        end = self.run_py.index("    if not cases:", start)
-        branch = self.run_py[start:end]
-        self.assertIn('do_build(cfg["tv"], timing=True)', branch)
-        self.assertNotIn('do_build(cfg["tv"])', branch)
-        self.assertRegex(branch, r'cfg\["arm_profile"\] = require_release_binary\(cfg\["tv"\]\)')
-        # the check sits BEFORE the first scene or the graphics profile is launched
-        self.assertLess(branch.index("require_release_binary"), branch.index("run_graphics_profile("))
-        self.assertLess(branch.index("require_release_binary"), branch.index("run_fps_suite("))
-
-    def test_the_functional_paths_still_build_with_the_default(self):
-        self.assertEqual(self.run_py.count('do_build(cfg["tv"], timing=True)'), 1)
-        self.assertEqual(len(re.findall(r'do_build\(cfg\["tv"\]\)', self.run_py)), 2)
-
-    def test_the_profile_is_in_the_report(self):
-        self.assertIn("binary profile: {cfg.get('arm_profile', 'unknown')}", self.run_py)
-        self.assertIn('"arm_profile": cfg.get("arm_profile", "unknown")', self.run_py)
 
     def test_deploy_records_the_profile_next_to_the_binary(self):
         makefile = read("Makefile")

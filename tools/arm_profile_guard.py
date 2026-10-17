@@ -8,9 +8,7 @@ hides one that is, and nothing in the output says why. Every path that measures 
 performance on the television therefore asks THIS module what profile the DEPLOYED binary came from
 and stops if it is `tvdev`:
 
-* `tests/run.py --fps / --fps-player / --graphics-profile` (and its `--build`, which builds with
-  `ARM_PROFILE=release` for those runs),
-* `tools/profile-graphics`, `tools/tv-sched-trace.sh`.
+`tools/profile-graphics` and `tools/tv-sched-trace.sh`.
 
 The record is a one-line file, `arm-profile`, that `make deploy` writes into the app directory next
 to the binary (`release` or `tvdev`), so it describes what is actually installed, including a
@@ -50,8 +48,7 @@ def refusal(profile: str, appid: str = "the deployed binary") -> Optional[str]:
     """The one-line refusal for a profile that must not be graded, else None."""
     if profile == "tvdev":
         return (f"refusing to grade timing: {appid} was built with the fast tvdev profile (no LTO), "
-                f"which is not the shipped build. Rebuild with `{FIX}` "
-                "(tests/run.py --build does that for timing runs) and run again.")
+                f"which is not the shipped build. Rebuild with `{FIX}` and run again.")
     return None
 
 

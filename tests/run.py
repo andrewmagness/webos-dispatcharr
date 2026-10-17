@@ -2011,23 +2011,16 @@ def run_pipeline_suite(cases, cfg, srv, url_base, verbose, skipped=()):
 # ---------------------------------------------------------------------------
 # Build
 # ---------------------------------------------------------------------------
-def do_build(tv, timing=False):
-    """`make all` then `make deploy`. `timing=True` for any run that grades frame timing.
-
-    A plain `make` builds the ARM library with the fast `tvdev` cargo profile (no LTO); a timing run
-    must measure the shipped build, so it asks for `ARM_PROFILE=release` on BOTH goals (deploy
-    rebuilds its own prerequisites, and a goal without the variable would rebuild `tvdev` over it).
-    Functional runs keep the fast default. The profile that actually landed is checked afterwards by
-    `require_release_binary`, which also covers a binary deployed without this flag.
-    """
+def do_build(tv):
+    """`make all` then `make deploy`, with the fast `tvdev` cargo profile: the cases are functional,
+    and none grades frame timing."""
     # The Makefile owns the whole build (it drives cargo +nightly with the load-bearing
     # cortex-a9 flags itself) — shelling out to it keeps run.py from drifting a second
     # copy of the toolchain invocation (the old hand-rolled zigbuild here did exactly that).
-    profile_args = ["ARM_PROFILE=release"] if timing else []
-    print("=== BUILD: make -> make deploy" + (" (ARM_PROFILE=release: timing run)" if timing else "") + " ===")
-    if make(["all", *profile_args], timeout=1200, capture=False).returncode != 0:
+    print("=== BUILD: make -> make deploy ===")
+    if make(["all"], timeout=1200, capture=False).returncode != 0:
         sys.exit("make failed")
-    if make(["deploy", f"TV={tv}", *profile_args], timeout=180, capture=False).returncode != 0:
+    if make(["deploy", f"TV={tv}"], timeout=180, capture=False).returncode != 0:
         sys.exit("make deploy failed")
     print("=== BUILD OK ===")
 

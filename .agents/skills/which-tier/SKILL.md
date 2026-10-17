@@ -24,7 +24,7 @@ not fail — it passes, which is worse, because a pass is what you were going to
 
 ## The two recorded ways of getting this wrong
 
-**1. Grading a pixel with a rate.** The `--fps` tier asserts the app's once/sec heartbeat. It is
+**1. Grading a pixel with a rate.** The `--fps` tier (removed with the Plex screens) asserted the app's once/sec heartbeat. It is
 blind to what a pixel *looks* like, by construction. On **2026-08-13** an `--fps` run was started
 for an *icon geometry* change and the user stopped it mid-flight — "can't find the reason to run
 FPS for an icon change, better take screenshots and watch manually". In that same session the
@@ -36,28 +36,19 @@ minutes of television for a pipeline the change cannot reach.)
 
 **For UI-only work the check is CAPTURES, LOOKED AT.** A shot nobody opens has verified nothing.
 
-**2. Reading a bare `./tests/run.py` as the suite it used to be.** The default **inverted on
-2026-08-22**. A bare run is now the **synthetic tier** — generated clips served off your
-Mac through `/tmp/dispatcharrtv-playurl`, **no Plex anywhere**. Ask `./tests/run.py --list` for the
-count — a number written down here has now rotted twice, the second time inside the branch that
-was correcting the first. The 21 library-backed cases are
-`./tests/run.py --server`; `--fps` and `--fps-player` imply `--server` (except with `--mock`, which refuses it; see tests/README.md) (their scenes navigate a
-real signed-in Home and would otherwise grade a QR screen). `--pipeline` still parses — it names
-the default — and pairing it with `--server`/`--fps` is refused rather than silently resolved.
+**2. Reading `./tests/run.py` as more than it is.** It plays **generated clips** served off your
+machine through `/tmp/dispatcharrtv-playurl`, with no Dispatcharr server and no channel behind
+them. Ask `./tests/run.py --list` for the count — a number written down here rots. It is the
+PLAYER PIPELINE, and it cannot see the live-TV half at all:
 
-The inversion is right: the obvious command now runs for everybody, needs no credentials and
-touches nobody's watch history. But **the synthetic tier cannot see the Plex half at all**, and it
-is not a subset failure, it is a whole bypassed layer:
+- it writes the route's stream declaration **itself**, so a channel's codec detection and
+  correction (`live_codec_correction`) are never entered and a regression there passes it green;
+- it reaches **no tune, no channel change, no reconnect and no Guide** whatsoever;
+- unsupported audio declarations fail before Load. The matrix's codec assertions still verify
+  that each fixture supplies the intended declaration.
 
-- it writes its five `route` fields **itself**, so `metadata → plan → apply_plan` is never entered
-  and a regression there passes it green;
-- it reaches **no resume, no markers, no Up Next, no `/:/timeline` reporter, no track SELECTION,
-  and no transcode path** whatsoever;
-- Unsupported audio declarations fail before Load. The matrix's codec assertions still verify
-  that each fixture supplies the intended declaration; an omitted trigger cannot be inferred
-  from a generic liveness assertion.
-
-**Never ship on the default alone.** `tests/README.md` has the full tier table.
+**Never ship on it alone.** Live behaviour is a `tv-session` run against a real or mock
+(`tests/mock_dispatcharr.py`) server. `tests/README.md` has the details.
 
 ## The tiers, and what each is blind to
 
@@ -84,8 +75,7 @@ but a photograph could show it (`gfx.rs`, at the `glBlendFuncSeparate` call).
 `ifs_same_cond`, `same_functions_in_if_condition`, `if_same_then_else` — the shadowed-branch gate),
 and followed by **three** host checks that are easy to forget are in here: `python3 ci/flavor.py
 --selftest` (the flavour transform, whose central assertion is that the STABLE transform is the
-identity), `python3 tests/test_harness.py` (pins `run.py`'s skip partition — the path a full
-`manifest.local.json` never enters), and `python3 tools/dispatcharrtv-lab selftest` (the Lab
+identity), `python3 tests/test_harness.py` (pins `run.py`'s grading, fixture skips and account move-aside), and `python3 tools/dispatcharrtv-lab selftest` (the Lab
 Diagnostics receiver: a real TLS listener on loopback, one accepted upload and six refusals — the
 whole of what that tool exposes to the public internet, and the only gate it has, since nothing in
 cargo can see a python file).
@@ -181,14 +171,9 @@ fails as "no line found", which reads exactly like a total regression. There is 
 OS-level mutex, and two jobs on it produce plausible WRONG data rather than a clean failure.
 
 ```sh
-./tests/run.py                 # the synthetic tier — the player pipeline, no Plex, no credentials
-./tests/run.py --server        # the 21 library-backed cases — selection, the whole Plex chain
-./tests/run.py --fps           # the UI fps scenes (implies --server; resolves the test identity)
-./tests/run.py --fps-player    # + the player-overlay scenes (manifest `tier: "player"`; `--list --server` names them)
-./tests/run.py --list          # OFFLINE: the synthetic cases, each declaration and raster, and
-                               #          which fixtures the pack is missing. THE census — a count
-                               #          written into prose here rotted inside one commit.
-./tests/run.py --list --server # OFFLINE: every server case + fps scene, each SKIP and its reason
+./tests/run.py                 # the clip harness — the player pipeline, no server, no credentials
+./tests/run.py --list          # OFFLINE: each case's declaration and raster, and which fixtures the
+                               #          pack is missing. THE census.
 tools/tv-session.sh up --screen <name>   # boot into a screen, then `key` / `click` / `shot`
 tools/capture-screen.sh out.png DISPLAY  # the panel, video plane composited in
 ```
@@ -197,35 +182,29 @@ tools/capture-screen.sh out.png DISPLAY  # the panel, video plane composited in
 teardown — so wrapping it in `tools/tv-lock.sh with` is belt and braces, useful mainly when the run
 is one step of a longer device session you do not want to lose the set between.
 
-**`--list` is the cheap move nobody makes**, and three things about it are not obvious. It contacts
-nothing — no television, no PMS, no plex.tv — but it **lists the tier you did not ask for**: a bare
-`--list` prints the synthetic matrix, and the library cases with their SKIP reasons appear only
-under `--list --server`. `run.py` prints two different tables on purpose, because the two matrices
-share no key (a `fixture` and a `declare` on one side, an `item`/`rk` on the other). It also still
-needs a TV **address** — the overlay's `tv`, `--tv`, or the shared lookup (`tools/tv-config.sh host`:
-the `.tv-host` files, then `~/.config/dispatcharrtv/tv-host`) — which it never dials; it exits saying so
-only when none of those yields one.
+**`--list` is the cheap move nobody makes.** It contacts nothing — no television, no server — and
+needs no TV address.
 
 **And the guard hook refuses it.** `.claude/hooks/tv-lock-guard.py` classifies by COMMAND WORD, so
 `./tests/run.py --list` is blocked exactly like a real run (verified 2026-08-23 by feeding the hook
 that command), even though `--list` returns long before `acquire_tv_lock` is reached. That is the
 right trade — a guard that parsed argv for intent would be a hole the first time a listing flag
 grew a side effect — but it means the free move is not free from inside an agent session. Take a
-short lease for it (`tools/tv-lock.sh with --why 'coverage listing' -- ./tests/run.py --list
---server`) or read `tests/manifest.json`. Not `PLX_TV_LOCK_BYPASS=1`: that hatch is for a human who
+short lease for it (`tools/tv-lock.sh with --why 'coverage listing' -- ./tests/run.py --list`)
+or read `tests/manifest.json`. Not `PLX_TV_LOCK_BYPASS=1`: that hatch is for a human who
 knows the set is theirs.
 
 ## The router — keyed on WHAT CHANGED
 
 | what you changed | run, in order | what those tiers CANNOT see |
 |---|---|---|
-| **pure logic** — `route/plan.rs`, `plex/`, `metadata.rs`, `browse.rs`, `aq.rs`, `stream.rs` parsing, `ff.rs` helpers | `make check` (+ a new test) → `make sim-shot` if a screen reads it | the native libraries; Linux syscall semantics; whether the value reaches a pixel |
-| **UI layout / spacing / colour / a new screen** (`ui/`) | `make check` → `make sim-shot SIM_W=1920 SIM_H=1080` (`ui-sim`) → **one device capture, looked at** | the fps tier is blind to pixels (the 2026-08-13 watched-mark bug); a FITTED sim shot is 960x540 on a 1x display, layout evidence only — which is what `SIM_W`/`SIM_H` exist for |
+| **pure logic** — `route/`, `dispatcharr/`, `aq.rs`, `stream.rs` parsing, `ff.rs` helpers | `make check` (+ a new test) → `make sim-shot` if a screen reads it | the native libraries; Linux syscall semantics; whether the value reaches a pixel |
+| **UI layout / spacing / colour / a new screen** (`ui/`) | `make check` → `make sim-shot SIM_W=1920 SIM_H=1080` (`ui-sim`) → **one device capture, looked at** | a rate is blind to pixels (the 2026-08-13 watched-mark bug); a FITTED sim shot is 960x540 on a 1x display, layout evidence only — which is what `SIM_W`/`SIM_H` exist for |
 | **text rasterization, fonts, the `theme::size` ladder** | `tools/font-hint-audit.py` → device capture | **the simulator is disqualified** — different FreeType; `make check` never rasterizes anything |
-| **anything ANIMATED, or repainting from a CLOCK** | two host tests (runs / rests) → `--fps` with a real `fps_floor`, plus an `fps_ceiling` if the screen settles | `loop_floor` cannot see a stopped animation at all; the simulator cannot see rate |
-| **frame rate / perf** | `profile-tv`: `./tests/run.py --fps` unarmed, or one scene with `--graphics-profile` for pacing + IRQ + HWCNT | never the simulator; only the profile's production leg has quotable FPS; `drift` is reported, never asserted |
-| **player pipeline, demux, Starfish/ACB, the Load payload, `route/decision.rs`** | `make check` (pure `ff.rs` logic) → `./tests/run.py` (synthetic) → `--server` if selection is involved | the synthetic tier bypasses `metadata → plan → apply_plan` and false-PASSes an unread trigger via `engine`'s `_ =>` arm |
-| **track selection, resume, markers, Up Next, `/:/timeline`** | `./tests/run.py --server` — **only** | the synthetic tier reaches none of these; a bare `./tests/run.py` is not evidence about any of them |
+| **anything ANIMATED, or repainting from a CLOCK** | two host tests (runs / rests) → the device heartbeat's `fps=` on an `ARM_PROFILE=release` deploy (`profile-tv`) | `loop=` cannot see a stopped animation at all; the simulator cannot see rate |
+| **frame rate / perf** | `profile-tv`: the heartbeat unarmed, then `tools/profile-graphics` for pacing + IRQ + HWCNT | never the simulator; only the profile's production leg has quotable FPS; `drift` is reported, never asserted |
+| **player pipeline, demux, Starfish/ACB, the Load payload, `route/decision.rs`** | `make check` (pure `ff.rs` logic) → `./tests/run.py` → a live tune (`tv-session`) if the channel side is involved | the clip harness bypasses a channel's codec detection and false-PASSes an unread trigger via `engine`'s `_ =>` arm |
+| **tune, channel change, reconnect, the Guide** | a `tv-session` run against `tests/mock_dispatcharr.py` (`--ts`, `--ts-hang`) or the real server | the clip harness reaches none of these; `./tests/run.py` is not evidence about any of them |
 | **FFI / linkage / `dynlib!`** | `tools/fwcompat.py` → `make check` → **`make sim` or `make macapp`** → device | **there is no link error any more**; and the device cannot see an Apple-ABI variadic bug — see below |
 | **the release feature configuration** | `cargo +nightly check --lib --no-default-features` → `make RELEASE=1` | `make check`, `make` and `make sim` all build DEV features; a broken `RELEASE=1` is invisible to every one of them |
 | **the Makefile, packaging, the `.ipk`** | `make check` (flavour selftest) → `make ipk` (runs `ci/check-package.py`) → a real `make FLAVOR=… install` | the dev loop is `make deploy`, which scp's into an already-registered app dir and **never exercises the package** |
@@ -322,7 +301,7 @@ built the package; a real release goes through the **`cut-release`** skill.
 | host suite is enough | `make check` — no skill needed |
 | needs to be SEEN, no TV required | **`ui-sim`** (`make sim`, N at once) |
 | needs the television | **`tv-lock`** → **`wake-tv`** → **`tv-session`** |
-| needs a suite on the television | `tv-lock` → `./tests/run.py`, plus `--server` / `--fps` / `--fps-player` as the router says |
+| needs the clip harness on the television | `tv-lock` → `./tests/run.py` |
 | several agents, and one of them needs the set | **`fleet-plan`** — at most ONE lane gets the television; the rest go to the simulator |
 | new FFI into a TV library | **`bind-tv-lib-abi`** (evidence via **`decompile-tv-lib`**) |
 | it is alive but slow or stuck | **`profile-tv`** |

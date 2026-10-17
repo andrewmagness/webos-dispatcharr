@@ -110,10 +110,10 @@ the macOS simulator are valuable, but they cannot prove every device behavior.
 - A plain local `make` / `make deploy` compiles the ARM library with the fast `tvdev` cargo profile
   (no LTO); CI, `RELEASE=1`, `SYMBOLS=1` and `FLAVOR=stable|nightly` keep the fat-LTO `release`
   profile. That binary is larger and slower in per-frame code, so a size-budget check needs
-  `ARM_PROFILE=release`. Timing runs enforce it themselves: `tests/run.py --fps*` builds with it
-  under `--build` and, like `tools/profile-graphics` and `tools/tv-sched-trace.sh`, refuses a deployed
-  `tvdev` binary (`make deploy` records the profile on the set); build with `make ARM_PROFILE=release
-  deploy` before any other FPS or smoothness measurement (`docs/agent-reference.md`, "ARM_PROFILE").
+  `ARM_PROFILE=release`. Timing tools enforce it themselves: `tools/profile-graphics` and
+  `tools/tv-sched-trace.sh` refuse a deployed `tvdev` binary (`make deploy` records the profile on
+  the set); build with `make ARM_PROFILE=release deploy` before any FPS or smoothness measurement
+  (`docs/agent-reference.md`, "ARM_PROFILE").
 - After editing `rust-modules/src/**/*.rs` or a layer crate's `rust-modules/*/src/**/*.rs`, also check the shipping feature set with
   `CARGO_INCREMENTAL=0 cargo +nightly check --manifest-path rust-modules/Cargo.toml --lib
   --no-default-features` when the Claude-only release hook did not run. Keep the
@@ -155,16 +155,13 @@ the macOS simulator are valuable, but they cannot prove every device behavior.
 - There is one physical television. Before any command that deploys, runs, drives, captures, or
   tests it, use the `tv-lock` skill and acquire the repository TV lock. Prefer `ui-sim` when the
   device is unnecessary or busy. Read-only status/log collection is the documented exception.
-- **Never write to a real person's Plex account.** Boot with `--guest` and verify the identity
-  line in the log before sending any key; never press `ok` on a card whose `ratingKey` you have not
-  read from the log; reopen a screen by relaunching with `--screen` rather than walking Home. A
-  Continue Watching tile resumes playback on OK whenever Settings > Playback > Continue Watching
-  is "Play" (the default, "Open details", opens the page) — and the setting is saved on the set,
-  so never assume which one a given install has. In the default the card's hold menu opens ON a
-  Play/Continue row, so hold-then-OK plays too. That press is how two separate sessions started
-  real playback on the owner's account. Seeding, scrobbling, unscrobbling, marking watched and
-  "Remove from Deck" are all writes to a household's actual viewing record — the managed and Guest profiles
-  are real users too. When screenshot or demo work needs particular content, mock the server.
+- **Never change the owner's Dispatcharr account on the set.** `dispatcharr.json` (and
+  `dispatcharr-prefs.json`) in the app's directory are the household's real server and login. A
+  test that needs a different account or none moves them aside first and restores them exactly
+  afterwards — owner uid 6030, mode 600 — from a trap or `finally`, so a failure still restores
+  them; `tests/run.py` does this for its whole run. When a test needs particular channels or
+  content, point the app at `tests/mock_dispatcharr.py` rather than editing the real server's
+  channels, groups or profiles.
 - Hold the TV lock around the device commands themselves and release as soon as the device work
   pauses. Do not hold a lease while building, reading screenshots or writing Markdown; other lanes
   queue behind it.

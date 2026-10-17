@@ -126,6 +126,7 @@ FIXTURES_ROOT = serve_fixtures_default_root()
 FLAVOUR = None          # "stable" | "debug"
 APPID = None            # com.magness.dispatcharrtv[.<flavour>]
 RUNDIR = None           # the runtime root: /tmp for stable, /tmp/<app id> for a flavoured install
+APPDIR = None           # the install's app directory on the television
 EVENTLOG = None         # <RUNDIR>/dispatcharrtv-events.log
 RUN_STREAM_MARK = None  # the remote command text — see _run_stream_pids()
 
@@ -225,127 +226,28 @@ def _resolve_items(entries, items):
         e["rk"] = rk
 
 
-def load_manifest(pipeline_only=False, tv_override=None, for_listing=False):
-    """Merge the tracked matrix with the gitignored overlay.
+def load_manifest(tv_override=None, for_listing=False):
+    """The tracked case list plus the TV address to drive.
 
-    `pipeline_only` is what makes requirement-1 true — that a stranger can run the pipeline tier
-    with nothing configured. That tier talks to no PMS, holds no token and names no ratingKey, so
-    every Plex-shaped key here stops being required: the overlay may be absent ENTIRELY, in which
-    case the TV address is read from the gitignored `.tv-host` files or the per-user
-    `~/.config/dispatcharrtv/tv-host` (`tools/tv-config.sh`, the same lookup the Makefile and `tools/`
-    use). A TV address is the one thing that still cannot be guessed, and is the only thing this
-    path can die for.
+    Nothing here is installation-dependent, so there is no overlay: the TV address comes from
+    `--tv`, else the gitignored `.tv-host` files or the per-user `~/.config/dispatcharrtv/tv-host`
+    (`tools/tv-config.sh`, the same lookup the Makefile and `tools/` use).
 
-    `for_listing` drops **even that**, and it is the difference between `--list` being offline and
-    only claiming to be. `--list` prints which cases a set of flags selects; it opens no socket,
-    arms no trigger and touches no television, which is exactly why `DefaultTier` in
-    `tests/test_harness.py` spawns the real CLI to ask what a bare command runs. On any machine
-    with no `.tv-host` and no overlay — a fresh clone, a fleet worktree, and **the CI runner** —
-    the requirements below fired first and `--list` exited 1 with empty stdout, so those two tests
-    failed on every push. They had been red on `main` since 2026-08-22 and were about to be
-    inherited, identically, by every lane of a parallel fleet: eleven red PRs in which a real
-    failure would have been indistinguishable from the background.
+    `for_listing` drops even that, and it is the difference between `--list` being offline and
+    only claiming to be: `--list` opens no socket and touches no television, so it must work on a
+    machine with no TV configured at all — a fresh clone, a fleet worktree, the CI runner.
     """
     with open(MANIFEST) as f:
         manifest = json.load(f)
-    local = {}
-    try:
-        with open(MANIFEST_LOCAL) as f:
-            local = json.load(f)
-    except FileNotFoundError:
-        if not (pipeline_only or for_listing):
-            _die_no_overlay()
-    except ValueError as e:
-        # Still fatal for a listing: a malformed overlay is a typo to fix, not an absent one to
-        # work around, and silently listing the wrong thing is the failure mode this whole
-        # function is shaped to avoid.
-        sys.exit(f"{MANIFEST_LOCAL} is not valid JSON: {e}")
-
-    if pipeline_only:
-        # `tv` from the overlay if it is there, else the TV-address files, else nothing to drive.
-        tv = tv_override or local.get("tv") or tv_config.host() or None
-        if not tv and not for_listing:
-            sys.exit("--pipeline needs a TV address: put one in ~/.config/dispatcharrtv/tv-host (one "
-                     "line, an IP or hostname; or $PLX_TV_CONFIG_DIR/tv-host, or a per-checkout "
-                     f".tv-host), or a `tv` key in {MANIFEST_LOCAL}, or pass --tv")
-        if tv:
-            manifest["tv"] = tv
-        if "flavour" in local:
-            manifest["flavour"] = local["flavour"]
-        return manifest
-
-    for field in ("pms", "tv"):
-        if field not in local:
-            if for_listing:
-                continue    # nothing downstream of a listing dials either of them
-            _die_no_overlay(f"\n  (no {field!r} block)")
-        manifest[field] = local[field]
-    # WHICH INSTALL to drive, and optional: absent means the Makefile's own default. An
-    # installation that always tests one build says so once, here, instead of typing --flavor on
-    # every invocation. Not validated here on purpose — the Makefile owns the whitelist and its
-    # parse-time $(error) names both the bad value and the allowed set on the first query.
-    if "flavour" in local:
-        manifest["flavour"] = local["flavour"]
-    # test_user is optional by design: leaving it out runs as the owner (with a warning).
-    if "test_user" in local:
-        manifest["test_user"] = local["test_user"]
-    # shared_server is optional the same way: an installation with no second server simply omits it,
-    # and any case that needs one is SKIPPED (not failed) with the reason printed. What is NOT
-    # optional is naming the server well enough to look up on plex.tv -- a block with neither
-    # machine_id nor name resolves to nothing, and would otherwise fail later as a mystery.
-    if "shared_server" in local:
-        ss = local["shared_server"]
-        if not (ss.get("machine_id") or ss.get("name")):
-            _die_no_overlay("\n  (`shared_server` needs a `machine_id` (preferred) or a `name` to "
-                            "match against your plex.tv resources)")
-        manifest["shared_server"] = ss
-
-    items = local.get("items", {})
-    _resolve_items(manifest["cases"], items)
-    _resolve_items(manifest.get("fps_scenes", []), items)
-    # The two places an item key appears NESTED rather than as a case's own `item`: the successor
-    # a credits marker auto-advances into is both reset server-side and asserted on by ratingKey.
-    # An unresolvable one skips ITS OWN case and nothing else -- before this, a library with no
-    # "the episode after that one" killed all 21 cases over the one case that names it.
-    for c in manifest["cases"]:
-        setup = c.get("setup", {})
-        if "also_reset" in setup:
-            resolved = [(k, _item_rk(items, k)) for k in setup["also_reset"]]
-            for k, rk in resolved:
-                if rk is None:
-                    c.setdefault("skip", _item_missing_reason(items, k) + " (setup.also_reset)")
-            setup["also_reset"] = [rk for _, rk in resolved if rk is not None]
-        for op in c.get("operations", []):
-            key = op.get("expect_up_next")
-            if key:
-                rk = _item_rk(items, key)
-                if rk is None:
-                    c.setdefault("skip", _item_missing_reason(items, key) + " (expect_up_next)")
-                else:
-                    op["expect_up_next"] = rk
-
-    # A copied-but-unedited template fails LOUDLY here rather than as a 404 from plex.tv or as a
-    # case that never plays: every value in the example is bracketed, and none is ever legitimate.
-    # `items.*` is deliberately NOT in this list any more: a bracketed ratingKey is the honest
-    # answer of somebody whose library has nothing of that shape, and it now skips the cases that
-    # need it. The values below stay fatal because no run of any size can proceed without them.
-    ss = manifest.get("shared_server", {})
-    # `.get` on both, for `for_listing`'s sake: with no overlay at all neither key was ever
-    # installed above, and a listing must still print. A real run cannot reach here without them —
-    # the `_die_no_overlay` calls above are what guarantee that, which is why this stays a lookup
-    # and not a second requirement check.
-    stray = [f"{k}={v}" for k, v in
-             [("pms.host", manifest.get("pms", {}).get("host")), ("tv", manifest.get("tv"))]
-             + ([("test_user.id", manifest["test_user"].get("id"))] if "test_user" in manifest else [])
-             + [(f"shared_server.{k}", ss.get(k)) for k in ("machine_id", "name", "host")]
-             if isinstance(v, str) and v.startswith("<")]
-    if stray:
-        sys.exit(f"{MANIFEST_LOCAL} still holds template placeholders: {', '.join(stray)}\n"
-                 f"  Replace each with the value for your own server / TV / library.")
+    tv = tv_override or tv_config.host() or None
+    if not tv and not for_listing:
+        sys.exit("tests/run.py needs a TV address: put one in ~/.config/dispatcharrtv/tv-host (one "
+                 "line, the IP), or pass --tv <ip>")
+    if tv:
+        manifest["tv"] = tv
     return manifest
 
 
-# ---------------------------------------------------------------------------
 def partition_skips(entries):
     """Split `entries` into (runnable, [(name, reason), …]).
 
@@ -845,12 +747,13 @@ def resolve_flavour(args, manifest):
     the launch will use, so this harness cannot arm triggers in one root and grade a log in
     another — and a future change to the naming rule reaches the harness for free.
     """
-    global FLAVOUR, APPID, RUNDIR, EVENTLOG, RUN_STREAM_MARK
+    global FLAVOUR, APPID, RUNDIR, EVENTLOG, APPDIR, RUN_STREAM_MARK
     # ONE invocation for all four. `print-flavor` comes back first and answers the default when
     # neither --flavor nor the overlay named one, so the old ask-then-ask-again round trip is gone.
     FLAVOUR = args.flavor or manifest.get("flavour") or ""
-    FLAVOUR, APPID, RUNDIR, EVENTLOG = make_query(
-        ("print-flavor", "print-appid", "print-rundir", "print-eventlog"), FLAVOUR or None)
+    FLAVOUR, APPID, RUNDIR, EVENTLOG, APPDIR = make_query(
+        ("print-flavor", "print-appid", "print-rundir", "print-eventlog", "print-appdir"),
+        FLAVOUR or None)
     # The tail `make run-stream` ends in. _run_stream_pids() matches it against `ps` to find this
     # harness's OWN ssh clients, so it has to be the text the Makefile actually runs: a copy that
     # stops matching reaps nothing, and every case then leaks an ssh client holding a remote
@@ -1449,8 +1352,12 @@ def a_offline_pick(lines):
 
 
 def a_video_bound(lines):
-    ln = find(lines, "setMediaVideoData sent")
-    return (ln is not None), (ln.strip() if ln else "no `setMediaVideoData sent` (video plane never bound)")
+    """The video plane bound. `videoplane: BOUND` is the player machine's one edge line for it,
+    whichever way the plane was bound; `setMediaVideoData sent` is the ACB arm's own step. The
+    dev set (webOS 6.5.3) binds through the exported window and logs only the first, so grading
+    the ACB line alone failed clips that played at 24 fps (2026-10-16)."""
+    ln = find(lines, "videoplane: BOUND") or find(lines, "setMediaVideoData sent")
+    return (ln is not None), (ln.strip() if ln else "no `videoplane: BOUND` (video plane never bound)")
 
 
 def a_timeline_climb(lines, min_climb, dense_only=False):
@@ -4898,16 +4805,42 @@ def save_case_log(cfg, name, lines):
     return path
 
 
-def run_pipeline_case(case, cfg, srv, url_base, verbose):
-    """One pipeline case. A sibling of `run_case` with every PMS step removed.
+ASIDE = ".harness-aside"
 
-    Kept from it: the `make kill` that opens (the app is a singleton on the television, and the
-    previous case's is still up), `apply_triggers`' single round-trip that recreates the runtime
-    root 1777 and glob-wipes stale triggers, and `stream_case` unchanged — the same early-exit
-    grading, the same install check, the same killpg-plus-ssh-reap in its `finally`.
-    Dropped: the unscrobble, the viewOffset seed, `also_reset`, and the token injection. There is
-    no ratingKey here to reset and no identity to be.
-    """
+
+def account_paths(appid, appdir, rundir):
+    """Every place the app looks for its Dispatcharr account and prefs
+    (`plx_base::paths::dispatcharr_candidates`, device order)."""
+    out = []
+    for stem in ("dispatcharr", "dispatcharr-prefs"):
+        out += [f"/media/developer/{appid}-{stem}.json", f"/media/internal/.{appid}-{stem}.json",
+                f"{appdir}/{stem}.json", f"{rundir}/{stem}.json"]
+    return out
+
+
+def account_aside_cmd(paths, aside):
+    """The remote shell that moves the account out of the app's way (`aside`) or puts it back.
+
+    **Why the cases need it:** a set with an account resumes its last channel on launch, a tuned
+    channel sets the route's URL, and the engine takes the route's URL before the playurl trigger
+    (2026-10-16: three cases graded a live channel and never requested their clip). With no
+    account the app boots to Setup, where nothing resumes. `mv` keeps owner and mode, so the
+    restore puts back exactly the file that was there. A leftover from an interrupted run is
+    restored before anything is moved, so an aside file can never be the only copy that a second
+    move overwrites."""
+    restore = [f"[ ! -e {sh_squote(p + ASIDE)} ] || mv -f {sh_squote(p + ASIDE)} {sh_squote(p)}"
+               for p in paths]
+    if not aside:
+        return "; ".join(restore) + "; true"
+    move = [f"[ ! -e {sh_squote(p)} ] || mv -f {sh_squote(p)} {sh_squote(p + ASIDE)}" for p in paths]
+    return "; ".join(restore + move) + "; true"
+
+
+def run_pipeline_case(case, cfg, srv, url_base, verbose):
+    """One case: `make kill` (the app is a singleton on the television, and the previous case's
+    is still up), `apply_triggers`' single round-trip that recreates the runtime root 1777 and
+    glob-wipes stale triggers, then `stream_case` — early-exit grading, the install check, and the
+    killpg-plus-ssh-reap in its `finally`."""
     name = case["name"]
     tv = cfg["tv"]
     run_secs = case.get("run_secs", 30)
@@ -4916,20 +4849,6 @@ def run_pipeline_case(case, cfg, srv, url_base, verbose):
 
     require_tv(tv, name)
     make(["kill", f"TV={tv}"], timeout=40)
-    srv.set_network_profile(case.get("network_profile"))
-    # **The REQUEST-indexed shaper, which existed and was never armed.**
-    # `serve_fixtures.set_segment_profile` has been implemented and covered by
-    # `test_harness.py` since it was written, but this runner only ever called its
-    # wall-clock sibling — so `pipe_abr_down_outrun`, the ONLY case that can make a
-    # candidate transfer deadline fire, declared a `segment_profile` the run silently
-    # ignored, streamed over an unshaped link and could not pass by construction. Both are
-    # reset per case (each setter clears when given None), and they COMPOSE — the
-    # request-indexed one wins where it applies.
-    srv.set_segment_profile(case.get("segment_profile"))
-    # A fresh PMS session may map the same request actuator to a different completed rendition.
-    # The fixture generation rides in the child playlist URI so the old live session and the
-    # candidate refresh remain distinct even though both paths say /__abr/22000.
-    srv.set_abr_response_profile(case.get("abr_response_profile"))
     files = triggers_for_case(case, url_base=url_base)
     apply_triggers(tv, files)
     print("    triggers: " + ", ".join(n + ("=" + c if c is not None else "") for n, c in files))
@@ -4940,9 +4859,6 @@ def run_pipeline_case(case, cfg, srv, url_base, verbose):
         """The wire counters are read LIVE, so the early-exit poll grades the same
         `server_wire` the verdict will — a case cannot stop early on a seek whose Range reopen
         has not happened yet."""
-        # Re-read every poll, not once: the shaper's phase clock does not start until the first
-        # response body, so at the moment this case was set up there were no windows to read.
-        c["_dip_windows"] = srv.dip_windows()
         now = srv.stats()
         return evaluate_pipeline(c, ls, tuple(n - b for n, b in zip(now, before)))
 
@@ -4958,12 +4874,6 @@ def run_pipeline_case(case, cfg, srv, url_base, verbose):
     gst_lines = pull_runtime_log(tv, "dispatcharrtv-gst.log") if case.get("gst_trace") else None
     if gst_lines is not None:
         print(f"    GST trace: {len(gst_lines)} line(s)")
-    # The shaper's schedule, for the FINAL grade. `grade()` above also sets it, but only the
-    # early-exit poll calls `grade()` — under `--no-early` it never runs, and the dip metric then
-    # reported "no degraded leg" on cases that plainly had one (observed 2026-08-26 on
-    # pipe_abr_brief_dropout and pipe_abr_oscillating_link). Captured here so the verdict path and
-    # the poll path see the same windows whichever way the case ended.
-    case["_dip_windows"] = srv.dip_windows()
     passed, results = evaluate_pipeline(case, lines, delta, gst_lines=gst_lines)
     report_and_record(cfg, name, passed, results, lines, elapsed, run_secs, stopped_early,
                       settled, verbose)
@@ -4981,16 +4891,28 @@ def run_pipeline_case(case, cfg, srv, url_base, verbose):
 
 def run_pipeline_suite(cases, cfg, srv, url_base, verbose, skipped=()):
     summary = []
-    for c in cases:
-        try:
-            passed, results, _ = run_pipeline_case(c, cfg, srv, url_base, verbose)
-        except Exception as e:  # keep the batch going; record the failure
-            print(f"    ERROR running {c['name']}: {e}")
-            passed, results = False, [("harness", False, str(e))]
-        summary.append((c["name"], passed, [l for l, ok, _ in results if not ok]))
+    paths = account_paths(APPID, APPDIR, RUNDIR)
+    tv = cfg["tv"]
+    make(["kill", f"TV={tv}"], timeout=40)
+    ssh(tv, account_aside_cmd(paths, aside=True))
+    print("    account: moved aside for the run (restored at the end)")
+    try:
+        for c in cases:
+            try:
+                passed, results, _ = run_pipeline_case(c, cfg, srv, url_base, verbose)
+            except Exception as e:  # keep the batch going; record the failure
+                print(f"    ERROR running {c['name']}: {e}")
+                passed, results = False, [("harness", False, str(e))]
+            summary.append((c["name"], passed, [l for l, ok, _ in results if not ok]))
+    finally:
+        # Before `teardown` releases the lock (atexit runs after this): the app is closed first so
+        # it cannot write the account while it is being put back.
+        make(["kill", f"TV={tv}"], timeout=40)
+        ssh(tv, account_aside_cmd(paths, aside=False))
+        print("    account: restored")
 
     print("\n" + "=" * 72)
-    print("SUMMARY  (pipeline tier — no Plex)")
+    print("SUMMARY")
     print("=" * 72)
     npass = nfail = 0
     for nm, passed, fails in summary:
@@ -6324,212 +6246,63 @@ def setup_shared(manifest, cfg, args, entries, what):
 
 
 def main():
-    # LIVE OUTPUT. This suite drives a television for ten to twenty minutes, and Python
-    # block-buffers stdout the moment it is not a tty — so piping it to a file or a log viewer
-    # showed NOTHING until the run ended, which is indistinguishable from a hung harness against a
-    # TV that is doing exactly what it was asked to. Line buffering costs nothing here (the output
-    # is a few hundred lines) and makes progress visible wherever it is sent.
+    # LIVE OUTPUT. This suite drives a television for minutes, and Python block-buffers stdout the
+    # moment it is not a tty -- so piping it to a file showed NOTHING until the run ended, which is
+    # indistinguishable from a hung harness. Line buffering costs nothing here.
     try:
         sys.stdout.reconfigure(line_buffering=True)
         sys.stderr.reconfigure(line_buffering=True)
     except AttributeError:  # pragma: no cover — pre-3.7
         pass
-    ap = argparse.ArgumentParser(description="webOS Plex player on-device regression harness")
+    ap = argparse.ArgumentParser(description="Dispatcharr TV on-device player regression harness")
     ap.add_argument("--build", action="store_true", help="cargo + make + make deploy before running")
     ap.add_argument("--filter", "--only", dest="filter", default=None,
-                    help="run only cases or FPS scenes whose name contains this substring")
-    ap.add_argument("--suite", default=None, choices=["logic", "codec"],
-                    help="run only one suite: 'logic' (seek/resume/audio/subtitle — the engine and "
-                         "pump; still covers h264-dp, 4k-hevc-dp and transcode) or 'codec' (the "
-                         "play-only decision + Load-payload cases). Default: every case. "
-                         "NB distinct from fps_scenes' ui|player 'tier'.")
+                    help="run only cases whose name contains this substring")
     ap.add_argument("--list", action="store_true", help="list cases and exit")
-    ap.add_argument("--extra-trigger", action="append", default=[], metavar="NAME[=CONTENT]",
-                    help="arm one more dispatcharrtv-* trigger for every fps scene of this run (e.g. "
-                         "dispatcharrtv-cpuprof, dispatcharrtv-framedrop=20). A profiler trigger disqualifies "
-                         "the run's fps= as a pacing number, exactly as --graphics-profile does; use "
-                         "it to attribute a frame, never to grade one.")
     ap.add_argument("--save-logs", metavar="DIR", default=None,
                     help="write each case's full event log to DIR/<case>.log. The app truncates "
                          "its log every launch and each case overwrites the previous one, so a "
                          "trace not captured here is gone when the run ends.")
-    ap.add_argument("--tv", default=None, help="override TV IP (default from manifest.local.json)")
+    ap.add_argument("--tv", default=None, help="override TV IP (default from the TV config)")
     # Deliberately NOT `choices=`: the Makefile's FLAVORS list is the one whitelist, and a second
     # copy here would be the copy that goes stale. A bad value fails on the first `make -s print-*`
     # with the Makefile's own parse-time error, which names the allowed set.
     ap.add_argument("--flavor", default=None, metavar="stable|debug",
-                    help="which INSTALL to drive (default: the overlay's `flavour` key, else the "
-                         "Makefile's own default). The two builds have separate app ids, separate "
-                         "runtime roots and separate sign-ins; everything this run touches is "
-                         "derived from this one choice")
+                    help="which INSTALL to drive (default: the Makefile's own default). The two "
+                         "builds have separate app ids and runtime roots; everything this run "
+                         "touches is derived from this one choice")
     ap.add_argument("--verbose", action="store_true", help="print evidence for passing assertions too")
     ap.add_argument("--no-early", action="store_true",
                     help="don't stop a case as soon as it passes — run the full manifest run_secs. "
                          "Slower by design: it widens the window for a LATE `Playing error` to show "
                          "up, which early exit trades away for speed.")
-    ap.add_argument("--owner", action="store_true",
-                    help="run as the config.local.h OWNER token (default: run as the overlay's "
-                         "test_user, so watch history stays off your real account)")
-    ap.add_argument("--print-test-token", action="store_true",
-                    help="resolve manifest.local.json's test_user to its per-server Plex token, "
-                         "print it to stdout and exit -- no cases, no television, no TV lock. "
-                         "This is the identity-resolution half of the --owner/test_user split "
-                         "above, exposed standalone so tools/tv-session.sh's `up --guest` can "
-                         "reuse it instead of re-deriving the plex.tv shared_servers call: a "
-                         "guest boot must resolve the REAL managed-user token or refuse, never "
-                         "fall through to the owner's (see the 2026-09-10 postmortem in that "
-                         "script's header — a silent fallback wrote real progress into the "
-                         "household account and unscrobbling it also reset the item's viewCount).")
-    ap.add_argument("--shared-server", action="store_true",
-                    help="inject the overlay's `shared_server` credentials into EVERY case/scene of "
-                         "this run, not just the ones declaring needs_shared_server. For bringing "
-                         "up a second-server screen by hand; exits if the overlay has no such block")
-    ap.add_argument("--fps", action="store_true",
-                    help="run the FPS regression suite (UI tier: home/detail, no video needed)")
-    ap.add_argument("--fps-player", action="store_true",
-                    help="FPS suite INCLUDING player-tier scenes (info/menu — needs playback, slower)")
-    ap.add_argument("--mock", action="store_true",
-                    help="with --fps/--fps-player: run the scenes that declare a `mock` block "
-                         "against the SYNTHETIC mock server (tests/mock_pms.py), which this run "
-                         "starts and stops itself at PMS_HOST:PMS_PORT from src/config.local.h with "
-                         "each scene's own arguments. Needs NO PMS_TOKEN, NO manifest.local.json "
-                         "and makes NO plex.tv call; boots the same synthetic guest as "
-                         "`tools/tv-session.sh up --guest --mock`, refuses a log whose server is "
-                         "not the synthetic one, and keeps the panel OFF and the sound OFF. "
-                         "Debug flavor only. Scenes with no `mock` block are skipped with a reason")
-    ap.add_argument("--graphics-profile", action="store_true",
-                    help="for exactly one selected FPS scene, run production pacing + passive "
-                         "Mali IRQ + a separate HWCNT leg and save one diagnostic bundle")
-    ap.add_argument("--profile-phase", default="frame.ui", metavar="PHASE",
-                    help="exact HWCNT phase for --graphics-profile (default: frame.ui)")
-    ap.add_argument("--graphics-output", default=None, metavar="DIR",
-                    help="bundle directory for --graphics-profile (default pkg/diagnostics/<stamp>)")
-    # THE DEFAULT TIER. `--server` opts into the library-backed one; `--pipeline` is accepted and
-    # redundant, kept because it is what every recipe written between this tier landing and the
-    # inversion says, and because naming the default explicitly is never wrong.
-    ap.add_argument("--server", "--integration", dest="server", action="store_true",
-                    help="run the SERVER tier instead of the default synthetic one: the 21 "
-                         "library-backed cases driven through the whole Plex chain (plex.tv auth, "
-                         "/decision, direct-play vs transcode, markers, resume, timeline). Needs a "
-                         "PMS, a token and a filled-in manifest.local.json")
-    ap.add_argument("--pipeline", action="store_true",
-                    help="run the synthetic pipeline tier — the DEFAULT, so this flag is a no-op "
-                         "kept for the recipes that name it")
     ap.add_argument("--fixtures-dir", default=None, metavar="DIR",
-                    help=f"where the generated pipeline pack lives (default $FIXTURES_OUT/pipeline, "
+                    help=f"where the generated pack lives (default $FIXTURES_OUT/pipeline, "
                          f"i.e. {FIXTURES_ROOT})")
     ap.add_argument("--fixtures-port", type=int, default=0, metavar="PORT",
                     help="port for the fixture HTTP server (default: pick a free one). Pin it when "
                          "a firewall rule names a port")
     args = ap.parse_args()
-    if args.print_test_token:
-        # Standalone: this mode answers one question (what token is the managed test user's?)
-        # and touches nothing else -- no case selection, no TV lock, no launch. Reject every flag
-        # that implies one of those instead of silently ignoring it, so a copy-pasted command line
-        # fails loudly rather than quietly running the wrong thing.
-        conflicting = [f for f, v in [
-            ("--list", args.list), ("--server", args.server), ("--fps", args.fps),
-            ("--fps-player", args.fps_player), ("--pipeline", args.pipeline),
-            ("--owner", args.owner), ("--build", args.build), ("--mock", args.mock),
-        ] if v]
-        if conflicting:
-            sys.exit(f"--print-test-token is standalone and cannot combine with {', '.join(conflicting)}")
-        manifest = load_manifest(pipeline_only=False, tv_override=args.tv)
-        test_user = manifest.get("test_user")
-        if not test_user:
-            sys.exit("no test_user in manifest.local.json -- nothing to resolve as a guest "
-                     "identity (add a test_user block, see manifest.local.json.example; or boot "
-                     "as the owner explicitly instead of asking for a guest)")
-        pms = manifest["pms"]
-        token = fetch_managed_user_token(read_token(), pms["host"], pms["port"], test_user["id"])
-        print(token)
-        return 0
-    if args.graphics_profile and not (args.fps or args.fps_player):
-        sys.exit("--graphics-profile operates on one deterministic FPS scene; combine it with "
-                 "--fps or --fps-player and select one with --only/--filter")
-    if args.graphics_output and not args.graphics_profile:
-        sys.exit("--graphics-output is only meaningful with --graphics-profile")
-    if args.graphics_profile and args.list:
-        sys.exit("--graphics-profile drives the television and cannot be combined with --list")
 
-    # WHICH TIER. The synthetic pipeline tier is the DEFAULT (2026-08-22); the library-backed one
-    # is `--server`. The inversion is deliberate and it is about what a bare `./tests/run.py`
-    # should mean: the default has to be the thing that runs for everybody, needs no credentials,
-    # touches nobody's watch history, and answers "is the PLAYER broken" — which is the question
-    # asked far more often than "is my library's metadata right". The server tier costs ten to
-    # twenty minutes, a PMS, a token and an overlay; making that the price of typing the obvious
-    # command meant most people could not type it at all.
-    #
-    # The FPS scenes are on the server side of the line whatever else is asked: they navigate a
-    # real signed-in Home, so without a token they grade a QR screen.
-    server_tier = args.server or args.fps or args.fps_player
-    if args.mock:
-        # The synthetic library has no real items, no plex.tv account and one fabricated guest, so
-        # every flag that names one of those is a contradiction, not a preference to resolve.
-        if not (args.fps or args.fps_player):
-            sys.exit("--mock applies to the FPS scenes: combine it with --fps or --fps-player. "
-                     "(The library-backed --server cases need real content a mock cannot give.)")
-        bad = [f for f, v in [("--server", args.server), ("--owner", args.owner),
-                              ("--shared-server", args.shared_server), ("--suite", args.suite),
-                              ("--graphics-profile", args.graphics_profile),
-                              ("--pipeline", args.pipeline)] if v]
-        if bad:
-            sys.exit(f"--mock cannot combine with {', '.join(bad)}: it runs against the synthetic "
-                     f"mock as a synthetic guest, never an account")
-    if args.pipeline and server_tier:
-        # `--pipeline` is a no-op naming the default, so combining it with anything that selects
-        # the other tier is not a preference to resolve — it is two contradictory instructions, and
-        # silently honouring one of them is how somebody watches a suite grade the tier they did
-        # not ask for and believe the result.
-        sys.exit("--pipeline names the DEFAULT tier and cannot be combined with "
-                 "--server/--fps/--fps-player, which select the server tier. Pick one.")
-    # `--mock` reads the tracked matrix and the TV address only (the same loader the pipeline tier
-    # uses): no overlay, so no `pms` block, no test_user, no item keys and nothing for plex.tv.
-    manifest = load_manifest(pipeline_only=(not server_tier) or args.mock, tv_override=args.tv,
-                             for_listing=args.list)
+    manifest = load_manifest(tv_override=args.tv, for_listing=args.list)
     # BEFORE anything else, including --list: every path this run uses hangs off it, and the
     # queries are offline and side-effect free (see make_query / the Makefile's PURE_QUERY).
     resolve_flavour(args, manifest)
-    if args.mock and FLAVOUR != "debug":
-        sys.exit(f"--mock drives the debug install only (this run resolved FLAVOR={FLAVOUR}): the "
-                 f"synthetic guest is never injected into a user-facing build")
     cfg = {
-        # `.get`, not `[…]`: under `--list` the overlay and `.tv-host` are both optional, so there
-        # may be no address at all. Nothing on a listing path dials it — and a RUN cannot reach
-        # here without one, because `load_manifest` still exits for that case.
+        # `.get`, not `[…]`: under `--list` there may be no address at all. Nothing on a listing
+        # path dials it, and a RUN cannot reach here without one (`load_manifest` exits).
         "tv": args.tv or manifest.get("tv", ""),
-        # server-tier only: the synthetic tier talks to no PMS and `load_manifest` does not
-        # synthesize the key for it.
-        "pms": manifest.get("pms", {}),
         "no_early": args.no_early,
         "save_logs": args.save_logs,
-        "extra_triggers": [tuple(t.split("=", 1)) if "=" in t else (t, None) for t in args.extra_trigger],
     }
-    if args.mock and not args.list:
-        mock_host, mock_port = mock_fps.configured_endpoint(CONFIG_LOCAL_H)
-        cfg["mock"] = {"host": mock_host, "port": mock_port}
-        cfg["inject_token"] = True  # the synthetic guest token rides dispatcharrtv-token, as for tv-session
-    cases = manifest["cases"]
-    if args.suite:
-        cases = [c for c in cases if case_suite(c) == args.suite]
+    root = args.fixtures_dir or FIXTURES_ROOT
+    cases = manifest.get("pipeline_cases", [])
     if args.filter:
         cases = [c for c in cases if args.filter in c["name"]]
-    # Partition BEFORE anything reads case["rk"]: a skipped case has none. Held as (name, reason)
-    # pairs so the summary can say which shape this library is missing, not merely how many.
-    cases, item_skipped = partition_skips(cases)
+    _resolve_fixtures(cases, root)
 
-    # Both the listing and the run below need these, and they were computed identically in each.
-    fixtures_root = args.fixtures_dir or FIXTURES_ROOT
-    pipeline_cases = manifest.get("pipeline_cases", [])
-
-    if args.list and not server_tier:
-        # A separate listing, not a filtered one: these cases share no key with the integration
-        # matrix (a `fixture` and a `declare`, never an `item` or an `rk`), and the columns that
-        # matter — which file, what it declares, whether the pack holds it — have no counterpart
-        # in the other table.
-        root, pcases = fixtures_root, pipeline_cases
-        _resolve_fixtures(pcases, root)
-        for c in pcases:
+    if args.list:
+        for c in cases:
             d = c.get("declare", {})
             decl = f"{d.get('vcodec','?')}/{d.get('acodec','?')}"
             if d.get("dovi", {}).get("profile"):
@@ -6537,303 +6310,46 @@ def main():
             if d.get("atmos"):
                 decl += "+atmos"
             # Only when it is not the 24p every other fixture runs at — a column that repeats
-            # the same number eleven times hides the two rows that are the point of it.
+            # the same number hides the rows that are the point of it.
             if abs(float(d.get("fps", 24.0)) - 24.0) > 0.01:
                 decl += f"@{d['fps']:g}"
-            ops = "+".join(o["op"] for o in c.get("operations", [])) or "play"
-            # The RESOLUTION, which six of these cases exist to vary (#50/#51) and which was
-            # otherwise readable only by opening the manifest — the listing showed the codec pair
-            # and the filename, and half the filenames do not carry the raster.
+            # The RESOLUTION, which the matrix cases exist to vary (#50/#51) and which half the
+            # filenames do not carry.
             size = c.get("expect", {}).get("video_size", "-")
             mark = f"  [SKIP: {c['skip']}]" if c.get("skip") else ""
-            print(f"{c['name']:30s} {decl:22s} {size:11s} {ops:8s} {c.get('fixture','?')}{mark}")
+            print(f"{c['name']:30s} {decl:22s} {size:11s} {c.get('fixture','?')}{mark}")
         print(f"\nfixtures: {root}")
         print(f"install:  {APPID} [{FLAVOUR}] — triggers and log under {RUNDIR}")
-        print("\nThe pipeline tier needs no PMS, no token and no manifest.local.json — only a TV "
-              "address and\na pack built by `make fixtures-pipeline`.")
+        print("\nNeeds only a TV address and a pack built by `make fixtures-pipeline`.")
         return 0
 
-    if args.list:
-        for c in manifest["cases"]:
-            ops = "+".join(o["op"] for o in c["operations"])
-            mark = "  [+2nd server]" if c.get("needs_shared_server") else ""
-            mark += f"  [SKIP: {c['skip']}]" if c.get("skip") else ""
-            print(f"{c['name']:32s} suite={case_suite(c):6s} rk={c.get('rk', 'SKIP'):<5} "
-                  f"{ops:20s} {', '.join(c.get('covers', []))}{mark}")
-        for s in manifest.get("fps_scenes", []):
-            tag = s["route"] + (f"/{s.get('overlay')}" if s.get("overlay") else "")
-            # A bench scene (push/modal/deep-100) gates on missed refreshes, not loop_floor — it
-            # has no `loop_floor` key at all, so assuming one crashed the listing partway through
-            # printing. Print whichever this scene actually declares.
-            if s.get("loop_floor") is not None:
-                gates = f"loop_floor={s['loop_floor']}"
-            elif s.get("bench"):
-                gates = f"bench_missed_max={s.get('bench_missed_max', 0)}"
-            else:
-                gates = "gate=?"
-            if s.get("fps_floor") is not None:
-                gates += f" fps_floor={s['fps_floor']}"
-            if s.get("fps_ceiling") is not None:
-                gates += f" fps_ceiling={s['fps_ceiling']}"
-            if s.get("worst_ceiling_ms") is not None:
-                gates += f" worst_ceiling_ms={s['worst_ceiling_ms']}"
-            if s.get("stall_ceiling_ms") is not None:
-                gates += f" stall_ceiling_ms={s['stall_ceiling_ms']}"
-            if s.get("coldopen_ceiling_ms") is not None:
-                gates += f" coldopen_ceiling_ms={s['coldopen_ceiling_ms']}"
-            mark = "  [+2nd server]" if s.get("needs_shared_server") else ""
-            if mock_fps.scene_mock(s) is not None:
-                mark += "  [mock-only]" if s["mock"].get("only") else "  [mock ok]"
-            mark += f"  [SKIP: {s['skip']}]" if s.get("skip") else ""
-            print(f"fps:{s['name']:28s} tier={s.get('tier','ui'):6s} {tag:16s} {gates}{mark}")
-        print(f"\ninstall: {APPID} [{FLAVOUR}] — runtime root {RUNDIR}")
-        # Offline, so this reports what the OVERLAY says — nothing is resolved and plex.tv is not
-        # called. It is still the answer to "will the [+2nd server] entries above actually run".
-        # `describe_spec` rather than `describe_server` for exactly that reason: with no resolved
-        # `sourceTitle` there is no way to tell a share from your own second machine here, and the
-        # stricter reading is the safe one to guess.
-        ss = manifest.get("shared_server")
-        if ss:
-            print(f"\nsecond server: {describe_spec(ss)} — configured; its access token "
-                  f"is resolved from plex.tv at run time")
-        else:
-            print(f"\nsecond server: not configured in {os.path.basename(MANIFEST_LOCAL)} — any "
-                  f"[+2nd server] entry above is SKIPPED (and --shared-server exits)")
-        return 0
-
-    # PIPELINE tier — the player with no Plex behind it. Placed here, after --list and before
-    # everything that reads a token, because none of what follows applies: no identity to resolve,
-    # no second server, no ratingKey to reset.
-    if not server_tier:
-        if args.suite:
-            sys.exit("--suite selects among the SERVER tier's cases; pass --server with it. "
-                     "(The synthetic tier is the default and has no logic/codec split.)")
-        if args.owner or args.shared_server:
-            sys.exit("--owner / --shared-server are identities on a PMS; the default tier talks to "
-                     "no server. Pass --server if you meant the library-backed cases.")
-        root, pcases = fixtures_root, pipeline_cases
-        if args.filter:
-            pcases = [c for c in pcases if args.filter in c["name"]]
-        _resolve_fixtures(pcases, root)
-        pcases, pskipped = partition_skips(pcases)
-        # Bail BEFORE the server is started and before arm_teardown: arming commits to driving the
-        # television, and its cleanup closes the app on EVERY exit path including this one. A run
-        # with nothing to grade must not close an app somebody is watching.
-        if not pcases:
-            sys.exit(f"no pipeline case can run (fixtures dir: {root})"
-                     + (":\n  " + "\n  ".join(f"{n}  <- {r}" for n, r in pskipped)
-                        if pskipped else f" — --filter {args.filter!r} matched nothing"))
-        srv, url_base = serve(root, port=args.fixtures_port,
-                              sink=(lambda m: print(f"      [srv] {m}")) if args.verbose else None,
-                              peer=cfg["tv"])
-        # LIFO: registered after the server and BEFORE arm_teardown, so on the way out the TV is
-        # cleaned FIRST and the bytes are pulled second. The other order stops serving an app that
-        # is still playing, which turns every interrupted run into a demux failure in the log.
-        atexit.register(srv.shutdown)
-        print(f"install: {APPID} [{FLAVOUR}] — triggers and log under {RUNDIR}")
-        print(f"fixtures: {root}")
-        print(f"serving:  {url_base}  (the TV fetches from this address)")
-        # The television is a mutex for this tier too, and MORE so than for the others: this is
-        # the default suite now, so it is the one somebody runs without thinking. It closes the
-        # app between cases, wipes the runtime root and grades a log it assumes only it is
-        # writing — every reason the server tier takes the lock applies here unchanged.
-        #
-        # Immediately before `arm_teardown`, matching the other two call sites and for a reason:
-        # `teardown` is what releases the lease, so any statement between taking it and arming
-        # that is a window where a failure leaks the television.
-        acquire_tv_lock(cfg["tv"], f"tests/run.py ({len(pcases)} synthetic cases) [{FLAVOUR}]")
-        arm_teardown(cfg["tv"])
-        if args.build:
-            do_build(cfg["tv"])
-        return run_pipeline_suite(pcases, cfg, srv, url_base, args.verbose, pskipped)
-
-    # FPS regression suite — a separate path from the playback cases. UI-tier scenes need no video
-    # (and no PMS token); --fps-player adds the info/menu scenes, which decode video as the test user.
-    if args.fps or args.fps_player:
-        if args.suite:
-            sys.exit("--suite selects playback cases; the FPS scenes use --fps / --fps-player")
-        include_player = args.fps_player
-        selected = fps_for_tiers(manifest.get("fps_scenes", []), include_player, args.filter)
-        # Same partition as the playback cases, and for a sharper reason: run_fps_scene's "$rk"
-        # substitution reads scene["rk"] directly, and the KeyError landed in the batch's blanket
-        # `except` as `[FAIL] ERROR: 'rk'` -- a false FAILURE, indistinguishable from a regression.
-        #
-        # Which scenes THIS server can serve comes first: under --mock only the ones that declare
-        # a `mock` block, and without it never a `mock.only` scene. Before anything reads a token.
-        # `mock_scene` then gives an `item` scene its synthetic `rk` and drops the overlay's
-        # "no such item on this library" skip, which the mock's own library answers.
-        selected, mock_skipped = mock_fps.partition_mock(selected, args.mock)
-        if args.mock:
-            selected = [mock_fps.mock_scene(s) for s in selected]
-        selected, fps_skipped = partition_skips(selected)
-        fps_skipped = list(fps_skipped) + mock_skipped
-        scenes, _skipped = setup_shared(manifest, cfg, args, selected, "scene")
-        # Bail BEFORE read_token() and arm_teardown(): arming commits to driving the television,
-        # and its cleanup closes the app on every exit path -- including this one. A run with
-        # nothing left to grade must not close an app somebody is watching (the same reason
-        # `--list` and a no-match `--filter` return before this point).
-        if not scenes:
-            sys.exit("no FPS scene left to run"
-                     + (":\n  " + "\n  ".join(f"{n}  <- {r}" for n, r in fps_skipped)
-                        if fps_skipped else f" for tier(s) {'ui+player' if include_player else 'ui'}"))
-        if args.graphics_profile and len(scenes) != 1:
-            names = ", ".join(scene["name"] for scene in scenes)
-            sys.exit("--graphics-profile requires exactly one reproducible scene; "
-                     f"--only/--filter currently selected {len(scenes)}: {names}")
-        token = None
-        # A second-server scene needs the FIRST server's token too, whatever its tier: without it
-        # the app boots to QR sign-in and the scene grades a screen it never reached.
-        # `--mock` resolves its own synthetic token per scene, after that scene's mock is up.
-        if not args.mock and fps_run_needs_token(scenes, bool(cfg.get("shared_server"))):
-            admin_token = read_token()
-            test_user = manifest.get("test_user")
-            if args.owner or not test_user:
-                token, cfg["inject_token"] = admin_token, True  # no baked token in the binary
-            else:
-                token = fetch_managed_user_token(admin_token, cfg["pms"]["host"],
-                                                 cfg["pms"]["port"], test_user["id"])
-                cfg["inject_token"] = True
-        print(f"install: {APPID} [{FLAVOUR}] — triggers and log under {RUNDIR}")
-        acquire_tv_lock(cfg["tv"], f"tests/run.py --fps ({len(scenes)} scenes) [{FLAVOUR}]")
-        arm_teardown(cfg["tv"])
-        if args.build:
-            do_build(cfg["tv"], timing=True)
-        # Mock or real server alike: both grade the same frame timing. Recorded in the report.
-        cfg["arm_profile"] = require_release_binary(cfg["tv"])
-        if args.graphics_profile:
-            return run_graphics_profile(
-                scenes[0], cfg, token, args.profile_phase, args.graphics_output
-            )
-        return run_fps_suite(scenes, cfg, token, include_player, fps_skipped)
-
+    cases, skipped = partition_skips(cases)
+    # Bail BEFORE the server is started and before arm_teardown: arming commits to driving the
+    # television, and its cleanup closes the app on EVERY exit path including this one. A run
+    # with nothing to grade must not close an app somebody is watching.
     if not cases:
-        # "matched nothing" and "matched, then skipped for want of an item" are different answers,
-        # and printing the first for the second is how a filter reads as a typo it is not.
-        if item_skipped:
-            sys.exit(f"every case matching --filter {args.filter!r} / --suite {args.suite!r} is "
-                     f"skipped for want of a library item:\n  "
-                     + "\n  ".join(f"{n}  <- {r}" for n, r in item_skipped))
-        sys.exit(f"no cases match --filter {args.filter!r} / --suite {args.suite!r}")
-
-    admin_token = read_token()  # owner token from config.local.h; never printed
-
-    # Resolve the identity every case plays as. Default = the overlay's test_user, so
-    # playback + timeline scrobbles land on that user's history and the owner's real account
-    # stays clean. --owner opts back into the owner token. Neither token is ever printed.
-    test_user = manifest.get("test_user")
-    if args.owner or not test_user:
-        token = admin_token
-        cfg["user_label"] = "owner (config.local.h)"
-        cfg["inject_token"] = True  # the binary has NO baked token; every identity is injected
-        if not args.owner:
-            print("NOTE: no test_user in manifest.local.json -> running as OWNER "
-                  "(history WILL be affected)")
-    else:
-        token = fetch_managed_user_token(admin_token, cfg["pms"]["host"], cfg["pms"]["port"],
-                                         test_user["id"])
-        cfg["user_label"] = f'{test_user.get("title", "managed")} (id={test_user["id"]})'
-        cfg["inject_token"] = True
+        sys.exit(f"no case can run (fixtures dir: {root})"
+                 + (":\n  " + "\n  ".join(f"{n}  <- {r}" for n, r in skipped)
+                    if skipped else f" — --filter {args.filter!r} matched nothing"))
+    srv, url_base = serve(root, port=args.fixtures_port,
+                          sink=(lambda m: print(f"      [srv] {m}")) if args.verbose else None,
+                          peer=cfg["tv"])
+    # LIFO: registered after the server and BEFORE arm_teardown, so on the way out the TV is
+    # cleaned FIRST and the bytes are pulled second. The other order stops serving an app that
+    # is still playing, which turns every interrupted run into a demux failure in the log.
+    atexit.register(srv.shutdown)
     print(f"install: {APPID} [{FLAVOUR}] — triggers and log under {RUNDIR}")
-    print(f"test identity: {cfg['user_label']}  (playback + watch-history isolation)")
-
-    # The second server, if anything selected needs one. AFTER the identity above and before the TV
-    # is touched: it can exit, and an exit here still leaves an app nobody has driven yet alone.
-    cases, shared_skipped = setup_shared(manifest, cfg, args, cases, "case")
-    if not cases:
-        sys.exit("no selected case can run: "
-                 + (f"{len(item_skipped)} skipped for want of a library item, " if item_skipped else "")
-                 + f"{len(shared_skipped)} for want of a second server "
-                 + f"(see {MANIFEST_LOCAL})")
-
+    print(f"fixtures: {root}")
+    print(f"serving:  {url_base}  (the TV fetches from this address)")
+    # The television is a mutex: this run closes the app between cases, wipes the runtime root,
+    # moves the account aside and grades a log it assumes only it is writing. Immediately before
+    # `arm_teardown`, because `teardown` is what releases the lease, so any statement between
+    # taking it and arming is a window where a failure leaks the television.
     acquire_tv_lock(cfg["tv"], f"tests/run.py ({len(cases)} cases) [{FLAVOUR}]")
     arm_teardown(cfg["tv"])
     if args.build:
         do_build(cfg["tv"])
-
-    # `session: stored` cases need a sign-in already on the install (see stored_session_reason).
-    # That is a property of the INSTALL, not of any one case, so it is checked once here — same
-    # shape as the link conditioner below — and an unmet precondition SKIPS just those cases
-    # instead of aborting the whole batch (`sys.exit` inside a per-case `run_case` is NOT caught
-    # by that loop's `except Exception`, so one offline case used to take the other 34 down with
-    # it). A `--filter`/`--suite` that selected ONLY stored-session cases still gets a loud exit
-    # naming the reason, so the operator sees why nothing ran rather than a quiet "0 passed".
-    stored_reason = None
-    if any(c.get("session") == "stored" for c in cases):
-        stored_reason = stored_session_reason(cfg["tv"])
-    cases, stored_skipped = partition_stored_sessions(cases, stored_reason)
-    if stored_skipped:
-        print(f"stored session UNAVAILABLE — {stored_reason}")
-        for c in stored_skipped:
-            print(f"    SKIP {c['name']}: `session: stored` {stored_reason}")
-        if not cases:
-            sys.exit(f"every case matching --filter {args.filter!r} / --suite {args.suite!r} "
-                     f"is `session: stored` and none can run: {stored_reason}")
-
-    # The link conditioner, started ONCE for the tier — the binary points at its port for every
-    # case, conditioned or not, so it cannot be a per-case resource. `usable` decides whether a
-    # case that names a `link_profile` runs or skips; nothing else changes.
-    _host, listen = compiled_pms_endpoint()
-    cond = LinkConditioner(listen, (cfg["pms"]["host"], cfg["pms"]["port"]), cfg["tv"])
-    cond.start()
-    atexit.register(cond.close)
-    shaped, link_skipped = [c for c in cases if c.get("link_profile")], []
-    if shaped:
-        if cond.usable:
-            print(f"link conditioner: :{listen} -> PMS, {len(shaped)} shaped case(s)")
-        else:
-            print(f"link conditioner UNAVAILABLE — {cond.why}")
-            for c in shaped:
-                print(f"    SKIP {c['name']}: needs a conditioned link")
-            cases = [c for c in cases if not c.get("link_profile")]
-            link_skipped = shaped
-
-    summary = []
-    for c in cases:
-        try:
-            passed, results, _ = run_case(c, cfg, token, args.verbose, cond=cond)
-        except Exception as e:  # keep the batch going; record the failure
-            print(f"    ERROR running {c['name']}: {e}")
-            passed, results = False, [("harness", False, str(e))]
-        fails = [label for label, ok, _ in results if not ok]
-        summary.append((c["name"], passed, fails, c.get("known_gap")))
-
-    # final table. A case tagged `known_gap` that fails is XFAIL (a documented, expected gap —
-    # not a regression); it does NOT fail the suite. If it unexpectedly passes it is XPASS.
-    print("\n" + "=" * 72)
-    print("SUMMARY")
-    print("=" * 72)
-    npass = real_fail = nxfail = 0
-    for name, passed, fails, gap in summary:
-        if passed:
-            npass += 1
-            mark = "XPASS" if gap else "PASS"
-            detail = "  (known gap unexpectedly passes)" if gap else ""
-        elif gap:
-            nxfail += 1
-            mark = "XFAIL"
-            detail = "  <- " + ", ".join(fails) + f"  (known gap: {gap})"
-        else:
-            real_fail += 1
-            mark = "FAIL"
-            detail = "  <- " + ", ".join(fails)
-        print(f"  [{mark}] {name}{detail}")
-    # A case that was never run is reported, never counted as a pass: an installation missing a
-    # media shape -- or a friend's server -- must be able to see, in the summary, exactly what its
-    # matrix did not cover. The bare pass count is the number that gets quoted; it must never be
-    # quotable without the skips beside it.
-    for name, reason in item_skipped:
-        print(f"  [SKIP] {name}  <- {reason}")
-    for name in shared_skipped:
-        print(f"  [SKIP] {name}  <- needs a second server; none configured in "
-              f"{os.path.basename(MANIFEST_LOCAL)}")
-    for c in link_skipped:
-        print(f"  [SKIP] {c['name']}  <- needs a conditioned link: {cond.why}")
-    for c in stored_skipped:
-        print(f"  [SKIP] {c['name']}  <- `session: stored` {stored_reason}")
-    nskip = len(shared_skipped) + len(item_skipped) + len(link_skipped) + len(stored_skipped)
-    tail = f", {nskip} skipped" if nskip else ""
-    print(f"\n{npass} passed, {real_fail} failed, {nxfail} known-gap of {len(summary)}{tail}")
-    return 0 if real_fail == 0 else 1
+    return run_pipeline_suite(cases, cfg, srv, url_base, args.verbose, skipped)
 
 
 if __name__ == "__main__":

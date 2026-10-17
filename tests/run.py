@@ -1046,183 +1046,38 @@ def pms_reset_streams(host, port, rk, token, parts=None):
 # ---------------------------------------------------------------------------
 # Trigger derivation
 # ---------------------------------------------------------------------------
-def triggers_for_case(case, url_base=None):
+def triggers_for_case(case, url_base):
     """
-    Map a case's operations -> the dispatcharrtv-* files to write in the TV's runtime root.
+    Map a case to the dispatcharrtv-* files to write in the TV's runtime root.
     Returns a list of (filename, content-or-None) pairs; None => `touch` (empty marker).
 
-    `url_base` selects the TIER, and it selects only the entry trigger: a pipeline case names a
-    generated file served over HTTP from this machine and declares its own Load payload
-    (`dispatcharrtv-playurl`), an integration case names a ratingKey on the PMS
-    (`dispatcharrtv-play`). Everything after that — the seek scripts especially — is the same
-    machinery driving the same engine, which is why this is one function with two heads rather
-    than two functions that would drift apart at the first new operation.
+    A case names a generated file served over HTTP from this machine and declares its own Load
+    payload (`dispatcharrtv-playurl`, `player::playurl::PlayUrl`).
     """
-    if url_base is not None:
-        # JSON, whole-file — player::playurl::PlayUrl. `separators` drops the spaces `json.dumps` would put
-        # after ':' and ',': they are legal JSON and the parser takes them, but this string is
-        # about to be printed in the case header and pasted into issues, and short is legible.
-        # Today's fields contain no apostrophe (a URL from `lan_ip()` plus codec names plus
-        # numbers), and apply_triggers still shell-quotes the complete value rather than making
-        # that incidental property the remote command's security boundary.
-        spec = dict(case.get("declare", {}))
-        spec["url"] = f"{url_base}/{case['fixture']}"
-        files = [("dispatcharrtv-playurl", json.dumps(spec, separators=(",", ":")))]
-        files.append(("dispatcharrtv-stats", None))
-        auto = case.get("auto_network")
-        if auto:
-            spec["auto_source_kbps"] = int(auto["source_kbps"])
-            spec["auto_hls_base"] = f"{url_base}/__abr"
-            # Enter HLS directly rather than by provoking a starvation. Declared per case: the one
-            # case that GRADES the Original->HLS transition must not skip it. See
-            # `player::playurl::PlayUrl::auto_start_hls` — the old entry relied on the starvation horizon
-            # firing while the reserve was filling, which stopped being possible on 2026-08-27.
-            if auto.get("start_hls"):
-                spec["auto_start_hls"] = True
-            # **The SOURCE raster, which is what decides whether the 4K actuator is feasible.**
-            # `route::arm_auto_fixture` defaults to 1080p, so omitting this leaves every existing
-            # case byte-identical; declaring [3840, 2160] is the only way a case can reach the Uhd
-            # rung, and until `tests/serve_fixtures.py` answered 22000 there was no such way at
-            # all. `[w, h]`.
-            if auto.get("source_raster"):
-                spec["source_raster"] = [int(v) for v in auto["source_raster"]]
-            files[0] = ("dispatcharrtv-playurl", json.dumps(spec, separators=(",", ":")))
-            files.append(("dispatcharrtv-quality", "auto"))
-            # Pin Auto's ladder to one actuator for the whole case, by REQUEST rate. Measurement
-            # step M4 needs a rung held long enough to read a settled reserve at it, and the
-            # playback-quality selector cannot do it: a non-Auto quality returns `None` from
-            # `route::hls_abr_control` before a controller exists, and the quality ladder has no
-            # mid-1080p points. Absent => ordinary Auto.
-            if case.get("abr_pin"):
-                files.append(("dispatcharrtv-abrpin", str(int(case["abr_pin"]))))
-            # The A/B selector increments I5 and I6 need. It must come through the manifest and
-            # not be armed by hand: `apply_triggers` wipes every dispatcharrtv-* in the runtime root
-            # before each case, so a hand-armed trigger cannot survive into the case it is meant
-            # to switch. Inert today — nothing reads it until a second policy path exists.
-            if case.get("abr_policy"):
-                files.append(("dispatcharrtv-abrpolicy", str(case["abr_policy"])))
-        # `dispatcharrtv-replay=<n>` — how many times a FINISHED playback restarts itself (LG #46).
-        # Keyed off `expect.replays`, so the number the app is TOLD and the number the harness
-        # GRADES are one statement rather than two that nothing keeps in step. Absent => the
-        # trigger is not written at all, which is the one-shot behaviour every other case wants.
-        n = case.get("expect", {}).get("replays", 0)
-        if n:
-            files.append(("dispatcharrtv-replay", str(n)))
-    else:
-        # Pin the routing contract instead of inheriting whatever the person last selected on the
-        # television. The established PMS matrix grades direct-play/remux/progressive transcode,
-        # so its default is Original; a future adaptive case opts in with `"quality": "auto"`.
-        # This trigger is an in-memory override and never changes the persisted user preference.
-        files = [
-            ("dispatcharrtv-play", case["rk"]),  # the robust play trigger (fetches any rk)
-            ("dispatcharrtv-quality", case.get("quality", "original")),
-            ("dispatcharrtv-stats", None),
-        ]
+    # JSON, whole-file. `separators` drops the spaces `json.dumps` would put after ':' and ',':
+    # they are legal JSON and the parser takes them, but this string is about to be printed in
+    # the case header and pasted into issues, and short is legible. apply_triggers shell-quotes
+    # the complete value rather than relying on what today's fields happen not to contain.
+    spec = dict(case.get("declare", {}))
+    spec["url"] = f"{url_base}/{case['fixture']}"
+    files = [("dispatcharrtv-playurl", json.dumps(spec, separators=(",", ":"))),
+             ("dispatcharrtv-stats", None)]
+    # `dispatcharrtv-replay=<n>` — how many times a FINISHED playback restarts itself (LG #46).
+    # Keyed off `expect.replays`, so the number the app is TOLD and the number the harness
+    # GRADES are one statement. Absent => the trigger is not written at all.
+    n = case.get("expect", {}).get("replays", 0)
+    if n:
+        files.append(("dispatcharrtv-replay", str(n)))
     gst_debug = case.get("gst_trace", {}).get("debug")
     if gst_debug:
         files.append(("dispatcharrtv-gstlog", gst_debug))
-    # issue #266 PR4 review: force the PERSISTED Boost Dialog / Normalize Loudness preference at
-    # boot on EVERY case, not just the two that exercise it — `dev::scenarios::arm_audio_enhancements`
-    # calls the real persisting setter, so a case's starting preference is a property of the
-    # manifest instead of of whatever a PREVIOUS case's (or a real person's) toggle left behind. A
-    # case opts into a non-off start with `"audio_enhancements_boot": "loudness"` (used by the
-    # reset case below to prove the cold-start "a saved preference forces a remux" path);
-    # everything else gets `"off"`.
-    files.append(("dispatcharrtv-audioenh", case.get("audio_enhancements_boot", "off")))
     # Arbitrary extra dev triggers, `{"name": content}` → `dispatcharrtv-<name>` in the runtime root
     # (`null` for a bare flag). For the one-run experiments a trigger exists for — `sinkmax`,
     # `nofps` — without teaching the harness a key per knob; the case's own triggers above win on
     # a name clash because they are written first and the app reads each name once.
     for name, content in (case.get("triggers") or {}).items():
         files.append((f"dispatcharrtv-{name}", content))
-    for op in case["operations"]:
-        kind = op["op"]
-        if kind == "seek" and op.get("mode") == "rapid":
-            # seek SCRIPT: comma-separated steps fired one per ~300ms — absolute seconds or
-            # tap-relative +N/-N (vs the last requested target). Exercises seek coalescing.
-            files.append(("dispatcharrtv-autoseek", op["script"]))
-        elif kind == "seek":
-            # The TARGET, always, on both tiers — because the manifest already declares it and
-            # `evaluate` already grades against it (`op.get("target_s", 140)`), so writing an empty
-            # marker instead meant "where the case seeks" and "where the case asserts it seeked"
-            # were two independent statements of the same number that nothing kept in step.
-            #
-            # This was briefly a pipeline-only arm, on the theory that making the server tier write
-            # its target would swap an app code path. That theory was WRONG and the app says so:
-            # `devtrig::read` returns Some("") for an empty file, and app.rs splits on ',', drops empty
-            # tokens, then does `if steps.is_empty() { steps.push("140") }` — so an empty file and
-            # the content "140" converge to a byte-identical `steps == ["140"]` before any seek
-            # logic runs. There is no second path to preserve. The app's empty-file default
-            # survives as a by-hand affordance, exercised by no case, which is its correct status.
-            #
-            # `delay_ms` is what makes a seek reachable from an ABR case. The app fires the first
-            # step at a fixed ~12 s after the player route is entered, and an ABR transaction needs
-            # tens of seconds of samples before it can COMMIT — so without a delay every seek in
-            # this suite lands before the controller has ever switched, and the state either side
-            # of a seek-after-a-switch is untestable. It is not the same quantity as `gap_ms` (the
-            # cadence BETWEEN rapid steps) and the app parses them as two tokens for that reason;
-            # expressing the wait as a gap would need a throwaway first seek, which would then be
-            # in the log this case grades.
-            target = str(op.get("target_s", 140))
-            delay_ms = op.get("delay_ms")
-            files.append((
-                "dispatcharrtv-autoseek",
-                f"delay={int(delay_ms)},{target}" if delay_ms else target,
-            ))
-        elif kind == "skip":
-            files.append(("dispatcharrtv-marker", op["marker"]))
-        elif kind == "marker":
-            # jump to 5s before the named server marker, so the skip/Up Next control row is
-            # reachable in seconds instead of 50 minutes into an episode
-            files.append(("dispatcharrtv-marker", op["marker"]))
-        elif kind == "quality_switch":
-            # The rungs to switch to WHILE IT PLAYS, in the app's own wire vocabulary — the same
-            # strings `dispatcharrtv-quality` accepts and `quality: switch → …` prints, so the case
-            # states each rung once. `gap_ms` only appears when there is more than one step,
-            # because with one there is no cadence to state.
-            steps = op["to"] if isinstance(op["to"], list) else [op["to"]]
-            gap = f'gap={op["gap_ms"]},' if len(steps) > 1 else ""
-            files.append(("dispatcharrtv-qualityswitch", gap + ",".join(steps)))
-        elif kind == "audio_switch":
-            files.append(("dispatcharrtv-menupick", f'{op["tab"]},{op["row"]}'))
-        elif kind == "subtitle":
-            files.append(("dispatcharrtv-menupick", f'{op["tab"]},{subtitle_menupick_target(op)}'))
-        elif kind == "audio_enhancement":
-            # issue #266: the Boost Dialog / Normalize Loudness rows live on the Audio tab (0),
-            # appended after the audio tracks (`track_menu.rs`'s `audio_form`). `menupick` names
-            # them rather than stating a row: `TrackRow`/`TrackMenuState::row_for_audio_target`
-            # resolve "boost"/"loudness" through the SAME row map `on_ok` dispatches on, so the
-            # trigger is correct regardless of the item's own track count — the derived-row-number
-            # dance this replaced (PR4's fix for a row hardcoded against a wrong track count) is
-            # gone; there is no track count to get wrong any more.
-            which = op.get("which", "normalize_loudness")
-            name = "boost" if which == "boost_dialog" else "loudness"
-            files.append(("dispatcharrtv-menupick", f'0,{name}'))
-        elif kind == "pause_resume":
-            files.append((
-                "dispatcharrtv-autopause",
-                f'delay={int(op.get("delay_ms", 0))},hold={int(op["hold_ms"])}',
-            ))
-        # "play", startup "resume" and "audio_enhancement_burn" (when it names no "row" — a
-        # cold-start proof against an item whose subtitle is already server-selected) need no extra
-        # trigger: the last of those grades the boot-forced preference the `dispatcharrtv-audioenh`
-        # trigger above already wrote, and there is no menu row to pick — the candidate becomes an
-        # enhanced Burn before the first frame (resume rides the seeded viewOffset).
     return files
-
-
-def key_inject_for_case(case):
-    """(log-pattern, remote-token) for a case that presses a key MID-RUN, or None.
-
-    The app mkfifos dispatcharrtv-remote in its runtime root and drains it every frame, so a token
-    written while it runs replays through the real key handler. Keying the write to a LOG LINE
-    rather than to a wall-clock delay is what makes it deterministic: the press lands the moment
-    the control is actually on screen, however long the resolve took.
-    """
-    for op in case["operations"]:
-        if op["op"] == "skip":
-            return (f"marker offer: {op['marker'].capitalize()}", op.get("press", "ok"))
-    return None
 
 
 def apply_triggers(tv, files, extra=None):
@@ -4979,26 +4834,12 @@ def _resolve_fixtures(cases, root):
 def evaluate_pipeline(case, lines, srv_delta, gst_lines=None):
     """Every assertion for a pipeline case. Returns (passed, [(label, ok, evidence)]).
 
-    A separate function rather than a flag threaded through `evaluate`, for one concrete reason:
-    `evaluate` calls `a_timeline_post` UNCONDITIONALLY, with no `expect` key that could switch it
-    off, and that assertion can never hold here. Splitting keeps the integration tier's behaviour
-    bit-identical instead of making it depend on a flag it never sets.
     """
     exp = case["expect"]
-    results = [("stream_path", *a_stream_path(
-        lines, case["fixture"],
-        hls_entry=bool((case.get("auto_network") or {}).get("start_hls"))))]
+    results = [("stream_path", *a_stream_path(lines, case["fixture"]))]
     results.append(("load_decl", *a_load_decl(lines, exp)))
     if "load_count_exact" in exp:
         results.append(("load_count", *a_load_count(lines, exp["load_count_exact"])))
-    if "auto_fallback_max_kbps" in exp:
-        results.append(("auto_network", *a_auto_network_recovery(
-            lines, exp["auto_fallback_max_kbps"], exp["abr_recovery_min_kbps"])))
-    if "abr_shape" in exp:
-        # The shaper's own schedule, stashed on the case by `run_pipeline_case` before
-        # grading. The dip window must come from the PLANT, never from the app's observations.
-        results.append(("abr_shape", *a_abr_shape(
-            lines, exp["abr_shape"], case.get("_dip_windows", ()))))
     if exp.get("require_audio_feed_ready"):
         results.append(("audio_feed", *a_audio_feed_ready(lines)))
     if exp.get("no_reload"):
@@ -5026,21 +4867,7 @@ def evaluate_pipeline(case, lines, srv_delta, gst_lines=None):
         results.append(("gst_cadence", *a_gst_resolution_trace(
             gst_lines or [], exp, case.get("gst_trace", {}))))
 
-    for op in case.get("operations", []):
-        if op["op"] == "quality_switch":
-            steps = op["to"] if isinstance(op["to"], list) else [op["to"]]
-            results.append(("quality_switch", *op_quality_switch(lines, steps)))
-        elif op["op"] == "seek" and op.get("mode") == "rapid":
-            results.append(("seek_rapid", *op_seek_rapid(lines, op["final_s"])))
-        elif op["op"] == "seek" and op.get("mode") == "refused":
-            results.append(("seek_refused", *op_seek_refused(lines, op.get("target_s", 140))))
-        elif op["op"] == "seek":
-            results.append(("seek_inplace", *op_seek_inplace(lines, op.get("target_s", 140))))
-        elif op["op"] == "pause_resume":
-            results.append(("pause_resume", *op_pause_resume(
-                lines, op.get("min_climb_after_s", 8))))
-
-    # Last, so its evidence sits next to the seek assertion it corroborates.
+    # Last: the wire counters corroborate stream_path from the server side.
     results.append(("server_wire", *a_server_wire(
         srv_delta, exp.get("server_opens_min", 1), exp.get("server_range_opens_min", 0),
         exp.get("server_opens_exact"), exp.get("server_range_opens_exact"))))

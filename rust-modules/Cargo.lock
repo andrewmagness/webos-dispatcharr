@@ -754,7 +754,6 @@ dependencies = [
  "plx_base",
  "plx_net",
  "plx_platform",
- "plx_plex",
  "serde",
  "serde_json",
 ]

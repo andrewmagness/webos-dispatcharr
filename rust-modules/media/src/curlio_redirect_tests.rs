@@ -396,7 +396,7 @@ fn the_token_in_the_original_url_never_reaches_a_cross_host_redirect_target_but_
     assert_eq!(arrived.len(), 1);
     assert_eq!(arrived[0].lines().next().unwrap_or_default(), "GET /cdn/video.mkv?sig=abc HTTP/1.1", "the hop is the Location, and only the Location");
     assert!(!arrived[0].to_ascii_lowercase().contains("x-plex-token") && !arrived[0].contains(TOKEN), "no trace of the token on the hop: {:?}", arrived[0]);
-    let agent = plx_plex::plex::identity::user_agent();
+    let agent = plx_base::identity::user_agent();
     assert!(!agent.is_empty());
     assert_eq!(header(&asked[0], "user-agent").as_deref(), Some(agent.as_str()));
     assert_eq!(header(&arrived[0], "user-agent").as_deref(), Some(agent.as_str()), "the User-Agent follows the request to the next host");

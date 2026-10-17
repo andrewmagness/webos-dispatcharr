@@ -7,11 +7,8 @@
 //! there is still no network to hide behind. [`queue`] is the framing and caps, pure; [`spool`] is
 //! the file those bytes live in and the one owner every read and write goes through; [`sender`] is
 //! the socket, and the place the credential split decides which project this build reports to.
-//! [`incident`] is the closed onboarding-failure schema, sent either as a standing report or — to
-//! somebody who was never asked, or said Yes before it existed — as a one-off on an explicit press,
-//! whose bounded transport is [`oneoff`]. Either one's Report ID is watched in [`delivery`], which
-//! the flush, the spool and the one-off fallback all settle, so the screen can say "sent" only once
-//! a server accepted it. [`classes`] is the closed vocabulary [`playback`] serialises, owned here so
+//! A report's ID is watched in [`delivery`], which the flush and the spool settle, so a screen can
+//! say "sent" only once a server accepted it. [`classes`] is the closed vocabulary [`playback`] serialises, owned here so
 //! the player classifies INTO it rather than this layer naming the player; [`transition`] is what a
 //! consent change does to the resources this module keeps.
 //!
@@ -24,8 +21,6 @@ pub mod classes;
 pub mod consent;
 pub mod crashreport;
 pub mod delivery;
-pub mod incident;
-pub mod oneoff;
 pub mod persistence;
 pub mod native;
 pub mod window;
@@ -52,7 +47,7 @@ static RELEASE: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
 /// env!("PLX_VERSION"))`, composed at compile time in ITS crate, because `ci/check-package.py`
 /// grades the packaged binary for exactly that contiguous string; a `format!` here would leave the
 /// prefix and the number in different places. It is the second statement of `enter_application`,
-/// right behind `plex::identity::set_version`, which `app::boot::seam_order_tests` pins. Idempotent
+/// right behind `plx_base::identity::set_version`, which `app::boot::seam_order_tests` pins. Idempotent
 /// for the same string; a different one is a wiring bug and is refused in a debug build.
 pub fn set_release(release: &'static str) {
     debug_assert!(release.starts_with(RELEASE_PREFIX), "telemetry::set_release takes `dispatcharrtv@<version>`");

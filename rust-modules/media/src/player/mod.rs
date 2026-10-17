@@ -528,7 +528,7 @@ pub fn state(ps: &crate::route::PlaybackSession) -> shared::PlaybackState {
 /// menu alone and is force-closed on leaving playback, so a failed session had no way to show them.
 ///
 /// Pure. Every part is a product identity or a closed vocabulary: the version every surface shares
-/// (`plex::identity`), the firmware release, the set (model · board · hw — the rule
+/// (`plx_base::identity`), the firmware release, the set (model · board · hw — the rule
 /// `app::diagnostics::device_rows` states: shared by every unit LG built, saying nothing about a
 /// household) and [`FailureKind::code`], the same string the telemetry channel sends. It never
 /// carries `ErrorShape::detail`, the server's free text, which is the one thing here that could
@@ -545,62 +545,23 @@ fn support_line_of(i: &plx_platform::tv::device::Info, hw: &plx_platform::tv::de
     let set: &str = if set.is_empty() { plx_platform::i18n::msg::settings_login_unknown_device() } else { &set };
     format!(
         "{} {} · {} · {} · {}",
-        plx_plex::plex::identity::DISPLAY_NAME,
-        plx_plex::plex::identity::version(),
+        plx_base::identity::DISPLAY_NAME,
+        plx_base::identity::version(),
         plx_platform::i18n::webos_release_line(i),
         set,
         kind.code()
     )
 }
 
-/// The `Error` state's wording, shaped by WHY — issue #22's lesson: `ff: no video stream` was
-/// technically true and cost the reviewer a full server-side investigation that the sentence
-/// "the server sent audio only" would have ended. Pure so every arm is host-testable; the two
-/// wrappers below feed it the globals (main thread only — `route::is_transcoding` reads
-/// main-thread state).
-///
-/// `sub` is `plex::serverinfo`'s Plex Pass tristate, an explicit parameter for the same purity.
-/// It sharpens the WORDING of the transcode arm and nothing more — and on a KNOWN-free server it
-/// appends the subscription as a support FACT, never as the cause. The distinction is the
-/// codebase's own audit: docs/plex-pass-audit.md row 1 says h264 encoding is free everywhere,
-/// and the profile's target chain ends in h264 precisely so a free server always HAS a usable
-/// video target — so reaching this arm on one means something ELSE failed (a source the server's
-/// ffmpeg cannot decode, transcoding disabled server-side), and "it cannot encode video without
-/// Plex Pass" was asserting a cause the profile had already ruled out, pointing the user at a
-/// purchase that would fix nothing. Known-true or unknown keeps the neutral wording alone: a
-/// subscription the app cannot prove absent must never even be named. (And wording is as far as
-/// subscription state may ever reach into playback — see `serverinfo::subscription`'s doc for
-/// why it is not a routing input.)
-///
-/// The (no-video, not-transcoding) arm — an audio-only DIRECT-PLAYED file — is worded for the
-/// file because that is the truth there: route only direct-plays when PMS metadata names an
-/// h264/hevc video track, so reaching it means the file disagrees with its own metadata.
-/// One error, three surfaces — the HUD caption, the diagnostics panel's verdict line, and the
-/// full-screen read-out (`Player Screen.dc.html`, the spec that superseded the retired
-/// `Plex Pass Awareness.dc.html` for this screen) — shaped in ONE place so
-/// they can never disagree about what happened. `no_pass` is the read-out's cue to draw the
-/// filled PLEX PASS capsule: a support FACT beside the reason, never the cause (see the arm
-/// comment above).
 /// **Why a playback failed, as a closed set.** Drives the wording below AND the telemetry code, so
 /// the two are one decision.
 ///
-/// Current variants are outcomes `error_shape` can tell apart. The retired `original_rollback`
-/// wire code (the destructive probe transaction was removed) has no cause here any more and lives
-/// on only as `telemetry::classes::FailureClass::OriginalRollback`, so old telemetry fixtures and
-/// dashboards retain their meaning. Runtime source, interrupted-playback and `Load` failures became
+/// Current variants are outcomes `error_shape` can tell apart. Runtime source, interrupted-playback and `Load` failures became
 /// distinct only when their worker signals existed. A video-plane bind or stalled feed still
 /// reaches [`Unspecified`](FailureKind::Unspecified) until an equally concrete signal exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {
-    /// `/decision` refused the item outright — the server can neither direct play nor convert it.
-    /// The earliest and most certain failure: it happens before an engine exists.
-    DecisionRefused,
-    /// The explicit Direct Play policy cannot deliver the requested original stream.
-    PlaybackPolicy,
-    /// Transcoding, and the server produced no video stream — it found no usable video target.
-    NoVideoTranscodeTarget,
-    /// Direct playing, and the stream carries no video track, so the file disagrees with the PMS
-    /// metadata that made us choose direct play.
+    /// The stream carries no video track.
     NoVideoTrack,
     /// The producer never opened a usable media stream or produced a video access unit.
     MediaSource,
@@ -631,9 +592,6 @@ impl FailureKind {
     pub fn class(self) -> plx_telemetry::telemetry::classes::FailureClass {
         use plx_telemetry::telemetry::classes::FailureClass as C;
         match self {
-            FailureKind::DecisionRefused => C::DecisionRefused,
-            FailureKind::PlaybackPolicy => C::PlaybackPolicy,
-            FailureKind::NoVideoTranscodeTarget => C::NoVideoTranscodeTarget,
             FailureKind::NoVideoTrack => C::NoVideoTrack,
             FailureKind::MediaSource => C::MediaSource,
             FailureKind::PlaybackInterrupted => C::PlaybackInterrupted,
@@ -736,25 +694,16 @@ pub struct ErrorShape {
     /// through an inner `if`.)
     pub kind: FailureKind,
     pub caption: &'static std::ffi::CStr,
-    /// the diagnostics panel's verdict suffix — always present in `Error`, and includes the
-    /// subscription fact in words because the panel is plain text
+    /// the diagnostics panel's verdict suffix — always present in `Error`
     pub panel: &'static str,
-    /// the read-out's reason line — sentence case, subscription fact NOT baked in (the
-    /// read-out states it as its own line, with the capsule)
+    /// the read-out's reason line — sentence case
     pub readout: &'static str,
-    /// Additional reason and recovery instructions for the viewer. A PMS verdict is preserved
-    /// verbatim; local policy failures and Force recovery copy are authored by the app.
-    /// Owned strings borrow from the playback session only while this shape is constructed.
+    /// Additional reason and recovery instructions for the viewer, authored by the app.
     ///
     /// **It deliberately does NOT reach `panel`.** The diagnostics panel is a PHOTOGRAPH — its
-    /// module doc bans URLs, paths and item titles from it, and a PMS decision sentence is
-    /// untrusted free text that can carry a filename. So the viewer's own screen quotes the
-    /// server and the shared support surface names only what the app decided; the asymmetry is
-    /// the redaction rule, not an oversight.
+    /// module doc bans URLs, paths and item titles from it; this line is for the viewer's own
+    /// screen.
     pub detail: std::borrow::Cow<'static, str>,
-    /// true only when the failure is the audio-only transcode AND the server is known to have
-    /// no Plex Pass — the one case the capsule appears
-    pub no_pass: bool,
 }
 
 /// Which runtime boundary ended playback after route resolution succeeded.
@@ -825,7 +774,6 @@ fn unsupported_video_shape(codec: &str) -> ErrorShape {
         panel: plx_platform::i18n::msg::dispatcharr_live_unsupported_video(),
         readout: plx_platform::i18n::msg::dispatcharr_live_unsupported_video(),
         detail: std::borrow::Cow::Owned(plx_platform::i18n::msg::dispatcharr_live_unsupported_help(name)),
-        no_pass: false,
     }
 }
 
@@ -848,58 +796,15 @@ fn jail_error_shape() -> ErrorShape {
         detail: std::borrow::Cow::Borrowed(
             plx_platform::i18n::msg::widgets_reason_jail_help(),
         ),
-        no_pass: false,
     }
 }
 
-fn error_shape(
-    no_video: bool,
-    transcoding: bool,
-    sub: plx_plex::plex::serverinfo::Subscription,
-    verdict: Option<&str>,
-    runtime: RuntimeFailure,
-) -> ErrorShape {
-    let no_pass = sub == plx_plex::plex::serverinfo::Subscription::No;
-    // FIRST, because it is the earliest thing that can fail and the most certain thing we can say:
-    // the server adjudicated the request at `/decision` and refused BOTH lanes before any of the
-    // signals below could exist (no engine ran, so `no_video` is simply false here). The two lines
-    // it produces are different KINDS of sentence — ours states what happened, mapped from the
-    // decision CODE; the server's is quoted verbatim beneath it.
-    //
-    // `no_pass` is FALSE on this arm on purpose, and it stays false on a server we KNOW has no Plex
-    // Pass and even when the encoder the server names happens to be HEVC. The server told us the
-    // cause; naming a subscription beside it would be exactly the speculation the tristate rule
-    // forbids — and it would be wrong twice over, since the arm is reachable for any source the
-    // server's own ffmpeg cannot decode, which no subscription changes.
-    if let Some(v) = verdict {
-        return ErrorShape {
-            kind: FailureKind::DecisionRefused,
-            caption: plx_platform::i18n::msg::widgets_failure_refused_c(),
-            // The panel's line is ours and static; the server's sentence rides on `detail`, whose
-            // surface (the full-screen read-out) is the one that can hold a whole sentence.
-            panel: plx_platform::i18n::msg::widgets_panel_refused(),
-            readout: plx_platform::i18n::msg::widgets_reason_refused(),
-            // OWNED since phase 9: the verdict is borrowed from the caller's session publication
-            // rather than from a `static mut`, so it cannot be lent for `'static`. One allocation,
-            // on the path where a playback has already failed.
-            detail: std::borrow::Cow::Owned(v.to_owned()),
-            no_pass: false,
-        };
-    }
-    if no_video && transcoding {
-        return ErrorShape {
-            kind: FailureKind::NoVideoTranscodeTarget,
-            caption: plx_platform::i18n::msg::widgets_failure_audio_only_c(),
-            panel: if no_pass {
-                plx_platform::i18n::msg::widgets_panel_audio_only_no_pass()
-            } else {
-                plx_platform::i18n::msg::widgets_panel_audio_only()
-            },
-            readout: plx_platform::i18n::msg::widgets_reason_audio_only(),
-            detail: std::borrow::Cow::Borrowed(""),
-            no_pass,
-        };
-    }
+/// The `Error` state's wording, shaped by WHY — issue #22's lesson: `ff: no video stream` was
+/// technically true and cost the reviewer a full server-side investigation that the sentence
+/// "the server sent audio only" would have ended. One error, three surfaces — the HUD caption, the
+/// diagnostics panel's verdict line and the full-screen read-out — shaped in ONE place so they can
+/// never disagree about what happened. Pure, so every arm is host-testable.
+fn error_shape(no_video: bool, runtime: RuntimeFailure) -> ErrorShape {
     if no_video {
         return ErrorShape {
             kind: FailureKind::NoVideoTrack,
@@ -907,7 +812,6 @@ fn error_shape(
             panel: plx_platform::i18n::msg::widgets_panel_no_video(),
             readout: plx_platform::i18n::msg::widgets_reason_no_video(),
             detail: std::borrow::Cow::Borrowed(""),
-            no_pass: false,
         };
     }
     match runtime {
@@ -917,7 +821,6 @@ fn error_shape(
             panel: plx_platform::i18n::msg::widgets_panel_open(),
             readout: plx_platform::i18n::msg::widgets_reason_open(),
             detail: std::borrow::Cow::Borrowed(""),
-            no_pass: false,
         },
         RuntimeFailure::PlaybackInterrupted => ErrorShape {
             kind: FailureKind::PlaybackInterrupted,
@@ -925,7 +828,6 @@ fn error_shape(
             panel: plx_platform::i18n::msg::widgets_panel_stopped(),
             readout: plx_platform::i18n::msg::widgets_reason_stopped(),
             detail: std::borrow::Cow::Borrowed(""),
-            no_pass: false,
         },
         RuntimeFailure::TvPipeline => ErrorShape {
             kind: FailureKind::TvPipeline,
@@ -933,7 +835,6 @@ fn error_shape(
             panel: plx_platform::i18n::msg::widgets_panel_tv_rejected(),
             readout: plx_platform::i18n::msg::widgets_reason_tv_rejected(),
             detail: std::borrow::Cow::Borrowed(""),
-            no_pass: false,
         },
         // A DIFFERENT `kind` from `TvPipeline` (issue #74 D.1.4's budget is a hang, not a firmware
         // refusal — see `RuntimeFailure::LoadTimeout`'s doc), and now its own reader-facing wording
@@ -945,7 +846,6 @@ fn error_shape(
             panel: plx_platform::i18n::msg::widgets_panel_load_timeout(),
             readout: plx_platform::i18n::msg::widgets_reason_load_timeout(),
             detail: std::borrow::Cow::Borrowed(""),
-            no_pass: false,
         },
         RuntimeFailure::Unknown => ErrorShape {
             kind: FailureKind::Unspecified,
@@ -953,54 +853,13 @@ fn error_shape(
             panel: plx_platform::i18n::msg::widgets_panel_unknown(),
             readout: plx_platform::i18n::msg::widgets_reason_unknown(),
             detail: std::borrow::Cow::Borrowed(""),
-            no_pass: false,
         },
     }
 }
-/// The Plex Pass claim that applies to THIS failure: the subscription of the server the PLAYING
-/// item came from.
-///
-/// **Never `serverinfo::subscription()`**, which answers for whichever server is *current* — and
-/// `current` stays pinned to the primary while a borrowed film plays (`plex::servers`' own rule:
-/// browsing a share does not re-point it). Both polarities are wrong and both are silent: a film
-/// borrowed from a Pass-less share loses the "(server has no Plex Pass)" clause and the read-out's
-/// capsule, which is exactly the support fact issue #22 was reported without; and our own Pass-less
-/// server would put that capsule on a failure that came from a friend's Pass'd machine, asserting a
-/// fact about a server that has nothing to do with it. `serverinfo::subscription_of` exists for
-/// this, and `route::cur_sid` is the playing item's own server — captured once at `request_play`
-/// and installed by `apply_plan`, which runs before either signal that can flip the state to
-/// `Error` (the plan's own refusal and the engine it would otherwise have started).
-///
-/// MAIN THREAD, like every other reader of `route`'s playback state.
-fn playing_subscription(ps: &crate::route::PlaybackSession) -> plx_plex::plex::serverinfo::Subscription {
-    plx_plex::plex::serverinfo::subscription_of(crate::route::cur_sid(ps))
-}
 
-/// Keep the runtime diagnosis while making the active override and its recovery path visible.
-/// A failed strict-original request is a policy failure, not evidence that PMS cannot convert
-/// the file: conversion was never allowed. The mode snapshot supplies that distinction; no
-/// user-facing sentence or firmware error string is parsed to decide it.
-fn with_forced_playback_context(mut shape: ErrorShape, forced: bool) -> ErrorShape {
-    if !forced { return shape; }
-    if shape.kind == FailureKind::DecisionRefused {
-        shape.kind = FailureKind::PlaybackPolicy;
-        shape.caption = plx_platform::i18n::msg::widgets_failure_forced_playback_c();
-        shape.panel = plx_platform::i18n::msg::widgets_panel_forced_playback();
-        shape.readout = plx_platform::i18n::msg::widgets_reason_forced_playback();
-        // The policy verdict already names the specific limitation and the return-to-Auto step.
-    } else {
-        shape.detail = std::borrow::Cow::Borrowed(
-            plx_platform::i18n::msg::widgets_reason_forced_playback_help(),
-        );
-    }
-    shape.no_pass = false;
-    shape
-}
-
-/// The live [`ErrorShape`] for `PlaybackState::Error` (main thread — `route::is_transcoding` and
-/// `route::play_verdict` read main-thread state).
+/// The live [`ErrorShape`] for `PlaybackState::Error` (main thread).
 pub fn error_now(ps: &crate::route::PlaybackSession) -> ErrorShape {
-    if let Some(arm) = failtest_arm(ps) {
+    if let Some(arm) = failtest_arm() {
         return arm;
     }
     // Ahead of every other cause: on an affected, unfixed set every Load this boot has been (and
@@ -1021,11 +880,8 @@ pub fn error_now(ps: &crate::route::PlaybackSession) -> ErrorShape {
     let demux_io_failed = SHARED
         .demux_io_failed
         .load(std::sync::atomic::Ordering::Acquire);
-    with_forced_playback_context(error_shape(
+    error_shape(
         SHARED.demux_no_video.load(Relaxed),
-        crate::route::is_transcoding(ps),
-        playing_subscription(&ps),
-        crate::route::play_verdict(ps),
         runtime_failure(
             demux_failed,
             demux_io_failed,
@@ -1033,14 +889,8 @@ pub fn error_now(ps: &crate::route::PlaybackSession) -> ErrorShape {
             // The refused start's cause: an abandoned Load exists only after the budget fired.
             SHARED.load_timed_out.load(Relaxed) || ps.native_start_refused,
         ),
-    ), crate::route::forced_direct_play(ps))
+    )
 }
-
-/// A sample PMS refusal, for the `verdict` variant of the dev trigger below. Real wording: this is
-/// the sentence a server emits when the only encoder our profile asked for is one it does not have,
-/// which is issue #22's failure with the pre-#22 single-entry target chain.
-const FAILTEST_VERDICT: &str =
-    "Cannot convert this item. Implementation for video encoder 'hevc' not found.";
 
 /// dev: `/tmp/dispatcharrtv-failtest=<arm>` — force one variant of the failure read-out.
 ///
@@ -1050,48 +900,24 @@ const FAILTEST_VERDICT: &str =
 /// photograph, because a maintainer triaging a report from someone else's television is its whole
 /// audience. So the arms are selectable, and there is no other way to grade them on a panel.
 ///
-/// Arms: `verdict` (the pre-flight refusal, with the server's own sentence quoted), `audio` (the
-/// audio-only transcode — pair with `/tmp/dispatcharrtv-nopass` for the PLEX PASS capsule), `novideo`
-/// (an audio-only file that direct-played), `stream` (no usable media), `connection` (an interrupted
+/// Arms: `novideo` (an audio-only stream), `stream` (no usable media), `connection` (an interrupted
 /// transfer), `tv` (the native pipeline refused Load), `jail` (this device's jail is missing
 /// `/dev/rtkmem` — forces [`jail_error_shape`] regardless of the real device probe, since most
-/// dev machines are not an affected SoC), and `none` (no cause was reported). It feeds
+/// dev machines are not an affected SoC), and `none` or any other word (no cause was reported). It feeds
 /// [`error_shape`] rather than short-circuiting it, so what is photographed is the real resolver.
 ///
 /// `player_hud::busy` has the other half — the state itself — for the same reason.
 ///
-/// The subscription comes from [`playing_subscription`], the same reader the real path uses, so the
-/// arm being photographed is the real resolver on real state. `/tmp/dispatcharrtv-nopass` is what makes
-/// the capsule reachable and it applies to EVERY server, so the pairing `docs/agent-reference.md`
-/// documents is unaffected — but note the arm still has to be looked at from the player route,
-/// i.e. after a play, which is when `route::cur_sid` names a server at all.
-fn failtest_arm(ps: &crate::route::PlaybackSession) -> Option<ErrorShape> {
+fn failtest_arm() -> Option<ErrorShape> {
     let arm = plx_base::devtrig::read("failtest")?;
-    let sub = playing_subscription(&ps);
     Some(match arm.trim() {
-        "audio" => error_shape(true, true, sub, None, RuntimeFailure::Unknown),
-        "novideo" => error_shape(true, false, sub, None, RuntimeFailure::Unknown),
-        "stream" => error_shape(false, false, sub, None, RuntimeFailure::MediaSource),
-        "connection" => error_shape(false, false, sub, None, RuntimeFailure::PlaybackInterrupted),
-        "tv" => error_shape(false, false, sub, None, RuntimeFailure::TvPipeline),
-        "load_timeout" => error_shape(false, false, sub, None, RuntimeFailure::LoadTimeout),
+        "novideo" => error_shape(true, RuntimeFailure::Unknown),
+        "stream" => error_shape(false, RuntimeFailure::MediaSource),
+        "connection" => error_shape(false, RuntimeFailure::PlaybackInterrupted),
+        "tv" => error_shape(false, RuntimeFailure::TvPipeline),
+        "load_timeout" => error_shape(false, RuntimeFailure::LoadTimeout),
         "jail" => jail_error_shape(),
-        "none" => error_shape(false, false, sub, None, RuntimeFailure::Unknown),
-        // Force Direct Play's own refusal (issue: the owner's photograph) — the route's real
-        // verdict sentence for a video format the engine cannot take, through the real resolver.
-        "policy" => with_forced_playback_context(
-            error_shape(false, false, sub,
-                Some(crate::route::PlayVerdict::Forced(crate::route::ForcedFailure::Video).text()),
-                RuntimeFailure::Unknown),
-            true,
-        ),
-        _ => error_shape(
-            false,
-            true,
-            sub,
-            Some(FAILTEST_VERDICT),
-            RuntimeFailure::Unknown,
-        ),
+        _ => error_shape(false, RuntimeFailure::Unknown),
     })
 }
 
@@ -1374,25 +1200,8 @@ pub fn reset_route_requests_for_test(ps: &crate::route::PlaybackSession) {
 pub fn desired_sub_idx() -> i32 {
     SHARED.desired_sub_idx.load(Relaxed)
 }
-/// The tone client-rendered subtitles are drawn in. A [`crate::route::LiveCell`] rather than a field
-/// of [`SHARED`] because it OUTLIVES a playback — it is a preference, not session state
-/// (the same reasoning as the quality cell in `route::prefs`) — and `reset_session` must not put a viewer back on white
-/// between two episodes. Restored by `route::restore_all`; written by [`set_subtitle_tone`] through
-/// the one write door (`route::choose`).
-///
-/// Seeded to white, which is what every build before the preference drew.
-pub(crate) static SUBTITLE_TONE: crate::route::LiveCell<plx_plex::plex::session::SubtitleTone> =
-    crate::route::LiveCell::new("subtitle tone preference");
-
-/// The selected tone. Read once a frame by the two subtitle draws (`appkit::player_hud`) and by the
-/// track menu for its checkmark.
-pub fn subtitle_tone() -> plx_plex::plex::session::SubtitleTone {
-    SUBTITLE_TONE.get()
-}
-
 /// The viewer's subtitle timing offset in MILLISECONDS — positive draws every client-rendered cue
-/// later, negative earlier. **It belongs to ONE playback of ONE subtitle track**, unlike
-/// [`SUBTITLE_TONE`]: a timing error is a property of a track against a media file, so the next
+/// later, negative earlier. **It belongs to ONE playback of ONE subtitle track**: a timing error is a property of a track against a media file, so the next
 /// film, or another track of this one, must never inherit it. It is remembered per item (never per
 /// track) by [`persist_subtitle_offset`], through the memory door, and recalled at that item's next
 /// play; [`reset_subtitle`]
@@ -1457,19 +1266,6 @@ fn subtitle_floor_for(position_ns: i64, seeking: bool, target_ns: i64) -> i64 {
 /// served at once (`subtitle_floor_ns`, and the image store's eviction order in
 /// [`push_subtitle_bitmap`]).
 pub const SUBTITLE_OFFSET_LATEST_MS: i64 = 60_000;
-
-/// The viewer's Plex Pass audio-DSP preference (issue #266: dialog boost, loudness normalization),
-/// as two bits — a PREFERENCE, like [`SUBTITLE_TONE`], so it outlives a playback. Only the
-/// resolve's `ResolveEnv::snapshot` reads it, on the main thread, and it reaches the wire only
-/// through `route::desired_audio`: with no Plex Pass (or an unknown one) nothing reads it at all.
-/// Restored by `route::restore_all`; written through the one write door (`route::choose`).
-pub(crate) static AUDIO_ENHANCEMENTS: crate::route::LiveCell<plx_plex::plex::AudioEnhancements> =
-    crate::route::LiveCell::new("audio enhancements preference");
-
-/// The current preference (see [`AUDIO_ENHANCEMENTS`]).
-pub fn audio_enhancements() -> plx_plex::plex::AudioEnhancements {
-    AUDIO_ENHANCEMENTS.get()
-}
 
 /// The text store's hard cap, a runaway guard that an ordinary file never reaches. The store
 /// holds every text track (the demux pushes them all) from `subtitle_floor_ns` — 32 s behind the
@@ -2055,16 +1851,7 @@ pub extern "C" fn acb_on_event(ev: c_long, reply: *const c_char) {
 /// A channel that stopped mid-stream, for tests outside this module that need a read-out.
 #[cfg(any(test, feature = "test-support"))]
 pub fn interrupted_shape_for_test() -> ErrorShape {
-    error_shape(false, false, plx_plex::plex::serverinfo::Subscription::Yes, None, RuntimeFailure::PlaybackInterrupted)
-}
-
-/// The shape the `failtest=policy` arm builds, for tests outside this module.
-#[cfg(any(test, feature = "test-support"))]
-pub fn failtest_policy_shape_for_test(verdict: &str) -> ErrorShape {
-    with_forced_playback_context(
-        error_shape(false, false, plx_plex::plex::serverinfo::Subscription::Yes, Some(verdict), RuntimeFailure::Unknown),
-        true,
-    )
+    error_shape(false, RuntimeFailure::PlaybackInterrupted)
 }
 
 #[cfg(test)]
@@ -2076,55 +1863,13 @@ mod tests {
     // `native_failure_regressions::jail_refusal_enters_error_without_engine_and_retires_on_exit`
     // below, against the real `ps.jail_load_blocked`-based gate in `engine.rs` — see that test.
 
-    #[test]
-    fn forced_runtime_failures_keep_the_cause_and_explain_how_to_leave_force() {
-        use plx_plex::plex::serverinfo::Subscription as Sub;
-        for runtime in [RuntimeFailure::Unknown, RuntimeFailure::MediaSource,
-            RuntimeFailure::PlaybackInterrupted, RuntimeFailure::TvPipeline, RuntimeFailure::LoadTimeout] {
-            let normal = error_shape(false, false, Sub::No, None, runtime);
-            let forced = with_forced_playback_context(error_shape(false, false, Sub::No, None, runtime), true);
-            assert_eq!(forced.kind, normal.kind);
-            assert_eq!(forced.readout, normal.readout);
-            assert!(forced.detail.contains("Force Direct Play is on"));
-            // The remedy is the read-out's own button now (`FailureAction::PlayAutomatically`),
-            // so the sentence says what happened and why, and no longer points into Settings.
-            assert!(!forced.detail.contains("Settings"), "{}", forced.detail);
-            assert!(!forced.no_pass);
-            let ordinary = with_forced_playback_context(normal, false);
-            assert!(ordinary.detail.is_empty(), "Auto/Disabled retain their ordinary error detail");
-        }
-    }
-
-    #[test]
-    fn forced_policy_refusal_does_not_claim_the_server_cannot_convert() {
-        use plx_plex::plex::serverinfo::Subscription as Sub;
-        let reason = "Force Direct Play is on, and this audio format can’t play without conversion.";
-        let forced = with_forced_playback_context(
-            error_shape(false, false, Sub::No, Some(reason), RuntimeFailure::Unknown), true);
-        assert_eq!(forced.kind, FailureKind::PlaybackPolicy);
-        assert_eq!(forced.kind.code(), "playback_policy");
-        assert_eq!(forced.detail, reason);
-        assert!(!forced.readout.contains("server"));
-        assert!(!forced.caption.to_str().unwrap().contains("convert"));
-        assert!(forced.panel.contains("automatic fallback is disabled"));
-        assert!(!forced.no_pass);
-        let server = with_forced_playback_context(
-            error_shape(false, true, Sub::No, Some("PMS cannot convert this item"), RuntimeFailure::Unknown), false);
-        assert_eq!(server.kind, FailureKind::DecisionRefused);
-        assert!(server.readout.contains("server"));
-    }
-
     /// **Each cause converts to its own telemetry class, under the code it always had.** The class
     /// enum is telemetry's and the match that fills it is this layer's, so a copy-paste that sent
-    /// two causes to one class would merge two dashboard series without any compile error. (The
-    /// retired `original_rollback` code has no cause here; its class is exercised by telemetry.)
+    /// two causes to one class would merge two dashboard series without any compile error.
     #[test]
     fn every_failure_kind_converts_to_its_own_stable_wire_class() {
         use FailureKind as K;
         let table = [
-            (K::DecisionRefused, "decision_refused"),
-            (K::PlaybackPolicy, "playback_policy"),
-            (K::NoVideoTranscodeTarget, "no_video_transcode_target"),
             (K::NoVideoTrack, "no_video_track"),
             (K::MediaSource, "media_source"),
             (K::PlaybackInterrupted, "playback_interrupted"),
@@ -2346,7 +2091,7 @@ mod tests {
             line,
             format!(
                 "Dispatcharr TV {} · webOS 4.10.2 · 43LM6300PVB · m3r · tv_pipeline",
-                plx_plex::plex::identity::version()
+                plx_base::identity::version()
             )
         );
         let bare = support_line_of(
@@ -2573,112 +2318,12 @@ mod tests {
         assert!(!TX.paused.load(std::sync::atomic::Ordering::Acquire));
     }
 
-    /// Issue #22: the error must NAME an audio-only stream, and name the right party. On a
-    /// transcode it is the server's doing — and on a KNOWN-free server the reason appends the
-    /// subscription as a FACT, never as the cause: the audit's row 1 says h264 encoding is free
-    /// everywhere and the profile's target chain ends in h264, so a missing Pass cannot be WHY
-    /// the video is gone, and asserting it would point the user at a purchase that fixes nothing
-    /// (the confident wrong answer this arm exists to prevent). Known-true or UNKNOWN keeps the
-    /// neutral wording alone: a subscription the app cannot prove absent is never even named.
-    /// Direct-played, the fault is the file's whatever the subscription says. Drives the pure
-    /// shape only, so no globals move and nothing here can race the HUD test that reads the real
-    /// (default-false) flags.
-    #[test]
-    fn an_audio_only_stream_is_blamed_on_whoever_sent_it() {
-        use plx_plex::plex::serverinfo::Subscription as Sub;
-        // transcode on a known-free server: the Pass appears as a parenthetical fact on the
-        // panel, as the capsule flag for the read-out…
-        let e = error_shape(true, true, Sub::No, None, RuntimeFailure::Unknown);
-        assert!(
-            e.caption
-                .to_str()
-                .unwrap()
-                .contains("server sent audio only"),
-            "{:?}",
-            e.caption
-        );
-        assert!(
-            e.panel.contains("no usable video transcode target"),
-            "{}",
-            e.panel
-        );
-        assert!(e.panel.contains("server has no Plex Pass"), "{}", e.panel);
-        assert!(e.no_pass, "the read-out draws the capsule from this flag");
-        // …and never as a cause — h264 encoding is free everywhere (audit row 1). The read-out
-        // reason carries no Pass words at all: the capsule line states the fact separately.
-        assert!(
-            !e.panel.contains("cannot encode"),
-            "causation may not be asserted: {}",
-            e.panel
-        );
-        assert!(
-            !e.readout.contains("Plex Pass"),
-            "the capsule, not prose, names the Pass: {}",
-            e.readout
-        );
-        assert!(
-            e.detail.is_empty(),
-            "only the server's own verdict fills the detail line"
-        );
-        // known-Pass'd or never-heard-from: today's wording, and no Pass blame anywhere in it
-        for sub in [Sub::Yes, Sub::Unknown] {
-            let e = error_shape(true, true, sub, None, RuntimeFailure::Unknown);
-            assert!(
-                e.caption
-                    .to_str()
-                    .unwrap()
-                    .contains("server sent audio only"),
-                "{:?}",
-                e.caption
-            );
-            assert!(
-                e.panel.contains("no usable video transcode target"),
-                "{} ({sub:?})",
-                e.panel
-            );
-            assert!(
-                !e.panel.contains("Plex Pass"),
-                "an unproven subscription must not be blamed ({sub:?})"
-            );
-            assert!(
-                !e.no_pass,
-                "the capsule may not appear on an unproven subscription ({sub:?})"
-            );
-        }
-        for sub in [Sub::Unknown, Sub::No, Sub::Yes] {
-            let e = error_shape(true, false, sub, None, RuntimeFailure::Unknown);
-            assert!(
-                e.caption.to_str().unwrap().contains("no video in the file"),
-                "{:?}",
-                e.caption
-            );
-            assert!(
-                e.panel.contains("no video track"),
-                "direct play blames the file, not the server"
-            );
-            assert!(!e.no_pass, "an audio-only FILE is not a subscription story");
-            for transcoding in [false, true] {
-                let e = error_shape(false, transcoding, sub, None, RuntimeFailure::Unknown);
-                assert_eq!(
-                    e.caption.to_str().unwrap(),
-                    "Playback failed",
-                    "no subsystem may be invented"
-                );
-                assert!(e.panel.contains("without a reported cause"));
-                assert!(e.readout.contains("identify the problem"));
-                assert!(e.detail.is_empty());
-                assert!(!e.no_pass);
-            }
-        }
-    }
-
     /// A terminal runtime failure already knows which subsystem stopped: the media source,
     /// the live transfer, or the television pipeline. The player read-out reserves a reason
     /// slot for that answer, so falling through to an empty string turns a diagnosed failure
     /// back into the unhelpful bare "Playback failed" screen.
     #[test]
     fn runtime_failures_fill_the_existing_readout_reason_slot() {
-        use plx_plex::plex::serverinfo::Subscription as Sub;
         let cases = [
             (
                 (true, false, false, false),
@@ -2725,7 +2370,7 @@ mod tests {
                 cause, want,
                 "the flags must resolve to the subsystem that stopped"
             );
-            let e = error_shape(false, false, Sub::Unknown, None, cause);
+            let e = error_shape(false, cause);
             assert_eq!(e.kind, kind);
             assert_eq!(e.kind.code(), code, "the Sentry/usage wire code is stable");
             assert!(
@@ -2764,9 +2409,8 @@ mod tests {
     /// answered), not the refusal's "rejected".
     #[test]
     fn load_timeout_has_its_own_wording_distinct_from_an_ordinary_tv_refusal() {
-        use plx_plex::plex::serverinfo::Subscription as Sub;
-        let refused = error_shape(false, false, Sub::Unknown, None, RuntimeFailure::TvPipeline);
-        let timed_out = error_shape(false, false, Sub::Unknown, None, RuntimeFailure::LoadTimeout);
+        let refused = error_shape(false, RuntimeFailure::TvPipeline);
+        let timed_out = error_shape(false, RuntimeFailure::LoadTimeout);
         assert_ne!(
             refused.caption, timed_out.caption,
             "a refusal and a hang must not share a caption"
@@ -2787,178 +2431,6 @@ mod tests {
         assert!(
             !timed_out_caption.to_lowercase().contains("rejected"),
             "{timed_out_caption:?} borrows the refusal's wording; a hang was never rejected"
-        );
-    }
-
-    /// The PRE-FLIGHT arm: `/decision` refused the item before a byte of video moved, so the reason
-    /// is the SERVER's and not our inference. Three things are asserted and each was a way to get
-    /// this wrong. (1) The reason line is ours and fixed, while the detail is the server's sentence
-    /// **verbatim** — not sentence-cased, not re-worded, because its wording is not ours and it is
-    /// the line a maintainer photographs. (2) The capsule NEVER appears here, on any subscription
-    /// state, including a proven-free server and including a verdict that names HEVC — the server
-    /// named the cause, so naming a subscription beside it is the speculation the tristate rule
-    /// forbids. (3) The arm OUTRANKS the demux-derived ones: nothing was ever demuxed, so a stale
-    /// `no_video` from a previous session must not re-word a refusal.
-    #[test]
-    fn a_refused_decision_quotes_the_server_and_never_names_a_subscription() {
-        use plx_plex::plex::serverinfo::Subscription as Sub;
-        const VP9: &str =
-            "Cannot convert this item. Implementation for video encoder 'vp9' not found.";
-        for sub in [Sub::Unknown, Sub::No, Sub::Yes] {
-            // graded with `no_video`/`transcoding` BOTH set — the arm that would otherwise win
-            let e = error_shape(
-                true,
-                true,
-                sub,
-                Some(VP9),
-                RuntimeFailure::PlaybackInterrupted,
-            );
-            assert_eq!(
-                e.readout, "The server cannot play or convert this file",
-                "({sub:?})"
-            );
-            assert_eq!(
-                e.detail, VP9,
-                "the server's sentence is reproduced unedited ({sub:?})"
-            );
-            assert!(
-                !e.no_pass,
-                "no capsule on this arm, ever — the server named the cause ({sub:?})"
-            );
-            assert!(
-                !e.readout.contains("Plex Pass") && !e.panel.contains("Plex Pass"),
-                "({sub:?})"
-            );
-            assert!(
-                e.caption.to_str().unwrap().starts_with("Playback failed"),
-                "{:?}",
-                e.caption
-            );
-        }
-        // an HEVC verdict on a server PROVEN to have no Pass is the temptation, and still no capsule
-        let e = error_shape(
-            false,
-            true,
-            Sub::No,
-            Some("Implementation for video encoder 'hevc' not found."),
-            RuntimeFailure::PlaybackInterrupted,
-        );
-        assert!(!e.no_pass);
-        // a server that refused without saying why: the reason still lands, the quote line does not
-        let e = error_shape(
-            false,
-            true,
-            Sub::No,
-            Some(""),
-            RuntimeFailure::PlaybackInterrupted,
-        );
-        assert_eq!(e.readout, "The server cannot play or convert this file");
-        assert!(
-            e.detail.is_empty(),
-            "an empty verdict draws no quote line at all"
-        );
-    }
-
-    /// **The subscription the read-out states is the FAILING ITEM's server's, not the current
-    /// one's** — the wiring the pure shape above cannot see, because it takes the tristate as an
-    /// argument.
-    ///
-    /// The two are routinely different: `plex::servers` keeps `current` pinned to the primary while
-    /// a borrowed film plays, so `serverinfo::subscription()` here answered for OUR server on every
-    /// failure of a share's item. Both polarities are silent and wrong. A film borrowed from a
-    /// Pass-less share dropped the "(server has no Plex Pass)" clause and the read-out's capsule —
-    /// the exact support fact issue #22 was reported without, on the exact configuration (someone
-    /// else's free server) that produced it. And with the primary free and the share Pass'd, the
-    /// capsule appeared on a failure nothing about a subscription explains, which is the confident
-    /// wrong answer `error_shape`'s tristate rule exists to prevent.
-    ///
-    /// Registry and subscription slots are still crate globals, so this holds `testlock::serial()`
-    /// and puts them back on the way OUT — the discipline `serverinfo`'s own multi-server tests
-    /// state, and the reason its `Fresh` guard has a `Drop`. **`route`'s playing identity is no
-    /// longer among them** (phase 9): the session is this test's own local, so it is restored by
-    /// being dropped, and the guard no longer has to put it back.
-    #[test]
-    fn the_failure_read_out_states_the_playing_items_server_not_the_current_one() {
-        let mut ps = crate::route::PlaybackSession::IDLE;
-        use plx_plex::plex::serverinfo::{store_for_test, Subscription as Sub};
-        struct Fresh {
-            _g: plx_base::testlock::Serial,
-        }
-        impl Drop for Fresh {
-            fn drop(&mut self) {
-                plx_plex::plex::reset_servers_for_test();
-            }
-        }
-        let g = plx_base::testlock::serial();
-        plx_plex::plex::reset_servers_for_test();
-        let _fresh = Fresh { _g: g };
-        crate::route::swap_cur_sid_for_test(&mut ps, plx_plex::plex::ServerId::UNSET);
-
-        let reg =
-            |m: &str, host: &str| plx_plex::plex::register_for_test(m, host, 32400, "tok", "cid");
-        let (ours, theirs) = (reg("mach-A", "10.0.0.1"), reg("mach-B", "10.0.0.2"));
-        // the slot arrays outlive `reset_servers_for_test` — start from the boot state explicitly
-        store_for_test(ours, Sub::Unknown, "");
-        store_for_test(theirs, Sub::Unknown, "");
-        // our own server has a Plex Pass; the friend's share does not
-        store_for_test(ours, Sub::Yes, "1.43.3.10861-cd85035e7");
-        store_for_test(theirs, Sub::No, "1.32.0.6918-free");
-        // …and browsing a share does NOT re-point `current`, which is the whole trap
-        assert!(plx_plex::plex::set_current(ours));
-
-        crate::route::swap_cur_sid_for_test(&mut ps, theirs);
-        assert_eq!(
-            playing_subscription(&ps),
-            Sub::No,
-            "the borrowed film's own server is the one that failed"
-        );
-        let e = error_shape(
-            true,
-            true,
-            playing_subscription(&ps),
-            None,
-            RuntimeFailure::Unknown,
-        );
-        assert!(e.no_pass, "so the read-out draws the capsule…");
-        assert!(
-            e.panel.contains("server has no Plex Pass"),
-            "…and the panel states the fact: {}",
-            e.panel
-        );
-
-        // the inverse polarity: playing from OUR Pass'd server while `current` sits on the share
-        assert!(plx_plex::plex::set_current(theirs));
-        crate::route::swap_cur_sid_for_test(&mut ps, ours);
-        assert_eq!(
-            playing_subscription(&ps),
-            Sub::Yes,
-            "the current server's answer is not this item's"
-        );
-        assert!(
-            !error_shape(
-                true,
-                true,
-                playing_subscription(&ps),
-                None,
-                RuntimeFailure::Unknown
-            )
-            .no_pass,
-            "no capsule may be invented"
-        );
-
-        // before the first play there is no playing server, and "we have not heard" is the honest
-        // answer — never slot 0's, and never a blamed subscription
-        crate::route::swap_cur_sid_for_test(&mut ps, plx_plex::plex::ServerId::UNSET);
-        assert_eq!(playing_subscription(&ps), Sub::Unknown);
-        assert!(
-            !error_shape(
-                true,
-                true,
-                playing_subscription(&ps),
-                None,
-                RuntimeFailure::Unknown
-            )
-            .no_pass
         );
     }
 

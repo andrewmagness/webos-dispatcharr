@@ -397,9 +397,8 @@ pub fn threaded_tls_ready() -> bool {
     CURL_THREADED_TLS_OK.load(Ordering::Acquire)
 }
 
-/// The `User-Agent` every easy request sends. The transport does not know who the client is — that
-/// is the Plex layer's identity (`plex::identity::user_agent`) — so boot hands it over once, with
-/// [`set_user_agent`] before [`global_init`], instead of this layer naming the one above it. Unset
+/// The `User-Agent` every easy request sends: the app's identity (`plx_base::identity::user_agent`),
+/// which boot hands over once with [`set_user_agent`] before [`global_init`]. Unset
 /// (a host test that never booted) no `User-Agent` is set, which is all libcurl sends by default.
 static USER_AGENT: OnceLock<String> = OnceLock::new();
 

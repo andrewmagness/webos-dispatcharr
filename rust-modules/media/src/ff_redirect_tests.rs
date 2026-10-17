@@ -112,7 +112,7 @@ fn request_line(head: &str) -> &str {
 fn progressive_open(port: u16, path: &str) -> Result<(String, i64), String> {
     let mut hs = plx_net::stream::http_stream_boxed();
     let mut aq = crate::aq::aq_new(1 << 20);
-    let origin = plx_plex::plex::Origin::http("127.0.0.1", port as i32);
+    let origin = plx_net::net::origin::Origin::http("127.0.0.1", port as i32);
     let opened = open_plain_progressive(&mut *hs, &origin, path, &mut *aq);
     let outcome = match opened {
         Ok((Src::Socket { path, .. }, size)) => Ok((path.to_string_lossy().into_owned(), size)),
@@ -191,7 +191,7 @@ fn a_cross_origin_hop_does_not_forward_the_token() {
             &format!("http://127.0.0.1:{cdn_port}/cdn/v.ts?sig=abc"),
         )
     });
-    let outcome = progressive_open(pms.port, "/start?X-Plex-Token=tok");
+    let outcome = progressive_open(pms.port, "/start");
     assert_eq!(outcome, Ok(("/cdn/v.ts?sig=abc".to_string(), 4)));
     let heads = cdn.heads();
     assert_eq!(heads.len(), 1, "{heads:?}");
@@ -219,11 +219,11 @@ fn a_progressive_open_follows_a_302() {
     });
     let mut hs = plx_net::stream::http_stream_boxed();
     let mut aq = crate::aq::aq_new(1 << 20);
-    let origin = plx_plex::plex::Origin::http("127.0.0.1", pms.port as i32);
+    let origin = plx_net::net::origin::Origin::http("127.0.0.1", pms.port as i32);
     let opened = open_plain_progressive(
         &mut *hs,
         &origin,
-        "/library/parts/1/file.mp4?X-Plex-Token=tok",
+        "/library/parts/1/file.mp4",
         &mut *aq,
     );
     let outcome = match opened {
@@ -235,7 +235,7 @@ fn a_progressive_open_follows_a_302() {
     assert_eq!(
         outcome,
         Some((
-            "/services/iva/assets/1/video.mp4?X-Plex-Token=tok".to_string(),
+            "/services/iva/assets/1/video.mp4".to_string(),
             8
         ))
     );
@@ -257,7 +257,7 @@ fn an_https_hop_from_the_socket_path_is_routed_to_curl() {
             &format!("https://127.0.0.1:{cdn_port}/cdn/seg.ts?sig=abc"),
         )
     });
-    let outcome = progressive_open(pms.port, "/start?X-Plex-Token=tok");
+    let outcome = progressive_open(pms.port, "/start");
     assert!(
         outcome.is_err(),
         "a plaintext server cannot finish TLS: {outcome:?}"

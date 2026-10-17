@@ -4349,7 +4349,7 @@ fn has_protected_authority() -> bool {
 
 /// The generic 0600 atomic write moved to `plx_base::atomic_file` (the Dispatcharr layer writes its
 /// account through it and cannot name this one); re-exported so every caller keeps its spelling.
-pub use plx_base::atomic_file::{write_atomic, WriteFailure};
+pub use plx_base::atomic_file::{open_owned_regular, read_owned_regular, write_atomic, WriteFailure, MAX_OWNED_FILE};
 use plx_base::atomic_file::remove_temp_siblings;
 
 /// The parent directory's owner and mode at the moment a candidate was tried — the other half of
@@ -4424,42 +4424,6 @@ fn log_candidate_diagnostics(context: &str, failures: &[CandidateDiagnostic]) {
             d.path.display()
         ));
     }
-}
-
-/// Open `path` for reading without following a symlink at its name, and only if it is a regular
-/// file this process owns. The metadata comes from the SAME descriptor the bytes will be read
-/// from, so a caller that records the file's identity describes what it read. A missing file is
-/// `NotFound`; anything else refused is `PermissionDenied`.
-pub fn open_owned_regular(
-    path: &std::path::Path,
-) -> std::io::Result<(std::fs::File, std::fs::Metadata)> {
-    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-    // O_NONBLOCK: a FIFO planted at the name must not block the open (it is refused just below);
-    // it changes nothing for a regular file.
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
-        .open(path)?;
-    let meta = file.metadata()?;
-    if !meta.file_type().is_file() || meta.uid() != unsafe { libc::geteuid() } {
-        return Err(std::io::ErrorKind::PermissionDenied.into());
-    }
-    Ok((file, meta))
-}
-
-/// The most [`read_owned_regular`] allocates for one file.
-pub const MAX_OWNED_FILE: u64 = 4 * 1024 * 1024;
-
-pub fn read_owned_regular(path: &std::path::Path) -> Option<Vec<u8>> {
-    use std::io::Read;
-    let (mut file, _) = open_owned_regular(path).ok()?;
-    const MAX_FILE: u64 = MAX_OWNED_FILE;
-    let mut bytes = Vec::new();
-    file.by_ref()
-        .take(MAX_FILE + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    (bytes.len() as u64 <= MAX_FILE).then_some(bytes)
 }
 
 /// What [`clear`] found out about the canonical authority. Distinct from a bare `()` return

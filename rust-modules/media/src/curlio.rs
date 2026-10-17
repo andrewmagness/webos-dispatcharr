@@ -692,7 +692,7 @@ impl CurlSource {
 
     /// **A second, independent transfer** — a side reader's demux of the same Part while the
     /// player's own [`ACTIVE`] transfer streams. It takes the same open as every other source
-    /// (`media_url_allowed`, the `net::resolve` pin for the host, the key-pin / roots policy and the
+    /// (the `net::resolve` pin for the host, the key-pin / roots policy and the
     /// token already in `url`, all applied inside `open_with_reservation_range_until`), but its abort
     /// handle is private: it never lands in [`ACTIVE`], so `abort_active` cannot wake it and its
     /// own `signal` cannot wake the movie. The caller signals the returned handle to tear it down.
@@ -786,16 +786,13 @@ impl CurlSource {
         deadline: Option<std::time::Instant>,
         checkpoint: &mut dyn Checkpoint,
     ) -> Result<Box<CurlSource>, OpenErr> {
-        if !media_url_allowed(url) {
-            return Err(OpenErr::Local);
-        }
         // The resolve pin, by this URL's host and port — see `net::resolve` for why the media
         // plane consults a table rather than carrying the pin. Looked up here for the first hop; a
         // seek reuses it, and each later hop looks up its own.
-        let (origin, _) = plx_plex::plex::origin::split(url);
+        let (origin, _) = plx_net::net::origin::split(url);
         let resolve_entry = resolve_entry_for(&origin)?;
         let url_c = CString::new(url).map_err(|_| OpenErr::Local)?;
-        let ua = CString::new(plx_plex::plex::identity::user_agent()).map_err(|_| OpenErr::Local)?;
+        let ua = CString::new(plx_base::identity::user_agent()).map_err(|_| OpenErr::Local)?;
         let multi = unsafe { curl_multi_init() };
         if multi.is_null() {
             return Err(OpenErr::Local);
@@ -843,10 +840,7 @@ impl CurlSource {
         if self.abort.is_set() {
             return Err(OpenErr::Aborted);
         }
-        if !media_url_allowed(url) {
-            return Err(OpenErr::Local);
-        }
-        let (origin, _) = plx_plex::plex::origin::split(url);
+        let (origin, _) = plx_net::net::origin::split(url);
         self.resolve_entry = resolve_entry_for(&origin)?;
         self.url = CString::new(url).map_err(|_| OpenErr::Local)?;
         self.off = 0;
@@ -1865,9 +1859,6 @@ impl Hop {
     /// ([`next_hop`]), so it carries none of the original's query.
     fn of(target: &Target, n: u32) -> Result<Hop, OpenErr> {
         let url = target.url();
-        if !media_url_allowed(&url) {
-            return Err(OpenErr::Local);
-        }
         let resolve_entry = resolve_entry_for(&target.origin)?;
         Ok(Hop {
             n,
@@ -1947,17 +1938,6 @@ fn log_target(target: Option<&Target>) -> String {
         Some(t) => format!("{}{}", t.origin.log_form(), log_endpoint(&t.path)),
         None => "an origin this client cannot read".to_owned(),
     }
-}
-
-fn media_url_allowed(url: &str) -> bool {
-    let (origin, path) = plx_plex::plex::origin::split(url);
-    plx_plex::http::credential_transport_allowed(&origin, path, &[])
-}
-
-#[cfg(test)]
-fn media_url_allowed_by_policy(url: &str, policy: plx_plex::plex::CredentialPolicy) -> bool {
-    let (origin, path) = plx_plex::plex::origin::split(url);
-    plx_plex::http::credential_transport_allowed_by_policy(&origin, path, &[], policy)
 }
 
 impl Drop for CurlSource {
@@ -2260,22 +2240,6 @@ mod tests {
     use std::io::Write;
     use std::sync::atomic::AtomicUsize;
 
-    #[test]
-    fn lower_media_layer_refuses_plaintext_credentials_in_store_policy() {
-        assert!(!media_url_allowed_by_policy(
-            "http://192.0.2.1:32400/video.mkv?X-Plex-Token=secret",
-            plx_plex::plex::CredentialPolicy::HttpsOnly,
-        ));
-        assert!(media_url_allowed_by_policy(
-            "https://example.invalid/video.mkv?X-Plex-Token=secret",
-            plx_plex::plex::CredentialPolicy::HttpsOnly,
-        ));
-        assert!(media_url_allowed_by_policy(
-            "http://192.0.2.1:32400/video.mkv?X-Plex-Token=secret",
-            plx_plex::plex::CredentialPolicy::AllowPlaintext,
-        ));
-    }
-
     /// **The gate every curl-driven test here opens with**, and it returns a HELD LOCK.
     ///
     /// Two process-globals are in play and both are load-bearing rather than incidental: net.rs's
@@ -2363,7 +2327,7 @@ mod tests {
                 "unpinned, the name resolves to nothing"
             );
             assert_eq!(accepts.load(Ordering::Acquire), 0);
-            let pin = plx_plex::plex::ResolvePin::for_test(
+            let pin = plx_net::net::origin::ResolvePin::for_test(
                 "no-such-host.invalid",
                 port as i32,
                 "127.0.0.1".parse().unwrap(),

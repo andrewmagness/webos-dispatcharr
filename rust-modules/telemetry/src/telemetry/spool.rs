@@ -77,7 +77,7 @@ fn resolve() -> Option<PathBuf> {
     // is the only honest test — `/media/internal` exists on a set where it is not writable by us.
     cands
         .into_iter()
-        .find(|p| plx_plex::plex::session::write_atomic(p, b"").is_ok())
+        .find(|p| plx_base::atomic_file::write_atomic(p, b"").is_ok())
 }
 
 /// Every record on disk, oldest first. A missing file is an empty queue — that is what a first boot
@@ -89,7 +89,7 @@ pub fn read() -> Vec<Record> {
 
 fn read_locked() -> Vec<Record> {
     let Some(p) = path() else { return Vec::new() };
-    let Some(bytes) = plx_plex::plex::session::read_owned_regular(&p) else {
+    let Some(bytes) = plx_base::atomic_file::read_owned_regular(&p) else {
         return Vec::new();
     };
     let d = queue::decode_all(&bytes);
@@ -172,29 +172,7 @@ fn append_guarded(r: &Record, allowed: impl FnOnce() -> bool, tenure: Option<u64
         }
         Some(appended)
     };
-    #[cfg(any(test, feature = "test-support"))]
-    after_append_for_test();
     result
-}
-
-#[cfg(any(test, feature = "test-support"))]
-thread_local! {
-    // A deterministic scheduler boundary: the spool lock is released, but its caller has not
-    // resumed. A flush can already read and settle the appended record at this point.
-    static AFTER_APPEND: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
-}
-
-#[cfg(test)]
-pub(super) fn on_append_for_test(f: impl FnOnce() + 'static) {
-    AFTER_APPEND.with(|slot| *slot.borrow_mut() = Some(Box::new(f)));
-}
-
-#[cfg(any(test, feature = "test-support"))]
-fn after_append_for_test() {
-    let f = AFTER_APPEND.with(|slot| slot.borrow_mut().take());
-    if let Some(f) = f {
-        f();
-    }
 }
 
 fn append_locked(r: &Record) -> bool {
@@ -265,7 +243,7 @@ fn write_locked(records: &[Record]) -> bool {
         settle_discarded(records, &kept);
     }
     let bytes: Vec<u8> = kept.iter().filter_map(queue::encode).flatten().collect();
-    let ok = plx_plex::plex::session::write_atomic(&p, &bytes).is_ok();
+    let ok = plx_base::atomic_file::write_atomic(&p, &bytes).is_ok();
     if ok {
         ON_DISK.store(kept.len(), std::sync::atomic::Ordering::Relaxed);
     }
@@ -370,13 +348,11 @@ fn test_path() -> Option<PathBuf> {
 /// **Also forgets [`ON_DISK`].** It is a per-PROCESS count, sound in production because `path()`
 /// is a `OnceLock` and the file never moves — but a test moves it, and a stale count from whichever
 /// spool test ran last makes the next `append` skip compaction and try to open a file that was
-/// never created at the new path (`append_locked`'s fast path only opens, it never creates). A
-/// one-off submit then reads that as a spool failure and takes the direct fallback instead.
+/// never created at the new path (`append_locked`'s fast path only opens, it never creates).
 #[cfg(any(test, feature = "test-support"))]
 pub fn set_test_path(p: Option<PathBuf>) {
     *TEST_PATH.lock().unwrap_or_else(|e| e.into_inner()) = p;
     ON_DISK.store(UNKNOWN, std::sync::atomic::Ordering::Relaxed);
-    AFTER_APPEND.with(|slot| *slot.borrow_mut() = None);
 }
 
 #[cfg(test)]

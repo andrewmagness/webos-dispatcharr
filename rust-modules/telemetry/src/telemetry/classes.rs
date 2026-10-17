@@ -49,182 +49,6 @@ impl TraceAge {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeliveryClass {
-    /// No route was ever installed — the plan was refused (by the server at `/decision`, or by the
-    /// Direct Play setting) or never resolved — so there is no delivery to name. Honest unknown, not
-    /// a guess at which route the attempt would have taken.
-    Unknown,
-    Direct,
-    Remux,
-    Hls,
-    Transcode,
-}
-
-impl DeliveryClass {
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::Unknown => "unknown",
-            Self::Direct => "original_direct",
-            Self::Remux => "original_remux",
-            Self::Hls => "hls",
-            Self::Transcode => "progressive_transcode",
-        }
-    }
-}
-
-/// A `/decision` verdict number (`generalDecisionCode` / `transcodeDecisionCode`) as a CLOSED
-/// domain. The number is a server protocol constant, not a quotation, so it is the one part of a
-/// refusal a report may carry; the server's sentence beside it never is.
-///
-/// **Which codes exist is only partly documented, and this list claims no more than the evidence.**
-/// The vendored OpenAPI spec (`docs/plex-openapi.json`, `generalDecisionCode`) documents the CLASSES
-/// — "1xxx are playback can succeed, 2xxx are a general error (such as insufficient bandwidth),
-/// 3xxx are errors in direct play, and 4xxx are errors in transcodes. Same codes are used in all"
-/// — and no table of members. The exact numbers named here are the ones this repository has
-/// observed a PMS send on a refusal: `2000` (general, "Neither direct play nor conversion is
-/// available", the code `route::plan::refusal` fires on), `2003` (transcode lane, "File is
-/// unplayable. DoVi (Profile 5) color space is not supported.", `docs/pms-api.md`) and `4007`
-/// (transcode lane, "Cannot convert this item. Implementation for video encoder 'vp9' not found.",
-/// PMS 1.43.3). Every other number falls into its documented class bucket — a new `4xxx` reads
-/// `other_4xxx`, which still says "a transcode-lane error" without this list guessing its meaning —
-/// and a number outside 1000-4999 is `other`. The wire code of a named member IS its number.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DecisionCodeClass {
-    /// The body carried no such code (never a defaulted 0).
-    Absent,
-    C2000,
-    C2003,
-    C4007,
-    Other1xxx,
-    Other2xxx,
-    Other3xxx,
-    Other4xxx,
-    Other,
-}
-
-impl DecisionCodeClass {
-    pub const ALL: [Self; 9] = [
-        Self::Absent,
-        Self::C2000,
-        Self::C2003,
-        Self::C4007,
-        Self::Other1xxx,
-        Self::Other2xxx,
-        Self::Other3xxx,
-        Self::Other4xxx,
-        Self::Other,
-    ];
-
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::Absent => "absent",
-            Self::C2000 => "2000",
-            Self::C2003 => "2003",
-            Self::C4007 => "4007",
-            Self::Other1xxx => "other_1xxx",
-            Self::Other2xxx => "other_2xxx",
-            Self::Other3xxx => "other_3xxx",
-            Self::Other4xxx => "other_4xxx",
-            Self::Other => "other",
-        }
-    }
-
-    pub fn from_code(code: Option<i64>) -> Self {
-        match code {
-            None => Self::Absent,
-            Some(2000) => Self::C2000,
-            Some(2003) => Self::C2003,
-            Some(4007) => Self::C4007,
-            Some(1000..=1999) => Self::Other1xxx,
-            Some(2000..=2999) => Self::Other2xxx,
-            Some(3000..=3999) => Self::Other3xxx,
-            Some(4000..=4999) => Self::Other4xxx,
-            Some(_) => Self::Other,
-        }
-    }
-}
-
-/// What a `decision_refused` report adds to the common context — all closed domains, none of the
-/// server's sentence. Present only for a refusal the SERVER made at `/decision`; the app's own
-/// policy refusals (Direct Play off, Force Direct Play) carry no server codes and no attempted
-/// transcode, so they get none of it rather than a half-filled block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RefusalContext {
-    /// `generalDecisionCode` of the refusing `/decision`.
-    pub general: DecisionCodeClass,
-    /// `transcodeDecisionCode` of the same body — the lane that names the cause.
-    pub transcode: DecisionCodeClass,
-    /// The route the refused plan ASKED for. A separate field from `delivery`, which stays
-    /// `unknown` because no route was installed: the attempt is recorded, the delivery is not.
-    pub attempted: DeliveryClass,
-    /// The SOURCE file's codecs (not the transcode's output, which a refusal never produced).
-    pub source_video: VideoCodecClass,
-    pub source_audio: AudioCodecClass,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QualityClass {
-    Unknown,
-    Auto,
-    Original,
-    K320,
-    K720,
-    M2,
-    M4,
-    M6,
-    M8,
-    M10,
-    M12,
-    M14,
-    M16,
-    M18,
-    M20,
-    M22,
-}
-
-impl QualityClass {
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::Unknown => "unknown",
-            Self::Auto => "auto",
-            Self::Original => "original",
-            Self::K320 => "320k",
-            Self::K720 => "720k",
-            Self::M2 => "2m",
-            Self::M4 => "4m",
-            Self::M6 => "6m",
-            Self::M8 => "8m",
-            Self::M10 => "10m",
-            Self::M12 => "12m",
-            Self::M14 => "14m",
-            Self::M16 => "16m",
-            Self::M18 => "18m",
-            Self::M20 => "20m",
-            Self::M22 => "22m",
-        }
-    }
-
-    pub fn from_kbps(kbps: i64) -> Self {
-        match kbps {
-            320 => Self::K320,
-            720 => Self::K720,
-            2_000 => Self::M2,
-            4_000 => Self::M4,
-            6_000 => Self::M6,
-            8_000 => Self::M8,
-            10_000 => Self::M10,
-            12_000 => Self::M12,
-            14_000 => Self::M14,
-            16_000 => Self::M16,
-            18_000 => Self::M18,
-            20_000 => Self::M20,
-            22_000 => Self::M22,
-            _ => Self::Unknown,
-        }
-    }
-}
-
 /// Privacy-preserving buckets for rates PMS actually declared or emitted. These are observations,
 /// not controller rungs: keeping the type separate prevents a 5.5 Mbit/s server response from being
 /// mislabeled as the 22 Mbit/s actuator that requested it.
@@ -296,107 +120,41 @@ impl RasterClass {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TraceDirection {
-    Up,
-    Down,
-    Refresh,
-}
-
-impl TraceDirection {
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::Up => "up",
-            Self::Down => "down",
-            Self::Refresh => "refresh",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeliveryReason {
-    LinkFallback,
-    OriginalRecovery,
-    OriginalOpenRollback,
-    /// The viewer picked a quality the current stream cannot satisfy, so the playback is
-    /// re-encoded: a fixed rung re-encodes at that rung (a transcode), and Auto, when it cannot
-    /// keep the bytes on screen, rebuilds the adaptive HLS ladder at its re-entry rung.
-    QualityPick,
-}
-
-impl DeliveryReason {
-    pub const ALL: [Self; 4] = [
-        Self::LinkFallback,
-        Self::OriginalRecovery,
-        Self::OriginalOpenRollback,
-        Self::QualityPick,
-    ];
-
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::LinkFallback => "link_fallback",
-            Self::OriginalRecovery => "original_recovery",
-            Self::OriginalOpenRollback => "original_open_rollback",
-            Self::QualityPick => "quality_pick",
-        }
-    }
-}
-
-/// **Why an engine open was made.** An attempt that fails reads differently by cause: a fresh Play
-/// that never opened is a different bug from an Original open the viewer asked for mid-film or a
-/// recovery the app started on its own. The producer (`player::report`) names the cause where the
-/// open is decided; a value is never inferred from a failure.
+/// **Why an engine open was made.** An attempt that fails reads differently by cause: a tune the
+/// viewer asked for that never opened is a different bug from a reconnect the app started on its
+/// own. The producer (`route::request_live`'s caller) names the cause where the tune is decided; a
+/// value is never inferred from a failure.
 ///
 /// Adding a cause is ONE place here: a variant, its `code`, and a slot in [`Self::ALL`], which the
 /// consent legend, the tests and the sample all read (the compiler checks `code` is exhaustive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttemptOrigin {
-    /// The first open after the viewer pressed Play.
+    /// The viewer tuned a channel: OK in the Guide, CH▲/▼, or the recall key.
     Fresh,
-    /// The viewer pressed Retry (or the failure screen's *Switch to Auto and play*) on a failure.
+    /// The viewer pressed *Try again* on a failure.
     UserRetry,
-    /// The viewer chose a quality, from the menu or from the failure screen, and the open follows
-    /// from that choice (including an Original they asked for).
-    QualityChange,
-    /// The app changed the delivery on its own: a link fallback or an automatic Original attempt.
-    AutoHandoff,
-    /// The app reopened a route after a failed open: the rollback from Original, or the HLS that
-    /// replaces an Original source that never opened.
+    /// The app tuned the channel again on its own: the stream ended or stalled, or it carried
+    /// other codecs than the lineup declared.
     Recovery,
-    /// The session was reopened at its position after the app returned to the foreground.
+    /// The channel was tuned again at the live edge after the app returned to the foreground.
     Resume,
-    /// A detail-page trailer preview, which is not a playback the viewer asked for: it opens in the
-    /// background on a dwell, direct play only, and writes no watch state. A failure of it is its
-    /// own issue group (see `playback::event_body`), not a playback failure.
-    Preview,
 }
 
 impl AttemptOrigin {
-    pub const ALL: [Self; 7] = [
-        Self::Fresh,
-        Self::UserRetry,
-        Self::QualityChange,
-        Self::AutoHandoff,
-        Self::Recovery,
-        Self::Resume,
-        Self::Preview,
-    ];
+    pub const ALL: [Self; 4] = [Self::Fresh, Self::UserRetry, Self::Recovery, Self::Resume];
 
     pub const fn code(self) -> &'static str {
         match self {
             Self::Fresh => "fresh",
             Self::UserRetry => "user_retry",
-            Self::QualityChange => "quality_change",
-            Self::AutoHandoff => "auto_handoff",
             Self::Recovery => "recovery",
             Self::Resume => "resume",
-            Self::Preview => "preview",
         }
     }
 }
 
 /// **Which engine open of the playback session this was**, counting the first, every Retry and
-/// every handoff or recovery: `1`..`9`, then `9+`. Bounded on purpose, so a session that flaps for
+/// every reconnect: `1`..`9`, then `9+`. Bounded on purpose, so a session that flaps for
 /// an hour is one value rather than a free number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AttemptOrdinal(u8);
@@ -437,60 +195,6 @@ impl AttemptOrdinal {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OriginalProbePhase {
-    // Retained stable wire vocabulary for events produced by builds before 2026-08-31. Current
-    // runtime emits SampleSource only; removing/reusing these strings would rewrite dashboards.
-    RetireHls,
-    SampleSource,
-    CloseSource,
-    RestoreHls,
-    OpenHls,
-    CommitHls,
-}
-
-impl OriginalProbePhase {
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::RetireHls => "retire_hls",
-            Self::SampleSource => "sample_source",
-            Self::CloseSource => "close_source",
-            Self::RestoreHls => "restore_hls",
-            Self::OpenHls => "open_hls",
-            Self::CommitHls => "commit_hls",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TraceOutcome {
-    Started,
-    Succeeded,
-    NoBody,
-    Deadline,
-    Transport,
-    /// The app observed failure but the available signal does not distinguish a moved local
-    /// session, a missing client or another control-plane circumstance.
-    Inconclusive,
-    ServerState,
-    Refused,
-}
-
-impl TraceOutcome {
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::Started => "started",
-            Self::Succeeded => "succeeded",
-            Self::NoBody => "no_body",
-            Self::Deadline => "deadline",
-            Self::Transport => "transport",
-            Self::Inconclusive => "inconclusive",
-            Self::ServerState => "server_state",
-            Self::Refused => "refused",
-        }
-    }
-}
-
 /// **How long a native Load spent in flight, as a bucket — never the millisecond count.**
 ///
 /// Recorded once per attempt, either when `player::threads::load_thread`'s Load-returned gate
@@ -528,32 +232,12 @@ impl LoadElapsedClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TraceEvent {
-    Requested {
-        selected: QualityClass,
-    },
+    Requested,
     Presented {
-        delivery: DeliveryClass,
-        requested: QualityClass,
         declared_rate: RateClass,
         raster: RasterClass,
     },
     SeekRequested,
-    QualitySelected {
-        selected: QualityClass,
-    },
-    DeliveryRequested {
-        delivery: DeliveryClass,
-        requested: QualityClass,
-        reason: DeliveryReason,
-    },
-    HlsCommitted {
-        direction: TraceDirection,
-        requested: QualityClass,
-    },
-    OriginalProbe {
-        phase: OriginalProbePhase,
-        outcome: TraceOutcome,
-    },
     /// The native Load-returned gate opened, or issue #74 D.1.4's budget fired first — see
     /// [`LoadElapsedClass`].
     LoadGateOpened {
@@ -792,9 +476,6 @@ impl TransferAgeClass {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlaybackErrorContext {
-    pub delivery: DeliveryClass,
-    pub selected: QualityClass,
-    pub requested: QualityClass,
     pub declared_rate: RateClass,
     pub media_rate: RateClass,
     pub raster: RasterClass,
@@ -807,15 +488,11 @@ pub struct PlaybackErrorContext {
     pub transfer_age: TransferAgeClass,
     /// Whether the PLAYBACK ever put a picture on the panel (the session's own latch).
     pub started: bool,
-    /// The route the failed attempt was opening, as against `delivery`, which is the route the
-    /// session had installed. They differ after a mid-play switch whose new route never opened.
-    pub attempted_delivery: DeliveryClass,
     /// Whether THIS attempt (the engine open that failed) put a picture on the panel, as against
     /// `started`, which is true for a session that played before the switch that failed.
     pub attempt_started: bool,
-    /// Why THAT open was made, and which open of the playback session it was (the first, a Retry,
-    /// a handoff...). `delivery` and `attempted_delivery` say what was opened; these say why and
-    /// how many times.
+    /// Why THAT open was made, and which open of the playback session it was (the first, a Try
+    /// again, a reconnect...).
     pub attempt_origin: AttemptOrigin,
     pub attempt_ordinal: AttemptOrdinal,
     /// The exact HTTP status the media source answered with, 100-599, or 0 when none was recorded
@@ -826,8 +503,6 @@ pub struct PlaybackErrorContext {
     /// nothing else: the callback's string is free text that can carry a URI or a path and has no
     /// field here.
     pub pipeline_error: i32,
-    /// Only for a refusal the server made at `/decision` — see [`RefusalContext`].
-    pub refusal: Option<RefusalContext>,
 }
 
 /// The video codec, as a CLOSED domain.
@@ -949,18 +624,8 @@ impl AudioCodecClass {
 /// (`player::FailureKind`, which also drives the read-out's wording) and converts it here with
 /// `FailureKind::class`; the code is the stable value `playback.failed`'s `kind` field and the
 /// handled error's `playback.kind` tag carry.
-///
-/// One historical code, [`OriginalRollback`](Self::OriginalRollback), remains so old telemetry
-/// fixtures and dashboards retain their meaning after the destructive probe transaction was
-/// removed; no live path emits it now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureClass {
-    /// `/decision` refused the item outright.
-    DecisionRefused,
-    /// The explicit Direct Play policy cannot deliver the requested original stream.
-    PlaybackPolicy,
-    /// Transcoding, and the server produced no video stream.
-    NoVideoTranscodeTarget,
     /// Direct playing, and the stream carries no video track.
     NoVideoTrack,
     /// The producer never opened a usable media stream or produced a video access unit.
@@ -969,8 +634,6 @@ pub enum FailureClass {
     PlaybackInterrupted,
     /// Starfish refused the Load declaration, so no decoder session could start.
     TvPipeline,
-    /// Historical telemetry only: the retired exclusive Original experiment lost its HLS rollback.
-    OriginalRollback,
     /// This device's jail is missing `/dev/rtkmem` on a SoC where that is a known cause of native
     /// A/V crashes — the Load was never attempted.
     JailMissingRtkmem,
@@ -981,18 +644,13 @@ pub enum FailureClass {
 }
 
 impl FailureClass {
-    /// Every class, so a test can hold the declared `playback.failed` domain to the enum it is
-    /// built from.
-    #[cfg(any(test, feature = "test-support"))]
-    pub const ALL: [Self; 11] = [
-        Self::DecisionRefused,
-        Self::PlaybackPolicy,
-        Self::NoVideoTranscodeTarget,
+    /// Every class, in wire order: the consent legend lists them, and a test holds the declared
+    /// `playback.failed` domain to them.
+    pub const ALL: [Self; 7] = [
         Self::NoVideoTrack,
         Self::MediaSource,
         Self::PlaybackInterrupted,
         Self::TvPipeline,
-        Self::OriginalRollback,
         Self::JailMissingRtkmem,
         Self::LoadTimeout,
         Self::Unspecified,
@@ -1002,14 +660,10 @@ impl FailureClass {
     /// rename is a refactor and must not silently re-partition a year of dashboards.
     pub const fn code(self) -> &'static str {
         match self {
-            Self::DecisionRefused => "decision_refused",
-            Self::PlaybackPolicy => "playback_policy",
-            Self::NoVideoTranscodeTarget => "no_video_transcode_target",
             Self::NoVideoTrack => "no_video_track",
             Self::MediaSource => "media_source",
             Self::PlaybackInterrupted => "playback_interrupted",
             Self::TvPipeline => "tv_pipeline",
-            Self::OriginalRollback => "original_rollback",
             Self::JailMissingRtkmem => "jail_missing_rtkmem",
             Self::LoadTimeout => "load_timeout",
             Self::Unspecified => "unspecified",

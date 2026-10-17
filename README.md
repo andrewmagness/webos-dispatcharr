@@ -61,6 +61,12 @@ Early and under active development. Nothing here has been released yet; the firs
 Both sets are rooted (the app installs as a developer app). Features are also verified in the
 desktop simulator against a mock Dispatcharr server (`tests/mock_dispatcharr.py`).
 
+### Privacy
+
+Optional crash reports and product analytics are off, and this version has no screen that asks
+about them, so it sends nothing. [`PRIVACY.md`](PRIVACY.md) lists what is stored on the television
+and exactly what each report would contain.
+
 ## Building
 
 The app is Rust (with a small C shim) cross-compiled to 32-bit ARM. [`docs/building.md`](docs/building.md)
@@ -76,9 +82,10 @@ what this app is built on. The Plex pages, plex.tv sign-in, the Settings pages, 
 documentation tooling, the on-demand player's transport and panels, the trailer preview engine,
 the Plex transcode machinery (seek and quality flights, Original trials, the film-resume machine),
 the Plex adaptive-bitrate and HLS playback engine, the Plex play resolve, timeline reporting
-and subtitle routing (side reader, sidecars, server burns), and the Plex library data stores
-(Home, Library, Detail, Search, Person, Collection, watch state, subtitle search) have been
-removed; the Plex client library the player still links is being removed in stages.
+and subtitle routing (side reader, sidecars, server burns), the Plex library data stores
+(Home, Library, Detail, Search, Person, Collection, watch state, subtitle search), the Plex player
+settings, and the Plex fields of the optional crash and analytics reports have been removed; the
+Plex client library the player still links is being removed in stages.
 
 ## Licence
 

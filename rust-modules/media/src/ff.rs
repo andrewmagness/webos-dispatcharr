@@ -1837,16 +1837,14 @@ extern "C" fn seek_cb(op: *mut c_void, offset: i64, whence: c_int) -> i64 {
                 path,
             } => {
                 plx_net::stream::http_close(*hs);
-                let origin = plx_plex::plex::Origin::http(&host.to_string_lossy(), *port);
+                let origin = plx_net::net::origin::Origin::http(&host.to_string_lossy(), *port);
                 let from = path.to_string_lossy().into_owned();
                 let req = plx_net::stream::redirect::Request {
                     origin: &origin,
                     path: &from,
-                    credentials: None,
                     range_from: Some(target),
                     deadline: None,
                     same_origin_only: false,
-                    credential_gate: plx_plex::http::credential_transport_allowed,
                 };
                 match plx_net::stream::redirect::open_following(
                     *hs,
@@ -2803,7 +2801,7 @@ fn open_curl_hop(
 /// on the curl source. Publishes the same two diagnostics the TLS arm of `demux` does.
 fn open_plain_progressive(
     hs_p: *mut HttpStream,
-    origin: &plx_plex::plex::Origin,
+    origin: &plx_net::net::origin::Origin,
     path: &str,
     aq_p: *mut AuQueue,
 ) -> Result<(Src, i64), MediaOpenFail> {
@@ -2812,11 +2810,9 @@ fn open_plain_progressive(
     let req = plx_net::stream::redirect::Request {
         origin,
         path,
-        credentials: None,
         range_from: None,
         deadline: None,
         same_origin_only: false,
-        credential_gate: plx_plex::http::credential_transport_allowed,
     };
     match plx_net::stream::redirect::open_following(hs_p, &req, &mut plx_base::checkpoint::NoCheckpoint)
     {
@@ -3262,14 +3258,14 @@ mod pre_audio_headroom_tests {
 
 /// The demux thread body (spawned by `engine::start_bufferfeed`).
 ///
-/// Takes an [`Origin`](plx_plex::plex::Origin) rather than a `(host, port)` pair because **the scheme
+/// Takes an [`Origin`](plx_net::net::origin::Origin) rather than a `(host, port)` pair because **the scheme
 /// decides the transport**: `http` reads through the Engine's `stream.rs` socket, `https` through
 /// [`crate::curlio`]. An origin is parsed from a URL and never rebuilt from an address, which is
 /// what keeps the `plex.direct` hostname TLS validates against intact all the way down here
 /// (`net/origin.rs`). `hs` is still passed on both paths — it is the Engine's, and it stays
 /// unused (fd = -1, published as `SHARED.hs_ptr`) when the origin turns out to be https.
 pub fn demux(
-    origin: plx_plex::plex::Origin,
+    origin: plx_net::net::origin::Origin,
     path: String,
     acodec: String,
     aq: SendPtr<AuQueue>,

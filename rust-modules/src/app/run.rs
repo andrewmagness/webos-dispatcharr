@@ -731,11 +731,6 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
         // `Navigation::resume` is idempotent, so the pair is safe and a lost one is not.
         super::bridge::foreground(&mut app.pages);
         if et == 0x106 {
-            // Nothing proves the television is still on the network the person allowed
-            // unencrypted connections on: every plaintext grant ends here, and each server that
-            // lost one is queued for a fresh discovery (requested by the upgrade retry's frame
-            // step) that re-proves eligibility before minting again (`plex::grant`).
-            plx_plex::plex::grant::network_changed();
             // Reacquire only on DID foreground, before playback restoration and rendering.
             restore_window(app.win);
             plx_machine::idle::invalidate();
@@ -1188,7 +1183,7 @@ fn resume_parked(app: &mut App) {
     if let Some(tune) = plx_media::route::live_tune(&app.player.session).cloned() {
         log("live: foreground re-tune");
         super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
-            &mut app.pages, &mut app.bridge);
+            plx_media::player::report::AttemptOrigin::Resume, &mut app.pages, &mut app.bridge);
     } else {
         plx_media::player::start_bufferfeed(&mut app.player.session, &mut app.adapters.player);
     }
@@ -1251,7 +1246,7 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
                         }
                         tune.codecs = Some(found);
                         super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
-                            &mut app.pages, &mut app.bridge);
+                            plx_media::player::report::AttemptOrigin::Recovery, &mut app.pages, &mut app.bridge);
                     }
                 }
             }
@@ -1265,8 +1260,8 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             // dropped. Tune the same channel again, on the page that is already up.
             log("live: the stream ended; reconnecting");
             if let Some(tune) = plx_media::route::live_tune(&app.player.session).cloned() {
-                super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune, &mut app.pages,
-                    &mut app.bridge);
+                super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
+                    plx_media::player::report::AttemptOrigin::Recovery, &mut app.pages, &mut app.bridge);
             }
         } else if playback_may_run(app) && super::bridge::player(&app.pages).is_some() && plx_media::player::ended() {
             if live_ended {
@@ -1851,7 +1846,7 @@ pub(crate) unsafe fn shutdown(
     ps: &mut plx_media::route::PlaybackSession,
     pa: &mut plx_media::player::adapter::PlayerAdapter,
 ) {
-    plx_media::player::report::abandon_pending(ps);
+    plx_media::player::report::abandon_pending();
     if is_started() {
         plx_media::player::stop_bufferfeed(ps, pa);
     }
@@ -2004,7 +1999,8 @@ mod lifecycle_regression_tests {
             url: "http://127.0.0.1:9/stream.ts".into(), logo: None, programmes: Vec::new() }];
         let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
         let tune = LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None };
-        assert!(plx_media::route::request_live(&mut app.player.session, tune, 0));
+        assert!(plx_media::route::request_live(&mut app.player.session, tune,
+            plx_media::player::report::AttemptOrigin::Fresh, 0));
         for et in [0x103, 0x104] {
             event(&mut app, &mut fr, et);
         }
@@ -2043,7 +2039,7 @@ mod lifecycle_regression_tests {
         let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
         let tune = LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None };
         super::super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
-            &mut app.pages, &mut app.bridge);
+            plx_media::player::report::AttemptOrigin::Fresh, &mut app.pages, &mut app.bridge);
         let tick = |app: &mut App, fr: &mut Frame| {
             for _ in 0..30 {
                 fr.now += 16;

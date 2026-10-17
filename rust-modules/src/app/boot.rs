@@ -203,21 +203,9 @@ mod panic_log_tests {
     }
 }
 
-/// **Hand `plex` the two answers it cannot name.** The Plex layer sits beneath `route` and
-/// `telemetry`, so what it needs from them reaches it as hooks installed here, once, first thing in
-/// [`enter_application`] — before anything can load the session:
-///
-/// * `plex::session::install_account_clear_cleanup` — `telemetry::cleanup_after_account_clear`, the
-///   telemetry/consent legacy-file sweep a durable sign-out runs. It exists only where the sweep does
-///   (ARM, not the simulator, not a test build); unset, `plex` reads it as already retired.
-pub(crate) fn install_plex_seams() {
-    #[cfg(all(target_os = "linux", target_arch = "arm", not(feature = "hostsim"), not(test)))]
-    plx_plex::plex::session::install_account_clear_cleanup(plx_telemetry::telemetry::cleanup_after_account_clear);
-}
-
 #[cfg(test)]
 mod seam_order_tests {
-    /// `plx_plex` reports the version it is handed (`plex::identity::set_version`) and, in a
+    /// `plx_base::identity` reports the version it is handed (`set_version`) and, in a
     /// shipping build, panics when asked for it earlier, so the hand-in has to be the first thing
     /// the one entry point does: nothing before it can build a header or a `User-Agent`. It also
     /// has to hand in `PLX_VERSION` itself, the string `ci/check-package.py` grades in the binary
@@ -225,8 +213,8 @@ mod seam_order_tests {
     /// may hand in anything else. Reads the source, like the tests
     /// below, because no host test can run `enter_application`.
     #[test]
-    fn the_plex_version_is_handed_in_first_and_only_there() {
-        let hand_in = concat!("plx_plex::plex::identity::", "set_version(env!(\"PLX_VERSION\"));");
+    fn the_version_is_handed_in_first_and_only_there() {
+        let hand_in = concat!("plx_base::identity::", "set_version(env!(\"PLX_VERSION\"));");
         let source = include_str!("mod.rs");
         let body = source
             .split_once("fn enter_application(")
@@ -641,7 +629,7 @@ pub(crate) unsafe fn construct(
     plx_gfx::gfx::init_blur();
     // The transport takes the client's `User-Agent` as a value (it names no Plex layer): hand it
     // over before any request can be made, so the first one already carries it.
-    plx_net::net::set_user_agent(plx_plex::plex::identity::user_agent());
+    plx_net::net::set_user_agent(plx_base::identity::user_agent());
     // One-time libcurl bind + init (main thread) before any threaded HTTPS call. A false here
     // means this device has no libcurl we can bind, so plex.tv sign-in will not work — the app
     // still runs, and `net::global_init` has already said so in the event log.

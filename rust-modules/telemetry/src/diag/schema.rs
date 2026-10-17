@@ -55,26 +55,8 @@ pub enum DiagEvent {
     RouteEntered {
         screen: &'static str,
     },
-    /// plex.tv sign-in finished and the app reached Home or the profile picker. A user-initiated
-    /// flow is bracketed by `started` and exactly one completed/failed/cancelled event; failures
-    /// carry only the fixed coarse stage, never server text or an account value.
-    SignInCompleted,
-    SignInStarted,
-    SignInFailed {
-        kind: SignInFailure,
-    },
-    SignInCancelled,
     FeatureUsed {
         feature: Feature,
-    },
-    /// **The server refused, or silently ignored, a Plex Pass audio DSP request** (issue #266) —
-    /// distinct from [`Feature::AudioEnhancement`], which fires on the PRESS regardless of what
-    /// the server does with it. The two knobs asked for, never which track, which server, or the
-    /// server's own decision text. Fires where `route::plan`/`route::decision` grade
-    /// `EnhancementOutcome::Refused` (`plan::enhancement_fallback` returning `Retry`).
-    EnhancementRefused {
-        boost_dialog: bool,
-        normalize_loudness: bool,
     },
 
     // ---- playback -----------------------------------------------------------------------------
@@ -109,7 +91,6 @@ pub enum DiagEvent {
     /// The first frame of this attempt reached the panel — the transition into `Playing`, once.
     PlaybackStarted {
         playback_id: i64,
-        mode: &'static str,
         /// `sd` / `hd` / `fhd` / `uhd`, never the raster.
         raster: &'static str,
         /// A fixed rung, never the measured rate.
@@ -123,23 +104,18 @@ pub enum DiagEvent {
     /// never the on-screen wording, which is prose and will be re-worded.
     PlaybackFailed {
         playback_id: i64,
-        mode: &'static str,
         kind: &'static str,
     },
     /// A real teardown — the viewer stopped, or the item ran out. **Not** a seek, a reload or an
     /// app-switch suspend, all of which end an ENGINE without ending a playback.
     PlaybackEnded {
         playback_id: i64,
-        mode: &'static str,
-        watched: &'static str,
     },
     PlaybackCancelled {
         playback_id: i64,
-        mode: &'static str,
     },
     PlaybackAbandoned {
         playback_id: i64,
-        mode: &'static str,
     },
     PlaybackQuality {
         playback_id: i64,
@@ -151,78 +127,12 @@ pub enum DiagEvent {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Feature {
     Pause,
-    Seek,
-    AudioTrack,
-    SubtitleTrack,
-    SkipIntro,
-    SkipCredits,
-    /// **The viewer moved to another library of the tab they were on** — a pill in the Library's
-    /// head row, or a row of the Sources panel behind it.
-    ///
-    /// It exists because issue #68 could not be answered from this channel at all. A user with two
-    /// TV libraries reported the second one as missing; the switcher was drawn and was never found,
-    /// and nothing here could say whether that was one account or every account with the shape.
-    /// This is the numerator for that question — "does anybody ever leave the library a tab opens
-    /// on" — and it is deliberately the whole of it: the denominator is a topology fact about an
-    /// account, which this channel does not carry and is not the place to start carrying.
-    LibrarySwitch,
-    /// **A viewer flipped a Boost dialog / Normalize loudness row** (issue #266, Plex Pass only —
-    /// the row is absent without it, so this event cannot fire on an account this build never
-    /// showed the toggle to). Fires from the Audio tab's `on_ok`, one bit at a time, never which
-    /// way it went or which track — see [`DiagEvent::EnhancementRefused`] for the server's answer.
-    AudioEnhancement,
-    /// **A viewer set the Next episode preference** (Settings → Video & playback) to one of its
-    /// three modes. The mode is the whole payload: a closed set of three codes, fired once per
-    /// change, never per playback and never with anything about what was playing.
-    NextEpisode(plx_plex::plex::session::NextEpisodeMode),
-    /// **A viewer set the Skip interval preference** (Settings → Video & playback) to one of its
-    /// five lengths. The length is the whole payload: a closed set of five codes, fired once per
-    /// durable change, never per press and never with anything about what was playing.
-    SkipInterval(plx_plex::plex::session::SkipInterval),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SignInFailure {
-    PinCreate,
-    Authorization,
-    Discovery,
-    Other,
-}
-
-impl SignInFailure {
-    fn code(self) -> &'static str {
-        match self {
-            Self::PinCreate => "pin_create",
-            Self::Authorization => "authorization",
-            Self::Discovery => "discovery",
-            Self::Other => "other",
-        }
-    }
 }
 
 impl Feature {
     fn code(self) -> &'static str {
         match self {
             Self::Pause => "pause",
-            Self::Seek => "seek",
-            Self::AudioTrack => "audio_track",
-            Self::SubtitleTrack => "subtitle_track",
-            Self::SkipIntro => "skip_intro",
-            Self::SkipCredits => "skip_credits",
-            Self::LibrarySwitch => "library_switch",
-            Self::AudioEnhancement => "audio_enhancement",
-            Self::NextEpisode(mode) => match mode {
-                plx_plex::plex::session::NextEpisodeMode::Countdown => "next_episode_countdown",
-                plx_plex::plex::session::NextEpisodeMode::AfterCredits => "next_episode_after_credits",
-                plx_plex::plex::session::NextEpisodeMode::Off => "next_episode_off",
-            },
-            Self::SkipInterval(interval) => match interval {
-                plx_plex::plex::session::SkipInterval::Seconds5 => "skip_interval_5s",
-                plx_plex::plex::session::SkipInterval::Seconds10 => "skip_interval_10s",
-                plx_plex::plex::session::SkipInterval::Seconds15 => "skip_interval_15s",
-                plx_plex::plex::session::SkipInterval::Seconds30 => "skip_interval_30s",
-                plx_plex::plex::session::SkipInterval::Seconds60 => "skip_interval_60s",
-            },
         }
     }
 }
@@ -281,18 +191,6 @@ pub struct UsageContext {
     pub device_model: String,
     pub soc: String,
     pub hardware_revision: String,
-    /// `local` / `remote` / `relay` / `unknown`. **Absent, not `unknown`, on an event with no one
-    /// server** — `app.launch`, `route.entered`, `signin.*` — since an account with N servers has
-    /// no single connection to report for those. Present (possibly `unknown`, when the winning
-    /// client hasn't classified its link yet) on every event captured through
-    /// [`UsageEnvelope::capture_for_snapshot`]. `#[serde(default)]` keeps an older spooled envelope,
-    /// captured before this field could be omitted, decoding as `None` rather than refusing to
-    /// parse.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub server_connection: Option<String>,
-    /// `v4` / `v6` / `unknown`. Same absence rule as `server_connection`, from the same cause.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ip_version: Option<String>,
     /// issue #74: the k5lp/k3lp `/dev/rtkmem` sandbox pre-flight — `ok` / `missing` / `n/a` — the
     /// SAME closed enum [`plx_platform::tv::sandbox::context`] reports, never a free-text probe result.
     /// Present on every event so a chassis's crash-at-start rate is queryable by sandbox rather
@@ -323,8 +221,6 @@ impl Default for UsageContext {
             device_model: "unknown".into(),
             soc: "unknown".into(),
             hardware_revision: "unknown".into(),
-            server_connection: None,
-            ip_version: None,
             rtkmem: rtkmem_default(),
             install: install_default(),
         }
@@ -333,45 +229,10 @@ impl Default for UsageContext {
 
 impl UsageContext {
     /// Read the already-probed platform inventory. `tv::probe_device` runs before telemetry boot and
-    /// before the first usage event; an unavailable field is reported honestly as `unknown`. This
-    /// is the server-LESS form — a generic screen or app event has no one server when an account
-    /// owns N of them, so it OMITS `server_connection`/`ip_version` entirely rather than
-    /// inheriting whichever registry slot happens to be current or reporting a hardcoded
-    /// `unknown` for a connection the event never had. The one server-addressed producer is
-    /// [`Self::for_snapshot`], for an event that captured its own `(link, ip)` up front.
+    /// before the first usage event; an unavailable field is reported honestly as `unknown`.
     pub fn current() -> Self {
-        Self::build(None)
-    }
-
-    /// Capture network facts from an ALREADY-CAPTURED `(link, ip)` pair rather than a live
-    /// registry read. `server.is_some()` is what decides "this event addresses one server" (and
-    /// so gets fields at all, possibly `unknown`); `server.is_none()` omits both regardless of
-    /// `link`/`ip`, matching [`Self::current`]'s server-less behaviour exactly.
-    pub fn for_snapshot(
-        server: Option<plx_plex::plex::ServerId>,
-        link: Option<plx_plex::plex::probe::Location>,
-        ip: Option<plx_plex::plex::IpVersion>,
-    ) -> Self {
-        Self::build(server.map(|_| (link, ip)))
-    }
-
-    fn build(connection: Option<(Option<plx_plex::plex::probe::Location>, Option<plx_plex::plex::IpVersion>)>) -> Self {
         let os = plx_platform::tv::device::info();
         let hw = plx_platform::tv::device::device();
-        let connection = connection.map(|(link, ip)| {
-            let connection = match link {
-                Some(plx_plex::plex::probe::Location::Local) => "local",
-                Some(plx_plex::plex::probe::Location::Remote) => "remote",
-                Some(plx_plex::plex::probe::Location::Relay) => "relay",
-                None => "unknown",
-            };
-            let ip = match ip {
-                Some(plx_plex::plex::IpVersion::V4) => "v4",
-                Some(plx_plex::plex::IpVersion::V6) => "v6",
-                None => "unknown",
-            };
-            (connection, ip)
-        });
         Self {
             app_version: dimension(crate::telemetry::app_version()),
             webos_release: dimension(&os.release),
@@ -380,8 +241,6 @@ impl UsageContext {
             device_model: dimension(&hw.model),
             soc: dimension(&hw.board),
             hardware_revision: dimension(&hw.hw_revision),
-            server_connection: connection.map(|(c, _)| c.to_string()),
-            ip_version: connection.map(|(_, ip)| ip.to_string()),
             rtkmem: plx_platform::tv::sandbox::context().into(),
             install: plx_base::paths::install_kind().into(),
         }
@@ -397,8 +256,6 @@ impl UsageContext {
             device_model: "<device model class>".into(),
             soc: "<SoC/platform class>".into(),
             hardware_revision: "<hardware revision class>".into(),
-            server_connection: Some("<local / remote / relay / unknown>".into()),
-            ip_version: Some("<v4 / v6 / unknown>".into()),
             rtkmem: "<ok / missing / n/a>".into(),
             install: "<devmode / homebrew / unknown>".into(),
         }
@@ -438,28 +295,6 @@ impl UsageEnvelope {
 
     pub fn capture(event: DiagEvent, occurred_at_ms: u64, session_id: &str) -> Self {
         Self::capture_with_context(event, occurred_at_ms, session_id, UsageContext::current())
-    }
-
-    /// Connection facts come from an already-captured `(link, ip)` snapshot rather than a live
-    /// registry read (#95 step 8, item 4) — what a playback attempt event wants, since
-    /// `player::report::requested` snapshots the attempt's server connection once and every later
-    /// event on that attempt must report THAT connection, not whatever the client reads as at
-    /// send time after a mid-attempt re-point. The one server-addressed producer; a generic event
-    /// with no one server goes through [`Self::capture`] instead.
-    pub fn capture_for_snapshot(
-        event: DiagEvent,
-        occurred_at_ms: u64,
-        session_id: &str,
-        server: plx_plex::plex::ServerId,
-        link: Option<plx_plex::plex::probe::Location>,
-        ip: Option<plx_plex::plex::IpVersion>,
-    ) -> Self {
-        Self::capture_with_context(
-            event,
-            occurred_at_ms,
-            session_id,
-            UsageContext::for_snapshot(Some(server), link, ip),
-        )
     }
 
     pub fn capture_with_context(
@@ -527,22 +362,9 @@ pub fn serialize(e: DiagEvent) -> (&'static str, Vec<(&'static str, Value)>) {
         DiagEvent::RouteEntered { screen } => {
             ("route.entered", vec![("screen", Value::Str(screen))])
         }
-        DiagEvent::SignInCompleted => ("signin.completed", Vec::new()),
-        DiagEvent::SignInStarted => ("signin.started", Vec::new()),
-        DiagEvent::SignInFailed { kind } => {
-            ("signin.failed", vec![("kind", Value::Str(kind.code()))])
-        }
-        DiagEvent::SignInCancelled => ("signin.cancelled", Vec::new()),
         DiagEvent::FeatureUsed { feature } => (
             "feature.used",
             vec![("feature", Value::Str(feature.code()))],
-        ),
-        DiagEvent::EnhancementRefused { boost_dialog, normalize_loudness } => (
-            "enhancement.refused",
-            vec![
-                ("boost_dialog", Value::Str(if boost_dialog { "true" } else { "false" })),
-                ("normalize_loudness", Value::Str(if normalize_loudness { "true" } else { "false" })),
-            ],
         ),
         DiagEvent::PlaybackRequested { playback_id } => (
             "playback.requested",
@@ -550,7 +372,6 @@ pub fn serialize(e: DiagEvent) -> (&'static str, Vec<(&'static str, Value)>) {
         ),
         DiagEvent::PlaybackStarted {
             playback_id,
-            mode,
             raster,
             fps,
             video,
@@ -560,7 +381,6 @@ pub fn serialize(e: DiagEvent) -> (&'static str, Vec<(&'static str, Value)>) {
             "playback.started",
             vec![
                 ("playback_id", Value::Int(playback_id)),
-                ("mode", Value::Str(mode)),
                 ("raster", Value::Str(raster)),
                 ("fps", Value::Str(fps)),
                 ("video", Value::Str(video)),
@@ -570,40 +390,32 @@ pub fn serialize(e: DiagEvent) -> (&'static str, Vec<(&'static str, Value)>) {
         ),
         DiagEvent::PlaybackFailed {
             playback_id,
-            mode,
             kind,
         } => (
             "playback.failed",
             vec![
                 ("playback_id", Value::Int(playback_id)),
-                ("mode", Value::Str(mode)),
                 ("kind", Value::Str(kind)),
             ],
         ),
         DiagEvent::PlaybackEnded {
             playback_id,
-            mode,
-            watched,
         } => (
             "playback.ended",
             vec![
                 ("playback_id", Value::Int(playback_id)),
-                ("mode", Value::Str(mode)),
-                ("watched", Value::Str(watched)),
             ],
         ),
-        DiagEvent::PlaybackCancelled { playback_id, mode } => (
+        DiagEvent::PlaybackCancelled { playback_id } => (
             "playback.cancelled",
             vec![
                 ("playback_id", Value::Int(playback_id)),
-                ("mode", Value::Str(mode)),
             ],
         ),
-        DiagEvent::PlaybackAbandoned { playback_id, mode } => (
+        DiagEvent::PlaybackAbandoned { playback_id } => (
             "playback.abandoned",
             vec![
                 ("playback_id", Value::Int(playback_id)),
-                ("mode", Value::Str(mode)),
             ],
         ),
         DiagEvent::PlaybackQuality {
@@ -650,24 +462,12 @@ pub const EVENT_SPECS: &[EventSpec] = &[
         name: "route.entered",
         fields: &[F { key: "screen", domain: "one of a fixed list of screen names" }],
     },
-    EventSpec { name: "signin.completed", fields: &[] },
-    EventSpec { name: "signin.started", fields: &[] },
-    EventSpec { name: "signin.failed", fields: &[F { key: "kind", domain: "`pin_create` / `authorization` / `discovery` / `other`" }] },
-    EventSpec { name: "signin.cancelled", fields: &[] },
     EventSpec { name: "feature.used", fields: &[F { key: "feature", domain: "one of a fixed list of feature names" }] },
-    EventSpec {
-        name: "enhancement.refused",
-        fields: &[
-            F { key: "boost_dialog", domain: "`true` / `false`" },
-            F { key: "normalize_loudness", domain: "`true` / `false`" },
-        ],
-    },
     EventSpec { name: "playback.requested", fields: &[F { key: "playback_id", domain: PLAYBACK_ID }] },
     EventSpec {
         name: "playback.started",
         fields: &[
             F { key: "playback_id", domain: PLAYBACK_ID },
-            F { key: "mode", domain: MODE },
             F { key: "raster", domain: "`sd` / `hd` / `fhd` / `uhd` / `unknown` — never the raster" },
             F { key: "fps", domain: "a fixed rung: `24`/`25`/`30`/`50`/`60`/`100`/`other`/`unknown` — never the measured rate" },
             F { key: "video", domain: "a codec name from a fixed table; anything else is `other`" },
@@ -679,17 +479,16 @@ pub const EVENT_SPECS: &[EventSpec] = &[
         name: "playback.failed",
         fields: &[
             F { key: "playback_id", domain: PLAYBACK_ID },
-            F { key: "mode", domain: MODE },
-            F { key: "kind", domain: "`decision_refused` / `playback_policy` / `no_video_transcode_target` / `no_video_track` / `media_source` / `playback_interrupted` / `tv_pipeline` / `original_rollback` / `jail_missing_rtkmem` / `load_timeout` / `unspecified`" },
+            F { key: "kind", domain: "`no_video_track` / `media_source` / `playback_interrupted` / `tv_pipeline` / `jail_missing_rtkmem` / `load_timeout` / `unspecified`" },
         ],
     },
     EventSpec {
         name: "playback.cancelled",
-        fields: &[F { key: "playback_id", domain: PLAYBACK_ID }, F { key: "mode", domain: MODE }],
+        fields: &[F { key: "playback_id", domain: PLAYBACK_ID }],
     },
     EventSpec {
         name: "playback.abandoned",
-        fields: &[F { key: "playback_id", domain: PLAYBACK_ID }, F { key: "mode", domain: MODE }],
+        fields: &[F { key: "playback_id", domain: PLAYBACK_ID }],
     },
     EventSpec {
         name: "playback.quality",
@@ -703,8 +502,6 @@ pub const EVENT_SPECS: &[EventSpec] = &[
         name: "playback.ended",
         fields: &[
             F { key: "playback_id", domain: PLAYBACK_ID },
-            F { key: "mode", domain: MODE },
-            F { key: "watched", domain: "`abandoned` / `some` / `most` / `finished` — never a position or a duration" },
         ],
     },
 ];
@@ -744,16 +541,6 @@ pub const CONTEXT_SPECS: &[F] = &[
         domain: "the hardware revision class reported by nyx",
     },
     F {
-        key: "server_connection",
-        domain: "`local` / `remote` / `relay` / `unknown` — omitted entirely on an event with no \
-                  one server, such as `app.launch`, `route.entered` or a `signin.*` event",
-    },
-    F {
-        key: "ip_version",
-        domain: "`v4` / `v6` / `unknown` — omitted entirely on an event with no one server, same \
-                  as `server_connection`",
-    },
-    F {
         key: "rtkmem",
         domain: "`ok` / `missing` / `n/a` — the k5lp/k3lp `/dev/rtkmem` jail pre-flight",
     },
@@ -765,8 +552,6 @@ pub const CONTEXT_SPECS: &[F] = &[
 
 #[cfg(any(test, feature = "test-support"))]
 const PLAYBACK_ID: &str = "a random number minted per attempt, never stored and never reused";
-#[cfg(any(test, feature = "test-support"))]
-const MODE: &str = "`direct` / `transcode` / `unknown` — `unknown` when no route was installed, as for a plan the server or a playback setting refused";
 
 /// One event's contract. See [`EVENT_SPECS`].
 #[cfg(any(test, feature = "test-support"))]
@@ -824,23 +609,12 @@ mod tests {
         let all = vec![
             DiagEvent::AppLaunch,
             DiagEvent::RouteEntered { screen: "home" },
-            DiagEvent::SignInCompleted,
-            DiagEvent::SignInStarted,
-            DiagEvent::SignInFailed {
-                kind: SignInFailure::Authorization,
-            },
-            DiagEvent::SignInCancelled,
             DiagEvent::FeatureUsed {
                 feature: Feature::Pause,
-            },
-            DiagEvent::EnhancementRefused {
-                boost_dialog: true,
-                normalize_loudness: false,
             },
             DiagEvent::PlaybackRequested { playback_id: 7 },
             DiagEvent::PlaybackStarted {
                 playback_id: 7,
-                mode: "direct",
                 raster: "fhd",
                 fps: "24",
                 video: "h264",
@@ -849,21 +623,16 @@ mod tests {
             },
             DiagEvent::PlaybackFailed {
                 playback_id: 7,
-                mode: "transcode",
                 kind: "no_video_track",
             },
             DiagEvent::PlaybackEnded {
                 playback_id: 7,
-                mode: "direct",
-                watched: "most",
             },
             DiagEvent::PlaybackCancelled {
                 playback_id: 7,
-                mode: "direct",
             },
             DiagEvent::PlaybackAbandoned {
                 playback_id: 7,
-                mode: "direct",
             },
             DiagEvent::PlaybackQuality {
                 playback_id: 7,
@@ -875,12 +644,7 @@ mod tests {
             match e {
                 DiagEvent::AppLaunch => {}
                 DiagEvent::RouteEntered { .. } => {}
-                DiagEvent::SignInCompleted => {}
-                DiagEvent::SignInStarted => {}
-                DiagEvent::SignInFailed { .. } => {}
-                DiagEvent::SignInCancelled => {}
                 DiagEvent::FeatureUsed { .. } => {}
-                DiagEvent::EnhancementRefused { .. } => {}
                 DiagEvent::PlaybackRequested { .. } => {}
                 DiagEvent::PlaybackStarted { .. } => {}
                 DiagEvent::PlaybackFailed { .. } => {}
@@ -891,48 +655,6 @@ mod tests {
             }
         }
         all
-    }
-
-    /// The Next episode preference is reported as `feature.used` carrying exactly one of three
-    /// fixed codes — the mode and nothing else, with no free-text field to put anything in.
-    #[test]
-    fn the_next_episode_setting_reports_only_its_mode() {
-        use plx_plex::plex::session::NextEpisodeMode;
-        let sent: Vec<_> = NextEpisodeMode::LADDER
-            .iter()
-            .map(|&mode| serialize(DiagEvent::FeatureUsed { feature: Feature::NextEpisode(mode) }))
-            .collect();
-        let want = |code| ("feature.used", vec![("feature", Value::Str(code))]);
-        assert_eq!(
-            sent,
-            [
-                want("next_episode_countdown"),
-                want("next_episode_after_credits"),
-                want("next_episode_off"),
-            ]
-        );
-    }
-
-    /// The Skip interval preference is reported as `feature.used` carrying exactly one of five
-    /// fixed codes — the length and nothing else, with no free-text field to put anything in.
-    #[test]
-    fn the_skip_interval_setting_reports_only_its_length() {
-        use plx_plex::plex::session::SkipInterval;
-        let sent: Vec<_> = SkipInterval::LADDER
-            .iter()
-            .map(|&interval| serialize(DiagEvent::FeatureUsed { feature: Feature::SkipInterval(interval) }))
-            .collect();
-        let want = |code| ("feature.used", vec![("feature", Value::Str(code))]);
-        assert_eq!(
-            sent,
-            [
-                want("skip_interval_5s"),
-                want("skip_interval_10s"),
-                want("skip_interval_15s"),
-                want("skip_interval_30s"),
-                want("skip_interval_60s"),
-            ]
-        );
     }
 
     /// **What is SENT is exactly what is DECLARED — name and every field key, in order.**
@@ -1126,15 +848,9 @@ mod tests {
             .find(|f| f.key == "kind")
             .expect("playback.failed declares a kind field")
             .domain;
-        // Every variant, including the retained historical `original_rollback` code — see
-        // `FailureClass`'s own doc for why that one still exists with no live producer.
-        for kind in F::ALL {
-            assert!(
-                domain.contains(kind.code()),
-                "playback.failed's declared kind domain omits {:?} ({}): {domain}",
-                kind,
-                kind.code()
-            );
-        }
+        // Exactly the variants, in their order: a code with no producer is a value a dashboard
+        // would wait on forever.
+        let want = F::ALL.iter().map(|k| format!("`{}`", k.code())).collect::<Vec<_>>().join(" / ");
+        assert_eq!(domain, want, "playback.failed's declared kind domain is not FailureClass's codes");
     }
 }

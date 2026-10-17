@@ -139,35 +139,7 @@ impl CarriedAudio {
     }
 }
 
-pub use plx_plex::plex::session::{PlaybackQuality as Quality, DeckPress, DirectPlayMode, NextEpisodeMode, SkipInterval, SubtitleSize, SubtitlePosition};
-
-/// The ladder IN ORDER, best first. The ONE place row order lives, so the picker's index mapping
-/// cannot drift from what was drawn (`appkit::more_menu`'s rule, and its bug).
-pub const QUALITY_LADDER: [Quality; 7] = [
-    Quality::Auto,
-    Quality::Original,
-    Quality::P1080High,
-    Quality::P1080,
-    Quality::P720,
-    Quality::P720Low,
-    Quality::P480,
-];
-
-/// The explicit support/readiness gate for automatic playback. The measured PMS contract,
-/// segmented demux, per-encoder wire identity, prime/commit transaction and single-Load LG
-/// resolution gate are all present. Keeping this named (instead of deleting it after launch)
-/// preserves one fail-closed switch should a future protocol change invalidate that evidence.
-pub const fn auto_quality_ready() -> bool {
-    true
-}
-
-pub(super) fn supported_quality(q: Quality) -> Quality {
-    if q == Quality::Auto && !auto_quality_ready() {
-        Quality::Original
-    } else {
-        q
-    }
-}
+pub use plx_plex::plex::session::DirectPlayMode;
 
 /// The two verdict NUMBERS of a `/decision` body — `generalDecisionCode` and `transcodeDecisionCode`
 /// — kept as the integers PMS sent (`None` = the body carried none; never a defaulted 0).

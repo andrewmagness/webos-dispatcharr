@@ -1133,17 +1133,17 @@ fn mark_paths() -> Vec<std::path::PathBuf> {
 static TEST_ROOT: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
 
 /// Read the crash log's bytes and identity from ONE non-following descriptor
-/// (`session::open_owned_regular`). A missing log is a valid empty generation; a symlink, a file
+/// (`plx_base::atomic_file::open_owned_regular`). A missing log is a valid empty generation; a symlink, a file
 /// somebody else owns, or one larger than `MAX_OWNED_FILE` is an error, and nothing is imported.
 fn read_snapshot(path: &std::path::Path) -> std::io::Result<Snapshot> {
     use std::io::Read;
     use std::os::unix::fs::MetadataExt;
-    let (file, meta) = match plx_plex::plex::session::open_owned_regular(path) {
+    let (file, meta) = match plx_base::atomic_file::open_owned_regular(path) {
         Ok(opened) => opened,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Snapshot::default()),
         Err(e) => return Err(e),
     };
-    let max = plx_plex::plex::session::MAX_OWNED_FILE;
+    let max = plx_base::atomic_file::MAX_OWNED_FILE;
     let mut bytes = Vec::new();
     file.take(max + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > max {
@@ -1162,7 +1162,7 @@ fn read_snapshot(path: &std::path::Path) -> std::io::Result<Snapshot> {
 fn cutoff_mark(path: &std::path::Path) -> std::io::Result<Mark> {
     use std::io::Read;
     use std::os::unix::fs::MetadataExt;
-    let (mut file, meta) = match plx_plex::plex::session::open_owned_regular(path) {
+    let (mut file, meta) = match plx_base::atomic_file::open_owned_regular(path) {
         Ok(opened) => opened,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Snapshot::default().mark()),
         Err(e) => return Err(e),
@@ -1509,7 +1509,7 @@ fn resume_from(snapshot: &Snapshot, mark: Option<&Mark>) -> usize {
 fn read_mark() -> Option<Mark> {
     mark_paths()
         .iter()
-        .filter_map(|p| plx_plex::plex::session::read_owned_regular(p))
+        .filter_map(|p| plx_base::atomic_file::read_owned_regular(p))
         .find_map(|b| serde_json::from_slice::<Mark>(&b).ok())
 }
 
@@ -1519,7 +1519,7 @@ fn write_mark(mark: &Mark) -> bool {
     };
     let stored = mark_paths()
         .iter()
-        .any(|p| plx_plex::plex::session::write_atomic(p, &json).is_ok());
+        .any(|p| plx_base::atomic_file::write_atomic(p, &json).is_ok());
     if !stored {
         // Loud, because the consequence is re-reporting the same crash on every boot until it
         // succeeds — bounded by the deterministic `event_id`, which Sentry dedupes, but still a

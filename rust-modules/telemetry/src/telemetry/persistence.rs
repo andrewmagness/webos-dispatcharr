@@ -1541,15 +1541,11 @@ mod upgrade_tests {
         let loaded = helper_load(&mut b, &[]);
         let next = super::super::consent::apply(&loaded, true, true, || Some("f".repeat(32)));
         let outcome = record_racing(&mut b, &next, |snapshot| {
-            let account = plx_plex::plex::session::Session {
-                client_id: "synthetic-client-id".into(),
-                account_token: "synthetic-next-account".into(),
-                ..Default::default()
-            };
-            let (mut public, protected) = plx_plex::plex::session::split_canonical(&account).unwrap();
-            public.consent = snapshot.state.public.consent.clone();
-            public.scopes = snapshot.state.public.scopes.clone();
-            public.ids = snapshot.state.public.ids.clone();
+            // Another account's sign-in replaces the auth slot: the same reporting state, a new
+            // client and credential.
+            let mut public = snapshot.state.public.clone();
+            public.client_id = Some("synthetic-client-id".into());
+            let protected = r#"{"account_token":"synthetic-next-account"}"#.to_owned();
             plx_platform::storage::wire::WireMutation::ReplaceAuth {
                 public: serde_json::to_value(public).unwrap(),
                 payload: plx_platform::storage::wire::SecretString(protected),

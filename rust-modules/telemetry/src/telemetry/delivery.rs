@@ -3,8 +3,7 @@
 //! A report the person can quote a Report ID for — an onboarding incident, standing or one-off —
 //! is WATCHED here from the moment its lane takes it, and every place that decides its fate says
 //! so against its event id: the flush (`super::process_records`) when a server answers or a record
-//! is retired unsent, the spool (`super::spool`) when its cap or a withdrawal discards one, and the
-//! one-off's bounded direct fallback (`super::oneoff`). The session adapter reads [`state`] once a
+//! is retired unsent, and the spool (`super::spool`) when its cap or a withdrawal discards one. The session adapter reads [`state`] once a
 //! frame and hands each change to the incident owner, so "sent" on screen means a server accepted
 //! it and nothing less.
 //!

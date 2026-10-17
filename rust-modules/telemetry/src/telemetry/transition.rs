@@ -31,10 +31,6 @@ pub fn commit(previous: &Consent, next: &Consent) {
         crate::telemetry::crashreport::discard_pending_before_opt_in();
     }
     crate::telemetry::consent::install(next.clone());
-    // Sign-in events held while the question was unanswered (`diag::event`) go through the
-    // ordinary gate now that the decision is published: a "yes" lets them through with their
-    // original stamp, a "no" drops them, and either way the held queue is empty afterwards.
-    crate::diag::replay_deferred();
     if !next.errors {
         super::playback::clear_error_trace();
     }
@@ -74,9 +70,6 @@ fn persist_record_off_thread(next: Consent) {
 pub fn forget(_prior: &Consent) {
     let next = Consent::default();
     crate::telemetry::consent::install(next.clone());
-    // A held sign-in event belongs to the account whose attempt caused it, never to whoever signs
-    // in next: drop it unreplayed.
-    crate::diag::clear_deferred();
     super::playback::clear_error_trace();
     crate::telemetry::delivery::forget();
     crate::telemetry::spool::purge_all_local();

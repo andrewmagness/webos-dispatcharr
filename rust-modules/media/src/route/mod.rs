@@ -12,9 +12,7 @@
 mod decision;
 mod live;
 mod plan;
-mod prefs;
 
 pub use decision::*;
 pub use live::{LiveChannel, LiveLineup, LiveProgramme, LiveTune};
 pub use plan::*;
-pub use prefs::*;

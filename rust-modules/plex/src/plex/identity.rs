@@ -32,60 +32,9 @@
 //! The client IDENTIFIER is deliberately not here — it is per-install, not per-build. It is minted
 //! once from `/dev/urandom` and persisted by [`session`](super::session).
 
-/// The product token: what headers and the `User-Agent` carry. Unique, not `Plex …` anything,
-/// and one token (no space) because a `User-Agent` product is one.
-pub const PRODUCT: &str = "DispatcharrTV";
-
-/// The app's name as a person reads it: the failure read-out's footer, the diagnostics panel.
-pub const DISPLAY_NAME: &str = "Dispatcharr TV";
-
-/// The app version, handed in by the application: `plx_plex` cannot see `PLX_VERSION`, because a
-/// `cargo:rustc-env` reaches one crate only and the rule that derives it (`rust-modules/build.rs`)
-/// is written exactly once. The application passes `env!("PLX_VERSION")` to [`set_version`] before
-/// its first request, the way it hands `storage::diagnostics::start` the same string.
-///
-/// `pkg/appinfo.json` (the single source for the ipk's version), `Cargo.toml` and this must not be
-/// able to disagree, and the two literals this replaces were already stale in opposite directions
-/// before the first release. **A release reports the package version exactly; anything else reports
-/// the next MINOR with a `-dev` suffix** -- `0.5.0` published, `0.6.0-dev` in the tree, because
-/// trunk is where features land and a patch is cut from an existing minor's own line.
-/// `rust-modules/build.rs` is where that rule is written and why, and the application crate's
-/// `release_line::tests` grade it. Every other surface that reports a version -- the telemetry
-/// release, the lab snapshot, the usage context -- reads the same `PLX_VERSION`, so they cannot
-/// drift apart.
-static VERSION: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
-
-/// Record the application's version. Idempotent for the same string; a second, different one is a
-/// wiring bug and is refused loudly in a debug build rather than silently re-labelling the client.
-pub fn set_version(version: &'static str) {
-    let kept = VERSION.get_or_init(|| version);
-    debug_assert_eq!(*kept, version, "plex::identity::set_version called with two versions");
-}
-
-/// What this client reports as `X-Plex-Version` and in its `User-Agent`.
-///
-/// Before [`set_version`] a test build answers a fixed placeholder (the layer's own tests build
-/// their headers without an application). A shipping build that gets here first is a wiring bug,
-/// and it **panics in every profile** rather than answer: the television's build is `--release`,
-/// where a `debug_assert!` is compiled out, so a placeholder there would be sent to plex.tv and to
-/// every PMS as this client's `X-Plex-Version` with nothing to say it had happened. The order that
-/// makes this unreachable (`set_version` is the first statement of `app::enter_application`, the
-/// one entry point) is held by `app::boot::seam_order_tests`.
-pub fn version() -> &'static str {
-    match VERSION.get() {
-        Some(v) => v,
-        None => {
-            #[cfg(any(test, feature = "test-support"))]
-            {
-                "0.0.0-test"
-            }
-            #[cfg(not(any(test, feature = "test-support")))]
-            {
-                panic!("plex::identity::version read before set_version: no request may report an unset X-Plex-Version")
-            }
-        }
-    }
-}
+// The app-wide half of this identity (product, display name, version, device class, User-Agent)
+// lives in `plx_base::identity`; the X-Plex-* headers below read it from there.
+pub use plx_base::identity::{set_version, user_agent, version, DEVICE, DISPLAY_NAME, PRODUCT};
 
 pub const PLATFORM: &str = "webOS";
 
@@ -113,9 +62,6 @@ pub fn language() -> Option<&'static str> {
     Some(plx_platform::i18n::current().language().tag())
 }
 
-/// Device CLASS — what kind of thing this is. Generic on purpose: this app runs on any rooted
-/// webOS 4.x panel, not on the model it was developed against.
-pub const DEVICE: &str = "LG webOS TV";
 pub const MODEL: &str = "LG webOS TV";
 
 /// Who MADE the hardware. The one field in this file that is a fact about the panel rather than a
@@ -148,15 +94,6 @@ pub fn device_name() -> &'static str {
 
 /// What this client offers the network. It plays; it is not a controller and not a server.
 pub const PROVIDES: &str = "player";
-
-/// The HTTP `User-Agent` for the libcurl transport (plex.tv + discover.provider.plex.tv).
-///
-/// This was `PlexForWebOS/1.0 (LG webOS)` — the same impersonation as the product string and
-/// arguably the worse one, since it is what lands in Plex's own server logs, and it named no
-/// version that has ever existed.
-pub fn user_agent() -> String {
-    format!("{PRODUCT}/{} ({DEVICE})", version())
-}
 
 #[cfg(test)]
 mod tests {

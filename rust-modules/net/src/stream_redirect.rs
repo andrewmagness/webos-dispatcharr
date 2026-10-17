@@ -1,7 +1,6 @@
 //! **HTTP redirects on the plaintext MEDIA path** — where a `3xx` answer to a plaintext media
 //! open is turned into the next request. An https open is followed by `curlio`'s `next_hop`,
-//! built on this module's `is_redirect`, `resolve_location` and `MAX_HOPS`; the credential rule
-//! below is this follower's alone.
+//! built on this module's `is_redirect`, `resolve_location` and `MAX_HOPS`.
 //!
 //! PMS answers some Part URLs (Plex-hosted trailers: `/services/iva/assets/…`) with a `302` to a
 //! presigned CDN URL on another origin — typically https, sometimes a relative `Location`. The
@@ -12,18 +11,9 @@
 //! following off, applies this module's `MAX_HOPS`, and refuses any hop from TLS back to
 //! plaintext).
 //!
-//! Credentials: the ORIGINAL request's credential header block and its `X-Plex-Token` query pair
-//! ride a hop only when the hop's scheme+host+port equal the ORIGINAL origin's. A cross-origin
-//! hop is requested exactly as its `Location` spells it — a presigned URL carries its own
-//! authority, and the PMS token must never reach a third party. A `Range` is not a credential and
-//! rides every hop. Log lines carry an origin and a query-less path, never a query.
-//!
-//! **Every plaintext hop that would carry a credential asks the credential authority first** — the
-//! first request, every followed hop, and every reopen a seek makes. The authority is the caller's:
-//! this transport names no Plex layer, so each [`Request`] carries it as a [`CredentialGate`] (the
-//! media callers pass `crate::http::credential_transport_allowed`, i.e. `plex::grant`). A plaintext
-//! media stream opened under a consented grant therefore stops at its next request once that grant
-//! is revoked: [`FollowError::Refused`], with nothing dialled.
+//! A hop is requested exactly as its `Location` spells it: the media plane carries no credential,
+//! so nothing rides a hop but a `Range`, which rides every one. Log lines carry an origin and a
+//! query-less path, never a query.
 //!
 //! A caller whose contract confines it to one origin — HLS, whose playlists may only name
 //! children on the PMS origin (`crate::hls`) — sets [`Request::same_origin_only`], and a hop
@@ -88,45 +78,30 @@ pub enum FollowError {
     TooManyHops,
     /// A hop off the original origin, for a [`Request::same_origin_only`] request.
     LeftOrigin,
-    /// The hop would carry a credential to a plaintext origin the credential authority does not
-    /// admit (no consented grant, or one revoked since the stream opened). Nothing was dialled.
-    Refused,
     /// A redirect with no `Location`, or one this client cannot request (another scheme, a
     /// malformed authority, control bytes).
     BadLocation(c_int),
 }
 
-/// The credential authority, as the caller's own decision: may a request for `path` carrying
-/// `headers` (the `Name: value` lines of its credential block) go to this origin? Asked before every
-/// plaintext hop that would carry one, so a revoked grant stops the very next request. A plain
-/// function pointer, not a lookup: the transport takes the decision as a value and never names the
-/// layer that makes it.
-pub type CredentialGate = fn(&Origin, &str, &[&str]) -> bool;
-
 /// One media GET to be opened with redirects followed.
 pub struct Request<'a> {
     pub origin: &'a Origin,
-    /// Absolute path plus optional query. May carry `X-Plex-Token`.
+    /// Absolute path plus optional query.
     pub path: &'a str,
-    /// A credential header block (`Name: value\r\n`…), sent to the original origin only.
-    pub credentials: Option<&'a str>,
     /// `Range: bytes=N-` on every hop when set.
     pub range_from: Option<i64>,
     /// Absolute setup deadline for the whole chain (connect/send/headers of every hop).
     pub deadline: Option<Instant>,
     /// Refuse, undialled, any hop whose scheme+host+port differ from [`Self::origin`].
     pub same_origin_only: bool,
-    /// Asked before every plaintext hop that would carry a credential; see [`CredentialGate`].
-    pub credential_gate: CredentialGate,
 }
 
-/// Open `req` on `hs`, following plaintext redirects. See the module doc for the credential rule.
+/// Open `req` on `hs`, following plaintext redirects.
 pub fn open_following(
     hs: *mut HttpStream,
     req: &Request,
     checkpoint: &mut dyn Checkpoint,
 ) -> Result<Opened, FollowError> {
-    let token = token_pair(req.path);
     let mut cur = Target {
         origin: req.origin.clone(),
         path: req.path.to_owned(),
@@ -136,21 +111,7 @@ pub fn open_following(
         if cur.origin.is_tls() {
             return Ok(Opened::Tls(cur));
         }
-        let same = same_origin(&cur.origin, req.origin);
         let mut extra = String::new();
-        if same {
-            if let Some(c) = req.credentials {
-                extra.push_str(c);
-            }
-        }
-        if !(req.credential_gate)(&cur.origin, &cur.path, &header_lines(&extra)) {
-            plx_base::eventlog::log(&format!(
-                "stream: {}{} REFUSED: a credential may not travel to this plaintext origin",
-                cur.origin.log_form(),
-                log_endpoint(&cur.path)
-            ));
-            return Err(FollowError::Refused);
-        }
         if let Some(at) = req.range_from {
             extra.push_str(&format!("Range: bytes={at}-\r\n"));
         }
@@ -186,7 +147,7 @@ pub fn open_following(
             Err(e) => return Err(FollowError::Open(e)),
         };
         let next = hs_redirect_location(hs).and_then(|loc| resolve_location(&cur, &loc));
-        let Some(mut next) = next else {
+        let Some(next) = next else {
             plx_base::eventlog::log(&format!(
                 "stream: redirect {status} from {}{} has no usable Location",
                 cur.origin.log_form(),
@@ -213,11 +174,6 @@ pub fn open_following(
             ));
             return Err(FollowError::LeftOrigin);
         }
-        if same {
-            if let Some(pair) = token {
-                next.path = with_query_pair(&next.path, pair);
-            }
-        }
         plx_base::eventlog::log(&format!(
             "stream: redirect {status} -> {}{} hop={hop} same_origin={same}",
             next.origin.log_form(),
@@ -227,41 +183,9 @@ pub fn open_following(
     }
 }
 
-/// A `Name: value\r\n` header block as the lines the credential check reads.
-fn header_lines(block: &str) -> Vec<&str> {
-    block.split("\r\n").filter(|line| !line.is_empty()).collect()
-}
-
 /// Same scheme, host (ASCII case-insensitive) and port.
 pub fn same_origin(a: &Origin, b: &Origin) -> bool {
     a.scheme() == b.scheme() && a.port() == b.port() && a.host().eq_ignore_ascii_case(b.host())
-}
-
-/// The `X-Plex-Token=…` pair of a path's query, if it has one.
-fn token_pair(path: &str) -> Option<&str> {
-    let (_, query) = path.split_once('?')?;
-    query
-        .split('&')
-        .find(|p| p.len() > 13 && p[..13].eq_ignore_ascii_case("X-Plex-Token="))
-}
-
-/// `path` with `pair` appended to its query, unless a parameter of that name is already there.
-fn with_query_pair(path: &str, pair: &str) -> String {
-    let name = pair.split('=').next().unwrap_or(pair);
-    let present = path.split_once('?').is_some_and(|(_, q)| {
-        q.split('&').any(|p| {
-            p.split('=')
-                .next()
-                .is_some_and(|n| n.eq_ignore_ascii_case(name))
-        })
-    });
-    if present {
-        path.to_owned()
-    } else if path.contains('?') {
-        format!("{path}&{pair}")
-    } else {
-        format!("{path}?{pair}")
-    }
 }
 
 /// Resolve a `Location` against the target that answered it (RFC 3986 §5.2, restricted to what
@@ -407,11 +331,6 @@ mod tests {
         }
     }
 
-    /// A gate that admits everything: these tests grade where credentials go, not who may send them.
-    fn allow_all(_: &Origin, _: &str, _: &[&str]) -> bool {
-        true
-    }
-
     fn pms() -> Target {
         base(
             Scheme::Http,
@@ -502,39 +421,15 @@ mod tests {
     }
 
     #[test]
-    fn the_token_is_carried_only_as_a_query_pair_that_is_not_already_there() {
-        assert_eq!(
-            token_pair("/a?x=1&X-Plex-Token=tok"),
-            Some("X-Plex-Token=tok")
-        );
-        assert_eq!(token_pair("/a?x=1"), None);
-        assert_eq!(token_pair("/a"), None);
-        assert_eq!(
-            with_query_pair("/b", "X-Plex-Token=tok"),
-            "/b?X-Plex-Token=tok"
-        );
-        assert_eq!(
-            with_query_pair("/b?y=2", "X-Plex-Token=tok"),
-            "/b?y=2&X-Plex-Token=tok"
-        );
-        assert_eq!(
-            with_query_pair("/b?x-plex-token=other", "X-Plex-Token=tok"),
-            "/b?x-plex-token=other"
-        );
-    }
-
-    #[test]
     fn a_tls_origin_is_handed_back_without_dialling() {
         let origin = Origin::new(Scheme::Https, "127.0.0.1", 1);
         let mut hs = super::super::http_stream_boxed();
         let req = Request {
             origin: &origin,
             path: "/x",
-            credentials: None,
             range_from: None,
             deadline: None,
             same_origin_only: false,
-            credential_gate: allow_all,
         };
         match open_following(&mut *hs, &req, &mut plx_base::checkpoint::NoCheckpoint) {
             Ok(Opened::Tls(t)) => assert_eq!(t.url(), "https://127.0.0.1:1/x"),
@@ -542,33 +437,9 @@ mod tests {
         }
     }
 
-    /// The credential gate is asked before anything is dialled, and its refusal ends the chain.
-    /// Port 1 has no listener, so a dial would have come back as `Open(Transport)` instead.
+    /// A `Range` is not tied to an origin: it rides the cross-origin hop as well as the first.
     #[test]
-    fn a_refusing_credential_gate_stops_the_request_before_it_dials() {
-        fn refuse(_: &Origin, _: &str, _: &[&str]) -> bool {
-            false
-        }
-        let origin = Origin::http("127.0.0.1", 1);
-        let mut hs = super::super::http_stream_boxed();
-        let req = Request {
-            origin: &origin,
-            path: "/x",
-            credentials: Some("X-Plex-Token: secret\r\n"),
-            range_from: None,
-            deadline: None,
-            same_origin_only: false,
-            credential_gate: refuse,
-        };
-        match open_following(&mut *hs, &req, &mut plx_base::checkpoint::NoCheckpoint) {
-            Err(FollowError::Refused) => {}
-            other => panic!("{other:?}"),
-        }
-    }
-
-    /// A credential HEADER block (not only the query pair) stays with the original origin.
-    #[test]
-    fn credential_headers_do_not_cross_origins_but_the_range_does() {
+    fn the_range_rides_a_cross_origin_hop() {
         use std::io::{Read, Write};
         let _serial = plx_base::testlock::serial();
         let serve = |reply: Vec<u8>| {
@@ -606,11 +477,9 @@ mod tests {
         let req = Request {
             origin: &origin,
             path: "/p",
-            credentials: Some("X-Plex-Token: secret\r\n"),
             range_from: Some(7),
             deadline: None,
             same_origin_only: false,
-            credential_gate: allow_all,
         };
         let got = open_following(&mut *hs, &req, &mut plx_base::checkpoint::NoCheckpoint);
         super::super::http_close(&mut *hs);
@@ -619,8 +488,7 @@ mod tests {
             Ok(Opened::Socket(t)) => assert_eq!(t.origin.port(), cdn as i32),
             other => panic!("{other:?}"),
         }
-        assert!(pms_head.contains("X-Plex-Token: secret"), "{pms_head}");
-        assert!(!cdn_head.contains("secret"), "{cdn_head}");
+        assert!(pms_head.contains("Range: bytes=7-"), "{pms_head}");
         assert!(cdn_head.contains("Range: bytes=7-"), "{cdn_head}");
     }
 }

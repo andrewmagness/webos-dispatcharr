@@ -99,7 +99,6 @@ pub(super) fn worker_ticket_of(control: &PlayerControl) -> WorkerTicket {
     }
 }
 
-pub use plx_plex::plex::session::DirectPlayMode;
 
 // ---- async resolve: worker computes an owned Plan, main thread installs it ------------------
 // The house idiom (metadata::load_season / browse.rs): generation counter + single-flight +

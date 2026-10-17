@@ -23,10 +23,10 @@ The evidence behind [the vX.Y.Z release note](https://github.com/andrewmagness/w
 | | |
 |---|---|
 | television | <model, platform release as the set reports it, what LG markets the generation as> |
-| server | <what the suite ran against> |
-| suite | `./tests/run.py --server` — <n> cases, <result>, <date> |
-| suite | `./tests/run.py` (synthetic pipeline tier, no Plex) — <n> cases, <result>, <date> |
-| perf | `./tests/run.py --fps` — <result>, or why it was not run |
+| server | <the Dispatcharr server and version live TV was watched from> |
+| suite | `./tests/run.py` (generated clips) — <n> cases, <result>, <skipped and why>, <date> |
+| live | <channels tuned, a channel change, a dropped stream reconnecting, an app switch> |
+| perf | <heartbeat `fps=` on an `ARM_PROFILE=release` deploy (`profile-tv`), or why it was not measured> |
 | by hand | <anything watched by a person that the suites do not cover, with what was seen> |
 
 <One paragraph on anything the runs do not settle: a case that was skipped and why, a shape the library does not contain, a tier that is structurally blind to what this release changed.>

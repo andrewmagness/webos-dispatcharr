@@ -19,7 +19,7 @@ after the event log's `SMP loadCompleted (priming before Play)` line, before any
   (and the same for `dvovideosink`).
 - SIGSEGV, `*** SIGNAL 11 addr=0x0`, registers `r0=0x0`.
 
-It reproduces through `tests/run.py --pipeline --only pipe_finish_eos` (an ordinary H.264/AC3 mkv,
+It reproduces through `tests/run.py --only pipe_finish_eos` (an ordinary H.264/AC3 mkv,
 no Dolby Vision declared) just as reliably as through real PMS-driven Play presses, and it is
 **debug-flavour-only in the field** — a `features=release` install on the same television plays
 the same content without incident.
@@ -60,7 +60,7 @@ a device build of "the current `HEAD` of `main`" on 2026-09-14 should already ha
 Either that device session built something other than what it intended to (a stale local checkout,
 a different flavour/branch), or the fix is textually present but not actually effective on real
 hardware for a reason not yet understood, or the empirical claim itself is mistaken. **Whoever picks
-this up next: re-run the device reproduction (`tests/run.py --pipeline --only pipe_finish_eos` or a
+this up next: re-run the device reproduction (`tests/run.py --only pipe_finish_eos` or a
 real PMS Play press) against a genuinely fresh `feature-trailers`/`main` checkout before trusting
 either paragraph** — the code-level evidence above is solid, but it has not been re-confirmed on the
 television this file's whole premise is about.

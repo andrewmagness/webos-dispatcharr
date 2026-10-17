@@ -184,3 +184,92 @@ pub fn tmp_path(path: &std::path::Path) -> Option<std::path::PathBuf> {
     name.push(".tmp");
     Some(path.with_file_name(name))
 }
+
+/// Open `path` for reading without following a symlink at its name, and only if it is a regular
+/// file this process owns. The metadata comes from the SAME descriptor the bytes will be read
+/// from, so a caller that records the file's identity describes what it read. A missing file is
+/// `NotFound`; anything else refused is `PermissionDenied`.
+pub fn open_owned_regular(
+    path: &std::path::Path,
+) -> std::io::Result<(std::fs::File, std::fs::Metadata)> {
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    // O_NONBLOCK: a FIFO planted at the name must not block the open (it is refused just below);
+    // it changes nothing for a regular file.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
+        .open(path)?;
+    let meta = file.metadata()?;
+    if !meta.file_type().is_file() || meta.uid() != unsafe { libc::geteuid() } {
+        return Err(std::io::ErrorKind::PermissionDenied.into());
+    }
+    Ok((file, meta))
+}
+
+/// The most [`read_owned_regular`] allocates for one file.
+pub const MAX_OWNED_FILE: u64 = 4 * 1024 * 1024;
+
+/// The whole of `path`, through [`open_owned_regular`]'s checks, or `None` when it is refused,
+/// unreadable or larger than [`MAX_OWNED_FILE`].
+pub fn read_owned_regular(path: &std::path::Path) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let (mut file, _) = open_owned_regular(path).ok()?;
+    const MAX_FILE: u64 = MAX_OWNED_FILE;
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(MAX_FILE + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (bytes.len() as u64 <= MAX_FILE).then_some(bytes)
+}
+
+
+#[cfg(test)]
+mod owned_tests {
+    use super::*;
+
+    fn dir(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("plx-owned-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn an_owned_regular_file_is_read_whole() {
+        let d = dir("read");
+        let p = d.join("f.json");
+        std::fs::write(&p, b"{}").unwrap();
+        assert_eq!(read_owned_regular(&p).as_deref(), Some(&b"{}"[..]));
+        assert!(read_owned_regular(&d.join("missing")).is_none());
+        assert_eq!(open_owned_regular(&d.join("missing")).unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A symlink or a FIFO planted at the name is refused rather than followed or blocked on.
+    #[test]
+    fn a_symlink_or_a_fifo_at_the_name_is_refused() {
+        let d = dir("planted");
+        let target = d.join("target");
+        std::fs::write(&target, b"secret").unwrap();
+        let link = d.join("link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(read_owned_regular(&link).is_none(), "a symlink is not followed");
+        let fifo = d.join("fifo");
+        let c = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+        assert_eq!(open_owned_regular(&fifo).unwrap_err().kind(), std::io::ErrorKind::PermissionDenied);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_file_over_the_bound_is_not_read() {
+        let d = dir("big");
+        let p = d.join("big");
+        std::fs::write(&p, vec![b'x'; MAX_OWNED_FILE as usize + 1]).unwrap();
+        assert!(read_owned_regular(&p).is_none());
+        std::fs::write(&p, vec![b'x'; MAX_OWNED_FILE as usize]).unwrap();
+        assert_eq!(read_owned_regular(&p).map(|b| b.len()), Some(MAX_OWNED_FILE as usize));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}

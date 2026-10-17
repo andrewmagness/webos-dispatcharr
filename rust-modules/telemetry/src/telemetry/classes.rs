@@ -120,61 +120,41 @@ impl RasterClass {
     }
 }
 
-/// **Why an engine open was made.** An attempt that fails reads differently by cause: a fresh Play
-/// that never opened is a different bug from an Original open the viewer asked for mid-film or a
-/// recovery the app started on its own. The producer (`player::report`) names the cause where the
-/// open is decided; a value is never inferred from a failure.
+/// **Why an engine open was made.** An attempt that fails reads differently by cause: a tune the
+/// viewer asked for that never opened is a different bug from a reconnect the app started on its
+/// own. The producer (`route::request_live`'s caller) names the cause where the tune is decided; a
+/// value is never inferred from a failure.
 ///
 /// Adding a cause is ONE place here: a variant, its `code`, and a slot in [`Self::ALL`], which the
 /// consent legend, the tests and the sample all read (the compiler checks `code` is exhaustive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AttemptOrigin {
-    /// The first open after the viewer pressed Play.
+    /// The viewer tuned a channel: OK in the Guide, CH▲/▼, or the recall key.
     Fresh,
-    /// The viewer pressed Retry (or the failure screen's *Switch to Auto and play*) on a failure.
+    /// The viewer pressed *Try again* on a failure.
     UserRetry,
-    /// The viewer chose a quality, from the menu or from the failure screen, and the open follows
-    /// from that choice (including an Original they asked for).
-    QualityChange,
-    /// The app changed the delivery on its own: a link fallback or an automatic Original attempt.
-    AutoHandoff,
-    /// The app reopened a route after a failed open: the rollback from Original, or the HLS that
-    /// replaces an Original source that never opened.
+    /// The app tuned the channel again on its own: the stream ended or stalled, or it carried
+    /// other codecs than the lineup declared.
     Recovery,
-    /// The session was reopened at its position after the app returned to the foreground.
+    /// The channel was tuned again at the live edge after the app returned to the foreground.
     Resume,
-    /// A detail-page trailer preview, which is not a playback the viewer asked for: it opens in the
-    /// background on a dwell, direct play only, and writes no watch state. A failure of it is its
-    /// own issue group (see `playback::event_body`), not a playback failure.
-    Preview,
 }
 
 impl AttemptOrigin {
-    pub const ALL: [Self; 7] = [
-        Self::Fresh,
-        Self::UserRetry,
-        Self::QualityChange,
-        Self::AutoHandoff,
-        Self::Recovery,
-        Self::Resume,
-        Self::Preview,
-    ];
+    pub const ALL: [Self; 4] = [Self::Fresh, Self::UserRetry, Self::Recovery, Self::Resume];
 
     pub const fn code(self) -> &'static str {
         match self {
             Self::Fresh => "fresh",
             Self::UserRetry => "user_retry",
-            Self::QualityChange => "quality_change",
-            Self::AutoHandoff => "auto_handoff",
             Self::Recovery => "recovery",
             Self::Resume => "resume",
-            Self::Preview => "preview",
         }
     }
 }
 
 /// **Which engine open of the playback session this was**, counting the first, every Retry and
-/// every handoff or recovery: `1`..`9`, then `9+`. Bounded on purpose, so a session that flaps for
+/// every reconnect: `1`..`9`, then `9+`. Bounded on purpose, so a session that flaps for
 /// an hour is one value rather than a free number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AttemptOrdinal(u8);

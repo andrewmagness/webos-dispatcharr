@@ -622,14 +622,16 @@ mod live_url_tests {
     /// playback (the Guide's OK, CH▲/▼, a reconnect, the foreground re-tune) goes through
     /// `request_live`, so that is where the attempt is minted: `playback.requested` is emitted and
     /// the attempt's trace generation becomes the one the engine's workers report under. Without
-    /// it no attempt exists, and `started`/`failed`/`ended` have nothing to join.
+    /// it no attempt exists, and `started`/`failed`/`ended` have nothing to join. The caller names
+    /// why the tune is made, and a failure report carries that cause.
     #[test]
     fn a_tune_is_a_playback_attempt_the_funnel_counts() {
+        use crate::player::report::AttemptOrigin as O;
         let _g = plx_base::testlock::serial();
         let mut ps = PlaybackSession::IDLE;
         let before = playback_trace_generation();
         let (ok, events) = plx_telemetry::diag::test_events::capture(|| {
-            request_live(&mut ps, tune(&["http://192.0.2.1:9191/a"], 0), 50)
+            request_live(&mut ps, tune(&["http://192.0.2.1:9191/a"], 0), O::Fresh, 50)
         });
         assert!(ok);
         assert!(
@@ -637,15 +639,20 @@ mod live_url_tests {
             "a tune must emit playback.requested: {events:?}"
         );
         assert_ne!(playback_trace_generation(), before, "the tune publishes its attempt's trace generation");
+        assert_eq!(crate::player::report::attempt_snapshot().0, O::Fresh);
+        // The app's reconnect of the same channel is the session's second open, and says so.
+        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a"], 0), O::Recovery, 60));
+        let (origin, ordinal) = crate::player::report::attempt_snapshot();
+        assert_eq!((origin.code(), ordinal.code()), ("recovery", "2"));
         clear_url(&mut ps);
     }
 
     #[test]
     fn a_tune_installs_the_channel_its_lineup_and_its_declaration() {
         let mut ps = PlaybackSession::IDLE;
-        assert!(!request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 1), 50), "no stream, no tune");
+        assert!(!request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 1), crate::player::report::AttemptOrigin::Fresh, 50), "no stream, no tune");
         assert!(live_tune(&ps).is_none());
-        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 0), 50));
+        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 0), crate::player::report::AttemptOrigin::Fresh, 50));
         assert!(is_live(&ps));
         assert_eq!(url(&ps), "http://192.0.2.1:9191/a");
         assert_eq!((stream_vcodec(&ps).as_str(), stream_acodec(&ps).as_str()), ("h264", "aac"));
@@ -684,35 +691,6 @@ pub enum UserRouteIntent {
     Retranscode,
     NativeAudioReload,
     AdaptiveReload,
-    RecoverOriginal(RecoveryCause),
-}
-
-/// Why an HLS/remux → Original recovery is being attempted. The cause decides which applied
-/// contract may authorise it and whether the Auto watchdog keeps watching the result, so it rides
-/// the intent instead of being re-derived from a quality atomic that may have moved since.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RecoveryCause {
-    /// The Auto worker proved the source fits: only an applied Auto contract may take it.
-    Automatic,
-    /// The viewer picked Original: the DESIRED quality must still say so at claim time.
-    ManualOriginal,
-    /// Issue #266: the enhanced remux is no longer wanted (toggle off, subtitle on, a track the
-    /// enhancement cannot carry) and the candidate direct-plays. The route stays Original-family,
-    /// so either applied Auto or Original may take it, and an Auto playback keeps its watchdog.
-    EnhancementReleased,
-}
-
-impl RecoveryCause {
-    /// Why the open this recovery makes is made, as a failed open reports it: the viewer asked for
-    /// it (an Original pick, or the enhancement they turned off) or the Auto worker did.
-    pub const fn attempt_origin(self) -> crate::player::report::AttemptOrigin {
-        use crate::player::report::AttemptOrigin as O;
-        match self {
-            Self::Automatic => O::AutoHandoff,
-            Self::ManualOriginal | Self::EnhancementReleased => O::QualityChange,
-        }
-    }
-
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1652,7 +1630,12 @@ pub fn surface_sid() -> ServerId {
 /// Refused, leaving everything as it was, while a PMS or native route transition owns the player
 /// (the phases [`request_play`] refuses in), for a channel with no stream, and for a declaration
 /// the television cannot be given.
-pub fn request_live(ps: &mut PlaybackSession, mut tune: super::LiveTune, now: i64) -> bool {
+pub fn request_live(
+    ps: &mut PlaybackSession,
+    mut tune: super::LiveTune,
+    origin: crate::player::report::AttemptOrigin,
+    now: i64,
+) -> bool {
     let Some(channel) = tune.channel().filter(|c| c.tunable()) else {
         return false;
     };
@@ -1682,8 +1665,8 @@ pub fn request_live(ps: &mut PlaybackSession, mut tune: super::LiveTune, now: i6
     // **The playback funnel's denominator, minted HERE**: every way into live playback (the Guide's
     // OK, CH▲/▼, a reconnect, the foreground re-tune) comes through this function, and it is past
     // every refusal above, so a press that cannot tune is not an attempt. The engine's workers
-    // report under the trace generation published here.
-    let trace_generation = crate::player::report::requested(crate::player::report::AttemptOrigin::Fresh);
+    // report under the trace generation published here, and `origin` says which of those it was.
+    let trace_generation = crate::player::report::requested(origin);
     ACTIVE_TRACE_GENERATION.store(trace_generation, Ordering::SeqCst);
     set_live_url(ps, &url);
     tune.at = now;

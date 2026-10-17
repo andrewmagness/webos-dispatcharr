@@ -321,7 +321,7 @@ pub fn note_seek_for(generation: u32) {
 }
 
 /// Why the open now in force was made and which open of the session it is.
-fn attempt_snapshot() -> (AttemptOrigin, AttemptOrdinal) {
+pub(crate) fn attempt_snapshot() -> (AttemptOrigin, AttemptOrdinal) {
     let ledger = ledger();
     (ledger.origin, ledger.ordinal)
 }
@@ -405,9 +405,9 @@ fn presented_event() -> TraceEvent {
 /// Mints the id and clears every latch, so a second Play on the same item is a second attempt with
 /// its own funnel rather than a silent no-op against the first one's latches.
 ///
-/// `origin` is why the viewer or the app is making it ([`AttemptOrigin`]): `Fresh` for a Play,
-/// which also restarts the session's open count; `UserRetry` or `QualityChange` for the resolve a
-/// failure screen's Retry or quality pick starts, which continues it.
+/// `origin` is why the viewer or the app is making it ([`AttemptOrigin`]): `Fresh` for a tune the
+/// viewer asked for, which also restarts the session's open count; `UserRetry`, `Recovery` or
+/// `Resume` for a re-tune of the same channel, which continues it.
 pub fn requested(origin: AttemptOrigin) -> u32 {
     resolve_replaced_attempt();
     let id = new_attempt_id();
@@ -928,13 +928,13 @@ mod tests {
             assert_eq!(retried.attempt_origin.code(), "user_retry");
             assert_eq!(retried.attempt_ordinal.code(), "2");
 
-            // A quality pick on the failure screen is a retry too, with its own cause.
+            // The app's own reconnect continues the count, with its own cause.
             clear_error_trace();
-            requested(AttemptOrigin::QualityChange);
-            let picked = error_context();
-            assert_eq!((picked.attempt_origin.code(), picked.attempt_ordinal.code()), ("quality_change", "3"));
+            requested(AttemptOrigin::Recovery);
+            let reconnected = error_context();
+            assert_eq!((reconnected.attempt_origin.code(), reconnected.attempt_ordinal.code()), ("recovery", "3"));
 
-            // Pressing Play on an item starts a new session.
+            // Tuning a channel starts a new session.
             clear_error_trace();
             requested(AttemptOrigin::Fresh);
             let fresh = error_context();

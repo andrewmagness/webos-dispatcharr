@@ -11,7 +11,7 @@
 //! enabled, and nothing is queued unless the viewer actually reaches `PlaybackState::Error`.
 
 use super::classes::{
-    AttemptOrigin, FailureClass, PlaybackErrorContext, TraceEvent, TraceStep,
+    FailureClass, PlaybackErrorContext, TraceEvent, TraceStep,
 };
 use serde_json::{Map, Value};
 
@@ -98,13 +98,7 @@ pub fn event_body(
         "logger": "playback",
         "transaction": "playback",
         "culprit": format!("playback::{code}"),
-        // A preview is not a playback the viewer asked for: its failures group apart. Every other
-        // origin keeps `["playback-error", code]` exactly.
-        "fingerprint": if context.attempt_origin == AttemptOrigin::Preview {
-            serde_json::json!(["playback-error", "preview", code])
-        } else {
-            serde_json::json!(["playback-error", code])
-        },
+        "fingerprint": ["playback-error", code],
         "exception": {"values": [{
             "type": "PlaybackError",
             "value": code,
@@ -246,7 +240,7 @@ pub fn preview_event() -> Vec<u8> {
             transfer_age: TransferAgeClass::S30To90,
             started: true,
             attempt_started: false,
-            attempt_origin: AttemptOrigin::QualityChange,
+            attempt_origin: AttemptOrigin::Recovery,
             attempt_ordinal: AttemptOrdinal::new(2),
             http_status: 404,
             pipeline_error: 601,
@@ -818,8 +812,7 @@ mod tests {
     /// **Why the failed attempt was made, and which open of the playback it was.** Both ride as a
     /// tag to search on and in the playback context, as closed strings (the ordinal is `1`..`9`
     /// then `9+`, a string in both places so the saturated value fits). Neither the cause nor the
-    /// ordinal splits a group, with one exception: the `preview` origin groups apart under its own
-    /// fingerprint segment, because a trailer is not a playback (asserted below).
+    /// ordinal splits a group.
     #[test]
     fn the_attempt_origin_and_ordinal_are_tagged_and_in_the_context_as_closed_strings() {
         for origin in AttemptOrigin::ALL {
@@ -840,54 +833,17 @@ mod tests {
                 assert_eq!(v["contexts"]["playback"]["attempt_origin"], origin.code());
                 assert_eq!(v["tags"]["playback.attempt_ordinal"], want, "ordinal {n}");
                 assert_eq!(v["contexts"]["playback"]["attempt_ordinal"], want, "ordinal {n}");
-                // The cause explains a group, it does not split it; the one exception is a
-                // preview, which is not a playback at all and groups apart (below).
-                let want_fingerprint = if origin == AttemptOrigin::Preview {
-                    serde_json::json!(["playback-error", "preview", "media_source"])
-                } else {
-                    serde_json::json!(["playback-error", "media_source"])
-                };
-                assert_eq!(v["fingerprint"], want_fingerprint, "{}", origin.code());
+                // The cause explains a group, it does not split it.
+                assert_eq!(v["fingerprint"], serde_json::json!(["playback-error", "media_source"]), "{}", origin.code());
             }
         }
         // The wire values are written out, never derived from a variant name.
         let codes: Vec<_> = AttemptOrigin::ALL.iter().map(|o| o.code()).collect();
         assert_eq!(
             codes,
-            ["fresh", "user_retry", "quality_change", "auto_handoff", "recovery", "resume", "preview"],
+            ["fresh", "user_retry", "recovery", "resume"],
         );
         assert_eq!(AttemptOrdinal::all().count(), 10, "1..=9 and the saturated value");
-    }
-
-    /// **A failed detail-page preview is its own Sentry issue.** A trailer is not a playback the
-    /// viewer asked for, so its failures must not pile into the playback groups (upstream Sentry issue 15).
-    /// The fingerprint carries `preview` for that origin alone; every other origin keeps the
-    /// `["playback-error", code]` shape byte for byte, for every failure kind.
-    #[test]
-    fn only_a_preview_failure_groups_apart_and_every_other_fingerprint_is_unchanged() {
-        use crate::telemetry::classes::FailureClass as F;
-        for kind in [F::MediaSource, F::TvPipeline, F::Unspecified] {
-            for origin in AttemptOrigin::ALL {
-                let mut ctx = context();
-                ctx.attempt_origin = origin;
-                let v: Value = serde_json::from_slice(&event_body(
-                    &"a".repeat(32),
-                    "0123456789abcdef",
-                    Some(&"e".repeat(32)),
-                    kind,
-                    ctx,
-                    &[],
-                ))
-                .expect("handled event JSON");
-                let want = if origin == AttemptOrigin::Preview {
-                    serde_json::json!(["playback-error", "preview", kind.code()])
-                } else {
-                    serde_json::json!(["playback-error", kind.code()])
-                };
-                assert_eq!(v["fingerprint"], want, "{} / {}", origin.code(), kind.code());
-                assert_eq!(v["tags"]["playback.kind"], kind.code(), "the kind is still the kind");
-            }
-        }
     }
 
     /// The consent screen shows what a report can carry: the sample event holds every new key, the
@@ -921,9 +877,7 @@ mod tests {
         assert!(legend.contains("100 to 599"), "the http_status domain");
         // Every origin and every ordinal the producer can send is listed, in the enum's own order.
         assert!(
-            legend.contains(
-                "fresh / user_retry / quality_change / auto_handoff / recovery / resume / preview"
-            ),
+            legend.contains("fresh / user_retry / recovery / resume"),
             "the attempt_origin domain",
         );
         assert!(legend.contains("1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 / 9+"), "the attempt_ordinal domain");

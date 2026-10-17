@@ -107,6 +107,8 @@ plx_base::dynlib! {
 const CURLOPT_URL: c_int = 10002;
 const CURLOPT_WRITEFUNCTION: c_int = 20011;
 const CURLOPT_WRITEDATA: c_int = 10001;
+const CURLOPT_HEADERFUNCTION: c_int = 20079;
+const CURLOPT_HEADERDATA: c_int = 10029;
 const CURLOPT_HTTPHEADER: c_int = 10023;
 const CURLOPT_POSTFIELDS: c_int = 10015;
 const CURLOPT_POSTFIELDSIZE: c_int = 60;
@@ -500,6 +502,8 @@ struct BodySink {
     body: Vec<u8>,
     max: Option<usize>,
     overflowed: bool,
+    /// The response's `Date` header, in Unix seconds (the last hop's, after a redirect).
+    date: Option<i64>,
 }
 
 impl BodySink {
@@ -508,6 +512,7 @@ impl BodySink {
             body: Vec::new(),
             max,
             overflowed: false,
+            date: None,
         }
     }
 
@@ -550,6 +555,82 @@ extern "C" fn write_cb(
     } else {
         0
     }
+}
+
+/// libcurl `CURLOPT_HEADERFUNCTION`: one header line at a time. Only `Date` is kept; every line is
+/// accepted, since refusing one would abort the transfer.
+extern "C" fn header_cb(
+    ptr: *mut c_char,
+    size: usize,
+    nmemb: usize,
+    userdata: *mut c_void,
+) -> usize {
+    let n = size.saturating_mul(nmemb);
+    if userdata.is_null() || ptr.is_null() {
+        return n;
+    }
+    let line = unsafe { std::slice::from_raw_parts(ptr as *const u8, n) };
+    if let Some(date) = date_header(line) {
+        let sink = unsafe { &mut *(userdata as *mut BodySink) };
+        sink.date = Some(date);
+    }
+    n
+}
+
+/// `Date: <IMF-fixdate>` as Unix seconds, or `None` for any other line or a date this cannot read.
+fn date_header(line: &[u8]) -> Option<i64> {
+    let line = std::str::from_utf8(line).ok()?.trim_end();
+    let (name, value) = line.split_once(':')?;
+    if !name.trim().eq_ignore_ascii_case("date") {
+        return None;
+    }
+    parse_http_date(value.trim())
+}
+
+/// An RFC 9110 IMF-fixdate — `Sun, 06 Nov 1994 08:49:37 GMT`, the only form a server may send —
+/// as Unix seconds. The two obsolete forms a recipient "should" accept are not read: an answer
+/// that is not the fixdate is treated as no date at all rather than guessed at.
+pub fn parse_http_date(text: &str) -> Option<i64> {
+    let mut it = text.split_ascii_whitespace();
+    let _weekday = it.next()?.strip_suffix(',')?;
+    let day: i64 = it.next()?.parse().ok()?;
+    let month = match it.next()? {
+        "Jan" => 1, "Feb" => 2, "Mar" => 3, "Apr" => 4, "May" => 5, "Jun" => 6,
+        "Jul" => 7, "Aug" => 8, "Sep" => 9, "Oct" => 10, "Nov" => 11, "Dec" => 12,
+        _ => return None,
+    };
+    let year: i64 = it.next()?.parse().ok()?;
+    let mut hms = it.next()?.split(':').map(|v| v.parse::<i64>().ok());
+    let (h, m, sec) = (hms.next()??, hms.next()??, hms.next()??);
+    if it.next()? != "GMT" || it.next().is_some() || hms.next().is_some() {
+        return None;
+    }
+    if !(1..=31).contains(&day) || !(0..24).contains(&h) || !(0..60).contains(&m) || !(0..61).contains(&sec) {
+        return None;
+    }
+    // Days from the civil date (Howard Hinnant's algorithm), proleptic Gregorian.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 86_400 + h * 3_600 + m * 60 + sec)
+}
+
+thread_local! {
+    /// The `Date` of the request this thread completed last; see [`last_response_date`].
+    static LAST_DATE: std::cell::Cell<Option<i64>> = const { std::cell::Cell::new(None) };
+}
+
+/// **The server's clock, as of the request this thread just made**: its response's `Date` header
+/// in Unix seconds, or `None` when it sent none, the transfer failed, or no request has run on this
+/// thread. Every request here BLOCKS and completes on the calling thread, so reading this right
+/// after a call answers for that call and no other. It exists for a television whose own clock
+/// cannot be trusted (`plx_dispatcharr::dispatcharr::clock`).
+pub fn last_response_date() -> Option<i64> {
+    LAST_DATE.with(|d| d.get())
 }
 
 struct Easy(*mut CURL);
@@ -801,6 +882,8 @@ pub fn request_result_evidence(
     resolve: Option<&str>,
     learn_pin: bool,
 ) -> Result<Resp, RequestFailure> {
+    // Cleared first, so a request that fails before a transfer completes reports no date.
+    LAST_DATE.with(|d| d.set(None));
     // A host test that needs to drive the REAL discovery-probe path (`auth::get_identity`, and
     // through it `http::request_probe` or `http::request_probe_learning_key`) against a loopback
     // HTTPS server cannot make libcurl trust
@@ -1620,6 +1703,13 @@ fn request_tls_evidence(
                 CURLOPT_WRITEDATA,
                 (&mut sink as *mut BodySink) as *mut c_void,
             );
+            // The `Date` header only: not required, so a refusal costs the date and nothing else.
+            curl_easy_setopt_ptr(easy.0, CURLOPT_HEADERFUNCTION, header_cb as *const c_void);
+            curl_easy_setopt_ptr(
+                easy.0,
+                CURLOPT_HEADERDATA,
+                (&mut sink as *mut BodySink) as *mut c_void,
+            );
             // No curl call in this module may escape HTTP(S). The public QR fetch is the only one that
             // follows redirects; it is capped, and an HTTPS start may never downgrade to plaintext.
             require_setopt!(
@@ -1897,6 +1987,7 @@ fn request_tls_evidence(
         break (done, mode);
     };
     let Attempt { rc, info_rc, code, sink, why, peer_pin, verify: done_verify } = done;
+    LAST_DATE.with(|d| d.set(if rc == 0 { sink.date } else { None }));
     // What the attempt that decided the request says about the host's mode.
     let established = rc == 0 || (info_rc == 0 && code != 0);
     if let Some(key) = &key {
@@ -3449,6 +3540,41 @@ mod wire_fixtures {
 mod request_tests {
     use super::*;
     use super::wire_fixtures::{with_h2_reset_failure, with_response};
+
+    #[test]
+    fn an_imf_fixdate_reads_as_unix_seconds() {
+        assert_eq!(parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT"), Some(784_111_777));
+        assert_eq!(parse_http_date("Sat, 17 Oct 2026 13:44:03 GMT"), Some(1_792_244_643));
+        assert_eq!(parse_http_date("Thu, 29 Feb 2024 00:00:00 GMT"), Some(1_709_164_800));
+        // Not the fixdate: the obsolete forms, another zone, junk, a trailing word.
+        assert_eq!(parse_http_date("Sunday, 06-Nov-94 08:49:37 GMT"), None);
+        assert_eq!(parse_http_date("Sun Nov  6 08:49:37 1994"), None);
+        assert_eq!(parse_http_date("Sun, 06 Nov 1994 08:49:37 PST"), None);
+        assert_eq!(parse_http_date("Sun, 06 Nov 1994 25:49:37 GMT"), None);
+        assert_eq!(parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT x"), None);
+        assert_eq!(date_header(b"date: Sun, 06 Nov 1994 08:49:37 GMT\r\n"), Some(784_111_777));
+        assert_eq!(date_header(b"X-Date: Sun, 06 Nov 1994 08:49:37 GMT\r\n"), None);
+    }
+
+    /// **The server's clock reaches the caller.** A television whose own clock is years off asked
+    /// for the wrong day's guide (2026-10-17: the dev set read 2021-01-01, the guide came back with
+    /// no programmes on any channel); the server's `Date` is the one clock it can check against.
+    #[test]
+    fn the_date_of_the_request_just_made_is_readable_after_it() {
+        let _serial = plx_base::testlock::serial();
+        assert!(global_init() && available(), "requires host libcurl");
+        let reply = b"HTTP/1.1 200 OK\r\nDate: Sat, 17 Oct 2026 13:44:03 GMT\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec();
+        with_response(reply, false, |url| {
+            let resp = request(url, &[], "GET", None, API, false, None, None).expect("completed");
+            assert_eq!(resp.status, 200);
+            assert_eq!(last_response_date(), Some(1_792_244_643));
+        });
+        let undated = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec();
+        with_response(undated, false, |url| {
+            request(url, &[], "GET", None, API, false, None, None).expect("completed");
+            assert_eq!(last_response_date(), None, "a response with no Date must not keep the last one");
+        });
+    }
 
     fn truncated_refusal_keeps_status(status: u16) {
         let _serial = plx_base::testlock::serial();

@@ -726,7 +726,7 @@ fn sink_envelope_now(ps: &crate::route::PlaybackSession, video: LoadVideo) -> Si
         crate::route::sink_max_raster(ps),
         crate::route::stream_fps(ps),
         plx_platform::devcaps::caps(),
-        plx_platform::devcaps::measured() && !crate::route::forced_direct_play(ps),
+        plx_platform::devcaps::measured(),
     )
 }
 

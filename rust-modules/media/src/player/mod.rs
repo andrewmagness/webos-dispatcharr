@@ -494,19 +494,11 @@ pub fn is_playing(ps: &crate::route::PlaybackSession) -> bool {
 }
 /// The derived playback state — the ONE thing the HUD renders from. See `PlaybackState`.
 pub fn state(ps: &crate::route::PlaybackSession) -> shared::PlaybackState {
-    // …and so is the PRE-FLIGHT refusal, for exactly the same reason: `/decision` answers before a
-    // byte of video moves, so the plan fails with no URL, no engine is ever built, and the pump
-    // that owns `pb_state` never runs. Deriving it in the one reader keeps a single writer — the
-    // alternative is poking `Error` into the player's state from the frame loop. It sits BELOW the
-    // resolve check because a fresh resolve is the thing that retires the last verdict.
-    // A start refused because a timed-out Load is still parked (`ps.native_start_refused`) is the
-    // same kind of fact: no Engine was built, so the pump that owns `pb_state` never runs and
-    // nothing else could say why the player is empty.
-    if ps.jail_load_blocked
-        || ps.native_start_refused
-        || crate::route::play_refused(ps)
-        || crate::route::play_resolution_failed(ps)
-    {
+    // A playback refused before any engine exists (the sandbox preflight), or a start refused
+    // because a timed-out Load is still parked (`ps.native_start_refused`): no Engine was built,
+    // so the pump that owns `pb_state` never runs and nothing else could say why the player is
+    // empty.
+    if ps.jail_load_blocked || ps.native_start_refused {
         return shared::PlaybackState::Error;
     }
     // A seek in flight is derived HERE too, not only published by the pump's own ladder (which

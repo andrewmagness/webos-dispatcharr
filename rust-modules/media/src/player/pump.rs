@@ -100,10 +100,6 @@ fn take_coalesced() -> u32 {
     TX.seek_reqs.swap(0, Relaxed).saturating_sub(1)
 }
 
-fn prime_before_play(rebase_pending: bool, segmented_hls: bool) -> bool {
-    rebase_pending || segmented_hls
-}
-
 /// Playable HLS reserve in the same content-time coordinates as the demux controller. The main
 /// thread needs this read for the exact depleted-buffer fallback and for rebuffer diagnostics;
 /// ordinary ABR decisions remain on the worker.
@@ -236,101 +232,6 @@ fn rebuffer_request_is_current(
     current_tail_ns: i64,
 ) -> bool {
     requested && (requested_tail_ns < 0 || current_tail_ns <= requested_tail_ns)
-}
-
-/// Stop the INTERNAL A/V clock at a physical reserve boundary while leaving demux and feeding
-/// alive. This is intentionally not `TX.paused`: the viewer did not pause, and the whole point is
-/// to keep acquiring until `try_prime` sees enough measured runway to resume smoothly.
-fn maybe_begin_hls_rebuffer(ps: &crate::route::PlaybackSession, mt: &MainThread, eng: &mut Engine) {
-    if !crate::route::is_segmented_hls(ps)
-        || eng.stage < Stage::Playing
-        || eng.prime_play
-        || TX.paused.load(Relaxed)
-    {
-        // Each of these legitimately stops the native clock, so none of them may be read later as
-        // a stalled one: a viewer paused for a minute must resume into playback, not into an
-        // instant internal hold, and the tick after this hold releases must start counting again.
-        restart_native_clock_watch();
-        return;
-    }
-    // Consume atomically: a worker request racing this tick must either be the value returned here
-    // or remain set for the next tick, never be erased by a later unconditional store.
-    let requested = SHARED.hls_rebuffer_requested.swap(false, Acquire);
-    let requested_tail_ns = SHARED.hls_rebuffer_request_tail_ns.load(Acquire);
-    let current_tail_ns = SHARED.hls_video_tail_ns.load(Acquire);
-    let requested = rebuffer_request_is_current(requested, requested_tail_ns, current_tail_ns);
-    let trial_reserve_ms = SHARED.hls_trial_reserve_ms.load(Acquire);
-    let runtime_runway_ms = SHARED.hls_prime_runway_ms.load(Acquire);
-    let buffered_ms = hls_buffered_ms();
-    let silence_ms = native_clock_silence_ms();
-    let clock_stopped = native_clock_stopped(silence_ms, buffered_ms);
-    // A silent clock that does NOT become a hold is the case this gate was blind to for 82 s on
-    // the device; say why, once per silent second, so a device log can answer it.
-    if silence_ms.is_some_and(|ms| ms >= NATIVE_CLOCK_STOPPED_MS) && !clock_stopped {
-        static LAST_SILENT_LINE_MS: std::sync::atomic::AtomicU32 =
-            std::sync::atomic::AtomicU32::new(0);
-        let now = super::vclock_ms();
-        if now.wrapping_sub(LAST_SILENT_LINE_MS.load(Relaxed)) >= 1_000 {
-            LAST_SILENT_LINE_MS.store(now, Relaxed);
-            super::log(&format!(
-                "hls: clock silent={}ms buf={}ms vtail={} atail={} disp_base={} pos={} \
-                 requested={} stage_playing=1",
-                silence_ms.unwrap_or(0),
-                buffered_ms.map_or(-1, |ms| ms),
-                SHARED.hls_video_tail_ns.load(Acquire),
-                SHARED.hls_audio_tail_ns.load(Acquire),
-                SHARED.disp_base.load(Relaxed),
-                SHARED.playpos_ns.load(Relaxed),
-                requested,
-            ));
-        }
-    }
-    if !should_begin_hls_rebuffer(
-        requested,
-        trial_reserve_ms,
-        runtime_runway_ms,
-        buffered_ms,
-        clock_stopped,
-    ) {
-        return;
-    }
-    let Some(pause_token) = SHARED.prepare_hls_rebuffer_pause() else {
-        if requested {
-            SHARED.hls_rebuffer_requested.store(true, Release);
-        }
-        super::log("hls: auto-rebuffer pause deferred by clock transition; will retry");
-        return;
-    };
-    let paused = unsafe { super::sink().pause(mt) };
-    match SHARED.complete_hls_rebuffer_pause(pause_token, paused != 0) {
-        HlsPauseCompletion::Accepted => {}
-        HlsPauseCompletion::Refused => {
-            if requested {
-                SHARED.hls_rebuffer_requested.store(true, Release);
-            }
-            super::log("hls: auto-rebuffer pause refused by Starfish; will retry");
-            return;
-        }
-        HlsPauseCompletion::Stale => {
-            if requested {
-                SHARED.hls_rebuffer_requested.store(true, Release);
-            }
-            super::log("hls: auto-rebuffer pause result was stale; will retry");
-            return;
-        }
-    }
-    arm_live_clock_prime(eng);
-    // The pause-local proof was armed before sf_pause, so a completed segment in the native-call
-    // window is already part of this hold instead of being silently discarded.
-    // `silent=` is the only field that separates the two ways this hold is reached: an exact
-    // arithmetic zero, or a presentation clock that stopped with a remnant it will never spend.
-    super::log(&format!(
-        "hls: auto-rebuffer pause buf={}ms trial_reserve={}ms runway={}ms silent={}ms",
-        buffered_ms.unwrap_or(-1),
-        trial_reserve_ms,
-        runtime_runway_ms,
-        silence_ms.map_or(-1, i64::from),
-    ));
 }
 
 /// Place the webOS 5+ exported window: source frame -> on-screen rect.
@@ -478,10 +379,6 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         set_state(PlaybackState::Connecting);
         return;
     }
-    if SHARED.frames.load(Relaxed) > 0 {
-        crate::route::confirm_resume_presented(ps);
-    }
-
     // The producer died before publishing a duration: the EOS path is gated on `duration_ns > 0`
     // so it can NEVER fire, and the player used to sit on a black screen forever with no error
     // and no exit. Surface it instead — BACK is already the escape.
@@ -740,12 +637,8 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             eng.stage = Stage::Streaming;
         }
         // A fresh Load for a seek/resume primes before Play so the clock does not free-run through
-        // the demux reopen gap. Segmented HLS needs the same gate even at offset zero: its video
-        // and AAC arrive through independent queues, and starting Starfish's audio-master clock
-        // before AAC is present produced silent initial playback that recovered only after a seek
-        // (the seek path already primed both lanes). Progressive initial play keeps its proven
-        // immediate-start behavior.
-        if prime_before_play(eng.rebase_pending, crate::route::is_segmented_hls(ps)) {
+        // the demux reopen gap; an initial play starts at once.
+        if eng.rebase_pending {
             eng.prime_play = true;
             super::log("SMP loadCompleted (priming before Play)");
         } else {
@@ -903,7 +796,6 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // issuing Play. NOT while a seek is armed: on a resume the seek is armed before PLAYING, so
     // feeding first would present the file start for a frame before the seek repositions — a
     // visible jump. ----------
-    maybe_begin_hls_rebuffer(ps, mt, eng);
     if eng.stage >= Stage::Playing && TX.feed_allowed() && TX.seek_to_ns.load(Relaxed) < 0 {
         if stream {
             // Two-lane feed, then the prime attempt — the ordering and the reason both live in
@@ -1182,14 +1074,6 @@ mod tests {
             held_at_ms.is_some_and(|ms| ms <= 1_500),
             "a presentation clock that has physically stopped is the terminal reserve boundary:              expected the hold within 1500 ms of the last position callback, got {held_at_ms:?}              (the device waited 82682 ms for the fetch to complete instead)"
         );
-    }
-
-    #[test]
-    fn segmented_hls_primes_both_lanes_even_without_a_seek() {
-        assert!(prime_before_play(false, true));
-        assert!(prime_before_play(true, true));
-        assert!(prime_before_play(true, false));
-        assert!(!prime_before_play(false, false));
     }
 
     #[test]

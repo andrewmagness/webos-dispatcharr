@@ -30,11 +30,6 @@ that nothing in that table is derived from Plex's watched threshold, its marker 
 a case's seek depth — because none of those exist down there. `PIPE_SHAPES`' own comment is
 where that tier's shapes, and the three it deliberately cannot contain, are argued.
 
-ONE STANDALONE SET (`--only mockverify`) is intentionally outside both manifest packs. It makes
-two small 150-second MKVs and an SRT for `tests/mock_pms.py --media`, so a television can verify
-language preferences and client-rendered subtitles without a Plex server or account. The mock
-ffprobes those files itself; this generator still verifies their exact stream layouts at creation.
-
 --------------------------------------------------------------------------------------
 THE TRAPS THIS SCRIPT IS BUILT AROUND. Every one of them fails SILENTLY — the command
 succeeds, the file exists, and it is the wrong shape. That is the failure mode worth
@@ -403,97 +398,6 @@ def write_srt(path, idx, label, duration, step=SUB_STEP, hold=SUB_HOLD, cover_en
     return path
 
 
-def build_mockverify(root, duration=150):
-    """Build the compact, account-free media set consumed by tests/mock_pms.py --media."""
-    root = Path(root).expanduser().resolve()
-    try:
-        root.relative_to(REPO_ROOT)
-    except ValueError:
-        pass
-    else:
-        raise Fail("refusing to write mock verification media inside the repository")
-    root.mkdir(parents=True, exist_ok=True)
-    work = root / ".mockverify-work"
-    work.mkdir(parents=True, exist_ok=True)
-    v1_en = write_srt(work / "v1-eng.srt", 0, "V1 ENGLISH EMBEDDED", duration,
-                      step=2, hold=2, cover_end=True)
-    v1_de = write_srt(work / "v1-deu.srt", 1, "V1 GERMAN EMBEDDED", duration,
-                      step=2, hold=2, cover_end=True)
-    v2_embedded = write_srt(work / "v2-eng.srt", 0, "EMBEDDED", duration,
-                            step=2, hold=2, cover_end=True)
-    sidecar = write_srt(root / "mockverify-v2.eng.srt", 0, "SIDECAR", duration,
-                        step=2, hold=2, cover_end=True)
-
-    common = ["ffmpeg", "-y", "-v", "error", "-nostdin", "-t", str(duration),
-              "-f", "lavfi", "-i", "testsrc=size=1920x1080:rate=24"]
-    video = ["-map", "0:v", "-c:v", "libx264", "-preset", "veryfast", "-profile:v", "high",
-             "-crf", "35", "-pix_fmt", "yuv420p", "-g", "48", "-sc_threshold", "0",
-             "-disposition:v:0", "default"]
-
-    v1 = root / "mockverify-v1.mkv"
-    argv = common + [
-        "-t", str(duration), "-f", "lavfi", "-i", f"sine=frequency=330:duration={duration}",
-        "-t", str(duration), "-f", "lavfi", "-i", f"sine=frequency=220:duration={duration}",
-        "-i", str(v1_en), "-i", str(v1_de),
-    ] + video + ["-map", "1:a", "-map", "2:a", "-map", "3:s", "-map", "4:s",
-                 "-c:a", "ac3", "-b:a", "192k", "-ac", "2", "-c:s", "srt",
-                 "-metadata:s:a:0", "language=deu", "-metadata:s:a:0", "title=German",
-                 "-disposition:a:0", "0",
-                 "-metadata:s:a:1", "language=eng", "-metadata:s:a:1", "title=English",
-                 "-disposition:a:1", "default",
-                 "-metadata:s:s:0", "language=eng", "-metadata:s:s:0", "title=English",
-                 "-disposition:s:0", "0",
-                 "-metadata:s:s:1", "language=deu", "-metadata:s:s:1", "title=German",
-                 "-disposition:s:1", "0", "-t", str(duration), str(v1)]
-    run(argv)
-
-    v2 = root / "mockverify-v2.mkv"
-    argv = common + [
-        "-t", str(duration), "-f", "lavfi", "-i", f"sine=frequency=262:duration={duration}",
-        "-i", str(v2_embedded),
-    ] + video + ["-map", "1:a", "-map", "2:s", "-c:a", "aac", "-b:a", "160k", "-ac", "2",
-                 "-c:s", "srt", "-metadata:s:a:0", "language=eng",
-                 "-metadata:s:a:0", "title=English", "-disposition:a:0", "default",
-                 "-metadata:s:s:0", "language=eng", "-metadata:s:s:0", "title=English",
-                 "-disposition:s:0", "0", "-t", str(duration), str(v2)]
-    run(argv)
-
-    expected = {
-        v1: [("video", "h264", None, 1), ("audio", "ac3", "deu", 0),
-             ("audio", "ac3", "eng", 1), ("subtitle", "subrip", "eng", 0),
-             ("subtitle", "subrip", "deu", 0)],
-        v2: [("video", "h264", None, 1), ("audio", "aac", "eng", 1),
-             ("subtitle", "subrip", "eng", 0)],
-    }
-    for path, want in expected.items():
-        got = []
-        info = probe(path)
-        for stream in info["streams"]:
-            got.append((stream["codec_type"], stream["codec_name"],
-                        (stream.get("tags") or {}).get("language"),
-                        int((stream.get("disposition") or {}).get("default", 0))))
-        if got != want:
-            raise Fail("%s stream layout mismatch: %r != %r" % (path.name, got, want))
-        measured = float(info["format"]["duration"])
-        if not 120 <= measured <= 180:
-            raise Fail("%s duration %.3fs is outside 120-180s" % (path.name, measured))
-    side_probe = probe(sidecar)
-    if [s.get("codec_name") for s in side_probe["streams"]] != ["subrip"]:
-        raise Fail("mockverify sidecar did not probe as SubRip")
-    shutil.rmtree(work, ignore_errors=True)
-    print("mockverify: built %s, %s, %s" % (v1, v2, sidecar))
-    return 0
-
-
-# ---------------------------------------------------------------------------------------
-# HDMV PGS (.sup) writer — see trap 10. Segment framing is
-#   'PG' | pts:u32be | dts:u32be | type:u8 | size:u16be | payload
-# with 0x14 PDS, 0x15 ODS, 0x16 PCS, 0x17 WDS, 0x80 END. One display set opens each cue
-# and a composition-state-0 set with no objects clears it, which is what makes ffmpeg's
-# decoder report num_rects 1 then 0 — the shape `subtitle_image_pgs` grades.
-# The authoring canvas stays 1920x1080 even for a 4K video, exactly as a UHD disc does;
-# the app scales from the canvas it is told about (`image cue … canvas=WxH`).
-# ---------------------------------------------------------------------------------------
 def _pgs_render(text, scale=6, pad=12):
     cw, ch, gap = GLYPH_W, GLYPH_H, 1
     tw = len(text) * (cw + gap) * scale
@@ -2974,20 +2878,6 @@ def main(argv=None):
 
     only_names = [name for chunk in args.only
                   for name in (x.strip() for x in chunk.split(",")) if name]
-    if "mockverify" in only_names:
-        if only_names != ["mockverify"]:
-            print("mockverify is a standalone set; select it by itself", file=sys.stderr)
-            return 2
-        if args.quick or args.secs is not None or args.tier != "integration":
-            print("mockverify has a fixed 150s layout and does not take tier/length overrides",
-                  file=sys.stderr)
-            return 2
-        try:
-            return build_mockverify(args.out)
-        except (Fail, FileNotFoundError) as e:
-            print("mockverify: FAILED: %s" % e, file=sys.stderr)
-            return 1
-
     tier = TIERS[args.tier]
     shapes = tier["shapes"]
     # One name for "the length this run builds at", None meaning "whatever each shape says".
@@ -3000,9 +2890,6 @@ def main(argv=None):
             for kk, pth in out_paths(label, k, spec):
                 print("%-34s %-8s %8ds  %s"
                       % (kk, spec["kind"], shape_duration(spec, secs), pth))
-        if args.tier == "integration":
-            print("%-34s %-8s %8ds  %s"
-                  % ("mockverify", "set", 150, Path("<out>") / "mockverify-v{1,2}.mkv"))
         # ...and the tooling report, because `--list` is what the README sends a newcomer to FIRST
         # and "which shapes can this machine actually build" is the only question they have at that
         # point. Without this the table above reads as ten happy rows to somebody with no

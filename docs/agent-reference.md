@@ -99,15 +99,12 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   performance on the TV (FPS, frame pacing, scroll smoothness, CPU/GPU) must use
   `ARM_PROFILE=release`**: `tvdev` loses the cross-crate inlining the per-frame UI code relies on,
   so its numbers are not the shipped ones. This is enforced rather than remembered: `make deploy`
-  writes the profile into `<app dir>/arm-profile` on the set, and `tests/run.py --fps` /
-  `--fps-player` / `--graphics-profile`, `tools/profile-graphics` and `tools/tv-sched-trace.sh`
-  read it through `tools/arm_profile_guard.py` and stop with a one-line message naming
+  writes the profile into `<app dir>/arm-profile` on the set, and `tools/profile-graphics` and
+  `tools/tv-sched-trace.sh` read it through `tools/arm_profile_guard.py` and stop with a one-line message naming
   `make ARM_PROFILE=release deploy` when it says `tvdev` (a missing record is a binary deployed
   before the record existed or installed from a package, both release, and is accepted as
-  `unrecorded`). `tests/run.py --build` builds both goals with `ARM_PROFILE=release` for those runs
-  only; the playback, pipeline and server cases keep the fast default. The profile is printed in
-  the FPS suite's header and summary and written to the graphics-profile bundle's `metadata.json`
-  and `summary.txt` and to `profile-graphics`'s; `tests/test_arm_profile_guard.py` pins the rule.
+  `unrecorded`). The profile is written to `profile-graphics`'s `metadata.json` and `summary.txt`;
+  `tests/test_arm_profile_guard.py` pins the rule.
   Graders that only read captured evidence (`tools/image-cache-stress.py`, `tools/analyze-*`) cannot
   know which binary produced it: run that evidence on a `release` deploy. The staticlib lands in
   `rust-modules/<tdir>/arm-unknown-linux-gnueabi/<profile>/`, and a non-`release` profile adds
@@ -1574,8 +1571,7 @@ set is in a living room. The owner's statement is that rendering continues with 
 fps scene graded under `screen off` is a real measurement; the 2026-09-06 form of this rule (panel
 ON for fps, on the reasoning that `plx_machine::idle` gates presents on what the panel shows) is SUPERSEDED,
 and the one number still owed is a same-session `fps=` comparison of one scene screen-on vs
-screen-off, to be taken at the next device session and written here. `tests/run.py --fps` says so
-in its banner; the command is `tools/tv-session.sh screen off` (a PANEL state, not an app state —
+screen-off, to be taken at the next device session and written here. The command is `tools/tv-session.sh screen off` (a PANEL state, not an app state —
 the app keeps running and playback keeps decoding). The sound half is now the same shape of
 command: `tools/tv-session.sh sound off|on|status` calls `com.webos.service.audio/setMuted` and
 reads `getVolume` back to confirm — this is the sanctioned path, so no lane needs
@@ -1584,91 +1580,41 @@ reads `getVolume` back to confirm — this is the sanctioned path, so no lane ne
 The **`tv-session` skill** is
 the bring-up/observe/drive loop; **`profile-tv`** handles a live but slow or stuck process and the
 three-layer graphics profile; **`crash-triage`** handles a death; **`bind-tv-lib-abi`** covers new
-FFI into the TV's own libraries. **`./tests/run.py` needs a gitignored `tests/manifest.local.json`**
-— `manifest.json` holds only the installation-INDEPENDENT case definitions, and each case names the
-SHAPE of item it needs (`item: "movie_h264_ac3_1080p"`); the overlay maps that to a ratingKey on
-this server and supplies the PMS host, TV address and test user. Copy
-`tests/manifest.local.json.example` and fill it in; the runner refuses to start without the FILE, and
-without `pms.host` / `tv` / `test_user.id`. **An `item` key it cannot resolve is a SKIP, not a
-death** (since 2026-08-22) — absent or left as the example's `<ratingKey>`, it skips the cases and
-fps scenes naming it, prints the reason in the summary and in `--list`, and runs the rest. The
-matrix is a SUPERSET of what any one library holds (it names 4K DoVi P8, TrueHD, PGS, AV1-with-no-
-DP-audio), so before that change the suite ran for exactly one library in the world; one ordinary
-h264/ac3 movie now gets a stranger every playback case and fps scene naming that shape or no item
-at all — count it with `./tests/run.py --list`, never from here. Consequence when
-reading a result: **the pass count is meaningless without the skip count beside it** — `16 passed`
-can mean sixteen of the shapes that installation happens to own. Resolution happens once at load and
-writes `rk` back for the resolvable ones, so everything downstream still reads `case["rk"]`; a
-skipped case has NO `rk` at all and is partitioned out in `main()` before anything subscripts it.
-`tests/test_harness.py` (in `make check`) pins that partition, because the maintainer's own overlay
-resolves every key and so never enters the path. The full on-device suite is `./tests/run.py`
-(count it with `--list --server`, never from here; `--fps` for the perf gates), and `make test` = `deploy` + `run`.
-
-**Tier 2 is TWO SUITES on one television, and since 2026-08-22 the DEFAULT IS THE SYNTHETIC ONE.**
-A bare **`./tests/run.py`** now runs the SYNTHETIC tier (generated clips, no Plex — take the count
-yourself with `./tests/run.py --list`, which is the only census that cannot rot; the number written
-here went stale inside the branch that wrote it, in one commit); the
-library-backed cases everything above describes are **`./tests/run.py --server`**, and `--fps` /
-`--fps-player` imply `--server` (not with `--mock`, which refuses `--server` and runs the scenes against `tests/mock_pms.py`) because those scenes navigate a real signed-in Home. `--pipeline`
-still parses (it names the default); pairing it with `--server`/`--fps` is refused rather than
-silently resolved. The inversion is about what the obvious command should mean: the default has to
-be the thing that runs for everybody, needs no credentials, touches nobody's watch history, and
-answers "is the PLAYER broken" — charging a PMS, a token and a filled-in overlay for typing
-`./tests/run.py` meant most people could not type it at all. **Never ship on the default alone**
-(what it cannot see is three paragraphs down). The server tier is still the right shape for what it
-grades — SELECTION: `/decision`, direct-play vs transcode, track menus from PMS metadata, markers,
-resume, the `/:/timeline` reporter — which is also why it needs somebody's library.
-**The synthetic tier is the PLAYER PIPELINE, with no Plex anywhere.** A generated clip (`make fixtures-pipeline`, ~0.9 GB flat in
-`$FIXTURES_OUT/pipeline`) is served off the dev Mac by `tests/serve_fixtures.py` and played through
-**`/tmp/dispatcharrtv-playurl`**, one JSON object carrying the URL *and the Load payload declaration*.
-It needs a TV address and nothing else — no token, no ratingKey, no `manifest.local.json`, no
-sharing — so it is the only tier a stranger can run, and it is what separates "the player is
-broken" from "the library layer is broken" when a server case fails. **What it covers, precisely:**
-the player feeds `{h264,hevc}` (plus `av1` / `vp9` on a set whose codec table lists that decoder's row) × `{aac,ac3,eac3,dts}` in mkv/mp4/m4v. Auto intersects this
-software set with the device table and per-codec channel ceilings; DTS requires a measured
-DTS row and feeds only the DTS core when an HD extension is present. The implemented Load
-strings are `H264`/`H265`/`AV1`/`VP9` (AV1 and VP9 only on a set whose table lists that decoder; elsewhere the Load is refused) and `AC3`/`AC3 PLUS`/`AAC`/`DTS`; these are not the firmware's whole
-vocabulary. The six AC3/EAC3/AAC combinations and H264/DTS are covered
-here, plus DV 8.1, both containers, in-place seek in each, and the FRAME-RATE axis added the same
-day (`pipe_h264_1080p5994` is the only fixture that reaches `fps_rational`'s 1001-denominator
-branch — device-verified `esInfo: videoFps 60000/1001` — and `pipe_hevc_4k_60fps` is 4K60 HEVC;
-every other fixture in both packs is 24p), and — since 2026-08-23 — the **RESOLUTION x CODEC
-matrix** LG checklist #50/#51 is graded as: SD 720x480 / HD 1280x720 / FHD 1920x1080 / UHD
-3840x2160 x {h264, hevc}, eight cells, one audio codec per column so a row-to-row difference is the
-raster alone, each grading `expect.video_size` EXACTLY out of the `ff:` line rather than a width
-floor — which is what stopped the item being answerable only as "pieces are covered", and which
-closed the `4k-h264` library gap on this tier (`8-bit-hevc` was already closed by
-`pipe_hevc_aac_mp4` and the gap list had not caught up; a generated clip closes neither gap's real
-half, which is a PMS DECISION on such an item). The same day added the one clip in
-either pack that is MEANT to run out (`pipe_finish_eos` and `pipe_replay_after_eos`, 20 s), which
-is #46 END TO END — the second of those restarts the finished stream through
-`/tmp/dispatcharrtv-replay[=N]`, a bounded counter re-arming `app.rs`'s one-shot autoplay latch, and
-grades the re-entry COUNT, a second `load:` line, a second fetch off the fixture server and a
-media position that falls and then climbs. Still
-uncovered: HLG, HDR10+, DV P5/P7, Atmos, the
-4096-wide edge and any refusal above it, a USER-driven replay (a Play control on a detail page is
-server-tier by construction), and the transcode INPUT space
-(three server cases on one AV1 item stand in for 17 codecs). One of those is an app gap, not a test
-gap — `devcaps` reads the table's `maxFrameRate` only into the per-codec rows the Starfish Load
-envelope clamps against (since 2026-09-03), so the profile sent to PMS still bounds no frame rate
-at all. Three things about it
-are worth knowing before reading a result. **(1)** The declaration is the interesting half and the
-main false-PASS risk: `engine`'s `_ =>` arm maps an unrecognised AUDIO codec to `"AC3"`, but the video side no longer
-defaults: `LoadVideo::of_stream` is case-insensitive, `""` and `h264` are the only H264, `hevc`/`h265`, `av1` and `vp9` get their own
-payloads (`av1` and `vp9` only where the device's codec table lists the row, otherwise the Load is refused), and any other `vcodec` in a
-`playurl` declaration refuses the Load with a log line naming it. So a trigger that was never read (`""`) still produces exactly the right
-payload for the AC-3 baseline case — which is why the matrix carries cases expecting
-`"AC3 PLUS"` and `"AAC"`, and why the engine now logs one `load: v=… a=… fps=… dv=… atmos=…` line
-per streamed playback (the only place an event log says what the app told the television the stream
-WAS, as opposed to what the demuxer found in it). **(2)** `python3 -m http.server` is DISQUALIFIED
-and the failure is silent: the AVIO seeks by reopening with `Range: bytes=N-`, `stream.rs` accepts
-any 2xx, and a server that ignores the header answers 200 from byte zero while the demuxer believes
-it is at N. `serve_fixtures.py` answers 206 or 416, never 200-with-a-Range, and the suite asserts
-the ranged-open COUNT off the server itself — the one assertion no log line can give. **(3)** It
-cannot prove that the declaration it feeds is the one a real item would produce: it writes those
-five `route` fields itself, so `metadata → plan → apply_plan` is bypassed and a regression there
-passes it green. It also reaches no resume, marker, Up Next, timeline, track-SELECTION or transcode
-path. Never run only this one before a release. `tests/README.md` has the tier table.
+FFI into the TV's own libraries. **`./tests/run.py` is the on-device player harness** (`tests/README.md`): generated clips (`make
+fixtures-pipeline`, ~0.9 GB flat in `$FIXTURES_OUT/pipeline`) served off the dev machine by
+`tests/serve_fixtures.py` and played through **`/tmp/dispatcharrtv-playurl`**, one JSON object
+carrying the URL *and the Load payload declaration*. It needs a TV address and nothing else; take
+the case count with `./tests/run.py --list`, the only census that cannot rot. A fixture the pack
+does not hold is a SKIP with the reason printed, so **the pass count is meaningless without the skip
+count beside it.** It moves the set's Dispatcharr account aside for the run and restores it: with an
+account the app resumes its last channel on launch, and a tuned channel outranks the clip trigger.
+**What it covers:** the player feeds `{h264,hevc}` (plus `av1` / `vp9` on a set whose codec table
+lists that decoder's row) × `{aac,ac3,eac3,dts}` in mkv/mp4. The implemented Load strings are
+`H264`/`H265`/`AV1`/`VP9` and `AC3`/`AC3 PLUS`/`AAC`/`DTS`; DTS requires a measured DTS row and
+feeds only the DTS core when an HD extension is present (and many 2020+ sets, the dev C1 among them,
+refuse a DTS Load outright). Also DV 8.1, both containers, the FRAME-RATE axis
+(`pipe_h264_1080p5994` is the only fixture that reaches `fps_rational`'s 1001-denominator branch —
+device-verified `esInfo: videoFps 60000/1001` — and `pipe_hevc_4k_60fps` is 4K60 HEVC), the
+**RESOLUTION x CODEC matrix** LG checklist #50/#51 is graded as (SD 720x480 / HD 1280x720 / FHD
+1920x1080 / UHD 3840x2160 x {h264, hevc}, each grading `expect.video_size` exactly out of the `ff:`
+line), and #46 end to end (`pipe_finish_eos` and `pipe_replay_after_eos`, a 20 s clip meant to run
+out; the second restarts the finished stream through `/tmp/dispatcharrtv-replay[=N]` and grades the
+re-entry COUNT, a second `load:` line, a second fetch off the fixture server and a media position
+that falls and then climbs). Still uncovered: HLG, HDR10+, DV P5/P7, Atmos, the 4096-wide edge and
+any refusal above it. Three things about it are worth knowing before reading a result. **(1)** The
+declaration is the interesting half and the main false-PASS risk: `engine`'s `_ =>` arm maps an
+unrecognised AUDIO codec to `"AC3"`, but the video side no longer defaults — `LoadVideo::of_stream`
+is case-insensitive, `""` and `h264` are the only H264, and any other unknown `vcodec` refuses the
+Load with a log line naming it. So a trigger that was never read still produces exactly the right
+payload for the AC-3 baseline case — which is why the matrix carries cases expecting `"AC3 PLUS"`
+and `"AAC"`, and why the engine logs one `load: v=… a=… fps=… dv=… atmos=…` line per streamed
+playback. **(2)** `python3 -m http.server` is DISQUALIFIED and the failure is silent: the AVIO
+reopens with `Range: bytes=N-`, `stream.rs` accepts any 2xx, and a server that ignores the header
+answers 200 from byte zero while the demuxer believes it is at N. `serve_fixtures.py` answers 206 or
+416, never 200-with-a-Range. **(3)** It cannot prove that the declaration it feeds is the one a real
+channel would produce: it writes the route's stream declaration itself, so a channel's codec
+detection and correction (`live_codec_correction`) are bypassed and a regression there passes it
+green.
 
 - **Event log:** the app writes `dispatcharrtv-events.log` in its runtime root on the TV (LS2/ACB/
   Starfish replies, feed stats, seek/bind steps, key raw bytes, crash tracer) — `/tmp` for the
@@ -1686,8 +1632,8 @@ path. Never run only this one before a release. `tests/README.md` has the tier t
 - **A case's `run_secs` is a CAP, not a runtime.** `tests/run.py` launches via `make run-stream`
   (tail -F over ssh) and re-grades the log as each line arrives, ending the case the moment every
   assertion passes — so a *passing* case costs what it needs. A failing one burns the full
-  `run_secs` unless its verdict is already settled (`failed_for_good`: a `Playing error`, or a
-  rapid-seek burst that escalated to `reload_at: fresh Load` — lines that never un-appear), since
+  `run_secs` unless its verdict is already settled (`failed_for_good`: a `Playing error` — a line
+  that never un-appears), since
   every other failure means "not appeared YET", which more time could still fix.
   Sound because assertions are monotone once satisfied, with two ABSENCE-check
   exceptions that can only flip the other way — `no_error` and `op_seek_rapid`'s `reload_at: fresh
@@ -1833,74 +1779,10 @@ path. Never run only this one before a release. `tests/README.md` has the tier t
 - **Screen capture:** `tools/capture-screen.sh [out.png] [DISPLAY|VIDEO|GRAPHIC]` grabs the panel
   output. `DISPLAY` = video plane + UI composited (use this); `VIDEO`-only failing with "no
   signal state" is itself a diagnostic that nothing is decoded on the video plane.
-- **Perf gates:** `./tests/run.py --fps` runs the UI-tier FPS regression scenes (gates per scene in
-  `tests/manifest.json`; `--fps-player` adds the player tier), asserting the app's once/sec
-  heartbeat. **Six assertions in three families. Three RATE gates — and picking the wrong one is how a frozen
-  animation ships:**
-  `loop_floor` grades `loop=`, which counts LOOP iterations — it proves the app is alive, and cannot
-  see a stopped animation at all; `fps_floor` grades `fps=` and is what proves an animation still
-  RUNS (`login-spinner`, the two `*-nav` scenes, `search-type`); `fps_ceiling` grades `fps=` from the
-  other side and proves a still screen stops (`home-idle`, `search-idle`). **And two FRAME-TIME gates (2026-09-06)** — `worst_ceiling_ms`
-  (the 2nd-highest post-warmup `worstframe=`) and `stall_ceiling_ms` (the largest `FRAMEDROP`
-  total on the route, warmup INCLUDED) — which arm `dispatcharrtv-framedrop` themselves and answer
-  what no rate can: one 80 ms frame under a healthy median. **And, since phase 11, one MOUNT gate:**
-  `coldopen_ceiling_ms`, the slowest `coldopen screen=<word> ms=<n>` of the scene's screen. It
-  exists because `stall_ceiling_ms` CENSORS ITS OWN SAMPLES and could not simply be re-pointed:
-  the frame-drop detector prints only above the threshold `frame_ceiling_threshold` armed it with,
-  so a cold open FASTER than the ceiling leaves no line and `grade_frame_ceilings` passes it as
-  "no FRAMEDROP line" — five runs of `cold-open` in TV session 5 read "no-line PASS, 208.5,
-  no-line PASS, 191.4, 227.8", in which a 30 ms open and a 159 ms one are the same output. The
-  `coldopen` line is UNARMED and unconditional, so one mount is one sample and an absent line
-  fails. Its value on `cold-open` is PROVISIONAL until TV session 7 leg 6 measures it, and the
-  scene's `_coldopen_note` says so. **And, since 2026-09-19, one STRESS family** — `bench_missed_max` (missed display refreshes summed over the run, default 0: each present interval, or the first frame's Top->Swap after idle, costs `max(0, round(ms/16.67) - 1)`, so a frame is a drop once it spans 1.5 refreshes; Top->Swap alone is not graded because it includes the vsync wait. A loop iteration the capture fence DEFERRED (`Frame::deferred`: `snapshot_pending()` was the only thing holding a present) keeps the present-to-present interval, so the next frame's interval spans it and counts; an idle skip still resets it. Deferrals before a half's first presented frame are input-to-first-frame latency, logged as `defer_first:<n>` in the half and never in `missed`. A scene may also set `bench_iv_max_ms`, a ceiling on the worst present-to-present interval from the half's `iv:` field), `bench_drift_ms`, and `bench_rss_growth_kb` for `push-100`/`modal-100`; for the DEEP-stack scene, `bench_depth_rss_kb` (deepest point minus the unwound root, so retained per-level state) and `bench_root_rss_kb` (an absolute ceiling on the unwound root) instead of a growth figure measured from a step-10 baseline that moves. It does not compose with the six: a scene carrying a `bench` key (every one in `tests/manifest.json`) is graded entirely by `run.py`'s `grade_bench`/`grade_deep_bench` (`deep` only for the latter) and never reaches the rate, frame-time or mount gates, so "six" counts the gates of an ordinary scene. The Search pair is the
-  clearest illustration that these are two halves of ONE question — same screen, same trigger, the
-  oscillator added or taken away. A scene with no motion and only a `loop_floor`
-  gates nothing — **`home-hero` carries an `_idle_gate_note` saying exactly that, and it is the only
-  one left**; this line said "three" long after the other two (`home-grid`, `library-scroll`) were
-  given oscillators and real `fps_floor`s, which is the fix that note asks for. The other three
-  `loop_floor`-only scenes are the player-tier overlays (`info-panel`, `track-menu`, `chapters-panel` — take the list from `./tests/run.py --list --server`, not from here) and need no note, because
-  the video plane stays bound for the whole scene, so `fps=` grades neither an animator nor an
-  idle screen. Every run also reports
-  **`drift`** (last-third minus first-third mean): sorting used to destroy sample ORDER, so a
-  monotone 60→53 decay and a flat 53 were byte-identical output. It is reported, never asserted —
-  18–36 s is far too short to gate a thermal ramp on, and **the "the panel thermally throttles"
-  story is MEASURED AND REFUTED** (2026-08-19): a control leg holds 60/60/60 across six runs on a
-  set up 2 h 15 m under continuous load, and what actually produces a 50 fps reading is **arming a
-  profiler** — `frame.ui` brackets every frame with two `glFinish`es and drops a 60 fps leg to 45.
-  **Never quote `fps=` from a run with `/tmp/dispatcharrtv-profile` or `/tmp/dispatcharrtv-hwcnt`
-  armed**;
-  take pacing in a separate unarmed run. What this hardware WILL give you, priced in frames and
-  milliseconds for design rather than in cycles, is **`docs/glass-hardware-budget.md`**; the
-  instruments and their structural blind spots are `docs/backdrop-blur-profiling.md`. **A third profiler mode, `/tmp/dispatcharrtv-cpuprof` (2026-09-02), times every `gfx::profile::phase` (spelled `ui::profile::phase` at most call sites; `ui` re-exports it since module-layers step L5) on the RENDER THREAD** — inclusive wall time, every phase at once, no `glFinish`, a `~src` suffix for the blur source pass's copy of a phase — and it is the one that can read a frame the frame-drop detector reports as `draw=24ms swap=0.3ms`: on this driver the wait for the GPU lands in the frame's FIRST framebuffer-0 command, i.e. inside `hm.clear`, so a fat `draw=` is not CPU work until this mode says which phase holds it. That is how the Home hero regression was read (`docs/backdrop-blur-profiling.md`, the 2026-09-02 section): 26 ms in `hm.clear`, 2 ms in everything Home actually computes. For by-hand judder hunts: `/tmp/dispatcharrtv-framedrop` logs any frame over 22ms (or over
-  N ms — the file's content) with an EIGHT-PHASE breakdown — `ingest results tick_drain navcommit
-  prepare draw capture swap`, the frame algorithm's names, timed from the TOP of the iteration since
-  2026-09-06 (it used to start after the input half, so a slow key handler was invisible) — plus
-  `up=`/`px=`/`cards=`/`off=`, **which are THAT FRAME's counts since phase 11 and were not before**:
-  their only drain was the closure the instrument calls after the threshold check, so a slow
-  frame's counts covered every frame since the previous slow one (the `up=9` in
-  `docs/measurements/tv-session-5-2026-09-10.md` is a reading of the old behaviour). It adds
-  `worstframe` (the whole iteration, presented frames only) and `worstprep`
-  (the prepare phase, timed on EVERY iteration) to the heartbeat; `/tmp/dispatcharrtv-homeosc` sweeps the grid focus top↔bottom perpetually to reproduce
-  scroll judder headlessly. For a reproducible three-layer account of one FPS scene use
-  `./tests/run.py --fps --only <scene> --graphics-profile --profile-phase <phase>`: it preserves
-  one unarmed pacing leg, samples global Mali IRQ activity with the selected install closed, then runs
-  HWCNT separately and labels that leg's FPS invalid. `tools/profile-graphics` attaches active
-  present/IRQ observation to an already-running app, with no baseline; it checks profiler triggers
-  and labels pacing invalid when one is armed. For a live freeze use `tools/dispatcharrtv-sample`; unlike the
-  shipped crash path its `watch` mode is a foreground developer command and sends nothing.
-- **Poster-upload pacing, since 2026-10-08:** a scene may set `upload_per_frame_min`,
-  `upload_late_share_max` and `upload_frames_min` (default 15). Over the frames that uploaded
-  posters (mean upload at most 120 000 px, so a backdrop never counts), uploads per such frame
-  must be at or over the floor and the share whose present-to-present interval was >= 22 ms at or
-  under the limit. The armed heartbeat carries it as ` pupf=<frames> pupf_ge22=<late>
-  pup=<uploads>` (`diag::heartbeat`, present only in a second that uploaded posters), summed over
-  the whole run; the scene arms `dispatcharrtv-framedrop` at a threshold nothing reaches, so there is
-  no per-frame log. `library-scroll` carries a floor of 1.25 and a share backstop of 0.35,
-  measured on the television 2026-10-09 (8 runs with `warm_tex` drawing to framebuffer 0, 22 with
-  it offscreen): uploads per upload frame 1.00 exactly against 1.41-1.85, which separates every
-  run; the single-run late share does not (0-30 % against 30-51 %), hence only a backstop. The
-  prepare budget is priced from the same measurement: `Poster` 2500 us under a 5000 us ceiling
-  (`ui/src/frame/budget.rs`).
+- **Perf:** there is no FPS regression suite. The scenes `tests/run.py --fps` graded were all
+  Plex screens and Plex playback panels, and went with them. A frame-rate or smoothness question
+  goes to the `profile-tv` skill — the heartbeat's `loop=` / `fps=` / `worstframe=` fields,
+  `tools/profile-graphics` and `tools/tv-sched-trace.sh` — on an `ARM_PROFILE=release` deploy.
 - **Dev trigger files (read once at boot, in the install's RUNTIME ROOT).** There are ~40; this
   lists the ones worth knowing by name. **The ROOT moved for flavoured installs and ONLY for
   them:** the stable install keeps `/tmp` byte for byte, so every `/tmp/dispatcharrtv-*` path written
@@ -2040,7 +1922,7 @@ path. Never run only this one before a release. `tests/README.md` has the tier t
   `/tmp/dispatcharrtv-modalbench[=<n>[,<ratingKey>]]` (n present→settle→dismiss cycles rotating every
   modal Style reachable without a TV-only gesture — `fps:modal-100`); both log one `bench:` line
   per cycle (worst-frame ms, presented frames, RSS, first-frame ms, missed refreshes per half) and a `bench: ... done` line once, then go
-  idle, graded by `tests/run.py`'s `grade_bench`. A third, `/tmp/dispatcharrtv-deepbench[=<depth>[,<ratingKey>]]`
+  idle. A third, `/tmp/dispatcharrtv-deepbench[=<depth>[,<ratingKey>]]`
   (default depth=100 — `fps:deep-100`), does not round-trip: it pushes `depth` pages with NO pop in
   between, rotating Detail/Person only (never Library — its only entry point is a peer swap,
   `NavOp::SelectTab`, that would collapse the very depth this scene builds, see
@@ -2126,9 +2008,9 @@ path. Never run only this one before a release. `tests/README.md` has the tier t
   the point, and this line read "NO credentials" flatly — which stops a reader before they reach
   it. A build with no credential compiled in cannot report at all, which is the guarantee that
   replaced the cargo feature that used to claim it. PMS access comes
-  from the signed-in session (QR login) or, for automated runs only, `/tmp/dispatcharrtv-token` — which
-  `tests/run.py` always injects (it reads the owner token from the gitignored
-  `src/config.local.h` on the HOST; that macro is never compiled in). An interactive boot lands
+  from the signed-in session (QR login) or, for automated runs only, `/tmp/dispatcharrtv-token`
+  (`tools/tv-session.sh up` reads the owner token from the gitignored `src/config.local.h` on the
+  HOST; that macro is never compiled in). An interactive boot lands
   on the Dispatcharr Setup screen (`screens::setup`), which hands over to the Guide
   (`screens::guide`) as soon as an account is stored, without activating the Plex session; the
   Plex boot (and, with no Plex session, its QR sign-in screen) is reached only through

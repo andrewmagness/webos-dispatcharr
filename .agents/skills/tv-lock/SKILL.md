@@ -43,7 +43,7 @@ tools/tv-lock.sh release                            # hand the TELEVISION back â
 One-shot jobs get the whole thing in a single command, released even on Ctrl-C:
 
 ```bash
-tools/tv-lock.sh with --why "fps suite" -- ./tests/run.py --fps
+tools/tv-lock.sh with --why "clip suite" -- ./tests/run.py
 ```
 
 **A lease covers ONE test run â€” minutes, never hours.** Other lanes queue behind you, and a

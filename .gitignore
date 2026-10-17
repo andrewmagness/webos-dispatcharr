@@ -38,7 +38,7 @@ src/config.local.h
 .claude/worktrees/
 # the on-device suite's installation-specific half: which PMS, which TV, which ratingKeys, which
 # Plex Home user. tests/manifest.json keeps the case DEFINITIONS (public); this keeps the private
-# library inventory that used to be committed alongside them. See tests/manifest.local.json.example.
+# library inventory that used to be committed alongside them (the removed Plex harness overlay).
 tests/manifest.local.json
 rust-modules/target/
 rust-modules/target-release/

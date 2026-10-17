@@ -63,6 +63,22 @@ fn the_file_is_private_to_this_user() {
     assert_eq!(mode, 0o600);
 }
 
+/// **A dev-mode reboot widens the file, and loading it narrows it back.** LG's own
+/// `/lib/systemd/system/scripts/devmode.sh` runs `chmod -R 777 /media/developer` on every boot of a
+/// set in developer mode (found on the dev set, 2026-10-17: 533 of 559 entries there shared one
+/// ctime just after a reboot, all 0777). The account is written only at sign-in, so until this the
+/// API key sat world-readable from the first reboot on. It still loads — refusing it would sign the
+/// owner out after every reboot — and the read leaves it 0600 again.
+#[test]
+fn a_file_a_reboot_widened_is_read_and_left_private_again() {
+    let c = Candidates::new("widened", 1);
+    account::save(&record("KEY")).unwrap();
+    std::fs::set_permissions(&c.paths[0], std::fs::Permissions::from_mode(0o777)).unwrap();
+    assert_eq!(account::load(), Loaded::Signed(record("KEY"), Saved::Durable));
+    let mode = std::fs::metadata(&c.paths[0]).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "the read must leave the API key private again");
+}
+
 #[test]
 fn the_server_is_stored_as_its_normalised_base() {
     let c = Candidates::new("base", 1);

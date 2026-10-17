@@ -154,6 +154,15 @@ pub(super) fn read_owned_up_to(path: &Path, max: u64) -> Result<Option<Vec<u8>>,
     if !meta.file_type().is_file() || meta.uid() != euid() || meta.len() > max {
         return Err(());
     }
+    // Back to 0600 before anything is read, through the descriptor rather than the name. A set in
+    // developer mode runs LG's `devmode.sh` on every boot, and its `chmod -R 777 /media/developer`
+    // widens this file with the rest of the directory; the file is written only at sign-in, so
+    // nothing else would ever narrow it again. Tightened, not refused: refusing would sign the
+    // owner out after every reboot. A failure here leaves the read as it was rather than losing it.
+    if meta.mode() & 0o077 != 0 {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = file.set_permissions(std::fs::Permissions::from_mode(0o600));
+    }
     let mut bytes = Vec::new();
     file.take(max + 1).read_to_end(&mut bytes).map_err(|_| ())?;
     Ok(Some(bytes))

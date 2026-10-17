@@ -27,21 +27,10 @@
 #   --server <slot>   open detail=/player= on this registered Plex server slot instead of the
 #                     current one; boots through the signed-in stored roster so secondary slots
 #                     exist (an already-armed dispatcharrtv-servers also survives with --keep)
-#   --guest           boot as tests/manifest.local.json's managed TEST USER, never the owner.
-#                     Reuses run.py's own identity resolution (fetch_managed_user_token, the
-#                     plex.tv shared_servers lookup) rather than re-deriving it, so the two
-#                     never disagree about what "guest" means. REFUSES (exit 1) rather than
-#                     falling through to the owner when no manifest.local.json/test_user is
-#                     configured — see the 2026-09-10 postmortem below `cmd_up`'s definition:
-#                     a caller asked for a guest, got the owner silently, and a real playback
-#                     wrote progress into the household account.
 #   --owner           boot as the household account (the config.local.h owner token). This is
-#                     also what a bare `up` does with neither flag — spelling it out is for a
-#                     script that wants the choice to be visible in its own command line.
-#   --mock            with --guest, use only tests/mock_pms.py at the configured PMS endpoint.
-#                     Verifies its synthetic identity; never uses an account token or contacts plex.tv.
-#   --dry-run         resolve and print the identity `up` would use (including a real --guest
-#                     token lookup, which touches plex.tv but never the TV) and the shape of the
+#                     also what a bare `up` does — spelling it out is for a script that wants the
+#                     choice to be visible in its own command line.
+#   --dry-run         resolve and print the identity `up` would use and the shape of the
 #                     commands it would run, then exit 0 without contacting the television at all.
 #   --stream[=PORT]   also start tools/stream-screen.py for a live browser view (default 8909)
 #                     STREAM_RES=480x270 makes mpeg encode ~4x cheaper (see the skill)
@@ -51,8 +40,8 @@
 #                     both. Needs cloudflared (brew install cloudflared). See the skill for why
 #                     this is a tunnel and never a router port forward.
 #   --no-token        boot with no injected token (exercises the QR sign-in flow, or the
-#                     who's-watching picker for a stored session — a THIRD identity, distinct
-#                     from both --guest and --owner)
+#                     who's-watching picker for a stored session — an identity distinct
+#                     from --owner)
 #   --arm NAME[=VAL]  also arm trigger dispatcharrtv-NAME (repeatable), written with the screen's own
 #                     triggers BEFORE the launch, which is the only time a boot trigger is read.
 #                     For a scene's extras, e.g. `--arm menu=1 --arm submenuosc=900 --arm framedrop=25`
@@ -401,51 +390,13 @@ push_token() {
   ok "token injected (value not printed)"
 }
 
-# guest identity: reuse tests/run.py's OWN resolution instead of re-deriving the plex.tv call.
-# `--print-test-token` is that path exposed standalone (tests/manifest.local.json's `test_user`
-# -> fetch_managed_user_token, the same owner-token + shared_servers lookup run.py already makes
-# for the identical reason -- keeping test playback off the real account's watch history).
-#
-# On success sets GUEST_TOKEN and returns 0. On failure sets GUEST_ERROR to run.py's own reason
-# (no manifest.local.json, no test_user block, the managed user has no shared_servers entry, …)
-# and returns 1 -- the caller MUST refuse rather than fall back to push_token, which is exactly
-# the 2026-09-10 defect this replaced: `--guest` printed a warning and booted as the owner anyway,
-# and a real playback wrote progress into the household account (clearing it needed
-# /:/unscrobble, which also reset that item's viewCount — real data loss, not a test artifact).
-GUEST_TOKEN=""
-GUEST_ERROR=""
-resolve_guest_token() {
-  GUEST_TOKEN=""; GUEST_ERROR=""
-  local errfile tok rc
-  errfile=$(mktemp 2>/dev/null) || errfile=/dev/null
-  if [ "${mock:-0}" = 1 ]; then
-    tok=$(python3 "$REPO/tools/mock-guest.py" "$REPO/src/config.local.h" 2>"$errfile")
-  else
-  tok=$(cd "$REPO/tests" && python3 run.py --print-test-token 2>"$errfile")
-  fi
-  rc=$?
-  if [ $rc -ne 0 ] || [ -z "$tok" ]; then
-    GUEST_ERROR=$(cat "$errfile" 2>/dev/null)
-    [ -n "$GUEST_ERROR" ] || GUEST_ERROR="tests/run.py --print-test-token exited $rc with no output"
-    [ "$errfile" = /dev/null ] || rm -f "$errfile"
-    return 1
-  fi
-  [ "$errfile" = /dev/null ] || rm -f "$errfile"
-  GUEST_TOKEN="$tok"
-}
-
 # Decide the Plex identity this boot will use, and do it BEFORE a single trigger is armed or the
-# television is touched — so --dry-run can print exactly the decision a real `up` would make, and
-# so an unresolvable --guest fails before the TV lock is even taken instead of after. Reads the
-# CALLER's (cmd_up's, or cmd_selftest's) locals guest/owner/no_token/server_set/server_slot by
+# television is touched — so --dry-run can print exactly the decision a real `up` would make.
+# Reads the CALLER's (cmd_up's, or cmd_selftest's) locals owner/no_token/server_set/server_slot by
 # Bash's dynamic scope — the same convention configure_direct_screen above already uses — and sets
-# the caller's identity_desc/push_guest/push_owner the same way.
-#
-# Returns 1 ONLY for an unresolvable --guest, and the caller MUST treat that as fatal: falling
-# through to the owner from here is the exact 2026-09-10 defect this function replaced (see
-# resolve_guest_token's doc above).
+# the caller's identity_desc/push_owner the same way.
 resolve_identity() {
-  identity_desc=""; push_guest=0; push_owner=0
+  identity_desc=""; push_owner=0
   if [ "$no_token" = 1 ]; then
     if [ "$server_set" = 1 ]; then
       identity_desc="stored session — restoring the signed-in multi-server roster for slot $server_slot"
@@ -453,22 +404,6 @@ resolve_identity() {
       identity_desc="stored session / picker — boots as a real user would (picker, or QR if $APPID has no session)"
     fi
     return 0
-  fi
-  if [ "$guest" = 1 ]; then
-    if resolve_guest_token; then
-      push_guest=1
-      if [ "${mock:-0}" = 1 ]; then
-        identity_desc="guest — synthetic mock PMS (no Plex account or account token)"
-      else
-      identity_desc="guest — the manifest's managed test user (token via tests/run.py, value not printed)"
-      fi
-      return 0
-    fi
-    bad "cannot resolve a guest identity: $GUEST_ERROR"
-    bad "refusing to boot — falling through to the owner here is the exact defect this guard replaced"
-    info "alternative: tests/run.py --server --filter <case>   (drives the harness AS the managed test user)"
-    info "alternative: tv-session.sh up --owner                (boot as the household account, explicitly)"
-    return 1
   fi
   identity_desc="owner (household account) — the config.local.h token"
   push_owner=1
@@ -664,9 +599,9 @@ await_direct_screen() {
 
 # ------------------------------------------------------------ commands -------
 cmd_up() {
-  local screen=home guest=0 mock=0 owner=0 dry_run=0 stream="" no_token=0 keep=0 remote="" server_slot="" server_set=0
+  local screen=home owner=0 dry_run=0 stream="" no_token=0 keep=0 remote="" server_slot="" server_set=0
   local direct_kind="" direct_rk="" direct_marker="" extra_arm=()
-  local identity_desc="" push_guest=0 push_owner=0
+  local identity_desc="" push_owner=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --screen) screen="$2"; shift 2 ;;
@@ -674,8 +609,6 @@ cmd_up() {
       --server) [ $# -ge 2 ] || { bad "--server needs a registry slot"; exit 2; }
                 server_slot="$2"; server_set=1; shift 2 ;;
       --server=*) server_slot="${1#*=}"; server_set=1; shift ;;
-      --guest) guest=1; shift ;;
-      --mock) mock=1; shift ;;
       --owner) owner=1; shift ;;
       --dry-run) dry_run=1; shift ;;
       --stream) stream=8909; shift ;;
@@ -690,19 +623,6 @@ cmd_up() {
       *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
   done
-  if [ "$mock" = 1 ] && [ "$guest" != 1 ]; then
-    bad "--mock requires --guest (synthetic identity only)"; exit 2
-  fi
-  if [ "$mock" = 1 ] && [ "$FLAVOR" != debug ]; then
-    bad "--mock requires the debug install"; exit 2
-  fi
-  if [ "$guest" = 1 ] && [ "$owner" = 1 ]; then
-    echo "--guest and --owner are mutually exclusive" >&2; exit 2
-  fi
-  if [ "$guest" = 1 ] && [ "$no_token" = 1 ]; then
-    echo "--guest and --no-token are mutually exclusive: --no-token boots the stored session (or the who's-watching picker), which is a THIRD identity, distinct from both --guest and --owner" >&2
-    exit 2
-  fi
   configure_direct_screen || exit 2
   # --remote is --stream plus a front door: there is nothing to publish without a stream, so it
   # turns one on rather than making the caller remember to pass both.
@@ -766,20 +686,9 @@ cmd_up() {
   # number the streamer dials are the one variable resolved at the top of this file.
   [ -n "$stream" ] && files+=("dispatcharrtv-capture=$APPPORT")
 
-  # A caller who typed --guest gets a REFUSAL, not a silently different identity, the moment the
-  # chosen screen/server turns out to force the stored-session boot instead (profiles; any
-  # --server slot, via configure_direct_screen above). Silently downgrading here would be the same
-  # shape of bug this whole change exists to close, just moved one option combination sideways.
-  if [ "$guest" = 1 ] && [ "$no_token" = 1 ]; then
-    bad "--guest cannot be combined with --screen $screen (server_set=$server_set): that combination requires the stored-session boot (no injected token), which is a different identity from the managed test user"
-    exit 1
-  fi
-
   # Identity is decided HERE — before a single trigger is armed, before the TV lock, before the
   # television is even woken — so it can be said out loud before booting into it, and so
-  # --dry-run never has to touch the set to answer "what would this do". See the 2026-09-10
-  # postmortem on resolve_guest_token above: --guest used to print a warning and then push the
-  # OWNER's token anyway, and a real playback wrote progress into the household Plex account.
+  # --dry-run never has to touch the set to answer "what would this do".
   resolve_identity || exit 1
   info "identity: $identity_desc"
 
@@ -794,9 +703,7 @@ cmd_up() {
     else
       echo "  (no boot triggers for this screen)"
     fi
-    if [ "$push_guest" = 1 ]; then
-      echo "  would run: printf '%s' '<guest token, not printed>' | tools/tv-ssh ssh tv 'cat > $RUNDIR/dispatcharrtv-token'"
-    elif [ "$push_owner" = 1 ]; then
+    if [ "$push_owner" = 1 ]; then
       echo "  would run: printf '%s' '<owner token from src/config.local.h, not printed>' | tools/tv-ssh ssh tv 'cat > $RUNDIR/dispatcharrtv-token'"
     else
       echo "  would inject: nothing ($identity_desc)"
@@ -838,11 +745,7 @@ cmd_up() {
     info "no boot triggers needed for this screen"
   fi
 
-  if [ "$push_guest" = 1 ]; then
-    printf '%s' "$GUEST_TOKEN" | tv "cat > $RUNDIR/dispatcharrtv-token" \
-      && ok "guest token injected (value not printed)" \
-      || { bad "failed to inject the guest token"; exit 1; }
-  elif [ "$push_owner" = 1 ]; then
+  if [ "$push_owner" = 1 ]; then
     push_token || info "continuing without a token — expect the QR sign-in screen"
   fi
 
@@ -980,89 +883,24 @@ cmd_selftest() {
   }
   ok "tv-session direct-screen contract"
 
-  # ---- identity: `--guest` must resolve the real managed-user token or REFUSE, and must never
-  # fall through to the owner's — the 2026-09-10 TV session 5 defect (a warning printed, then the
-  # owner's token pushed anyway; a real playback wrote progress into the household Plex account,
-  # and clearing it needed /:/unscrobble, which also reset that item's viewCount).
-  #
-  # Stubs resolve_guest_token so this never shells out to python3/plex.tv. A Bash function
-  # definition is GLOBAL, not scoped to this one — cmd_selftest itself runs as a side effect of
-  # simply `source`ing this script with "selftest" as $1 (see the dispatch `case` at the bottom of
-  # the file), which is exactly what ci/test_tv_session.py's own harness does to reach OTHER
-  # functions in this file without touching the TV. Leaving the stub installed would then silently
-  # answer every LATER call to resolve_guest_token in that same sourced shell, in that test file's
-  # own process — so it is captured and restored around this block rather than left in place.
-  local identity_desc="" push_guest=0 push_owner=0
-  local guest=1 owner=0 no_token=0 server_set=0 server_slot=""
-  local _guest_stub_ok=1
-  local _real_resolve_guest_token; _real_resolve_guest_token=$(declare -f resolve_guest_token)
-  resolve_guest_token() {
-    if [ "$_guest_stub_ok" = 1 ]; then GUEST_TOKEN="stub-token"; GUEST_ERROR=""; return 0
-    else GUEST_TOKEN=""; GUEST_ERROR="stubbed failure"; return 1
-    fi
-  }
-
+  # ---- identity: the owner token by default and with --owner; nothing at all with --no-token.
+  local identity_desc="" push_owner=0
+  local owner=0 no_token=0 server_set=0 server_slot=""
   local _identity_rc=0
-  resolve_identity || { bad "resolve_identity failed on a resolvable guest"; _identity_rc=1; }
-  if [ "$_identity_rc" = 0 ]; then
-    { [ "$push_guest" = 1 ] && [ "$push_owner" = 0 ] && [ "$GUEST_TOKEN" = "stub-token" ]; } || {
-      bad "a resolvable guest did not resolve cleanly (push_guest=$push_guest push_owner=$push_owner)"
-      _identity_rc=1
-    }
+  owner=1
+  resolve_identity
+  [ "$push_owner" = 1 ] || { bad "--owner did not resolve to the owner identity"; _identity_rc=1; }
+  owner=0; no_token=0
+  resolve_identity
+  [ "$push_owner" = 1 ] || { bad "the DEFAULT must resolve to the owner identity"; _identity_rc=1; }
+  owner=0; no_token=1
+  resolve_identity
+  [ "$push_owner" = 0 ] || { bad "--no-token must inject no identity at all"; _identity_rc=1; }
+  if (cmd_up --guest --dry-run) >/dev/null 2>&1; then
+    bad "--guest went with the Plex harness and must be refused"; _identity_rc=1
   fi
-
-  if [ "$_identity_rc" = 0 ]; then
-    _guest_stub_ok=0
-    if resolve_identity; then
-      bad "resolve_identity must FAIL when the guest cannot be resolved"; _identity_rc=1
-    elif ! { [ "$push_guest" = 0 ] && [ "$push_owner" = 0 ]; }; then
-      bad "an UNRESOLVABLE guest left push_guest=$push_guest push_owner=$push_owner -- this is the exact silent-owner-fallback defect"
-      _identity_rc=1
-    fi
-  fi
-
-  if [ "$_identity_rc" = 0 ]; then
-    guest=0; owner=1
-    resolve_identity
-    [ "$push_owner" = 1 ] || { bad "--owner did not resolve to the owner identity"; _identity_rc=1; }
-  fi
-
-  if [ "$_identity_rc" = 0 ]; then
-    guest=0; owner=0; no_token=0
-    resolve_identity
-    [ "$push_owner" = 1 ] || {
-      bad "the DEFAULT (neither --guest nor --owner) must resolve to the owner identity"; _identity_rc=1
-    }
-  fi
-
-  if [ "$_identity_rc" = 0 ]; then
-    guest=0; owner=0; no_token=1
-    resolve_identity
-    { [ "$push_guest" = 0 ] && [ "$push_owner" = 0 ]; } || {
-      bad "--no-token must inject no identity at all"; _identity_rc=1
-    }
-  fi
-
-  if [ "$_identity_rc" = 0 ]; then
-    _guest_stub_ok=1
-    local mock_dry
-    mock_dry=$(cmd_up --guest --mock --dry-run 2>&1) || _identity_rc=1
-    case "$mock_dry" in
-      *"identity: guest — synthetic mock PMS"*) ;;
-      *) bad "mock guest dry run did not select a synthetic identity"; _identity_rc=1 ;;
-    esac
-    if (cmd_up --mock --dry-run) >/dev/null 2>&1; then
-      bad "mock without guest must refuse"; _identity_rc=1
-    fi
-    if (FLAVOR=stable; cmd_up --guest --mock --dry-run) >/dev/null 2>&1; then
-      bad "mock on stable must refuse"; _identity_rc=1
-    fi
-  fi
-
-  # Restore the REAL resolve_guest_token unconditionally, whichever branch above set _identity_rc.
-  eval "$_real_resolve_guest_token"
   [ "$_identity_rc" = 0 ] || return 1
-  ok "tv-session identity contract (guest resolves-or-refuses, never falls back to owner)"
+  ok "tv-session identity contract (owner by default, nothing with --no-token)"
 }
 
 cmd_status() {

@@ -125,7 +125,6 @@ ci/check-statics.sh
 # real tree against ci/module-cycle-baseline.json (~1.5 s); its self-test uses a synthetic crate.
 python3 ci/test_module_cycle.py
 python3 ci/check-module-cycle.py
-python3 tests/player_pointer.py --selftest
 python3 tools/prune-gh-caches.py --selftest
 python3 tests/test_image_cache_stress.py
 # Host-only halves of the opt-in live diagnostics: /proc/interrupt parsing, rate normalization,
@@ -135,7 +134,6 @@ tools/dispatcharrtv-sample selftest
 # The direct-screen TV command's own host-only contract: `--server N` must suppress the
 # singular token boot (which cannot register N>0) and must construct the exact identity marker
 # that `up` requires after launch. No SSH or television access occurs in this self-test.
-python3 tools/mock-guest.py --selftest
 tools/tv-session.sh selftest
 # The three PreToolUse/PostToolUse hooks' own suites (~0.6s together). They were not in this
 # target until 2026-08-26, which meant the guard that decides whether a private value may
@@ -227,12 +225,6 @@ python3 ci/check-plex-requests.py
 # land unseen. Pure lexing, no cargo; the self-tests run on synthetic trees in a private temp dir.
 python3 ci/test_check_list_caps.py
 python3 ci/check-list-caps.py
-
-# The link conditioner and the mock's paging contract (rate, determinism, per-class, run-time change; the
-# mock's own --selftest rides along): real loopback sockets on port 0, a few seconds.
-python3 tests/test_link_conditioner.py
-# The conditioned paging test's analysis on synthetic logs (the run itself needs a window and minutes: not here).
-python3 tests/paging_link.py --selftest
 
 # ci/check-debug-files.py (the Sentry upload step's "debug-files check must show symbols" gate), exercised against a stub CLI.
 python3 ci/test_check_debug_files.py

@@ -479,7 +479,7 @@ pub const EVENT_SPECS: &[EventSpec] = &[
         name: "playback.failed",
         fields: &[
             F { key: "playback_id", domain: PLAYBACK_ID },
-            F { key: "kind", domain: "`decision_refused` / `playback_policy` / `no_video_transcode_target` / `no_video_track` / `media_source` / `playback_interrupted` / `tv_pipeline` / `original_rollback` / `jail_missing_rtkmem` / `load_timeout` / `unspecified`" },
+            F { key: "kind", domain: "`no_video_track` / `media_source` / `playback_interrupted` / `tv_pipeline` / `jail_missing_rtkmem` / `load_timeout` / `unspecified`" },
         ],
     },
     EventSpec {
@@ -848,15 +848,9 @@ mod tests {
             .find(|f| f.key == "kind")
             .expect("playback.failed declares a kind field")
             .domain;
-        // Every variant, including the retained historical `original_rollback` code — see
-        // `FailureClass`'s own doc for why that one still exists with no live producer.
-        for kind in F::ALL {
-            assert!(
-                domain.contains(kind.code()),
-                "playback.failed's declared kind domain omits {:?} ({}): {domain}",
-                kind,
-                kind.code()
-            );
-        }
+        // Exactly the variants, in their order: a code with no producer is a value a dashboard
+        // would wait on forever.
+        let want = F::ALL.iter().map(|k| format!("`{}`", k.code())).collect::<Vec<_>>().join(" / ");
+        assert_eq!(domain, want, "playback.failed's declared kind domain is not FailureClass's codes");
     }
 }

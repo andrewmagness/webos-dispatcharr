@@ -625,10 +625,6 @@ impl AudioCodecClass {
 /// (`player::FailureKind`, which also drives the read-out's wording) and converts it here with
 /// `FailureKind::class`; the code is the stable value `playback.failed`'s `kind` field and the
 /// handled error's `playback.kind` tag carry.
-///
-/// One historical code, [`OriginalRollback`](Self::OriginalRollback), remains so old telemetry
-/// fixtures and dashboards retain their meaning after the destructive probe transaction was
-/// removed; no live path emits it now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureClass {
     /// Direct playing, and the stream carries no video track.

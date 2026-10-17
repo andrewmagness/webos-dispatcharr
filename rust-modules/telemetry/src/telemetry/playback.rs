@@ -271,16 +271,7 @@ pub fn preview_domains() -> String {
     use plx_platform::i18n::msg;
     // The labels are the reader's words; the codes after them are the wire values themselves.
     let domains: [(&str, String); 14] = [
-        (msg::core_preview_domain_failure_kind(), codes(
-            &[
-                F::NoVideoTrack,
-                F::MediaSource,
-                F::PlaybackInterrupted,
-                F::TvPipeline,
-                F::Unspecified,
-            ],
-            F::code,
-        )),
+        (msg::core_preview_domain_failure_kind(), codes(&F::ALL, F::code)),
         (msg::core_preview_domain_attempt_started(), "yes / no".to_owned()),
         (msg::core_preview_domain_attempt_origin(), codes(&AttemptOrigin::ALL, AttemptOrigin::code)),
         (msg::core_preview_domain_attempt_ordinal(), codes(&AttemptOrdinal::all().collect::<Vec<_>>(), AttemptOrdinal::code)),
@@ -647,12 +638,13 @@ mod tests {
         let legend = preview_domains();
         let privacy = include_str!("../../../../PRIVACY.md");
         for value in [
+            "no_video_track",
+            "media_source",
             "playback_interrupted",
-            "original_rollback",
-            "inconclusive",
-            "server_state",
-            "original_open_rollback",
-            "refresh",
+            "tv_pipeline",
+            "jail_missing_rtkmem",
+            "load_timeout",
+            "unspecified",
         ] {
             assert!(legend.contains(value), "preview domain omitted {value}");
             assert!(privacy.contains(value), "PRIVACY.md omitted {value}");
@@ -846,26 +838,20 @@ mod tests {
         assert_eq!(AttemptOrdinal::all().count(), 10, "1..=9 and the saturated value");
     }
 
-    /// The consent screen shows what a report can carry: the sample event holds every new key, the
-    /// legend names each field with its domain, and PRIVACY.md describes them.
+    /// The consent screen shows what a report can carry: the sample event holds every attempt key,
+    /// the legend names each field with its domain, and PRIVACY.md describes them.
     #[test]
     fn the_consent_sample_legend_and_privacy_list_every_attempt_field() {
         use plx_platform::i18n::msg;
         let v: Value = serde_json::from_slice(&preview_event()).expect("preview JSON");
-        for key in [
-            "attempted_delivery",
-            "attempt_started",
-            "attempt_origin",
-            "attempt_ordinal",
-            "http_status",
-        ] {
+        let keys = ["attempt_started", "attempt_origin", "attempt_ordinal", "http_status"];
+        for key in keys {
             assert!(v["contexts"]["playback"].get(key).is_some(), "sample context omitted {key}");
             assert!(v["tags"].get(format!("playback.{key}")).is_some(), "sample tags omitted {key}");
         }
         assert!(v["contexts"]["playback"]["http_status"].is_u64());
         let legend = preview_domains();
         for label in [
-            msg::core_preview_domain_attempted_delivery(),
             msg::core_preview_domain_attempt_started(),
             msg::core_preview_domain_attempt_origin(),
             msg::core_preview_domain_attempt_ordinal(),
@@ -876,33 +862,19 @@ mod tests {
         assert!(legend.contains("yes / no"), "the attempt_started domain");
         assert!(legend.contains("100 to 599"), "the http_status domain");
         // Every origin and every ordinal the producer can send is listed, in the enum's own order.
-        assert!(
-            legend.contains("fresh / user_retry / recovery / resume"),
-            "the attempt_origin domain",
-        );
+        assert!(legend.contains("fresh / user_retry / recovery / resume"), "the attempt_origin domain");
         assert!(legend.contains("1 / 2 / 3 / 4 / 5 / 6 / 7 / 8 / 9 / 9+"), "the attempt_ordinal domain");
-        assert!(legend.contains("quality_pick"), "the delivery reason the fixed-rung pick notes");
-        // The attempted route rides EVERY report now, so its row lists the whole delivery domain
-        // (including `unknown`), not only the three a refusal can name.
-        let all = "unknown / original_direct / original_remux / hls / progressive_transcode";
-        assert_eq!(legend.matches(all).count(), 2, "delivery and attempted delivery both list it");
         let privacy = include_str!("../../../../PRIVACY.md");
-        for key in [
-            "attempted_delivery",
-            "attempt_started",
-            "attempt_origin",
-            "attempt_ordinal",
-            "http_status",
-        ] {
+        for key in keys {
             assert!(privacy.contains(key), "PRIVACY.md omitted {key}");
         }
         for origin in AttemptOrigin::ALL {
-            // Backticked, as PRIVACY.md writes every wire value: a bare word such as `preview`
-            // already appears in its prose, so a bare match would pass for an omission.
+            // Backticked, as PRIVACY.md writes every wire value, so a word in its prose does not
+            // pass for the value.
             let quoted = format!("`{}`", origin.code());
             assert!(privacy.contains(&quoted), "PRIVACY.md omitted the origin {}", origin.code());
         }
-        assert!(privacy.contains("9+") && privacy.contains("quality_pick"));
+        assert!(privacy.contains("9+"));
     }
 
     /// **The firmware's error number.** A `tv_pipeline` report used to say only that the pipeline

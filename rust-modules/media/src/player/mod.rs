@@ -553,41 +553,10 @@ fn support_line_of(i: &plx_platform::tv::device::Info, hw: &plx_platform::tv::de
     )
 }
 
-/// The `Error` state's wording, shaped by WHY — issue #22's lesson: `ff: no video stream` was
-/// technically true and cost the reviewer a full server-side investigation that the sentence
-/// "the server sent audio only" would have ended. Pure so every arm is host-testable; the two
-/// wrappers below feed it the globals (main thread only — `route::is_transcoding` reads
-/// main-thread state).
-///
-/// `sub` is `plex::serverinfo`'s Plex Pass tristate, an explicit parameter for the same purity.
-/// It sharpens the WORDING of the transcode arm and nothing more — and on a KNOWN-free server it
-/// appends the subscription as a support FACT, never as the cause. The distinction is the
-/// codebase's own audit: docs/plex-pass-audit.md row 1 says h264 encoding is free everywhere,
-/// and the profile's target chain ends in h264 precisely so a free server always HAS a usable
-/// video target — so reaching this arm on one means something ELSE failed (a source the server's
-/// ffmpeg cannot decode, transcoding disabled server-side), and "it cannot encode video without
-/// Plex Pass" was asserting a cause the profile had already ruled out, pointing the user at a
-/// purchase that would fix nothing. Known-true or unknown keeps the neutral wording alone: a
-/// subscription the app cannot prove absent must never even be named. (And wording is as far as
-/// subscription state may ever reach into playback — see `serverinfo::subscription`'s doc for
-/// why it is not a routing input.)
-///
-/// The (no-video, not-transcoding) arm — an audio-only DIRECT-PLAYED file — is worded for the
-/// file because that is the truth there: route only direct-plays when PMS metadata names an
-/// h264/hevc video track, so reaching it means the file disagrees with its own metadata.
-/// One error, three surfaces — the HUD caption, the diagnostics panel's verdict line, and the
-/// full-screen read-out (`Player Screen.dc.html`, the spec that superseded the retired
-/// `Plex Pass Awareness.dc.html` for this screen) — shaped in ONE place so
-/// they can never disagree about what happened. `no_pass` is the read-out's cue to draw the
-/// filled PLEX PASS capsule: a support FACT beside the reason, never the cause (see the arm
-/// comment above).
 /// **Why a playback failed, as a closed set.** Drives the wording below AND the telemetry code, so
 /// the two are one decision.
 ///
-/// Current variants are outcomes `error_shape` can tell apart. The retired `original_rollback`
-/// wire code (the destructive probe transaction was removed) has no cause here any more and lives
-/// on only as `telemetry::classes::FailureClass::OriginalRollback`, so old telemetry fixtures and
-/// dashboards retain their meaning. Runtime source, interrupted-playback and `Load` failures became
+/// Current variants are outcomes `error_shape` can tell apart. Runtime source, interrupted-playback and `Load` failures became
 /// distinct only when their worker signals existed. A video-plane bind or stalled feed still
 /// reaches [`Unspecified`](FailureKind::Unspecified) until an equally concrete signal exists.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -830,6 +799,11 @@ fn jail_error_shape() -> ErrorShape {
     }
 }
 
+/// The `Error` state's wording, shaped by WHY — issue #22's lesson: `ff: no video stream` was
+/// technically true and cost the reviewer a full server-side investigation that the sentence
+/// "the server sent audio only" would have ended. One error, three surfaces — the HUD caption, the
+/// diagnostics panel's verdict line and the full-screen read-out — shaped in ONE place so they can
+/// never disagree about what happened. Pure, so every arm is host-testable.
 fn error_shape(no_video: bool, runtime: RuntimeFailure) -> ErrorShape {
     if no_video {
         return ErrorShape {
@@ -1921,8 +1895,7 @@ mod tests {
 
     /// **Each cause converts to its own telemetry class, under the code it always had.** The class
     /// enum is telemetry's and the match that fills it is this layer's, so a copy-paste that sent
-    /// two causes to one class would merge two dashboard series without any compile error. (The
-    /// retired `original_rollback` code has no cause here; its class is exercised by telemetry.)
+    /// two causes to one class would merge two dashboard series without any compile error.
     #[test]
     fn every_failure_kind_converts_to_its_own_stable_wire_class() {
         use FailureKind as K;

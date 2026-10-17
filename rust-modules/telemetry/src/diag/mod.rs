@@ -31,10 +31,8 @@ pub mod test_events;
 /// event's category, an install identifier that actually exists, and a build that carries an
 /// endpoint at all. Any of them missing is a silent return, which is the only safe direction —
 /// and the reason the boot log states which destinations this build can reach, since "consented
-/// but not wired" and "sent" look identical from every other line. One bounded exception sits in
-/// front of the consent gate: an UNANSWERED decision defers the sign-in family instead of dropping
-/// it (`defer`, cap [`DEFERRED_CAP`], in memory, session-only) so a sign-in, which always precedes
-/// the first question, is not silently lost; an ANSWERED "no" still drops, exactly as before.
+/// but not wired" and "sent" look identical from every other line. An unanswered decision drops
+/// the event exactly as a "no" does: nothing is held for a later answer.
 ///
 /// Sending happens on `telemetry::flush_soon`'s worker. This is the frame loop: a send opens a
 /// socket and can block for the sender's whole timeout.

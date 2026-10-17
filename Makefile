@@ -1671,11 +1671,8 @@ check-python-harness:
 	@# and run on a thread pool (`PLX_TEST_JOBS`, default min(8, cpus)): the module takes 175 s
 	@# instead of 661 s. (It was 980 s of 1217 s before `check-deps.sh` stopped forking a process
 	@# per candidate line.) Measure before budgeting, and if this number needs to come down
-	@# further, `check-deps.sh` itself is the place. run.py
-	@# decides WHAT gets driven on the one television and had no test of any kind until 2026-08-22.
-	@# What it pins is the code path a full manifest.local.json never enters: an `item` key this
-	@# installation cannot resolve SKIPS the cases that need it instead of killing the run. A
-	@# regression there is invisible here and shows up as a stranger concluding the suite is broken.
+	@# further, `check-deps.sh` itself is the place. run.py decides WHAT gets driven on the one
+	@# television; these pin its grading, its fixture checks and the account move-aside offline.
 	python3 tests/test_harness.py
 
 # The C unit tests, each COMPILED INTO A PRIVATE DIRECTORY (`mktemp -d`, removed on the way out), never to
@@ -1956,11 +1953,23 @@ install: ipk tv-lock-require
 	$(SCP) $(IPK) tv:/tmp/
 	@# `script -qc` because luna-send needs a tty (see the webos-screen-capture note); `-i` keeps
 	@# the subscription open long enough for appinstalld to report, which is the only place a
-	@# failure is ever named.
-	$(SSH) 'script -qc "luna-send -i -a com.webos.appInstallService \
+	@# failure is ever named. It never CLOSES, though, and webOS 6.5.3 never reports "installed"
+	@# either (its stream stops at "service installing"), so `tools/luna-sub.py` ends it: at
+	@# "installed", at a failure, or after 20 s of silence, which is answered by checking that the
+	@# install rewrote $(APPDIR)/appinfo.json. A `| head -20` here hung until killed, and the
+	@# deploy below never ran.
+	@t0=$$($(SSH) 'date +%s') && \
+	python3 tools/luna-sub.py --done installed --quiet 20 --deadline 600 -- $(SSH) 'script -qc "luna-send -i -a com.webos.appInstallService \
 	  luna://com.webos.appInstallService/dev/install \
-	  \"{\\\"id\\\":\\\"$(APPID)\\\",\\\"ipkUrl\\\":\\\"/tmp/$(notdir $(IPK))\\\",\\\"subscribe\\\":true}\"" /dev/null' | head -20
-	$(SSH) 'rm -f /tmp/$(notdir $(IPK))'
+	  \"{\\\"id\\\":\\\"$(APPID)\\\",\\\"ipkUrl\\\":\\\"/tmp/$(notdir $(IPK))\\\",\\\"subscribe\\\":true}\"" /dev/null'; \
+	rc=$$?; \
+	if [ $$rc -eq 3 ]; then \
+	  $(SSH) "[ \$$(stat -c %Y $(APPDIR)/appinfo.json 2>/dev/null || echo 0) -ge $$t0 ]" \
+	    && { echo "install: appinstalld went quiet before \"installed\"; $(APPDIR) was rewritten, so it landed"; rc=0; } \
+	    || echo "install: appinstalld went quiet and $(APPDIR)/appinfo.json was not rewritten"; \
+	fi; \
+	$(SSH) 'rm -f /tmp/$(notdir $(IPK))'; \
+	exit $$rc
 	@$(MAKE) --no-print-directory deploy FLAVOR=$(FLAVOR) RELEASE=$(RELEASE)
 	@echo "installed and deployed $(APPID)"
 
@@ -1968,9 +1977,16 @@ install: ipk tv-lock-require
 # watches with is not something a make target should make easy, and appinstalld gives no undo.
 uninstall: tv-lock-require
 	@test "$(FLAVOR)" != stable || { echo "refusing to uninstall $(APPID_STABLE) — do that from the TV's own app list"; exit 1; }
-	$(SSH) 'script -qc "luna-send -i -a com.webos.appInstallService \
+	@# Ended by `tools/luna-sub.py` for the reason `install` gives; silence is answered by
+	@# checking that $(APPDIR) is gone.
+	@python3 tools/luna-sub.py --done removed --quiet 20 --deadline 300 -- $(SSH) 'script -qc "luna-send -i -a com.webos.appInstallService \
 	  luna://com.webos.appInstallService/dev/remove \
-	  \"{\\\"id\\\":\\\"$(APPID)\\\",\\\"subscribe\\\":true}\"" /dev/null' | head -20
+	  \"{\\\"id\\\":\\\"$(APPID)\\\",\\\"subscribe\\\":true}\"" /dev/null'; \
+	rc=$$?; \
+	if [ $$rc -eq 3 ]; then \
+	  $(SSH) '[ ! -e $(APPDIR) ]' && rc=0 || echo "uninstall: appinstalld went quiet and $(APPDIR) is still there"; \
+	fi; \
+	exit $$rc
 	$(SSH) 'rm -rf $(RUNDIR)' || true
 	@echo "removed $(APPID)"
 
@@ -2231,49 +2247,22 @@ macapp-zip:
 	MACAPP_TDIR=$(MACAPP_TDIR) ci/mkmacapp.py --zip
 
 # ---------------------------------------------------------------------------------------------
-# `make fixtures` — SYNTHESIZE THE TEST MEDIA. Host-side, and there is NO TELEVISION anywhere in
-# it: it is ffmpeg + lavfi on this Mac, writing into $(FIXTURES_OUT) (default ~/dispatcharrtv-fixtures,
-# OUTSIDE the repo — tests/fixtures/make_fixtures.py refuses an --out inside it, because media must
-# never be committed).
+# `make fixtures-pipeline` — SYNTHESIZE THE TEST CLIPS. Host-side, and there is NO TELEVISION anywhere
+# in it: it is ffmpeg + lavfi on this machine, writing into $(FIXTURES_OUT)/pipeline (default
+# ~/dispatcharrtv-fixtures, OUTSIDE the repo — tests/fixtures/make_fixtures.py refuses an --out inside
+# it, because media must never be committed). `./tests/run.py` serves these files off this machine
+# over HTTP and plays them through dispatcharrtv-playurl: short clips in a FLAT directory, ~0.7 GB
+# and a few minutes. Deliberately NOT a prerequisite of `all` or `check`.
 #
-# What it is for: `./tests/run.py --server` grades the player against nine symbolic item SHAPES, and
-# tests/manifest.local.json maps each to a ratingKey on whatever PMS you own. That mapping is the
-# entire barrier to entry — the shapes include a TrueHD default with an AC-3 sibling, a Dolby
-# Vision 8.1 base layer, a PGS bitmap subtitle track and an eight-track audio file with English DTS
-# at ordinal 6, and two of those have no freely-licensed example anywhere. This builds all of them
-# from nothing, lays them out in two Plex-scannable trees, and writes a fixtures.json saying what
-# it PROVED about each file. tests/fixtures/README.md is the walkthrough, including the shapes it
-# cannot solve (the three marker_* cases) and why.
-#
-# Deliberately NOT a prerequisite of `all` or `check`, and never run by them: this writes ~2.5 GB
-# and takes ~20 minutes, which is not something a build should do because somebody typed `make`.
-# `fixtures-quick` builds the same shapes at ~20 s each in about a minute — structurally correct,
-# and NOT suite-valid, since every seek/resume/marker depth the suite asserts is deeper than that.
+# It grew from ~0.4 GB on 2026-08-23, when the RESOLUTION x CODEC matrix landed (LG App Self
+# Checklist #50/#51): six clips at SD/HD/FHD/UHD, of which the 4K H.264 one is 93 MB on its own,
+# plus a deliberately SHORT 20 s clip that exists to run out (#46). Resolution is a property of
+# the media, so a matrix cell cannot be a second case on an existing file — that is the whole
+# reason this is disk rather than manifest. `--only <shape>` rebuilds one.
 FIXTURES_OUT ?= $(HOME)/dispatcharrtv-fixtures
 
 # $(FIXTURES_OUT) is QUOTED: it defaults under $(HOME), and a home directory with a space in it
 # would otherwise split into two arguments and fail as an unknown option.
-fixtures:
-	python3 tests/fixtures/make_fixtures.py --out "$(FIXTURES_OUT)" $(FIXTURES_ARGS)
-
-fixtures-quick:
-	python3 tests/fixtures/make_fixtures.py --quick --out "$(FIXTURES_OUT)" $(FIXTURES_ARGS)
-
-# ...and the PIPELINE tier's pack, which is a different thing for a different suite. `fixtures`
-# above builds media for the INTEGRATION suite: full-length, laid out in two Plex-scannable trees,
-# because those cases go through a PMS and every duration in them is a Plex constant (the ~90%
-# watched threshold that drops a seeded resume point, the marker windows, the Up Next tail).
-# `./tests/run.py` (the DEFAULT tier since 2026-08-22) needs none of that — it serves these files
-# off this machine over HTTP
-# and plays them through dispatcharrtv-playurl with no Plex anywhere — so the pack is short clips in a
-# FLAT directory, ~0.7 GB and a few minutes instead of ~3 GB and twenty. Same root, its own
-# subdirectory, which is also where the harness looks by default.
-#
-# It grew from ~0.4 GB on 2026-08-23, when the RESOLUTION x CODEC matrix landed (LG App Self
-# Checklist #50/#51): six new clips at SD/HD/FHD/UHD, of which the 4K H.264 one is 93 MB on its
-# own, plus a deliberately SHORT 20 s clip that exists to run out (#46). Resolution is a property
-# of the media, so a matrix cell cannot be a second case on an existing file — that is the whole
-# reason this is disk rather than manifest. `--only <shape>` rebuilds one.
 fixtures-pipeline:
 	python3 tests/fixtures/make_fixtures.py --tier pipeline --out "$(FIXTURES_OUT)/pipeline" $(FIXTURES_ARGS)
 
@@ -2289,5 +2278,5 @@ fetch-profile:
 	-$(SCP) tv:$(RUNDIR)/dispatcharrtv-hwcnt.jsonl pkg/dispatcharrtv-hwcnt.jsonl
 	@ls -l pkg/dispatcharrtv-*.jsonl 2>/dev/null || echo "no profiler output in $(RUNDIR) on the TV ($(APPID))"
 
-.PHONY: libass libass-host  disk symbols symbols-libs sentry-symbols sentry-native all setup-env telemetry-local deploy verify-deploy run run-stream kill check check-unlocked check-ffmpeg lint test ipk clean tv-lock-require threadprobe sockprobe logmprobe mali-hwcnt-probe tv-capture-bench mali-irq-sample dispatcharrtv-stackwalk sim sim-macos sim-linux sim-wsl sim-run sim-macos-run sim-shot sim-macos-shot sim-token sim-macos-token sim-play sim-macos-play sim-clean sim-macos-clean macapp macapp-zip fixtures fixtures-quick fixtures-pipeline fetch-profile \
+.PHONY: libass libass-host  disk symbols symbols-libs sentry-symbols sentry-native all setup-env telemetry-local deploy verify-deploy run run-stream kill check check-unlocked check-ffmpeg lint test ipk clean tv-lock-require threadprobe sockprobe logmprobe mali-hwcnt-probe tv-capture-bench mali-irq-sample dispatcharrtv-stackwalk sim sim-macos sim-linux sim-wsl sim-run sim-macos-run sim-shot sim-macos-shot sim-token sim-macos-token sim-play sim-macos-play sim-clean sim-macos-clean macapp macapp-zip fixtures-pipeline fetch-profile \
         release-guard lab-guard install uninstall $(QUERY_GOALS)

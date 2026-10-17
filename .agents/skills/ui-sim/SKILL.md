@@ -273,8 +273,8 @@ Report these ONLY from the device, via the **`tv-session`** skill (and `wake-tv`
    use `tools/sim.ps1 shot`. No TV, no
    queue, parallel-safe.
 2. When it looks right, run `make check` (host suite + lint).
-3. Then verify once on the device with **`tv-session`** — and run `./tests/run.py --fps` there if
-   motion changed. A change is not done until the device has seen it.
+3. Then verify once on the device with **`tv-session`** — and read the heartbeat's `fps=` there
+   (`profile-tv`) if motion changed. A change is not done until the device has seen it.
 
 Reporting rule: say which of the two produced each claim. "Looks right in the simulator, not yet
 device-verified" is a useful, honest status. "Verified" without a TV is not.

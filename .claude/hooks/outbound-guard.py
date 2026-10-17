@@ -144,8 +144,7 @@ WHAT IT DELIBERATELY DOES NOT MATCH, beyond the floor: RFC 5737 documentation ad
 so does `tv-lock-guard-test.py`; `1.2.3.4`, which is the Makefile's own example; `127.0.0.1`,
 `0.0.0.0` and `localhost`; a partial range like `192.168.x` or `172.20.x.x` (naming a range is not
 naming a host, it is not dialable, and the manifest template does it); a quad written as CIDR
-(`172.16.0.0/12`); `<placeholder>` and `YOUR_*` forms, so nothing in
-`tests/manifest.local.json.example` or `src/config.local.h.example` can ever trip it; and `alpine`,
+(`172.16.0.0/12`); `<placeholder>` and `YOUR_*` forms, so nothing in `src/config.local.h.example` can ever trip it; and `alpine`,
 the webosbrew dev-mode root password, which CLAUDE.md and `docs/distribution.md` both keep on
 purpose because it is published, identical on every rooted set, and identifies nobody.
 
@@ -1197,7 +1196,7 @@ def main():
         "  handle `friend` · machine `nas-home` · library `Film Club` · port `31234`\n"
         "  LAN address `10.9.9.7` · public address `203.0.113.9` (RFC 5737 TEST-NET-3)\n"
         "  a machine id: `aaaabbbb…` runs, never a real 40-hex one\n"
-        "and tests/manifest.local.json.example uses `<pms-host>`, `<tv-host>`, `<ratingKey>`.\n"
+        "and src/config.local.h.example uses `YOUR_PMS_HOST` and `YOUR_PLEX_TOKEN`.\n"
         "\n"
         "If the reader genuinely needs the real value, name the gitignored FILE it comes from\n"
         "(.tv-host, ~/.config/dispatcharrtv/tv-host, src/config.local.h, tests/manifest.local.json) and let\n"

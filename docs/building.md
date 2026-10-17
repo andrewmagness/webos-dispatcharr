@@ -133,27 +133,18 @@ and `hostsim`), alongside the package, C, harness and tooling self-tests. Second
 television. Run it before you push, and run it **on nightly** — `make check` uses `cargo +nightly`
 while a bare `cargo test` picks up your default toolchain, and the two have disagreed.
 
-**`./tests/run.py`** — the synthetic device tier. Generated clips served off the host and played
-through a dev trigger; it needs a television address and `make fixtures-pipeline`, and nothing else.
-No Plex Media Server, no token, no manifest. This is the tier that separates "the player is broken" from "the library layer
-is broken", and it is the only one a stranger can run.
+**`./tests/run.py`** — the on-device player harness. Generated clips served off the host and played
+through a dev trigger; it needs a television address and `make fixtures-pipeline`, and nothing else
+— no Dispatcharr server, no account (it moves the set's account aside for the run and restores it).
+This is the tier that separates "the player is broken" from "the channel or the server is broken".
 
 ```sh
 make fixtures-pipeline   # generate the clips once
-./tests/run.py           # the synthetic player suite
+./tests/run.py           # the clip suite
 ```
 
-**`./tests/run.py --server`** — the library-backed suite: `/decision`, direct play vs transcode,
-track menus, markers, resume, and progress reporting. It needs two gitignored files —
-`tests/manifest.local.json`, mapping named media shapes to items in *your* library (copy the
-`.example` beside it and drop the ones you don't have), and `src/config.local.h` with your Plex
-token, which the harness reads on the host and injects. The token is never compiled into the binary.
-A media shape your library lacks is skipped, not failed, so read the skip count beside the pass
-count.
-
-**`./tests/run.py --fps`** — the frame-rate regression scenes, which imply `--server` (with `--mock`, the scenes that declare a `mock` block run against `tests/mock_pms.py` with no token, and `--server` is refused). Per-screen
-floors live in `tests/manifest.json`. This tier is opt-in and runs on a real television; CI cannot
-grade frame rate, so a green CI run says nothing about pacing.
+Frame rate is measured on a real television with an `ARM_PROFILE=release` deploy (the `profile-tv`
+skill); CI cannot grade frame rate, so a green CI run says nothing about pacing.
 
 **Two checks CI runs that `make check` does not**, and which are easy to break locally: the shipping
 feature set (`cargo +nightly check --manifest-path rust-modules/Cargo.toml --lib

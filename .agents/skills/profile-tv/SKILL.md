@@ -54,16 +54,11 @@ tools/profile-graphics --seconds 30
 
 Attach mode does not close the selected install, so it has no IRQ baseline. It checks the three
 render-profiler triggers and marks pacing invalid if one is armed; only call its FPS production pacing
-when the report says those triggers were absent. Use the deterministic command below for all three
-layers and the selected-install-closed baseline.
+when the report says those triggers were absent. The deterministic three-layer run (a closed-app
+baseline, then a scene) went with the FPS harness, whose scenes were all Plex screens; until live-TV
+scenes exist, bring the screen up with `tv-session` and attach, and take the HWCNT leg by hand.
 
-For a reproducible scene, collect the full profile through the FPS harness:
-
-```bash
-./tests/run.py --fps --only <scene> --graphics-profile --profile-phase frame.ui
-```
-
-The bundle has three deliberately different meanings:
+A full profile has three deliberately different meanings:
 
 1. **Production present pacing:** unarmed `fps=`/`loop=`. This is the only leg whose FPS may be
    quoted as application pacing.

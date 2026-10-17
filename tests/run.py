@@ -59,7 +59,6 @@ TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(TESTS_DIR)
 TOOLS_DIR = os.path.join(REPO_ROOT, "tools")
 MANIFEST = os.path.join(TESTS_DIR, "manifest.json")
-MANIFEST_LOCAL = os.path.join(TESTS_DIR, "manifest.local.json")
 TV_SSH = os.path.join(REPO_ROOT, "tools", "tv-ssh")  # key-first ssh/scp front door; see its header
 
 sys.path.insert(0, TESTS_DIR)

@@ -421,18 +421,16 @@ class PythonReaderTests(Fixture):
             self.assertEqual(self.tv_config.host(), "")
             self.assertEqual(self.tv_config.mac(), "")
 
-    def test_run_py_pipeline_manifest_uses_the_user_dir_address(self):
+    def test_run_py_manifest_uses_the_user_dir_address(self):
         self.put(self.cfg, "tv-host", HOST_USER)
         import run
-        with mock.patch.object(run, "MANIFEST_LOCAL", str(self.tmp / "no-such-overlay.json")):
-            m = run.load_manifest(pipeline_only=True)
+        m = run.load_manifest()
         self.assertEqual(m["tv"], HOST_USER)
 
     def test_run_py_explicit_tv_still_wins(self):
         self.put(self.cfg, "tv-host", HOST_USER)
         import run
-        with mock.patch.object(run, "MANIFEST_LOCAL", str(self.tmp / "no-such-overlay.json")):
-            m = run.load_manifest(pipeline_only=True, tv_override=HOST_ENV)
+        m = run.load_manifest(tv_override=HOST_ENV)
         self.assertEqual(m["tv"], HOST_ENV)
 
     def test_stream_screen_default_host_uses_the_user_dir(self):

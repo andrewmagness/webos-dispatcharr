@@ -645,9 +645,8 @@ pub enum FailureClass {
 }
 
 impl FailureClass {
-    /// Every class, so a test can hold the declared `playback.failed` domain to the enum it is
-    /// built from.
-    #[cfg(any(test, feature = "test-support"))]
+    /// Every class, in wire order: the consent legend lists them, and a test holds the declared
+    /// `playback.failed` domain to them.
     pub const ALL: [Self; 7] = [
         Self::NoVideoTrack,
         Self::MediaSource,

@@ -59,10 +59,8 @@ pub fn caption_page(pager: &CaptionPager, hud_up: bool) -> u32 {
     pager.refresh(hud_up).unwrap_or(0) as u32
 }
 
-/// Shared caption placement for plain text and a styled-renderer failure message. Text size and
-/// vertical placement follow the viewer's Settings > Playback picks (`route::subtitle_size`,
-/// `route::subtitle_position`) — native ASS/SSA keeps its authored style instead
-/// (`docs/ass-subtitles.md`). The message is a short fixed string, so it is never paged: a block
+/// Shared caption placement for plain text and a styled-renderer failure message — native ASS/SSA
+/// keeps its authored style instead (`docs/ass-subtitles.md`). The message is a short fixed string, so it is never paged: a block
 /// taller than the area is drawn whole at the smallest step.
 pub fn draw_subtitle_message(text: &str, hud_up: bool) {
     let (scale, baseline, floor) = caption_geometry(hud_up);
@@ -74,21 +72,20 @@ pub fn draw_subtitle_message(text: &str, hud_up: bool) {
     draw_caption_block(&lines, &lay);
 }
 
-/// The viewer's size and the y a caption block is placed from: sit near the bottom normally; lift
-/// above the scrubber/tabs while the HUD is up; the viewer's Position pick lifts it further still,
-/// same direction, on top of that. The third value is the lowest y the block may reach — with the
-/// HUD up that is the transport's ceiling, so a block that grows down cannot run into the scrubber.
+/// The face scale and the y a caption block is placed from: sit near the bottom normally; lift
+/// above the scrubber/tabs while the HUD is up. The third value is the lowest y the block may
+/// reach — with the HUD up that is the transport's ceiling, so a block that grows down cannot run
+/// into the scrubber.
 fn caption_geometry(hud_up: bool) -> (f32, f32, f32) {
-    let scale = subtitle_size_scale(plx_media::route::subtitle_size());
-    let baseline = (if hud_up { SUB_CEIL_Y } else { SUB_BASE_Y })
-        - subtitle_position_lift(plx_media::route::subtitle_position());
+    let scale = 1.0;
+    let baseline = if hud_up { SUB_CEIL_Y } else { SUB_BASE_Y };
     let floor = if hud_up { SUB_CEIL_Y } else { CAPTION_FLOOR_Y };
     (scale, baseline, floor)
 }
 
 fn draw_caption_block(lines: &[String], lay: &CaptionLayout) {
     let cx = SCR_W * 0.5;
-    let ink = subtitle_ink(); // white unless the viewer picked a dimmer tone (track menu)
+    let ink = subtitle_ink();
     let outline = theme::scrim_black(0.85);
     let p = Painter::root();
     for (i, ln) in lines.iter().enumerate() {
@@ -278,43 +275,11 @@ fn caption_fit(lines: usize, scale: f32, baseline: f32, floor: f32) -> (CaptionL
     (lay, fits)
 }
 
-/// The ink both subtitle draws use this frame: the viewer's tone ([`plx_media::player::subtitle_tone`])
-/// resolved on [`theme::SUBTITLE_INKS`]. A rung the table does not have is white, never a
-/// neighbour.
+/// The ink both subtitle draws use: white. The caption is media chrome over the video plane rather
+/// than app text, which is why it is `WHITE` and not `TEXT_PRIMARY`; image subtitles (PGS/VobSub)
+/// are tinted by it, which leaves their authored colours as they are.
 pub fn subtitle_ink() -> [f32; 4] {
-    subtitle_ink_for(plx_media::player::subtitle_tone())
-}
-
-fn subtitle_ink_for(tone: plx_plex::plex::session::SubtitleTone) -> [f32; 4] {
-    theme::SUBTITLE_INKS
-        .get(tone.index() as usize)
-        .copied()
-        .unwrap_or(theme::SUBTITLE_INKS[0])
-}
-
-/// The face-size multiplier for the viewer's Settings > Playback pick, applied to the plain-text
-/// caption's 36 px base face ([`draw_subtitle_message`]) and its line pitch/wrap width together,
-/// so a larger caption still wraps before it runs off either edge.
-fn subtitle_size_scale(size: plx_plex::plex::session::SubtitleSize) -> f32 {
-    use plx_plex::plex::session::SubtitleSize;
-    match size {
-        SubtitleSize::Small => 0.78,
-        SubtitleSize::Medium => 1.0,
-        SubtitleSize::Large => 1.25,
-        SubtitleSize::ExtraLarge => 1.5,
-    }
-}
-
-/// How far ABOVE [`SUB_BASE_Y`]/[`SUB_CEIL_Y`] the viewer's Position pick lifts the plain-text
-/// caption ([`draw_subtitle_message`]) — Low is the baseline every build before this preference
-/// drew, so it lifts nothing.
-fn subtitle_position_lift(position: plx_plex::plex::session::SubtitlePosition) -> f32 {
-    use plx_plex::plex::session::SubtitlePosition;
-    match position {
-        SubtitlePosition::Low => 0.0,
-        SubtitlePosition::Middle => 160.0,
-        SubtitlePosition::High => 320.0,
-    }
+    theme::CAPTION_INK
 }
 
 /// Subtitle baseline: where the caption block sits with the transport DOWN, and the ceiling it
@@ -1016,28 +981,6 @@ mod tests {
             r.w,
             r.h
         );
-    }
-
-    /// **Every tone has an ink, the first is the white every earlier build drew, and each rung
-    /// under it is strictly darker** — the ladder's whole promise is "down is dimmer", and the
-    /// table is indexed by position, so a rung added to `SubtitleTone::LADDER` without an ink
-    /// here would silently draw white. Opaque and achromatic throughout: a tone gives up light,
-    /// never coverage (the outline depends on it) and never hue (it tints image subtitles).
-    #[test]
-    fn the_subtitle_tones_are_a_strictly_darkening_opaque_grey_ladder_from_white() {
-        use plx_plex::plex::session::SubtitleTone;
-        assert_eq!(theme::SUBTITLE_INKS.len(), SubtitleTone::LADDER.len());
-        assert_eq!(subtitle_ink_for(SubtitleTone::White), [1.0, 1.0, 1.0, 1.0]);
-        let mut prev = f32::MAX;
-        for tone in SubtitleTone::LADDER {
-            let ink = subtitle_ink_for(tone);
-            assert!(ink[0] == ink[1] && ink[1] == ink[2], "{tone:?} has a hue");
-            assert_eq!(ink[3], 1.0, "{tone:?} is not opaque");
-            assert!(ink[0] < prev, "{tone:?} is not darker than the rung above it");
-            prev = ink[0];
-        }
-        // the darkest rung still has to be READ over the 0.85 black outline it is drawn on
-        assert!(prev > 0.25, "the darkest tone has sunk into its own outline");
     }
 
     /// A 1080p-authored PGS rect must land EXACTLY where it always did — the scale is identity,

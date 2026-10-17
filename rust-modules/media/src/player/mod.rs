@@ -1200,25 +1200,8 @@ pub fn reset_route_requests_for_test(ps: &crate::route::PlaybackSession) {
 pub fn desired_sub_idx() -> i32 {
     SHARED.desired_sub_idx.load(Relaxed)
 }
-/// The tone client-rendered subtitles are drawn in. A [`crate::route::LiveCell`] rather than a field
-/// of [`SHARED`] because it OUTLIVES a playback — it is a preference, not session state
-/// (the same reasoning as the quality cell in `route::prefs`) — and `reset_session` must not put a viewer back on white
-/// between two episodes. Restored by `route::restore_all`; written by [`set_subtitle_tone`] through
-/// the one write door (`route::choose`).
-///
-/// Seeded to white, which is what every build before the preference drew.
-pub(crate) static SUBTITLE_TONE: crate::route::LiveCell<plx_plex::plex::session::SubtitleTone> =
-    crate::route::LiveCell::new("subtitle tone preference");
-
-/// The selected tone. Read once a frame by the two subtitle draws (`appkit::player_hud`) and by the
-/// track menu for its checkmark.
-pub fn subtitle_tone() -> plx_plex::plex::session::SubtitleTone {
-    SUBTITLE_TONE.get()
-}
-
 /// The viewer's subtitle timing offset in MILLISECONDS — positive draws every client-rendered cue
-/// later, negative earlier. **It belongs to ONE playback of ONE subtitle track**, unlike
-/// [`SUBTITLE_TONE`]: a timing error is a property of a track against a media file, so the next
+/// later, negative earlier. **It belongs to ONE playback of ONE subtitle track**: a timing error is a property of a track against a media file, so the next
 /// film, or another track of this one, must never inherit it. It is remembered per item (never per
 /// track) by [`persist_subtitle_offset`], through the memory door, and recalled at that item's next
 /// play; [`reset_subtitle`]
@@ -1283,19 +1266,6 @@ fn subtitle_floor_for(position_ns: i64, seeking: bool, target_ns: i64) -> i64 {
 /// served at once (`subtitle_floor_ns`, and the image store's eviction order in
 /// [`push_subtitle_bitmap`]).
 pub const SUBTITLE_OFFSET_LATEST_MS: i64 = 60_000;
-
-/// The viewer's Plex Pass audio-DSP preference (issue #266: dialog boost, loudness normalization),
-/// as two bits — a PREFERENCE, like [`SUBTITLE_TONE`], so it outlives a playback. Only the
-/// resolve's `ResolveEnv::snapshot` reads it, on the main thread, and it reaches the wire only
-/// through `route::desired_audio`: with no Plex Pass (or an unknown one) nothing reads it at all.
-/// Restored by `route::restore_all`; written through the one write door (`route::choose`).
-pub(crate) static AUDIO_ENHANCEMENTS: crate::route::LiveCell<plx_plex::plex::AudioEnhancements> =
-    crate::route::LiveCell::new("audio enhancements preference");
-
-/// The current preference (see [`AUDIO_ENHANCEMENTS`]).
-pub fn audio_enhancements() -> plx_plex::plex::AudioEnhancements {
-    AUDIO_ENHANCEMENTS.get()
-}
 
 /// The text store's hard cap, a runaway guard that an ordinary file never reaches. The store
 /// holds every text track (the demux pushes them all) from `subtitle_floor_ns` — 32 s behind the

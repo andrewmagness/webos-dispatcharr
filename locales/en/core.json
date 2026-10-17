@@ -110,31 +110,7 @@
     "description": "One line of the consent preview's list of possible values: a field name, then its possible technical codes."
   },
   "core.preview_domain_failure_kind": {
-    "value": "failure kind (including retained historical codes)",
-    "description": "Field name in the consent preview's list of possible playback-error values."
-  },
-  "core.preview_domain_delivery": {
-    "value": "delivery",
-    "description": "Field name in the consent preview's list of possible playback-error values: how the video was delivered."
-  },
-  "core.preview_domain_refusal_codes": {
-    "value": "server decision codes, general and transcode (refused-plan reports only)",
-    "description": "Field name in the consent preview's list of possible playback-error values: the numeric verdict codes the media server gave when it refused to play or convert an item. Only reports about a refusal carry it."
-  },
-  "core.preview_domain_attempted_delivery": {
-    "value": "attempted delivery",
-    "description": "Field name in the consent preview's list of possible playback-error values: which way of delivering the video the app was opening when the failure happened, which after a mid-playback quality switch can differ from the delivery before the switch. For a refused plan it is the way the app asked the server for before the server refused."
-  },
-  "core.preview_domain_source_video": {
-    "value": "source video codec (refused-plan reports only)",
-    "description": "Field name in the consent preview's list of possible playback-error values: the video format class of the file the server refused. Only reports about a refusal carry it."
-  },
-  "core.preview_domain_source_audio": {
-    "value": "source audio codec (refused-plan reports only)",
-    "description": "Field name in the consent preview's list of possible playback-error values: the audio format class of the file the server refused. Only reports about a refusal carry it."
-  },
-  "core.preview_domain_quality": {
-    "value": "quality",
+    "value": "failure kind",
     "description": "Field name in the consent preview's list of possible playback-error values."
   },
   "core.preview_domain_observed_rate": {
@@ -188,22 +164,6 @@
   "core.preview_domain_elapsed": {
     "value": "elapsed",
     "description": "Field name in the consent preview's list of possible playback-error values: time since an event."
-  },
-  "core.preview_domain_hls_direction": {
-    "value": "HLS direction",
-    "description": "Field name in the consent preview's list of possible playback-error values: whether streaming quality went up or down."
-  },
-  "core.preview_domain_delivery_reason": {
-    "value": "delivery reason",
-    "description": "Field name in the consent preview's list of possible playback-error values."
-  },
-  "core.preview_domain_original_phase": {
-    "value": "Original phase (including retained historical codes)",
-    "description": "Field name in the consent preview's list of possible playback-error values: the stage of an original-quality attempt."
-  },
-  "core.preview_domain_original_outcome": {
-    "value": "Original outcome",
-    "description": "Field name in the consent preview's list of possible playback-error values: the result of an original-quality attempt."
   },
   "core.unit_gb": {
     "value": "{value} GB",

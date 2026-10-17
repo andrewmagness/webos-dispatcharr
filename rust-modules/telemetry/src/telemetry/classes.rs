@@ -491,9 +491,8 @@ pub struct PlaybackErrorContext {
     /// Whether THIS attempt (the engine open that failed) put a picture on the panel, as against
     /// `started`, which is true for a session that played before the switch that failed.
     pub attempt_started: bool,
-    /// Why THAT open was made, and which open of the playback session it was (the first, a Retry,
-    /// a handoff...). `delivery` and `attempted_delivery` say what was opened; these say why and
-    /// how many times.
+    /// Why THAT open was made, and which open of the playback session it was (the first, a Try
+    /// again, a reconnect...).
     pub attempt_origin: AttemptOrigin,
     pub attempt_ordinal: AttemptOrdinal,
     /// The exact HTTP status the media source answered with, 100-599, or 0 when none was recorded

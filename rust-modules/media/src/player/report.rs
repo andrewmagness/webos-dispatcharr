@@ -12,14 +12,13 @@
 //!
 //! # A failure says WHY the attempt it ended was made
 //!
-//! A report names the attempt that failed beside the playback it failed in: the route being opened
-//! and whether that open ever showed a picture (`attempted_delivery`, `attempt_started`), why it
-//! was made (`attempt_origin`: a Play, a Retry, a quality pick, an automatic handoff, a recovery, a
-//! foreground resume) and which open of the session it was (`attempt_ordinal`).
-//! Origin and ordinal are decided where the open is, never inferred from the failure: [`requested`]
-//! for a request (a Retry continues the count, a Play restarts it) and
-//! [`note_delivery_requested_for`] / [`note_attempt`] for a reload of the same playback. They live
-//! in [`AttemptLedger`], not in the trace, because a Retry stops the failed playback first and that
+//! A report names the attempt that failed beside the playback it failed in: whether that open ever
+//! showed a picture (`attempt_started`), why it was made (`attempt_origin`: a tune, a Try again, a
+//! reconnect, a foreground re-tune) and which open of the session it was (`attempt_ordinal`).
+//! Origin and ordinal are decided where the tune is, never inferred from the failure: the caller
+//! of `route::request_live` names the origin and [`requested`] counts it (a re-tune of the same
+//! channel continues the count, a fresh tune restarts it). They live in [`AttemptLedger`], not in
+//! the trace, because a Retry stops the failed playback first and that
 //! clears the trace.
 //!
 //! # These are TRANSITIONS, not log lines

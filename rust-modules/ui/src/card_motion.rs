@@ -190,23 +190,14 @@ fn declines_moving() -> bool {
 
 /// Should a card DRAW decline to start art work for this card? An `Unknown` placement always does
 /// (one sample is needed to know a speed); a `Moving` one only under `dispatcharrtv-cardspeed`.
-///
-/// **Never in a frame dump** ([`plx_gfx::dump`]): a held repeat samples at `dt == 0`, which is
-/// `Unknown` by construction, and a card that scrolled in `Moving` is `Moving` for the same reason
-/// on every repeat, so under a frozen clock the verdict can never settle and the declined request
-/// would never be made (measured: one `down` on Home held 56,670 iterations on `card-skeleton`).
-/// Admitting everything is safe there because the dump draws one deterministic frame at a time
-/// and holds until every placeholder is gone. Outside the simulator `armed()` is a constant
-/// `false` and this is the verdict test alone.
 pub fn declines_request() -> bool {
-    declines_in(plx_gfx::dump::armed(), verdict(), declines_moving())
+    declines_in(verdict(), declines_moving())
 }
 
-/// [`declines_request`] as a pure function of the dump switch, the verdict and whether a `Moving`
-/// card declines.
+/// [`declines_request`] as a pure function of the verdict and whether a `Moving` card declines.
 #[inline]
-fn declines_in(dump: bool, verdict: Option<Verdict>, moving_declines: bool) -> bool {
-    !dump && match verdict {
+fn declines_in(verdict: Option<Verdict>, moving_declines: bool) -> bool {
+    match verdict {
         Some(Verdict::Unknown) => true,
         Some(Verdict::Moving) => moving_declines,
         Some(Verdict::Settled) | None => false,
@@ -237,7 +228,7 @@ mod tests {
         // change what the default is.
         assert_eq!(parse_limit("junk"), None, "an unusable trigger is ignored and the default stands");
         assert_eq!(parse_limit("480"), Some(480.0));
-        assert!(!declines_in(false, Some(Verdict::Moving), false), "no dispatcharrtv-cardspeed trigger");
+        assert!(!declines_in(Some(Verdict::Moving), false), "no dispatcharrtv-cardspeed trigger");
         let _default = default_for_test();
         assert!(!declines_moving());
     }
@@ -375,13 +366,11 @@ mod tests {
     }
 
     #[test]
-    fn a_dump_never_declines_a_draw_for_card_motion() {
-        // Held repeats sample at dt == 0, which is `Unknown`; a frozen clock never leaves it.
+    fn unknown_always_declines_and_moving_only_under_cardspeed() {
         for v in [Verdict::Unknown, Verdict::Moving] {
-            assert!(declines_in(false, Some(v), true), "outside a dump {v:?} declines (cardspeed armed)");
-            assert!(!declines_in(true, Some(v), true), "a dump admits every card draw ({v:?})");
+            assert!(declines_in(Some(v), true), "{v:?} declines (cardspeed armed)");
         }
-        assert!(declines_in(false, Some(Verdict::Unknown), false) && !declines_in(false, Some(Verdict::Moving), false));
-        assert!(!declines_in(false, Some(Verdict::Settled), true) && !declines_in(false, None, true));
+        assert!(declines_in(Some(Verdict::Unknown), false) && !declines_in(Some(Verdict::Moving), false));
+        assert!(!declines_in(Some(Verdict::Settled), true) && !declines_in(None, true));
     }
 }

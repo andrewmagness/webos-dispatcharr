@@ -20,7 +20,7 @@ default = []
 # `idle`'s simulator settle clock).
 devtriggers = ["plx_base/devtriggers"]
 hostsim = ["plx_base/hostsim"]
-# The `cfg(test)` fixtures other crates' tests use (`landgate`'s fixture gate, `idle::reset_for_test`,
+# The `cfg(test)` fixtures other crates' tests use (`idle::reset_for_test`,
 # `machine::{BareArg, BareMeasure}`, the `Measure` impl for `fontcov`'s `ShippedMeasure`) plus the
 # test-mode behaviour that `cfg(test)` alone cannot give a dependent (`present`'s private wake door,
 # `idle`'s per-thread damage counter). Enabled from the dependents' `[dev-dependencies]`; never in a

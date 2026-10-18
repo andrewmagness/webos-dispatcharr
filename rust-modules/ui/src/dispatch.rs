@@ -781,20 +781,6 @@ where
         self.page_image_alpha
     }
 
-    /// Is a modal surface or a popover's held image up? The frame dump fails closed on it: the dim
-    /// field behind a modal is sampled on a cadence of presented iterations.
-    pub fn overlay_open(&self) -> bool {
-        !self.nav.modals.surfaces.is_empty() || crate::popover::host::held_ceiling().is_some()
-    }
-
-    /// Does the dispatcher carry work into its next iteration: a queued step, a parked structural
-    /// op or lifecycle step (one nav commit per iteration), a pending back? The frame dump holds a
-    /// virtual frame on it, so an input's whole effect lands within the frame it was pressed in
-    /// rather than on whichever later iteration the holds happened to leave.
-    pub fn work_carried(&self) -> bool {
-        !self.queue.is_empty() || !self.parked.is_empty() || !self.parked_life.is_empty() || self.pending_back
-    }
-
     /// Whether this frame may show the page as a frozen image at all: a freezing transition, a
     /// snapshot texture to hold it, and no video plane under it.
     fn page_image_possible(&self, video_plane: bool) -> bool {

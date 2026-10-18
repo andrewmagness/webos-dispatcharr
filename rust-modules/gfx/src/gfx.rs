@@ -511,8 +511,7 @@ thread_local! {
 }
 
 /// Block until the GPU has finished all queued commands. Used as a completion boundary by the draw
-/// profiler (`ui::profile`), a coarse wall-clock aid, and by dump mode's GPU wait
-/// (`snapshot_frame_begin`, only while `crate::dump` is armed). It is not a GPU timestamp and it
+/// profiler (`ui::profile`), a coarse wall-clock aid. It is not a GPU timestamp and it
 /// serializes the pipeline, so never call it on the normal render path of a live loop.
 #[cfg(feature = "devtriggers")]
 pub fn gl_finish() {
@@ -2248,20 +2247,7 @@ pub fn snapshot_defers(fence: Option<bool>, deferred: u32) -> bool {
     fence == Some(false) && deferred < SNAPSHOT_DEFER_MAX
 }
 
-/// Dump mode's GPU wait. `glFinish` is bound only in a `devtriggers` build (the dump driver's own
-/// build), so a shipping binary has no call to it here at all.
-fn dump_wait_for_gpu() {
-    #[cfg(feature = "devtriggers")]
-    gl_finish();
-}
-
-/// [`snapshot_defers`] under dump mode, which never defers: the GPU was just waited out, so
-/// readiness is a constant instead of an environmental observation.
-pub fn snapshot_defers_in(dump: bool, fence: Option<bool>, deferred: u32) -> bool {
-    !dump && snapshot_defers(fence, deferred)
-}
-
-/// Close a presented frame: a frame that captured the page leaves a fence behind it.
+/// Close a presented frame:/// Close a presented frame: a frame that captured the page leaves a fence behind it.
 pub fn snapshot_frame_end() {
     if SNAPSHOT_THIS_FRAME.swap(false, Ordering::Relaxed) {
         // SAFETY: main render thread, like every GL call here.
@@ -2275,16 +2261,10 @@ pub fn snapshot_frame_end() {
 /// answer; controlled replay supplies the recorded one. Native fence retirement still follows
 /// the actual GPU, and the independent physical window gate still governs every swap.
 pub fn snapshot_frame_begin(readiness: impl FnOnce(bool) -> bool) {
-    // DUMP MODE (`crate::dump`): the GPU is waited out BEFORE the sample, so the fence has
-    // signalled and the capture is never pending; GPU speed is not an input to the dump.
-    let dump = crate::dump::armed();
-    if dump {
-        dump_wait_for_gpu();
-    }
     // SAFETY: main render thread.
     let fence = unsafe { (*std::ptr::addr_of!(SNAPSHOT_FENCE)).as_ref().map(|f| f.signaled()) };
     let n = SNAPSHOT_DEFERRED.load(Ordering::Relaxed);
-    let defer = snapshot_defers_in(dump, fence, n);
+    let defer = snapshot_defers(fence, n);
     if defer {
         SNAPSHOT_DEFERRED.store(n + 1, Ordering::Relaxed);
     } else if fence.is_some() {
@@ -4648,27 +4628,7 @@ impl ProbeCadence {
     }
 }
 
-/// How a ground sampler answers a call: see [`probe_mode`].
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ProbeMode {
-    /// The product: queue a fenced copy on a cadence, collect it a frame later ([`ProbeCadence`]).
-    Cadenced,
-    /// Dump mode: copy and read inside the call, every call, so the answer is a function of the
-    /// frame being drawn and not of how many loop iterations went by (`crate::dump`).
-    Sync,
-}
-
-/// The mode, as a pure function of the dump switch (the half a host test can reach).
-#[inline(always)]
-pub fn probe_mode(dump_armed: bool) -> ProbeMode {
-    if dump_armed {
-        ProbeMode::Sync
-    } else {
-        ProbeMode::Cadenced
-    }
-}
-
-/// **A ground sampler's asynchronous read-back**: `N` boxes of `px` square, copied side by side
+/// **A ground sampler's asynchronous read-back**/// **A ground sampler's asynchronous read-back**: `N` boxes of `px` square, copied side by side
 /// into one `N*px x px` target, fenced, and read once finished. See [`ProbeCadence`] for why.
 ///
 /// The target is built lazily on the first kick and never resized. An incomplete FBO latches `off`
@@ -4729,39 +4689,12 @@ impl<const N: usize> GroundProbe<N> {
         self.ready = Some(buf);
     }
 
-    /// Dump mode's answer: build the target if needed, copy the boxes, read them back now.
-    #[cold]
-    unsafe fn read_now(&mut self, origins: &[(c_int, c_int); N], who: &str) -> Option<Vec<u8>> {
-        if self.target.is_none() {
-            self.target = fbo_target(self.px * N as c_int, self.px, who);
-            if self.target.is_none() {
-                self.off = true;
-                return None;
-            }
-        }
-        let (tex, fbo) = self.target?;
-        let px = self.px;
-        glBindTexture(GL_TEXTURE_2D, tex);
-        for (i, &(x, y)) in origins.iter().enumerate() {
-            glCopyTexSubImage2D(GL_TEXTURE_2D, 0, i as c_int * px, 0, x, y, px, px);
-        }
-        let (w, h) = (px * N as c_int, px);
-        let mut buf = vec![0u8; (w * h * 4) as usize];
-        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buf.as_mut_ptr() as *mut c_void);
-        glBindFramebuffer(GL_FRAMEBUFFER, plx_base::surface::default_fb());
-        Some(buf)
-    }
-
-    /// One sampler call. `origins` are the boxes' lower-left corners in framebuffer pixels, already
+    /// One sampler call.    /// One sampler call. `origins` are the boxes' lower-left corners in framebuffer pixels, already
     /// clamped — used only on a kick. Returns the collected `N*px x px` RGBA row-major buffer on a
     /// collect, `None` otherwise.
     unsafe fn step(&mut self, have: bool, origins: &[(c_int, c_int); N], who: &str) -> Option<Vec<u8>> {
         if self.off {
             return None;
-        }
-        if probe_mode(crate::dump::armed()) == ProbeMode::Sync {
-            return self.read_now(origins, who);
         }
         match self.cadence.step(have, drawn_frames(), self.ready.is_some()) {
             ProbeStep::Keep => None,

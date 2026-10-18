@@ -10,7 +10,7 @@ Scenarios (each a named row; `--only ID,ID` selects, `--quick` is `noop,leaf,siz
             (rust-modules/base/src/cbuf.rs, in `plx_base`): the crate every other layer depends on,
             so the app crate rebuilds behind it. This was the one-crate leaf edit before the split.
   machine   ...after appending one to a leaf file of the MACHINE layer crate
-            (rust-modules/machine/src/landgate.rs, in `plx_machine`): `plx_base` stays fresh, the
+            (rust-modules/machine/src/motion.rs, in `plx_machine`): `plx_base` stays fresh, the
             machine crate and the app crate behind it recompile.
   platform  ...after appending one to a leaf file of the PLATFORM layer crate
             (rust-modules/platform/src/devcaps.rs, in `plx_platform`): `plx_base` and `plx_machine`
@@ -123,7 +123,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 LEAF_FILE = "rust-modules/base/src/cbuf.rs"
-MACHINE_LEAF_FILE = "rust-modules/machine/src/landgate.rs"
+MACHINE_LEAF_FILE = "rust-modules/machine/src/motion.rs"
 PLATFORM_LEAF_FILE = "rust-modules/platform/src/devcaps.rs"
 GFX_LEAF_FILE = "rust-modules/gfx/src/overdraw.rs"
 NET_LEAF_FILE = "rust-modules/net/src/stream_redirect.rs"
@@ -169,7 +169,7 @@ CHECK_BRANCHES = ("cargo", "python")
 TITLES = {
     "noop": "No-op host test build",
     "leaf": "Edit leaf (plx_base cbuf.rs), non-incremental",
-    "machine": "Edit leaf (plx_machine landgate.rs), non-incremental",
+    "machine": "Edit leaf (plx_machine motion.rs), non-incremental",
     "platform": "Edit leaf (plx_platform devcaps.rs), non-incremental",
     "gfx": "Edit leaf (plx_gfx overdraw.rs), non-incremental",
     "net": "Edit leaf (plx_net stream_redirect.rs), non-incremental",

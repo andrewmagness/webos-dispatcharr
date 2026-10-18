@@ -57,7 +57,7 @@ def read(p):
         return open(p).read()
     except OSError:
         return ""
-EDITED = ("base/src/cbuf.rs", "machine/src/landgate.rs", "platform/src/devcaps.rs", "gfx/src/overdraw.rs", "net/src/stream_redirect.rs", "ui/src/dwell.rs", "dispatcharr/src/dispatcharr/time.rs", "telemetry/src/telemetry/window.rs", "data/src/metadata/track_names.rs", "media/src/player/vp9_hdr.rs", "appkit/src/live_banner.rs", "screens/src/player/ass_subtitles.rs", "src/coldstart.rs", "ui/src/lib.rs")
+EDITED = ("base/src/cbuf.rs", "machine/src/motion.rs", "platform/src/devcaps.rs", "gfx/src/overdraw.rs", "net/src/stream_redirect.rs", "ui/src/dwell.rs", "dispatcharr/src/dispatcharr/time.rs", "telemetry/src/telemetry/window.rs", "data/src/metadata/track_names.rs", "media/src/player/vp9_hdr.rs", "appkit/src/live_banner.rs", "screens/src/player/ass_subtitles.rs", "src/coldstart.rs", "ui/src/lib.rs")
 if os.environ.get("FAKE_FAIL_ON_EDIT") and "build-bench edit" in "".join(read(p) for p in EDITED):
     sys.stderr.write("error: fake cargo failed on the edited tree\n")
     sys.exit(101)
@@ -121,7 +121,7 @@ SCRATCH_MAKEFILE = r'''print-bench-config:
 	  'RUST_ENV=RUSTFLAGS="-C target-cpu=fake -C x"' 'TEST_FAST_TDIR=target-fast' 'UNIT_RUN=python3 ../tools/cargo-test-parallel.py' 'RELEASE=$(RELEASE)'
 '''
 LEAF = "rust-modules/base/src/cbuf.rs"
-MACHINE_LEAF = "rust-modules/machine/src/landgate.rs"
+MACHINE_LEAF = "rust-modules/machine/src/motion.rs"
 PLATFORM_LEAF = "rust-modules/platform/src/devcaps.rs"
 GFX_LEAF = "rust-modules/gfx/src/overdraw.rs"
 NET_LEAF = "rust-modules/net/src/stream_redirect.rs"

@@ -334,22 +334,7 @@ fn evict_backoff(evict_attempts: u8) -> Duration {
 
 /// Has a P_EVICTED slot's cooldown cleared? Wrap-safe like [`retry_due`]; `None` (no cooldown was
 /// ever set) is always due.
-///
-/// **In a frame dump (`plx_gfx::dump`) every cooldown is over.** The dump holds the app clock still
-/// while it waits for debt to clear, so a cooldown armed from that clock never expires and the
-/// re-arm it paces would never come (a hold with no way out); and a cooldown that did expire would
-/// make the frame it expires on a function of how long the host took. The dump's own residency is
-/// bounded and logical, so the thrash this guard paces does not arise there.
 fn evict_cooldown_due(cooldown_until: Option<u32>, now: u32) -> bool {
-    evict_cooldown_due_in(plx_gfx::dump::armed(), cooldown_until, now)
-}
-
-/// [`evict_cooldown_due`] with the dump switch passed in, for a host test.
-#[inline]
-fn evict_cooldown_due_in(dump: bool, cooldown_until: Option<u32>, now: u32) -> bool {
-    if dump {
-        return true;
-    }
     match cooldown_until {
         None => true,
         Some(t) => now.wrapping_sub(t) < u32::MAX / 2,
@@ -1058,7 +1043,6 @@ fn lookup(srv: ServerId, key_s: &str, touch: Touch) -> (Hit, Warm) {
     // and upload that the gate would never see if it only guarded the miss. A HIT is deliberately untouched: art that is
     // already resident still draws and still takes its LRU touch, so declining never blanks a
     // tile that had its picture.
-    // (`declines_request` is always false in a frame dump: a frozen clock never leaves `Unknown`.)
     let decline = touch == Touch::Draw && plx_ui::card_motion::declines_request();
     let mut g = store();
     let cache_gen = plx_platform::imgcache::generation();
@@ -1998,16 +1982,11 @@ mod tests {
     /// The pure decision behind the thrash guard's cooldown gate: no cooldown ever set is always
     /// due (the ordinary, non-thrashing case), and a set cooldown is due only once its deadline has
     /// actually passed - mirrors [`retry_due`]'s own wrap-safe "has this deadline passed" shape.
-    ///
-    /// Through the pure twin with the dump switch passed as `false`: this test holds no
-    /// `testlock::serial()`, and `an_armed_dump_claims_a_slot_...` arms the process-global switch in
-    /// the same binary, so the global-reading `evict_cooldown_due` could answer `true` here for the
-    /// few statements the switch is up.
     #[test]
     fn evict_cooldown_due_only_after_its_own_deadline() {
-        assert!(evict_cooldown_due_in(false, None, 0), "no cooldown was ever set - never gated");
-        assert!(!evict_cooldown_due_in(false, Some(1_000), 999), "one millisecond short is still cooling");
-        assert!(evict_cooldown_due_in(false, Some(1_000), 1_000), "the deadline itself has cleared");
+        assert!(evict_cooldown_due(None, 0), "no cooldown was ever set - never gated");
+        assert!(!evict_cooldown_due(Some(1_000), 999), "one millisecond short is still cooling");
+        assert!(evict_cooldown_due(Some(1_000), 1_000), "the deadline itself has cleared");
     }
 
     /// The pure decision behind [`invalidate_due_evictions`]: only a slot an active cooldown
@@ -2958,29 +2937,6 @@ mod tests {
         assert_eq!(store().slots[0].state, P_WANT);
         assert!(store().slots[0].visible);
 
-        store().slots = [Pslot::ZERO; PT_CAP];
-    }
-
-    /// The wiring `declines_in` is a pure function of: in a frame dump the SAME fast-moving draw
-    /// claims a slot, because a dump never declines for motion (`card_motion::declines_request`),
-    /// even with `dispatcharrtv-cardspeed` armed.
-    #[test]
-    fn an_armed_dump_claims_a_slot_for_the_miss_a_fast_scroll_would_decline() {
-        let (_fresh, sid, _) = one_server();
-        let path = key_for(sid, "http://192.0.2.1/library/metadata/4243/thumb", 2, 2, 0);
-        store().slots = [Pslot::ZERO; PT_CAP];
-
-        let _enforce = plx_ui::card_motion::enforce_for_test();
-        let _motion = plx_ui::card_motion::Scope::moving_for_test();
-        assert!(plx_ui::card_motion::declines_request(), "the fixture is a fast scroll");
-        {
-            let _dump = plx_gfx::dump::Armed::new();
-            assert!(!plx_ui::card_motion::declines_request(), "armed, motion declines nothing");
-            let (_, warm) = lookup(sid, &path, Touch::Draw);
-            assert_eq!(warm, Warm::Claimed, "the draw claims the slot a fast scroll would have declined");
-            assert_eq!(store().slots[0].state, P_WANT);
-        }
-        assert!(plx_ui::card_motion::declines_request(), "disarmed, the same scope declines again");
         store().slots = [Pslot::ZERO; PT_CAP];
     }
 

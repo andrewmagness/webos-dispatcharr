@@ -36,7 +36,7 @@ Scenarios (each a named row; `--only ID,ID` selects, `--quick` is `noop,leaf,siz
             `plx_platform` and `plx_telemetry` stay fresh, the data crate and the app
             crate behind it recompile.
   media     ...after appending one to a leaf file of the MEDIA layer crate
-            (rust-modules/media/src/abr/units.rs, in `plx_media`): `plx_base`,
+            (rust-modules/media/src/player/vp9_hdr.rs, in `plx_media`): `plx_base`,
             `plx_platform`, `plx_net`, `plx_telemetry` and `plx_data` stay fresh, the
             media crate and the app crate behind it recompile.
   appkit    ...after appending one to a leaf file of the APPKIT layer crate
@@ -131,7 +131,7 @@ UI_LEAF_FILE = "rust-modules/ui/src/dwell.rs"
 DISPATCHARR_LEAF_FILE = "rust-modules/dispatcharr/src/dispatcharr/time.rs"
 TELEMETRY_LEAF_FILE = "rust-modules/telemetry/src/telemetry/window.rs"
 DATA_LEAF_FILE = "rust-modules/data/src/metadata/track_names.rs"
-MEDIA_LEAF_FILE = "rust-modules/media/src/abr/units.rs"
+MEDIA_LEAF_FILE = "rust-modules/media/src/player/vp9_hdr.rs"
 APPKIT_LEAF_FILE = "rust-modules/appkit/src/live_banner.rs"
 SCREENS_LEAF_FILE = "rust-modules/screens/src/player/ass_subtitles.rs"
 APP_LEAF_FILE = "rust-modules/src/coldstart.rs"
@@ -177,7 +177,7 @@ TITLES = {
     "dispatcharr": "Edit leaf (plx_dispatcharr time.rs), non-incremental",
     "telemetry": "Edit leaf (plx_telemetry window.rs), non-incremental",
     "data": "Edit leaf (plx_data track_names.rs), non-incremental",
-    "media": "Edit leaf (plx_media units.rs), non-incremental",
+    "media": "Edit leaf (plx_media vp9_hdr.rs), non-incremental",
     "appkit": "Edit leaf (plx_appkit live_banner.rs), non-incremental",
     "screens": "Edit leaf (plx_screens ass_subtitles.rs), non-incremental",
     "app": "Edit leaf (app coldstart.rs), non-incremental",

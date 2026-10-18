@@ -1844,7 +1844,6 @@ extern "C" fn seek_cb(op: *mut c_void, offset: i64, whence: c_int) -> i64 {
                     path: &from,
                     range_from: Some(target),
                     deadline: None,
-                    same_origin_only: false,
                 };
                 match plx_net::stream::redirect::open_following(
                     *hs,
@@ -2812,7 +2811,6 @@ fn open_plain_progressive(
         path,
         range_from: None,
         deadline: None,
-        same_origin_only: false,
     };
     match plx_net::stream::redirect::open_following(hs_p, &req, &mut plx_base::checkpoint::NoCheckpoint)
     {

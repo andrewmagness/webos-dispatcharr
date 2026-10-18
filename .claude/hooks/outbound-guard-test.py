@@ -43,10 +43,10 @@ OTHER_TOKEN = "Ab3xY9zQ1mNp7Rt5Vw2K"         # token-shaped, in NO file — test
 OTHER_MACHINE = "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
 GIT_SHA = "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d"        # also 40 hex, and NOT a leak
 
-# What `git grep -F` would find in a tracked file. Two real ones, both counted 2026-08-23:
-# docs/shared-servers.md nominates 10.9.9.7 as the LAN-address stand-in ("RFC1918, as the real one
-# is") and it is now in five tracked files, and docs/plex-openapi.json carries upstream Plex's
-# 10.0.0.42 example EIGHT times. This comment said fifteen; nothing in the tree says fifteen.
+# What `git grep -F` would find in a tracked file (a fixture of the rule, not a live count):
+# docs/placeholders.md nominates 10.9.9.7 as the LAN-address stand-in ("RFC1918, as a real one
+# is"), and 10.0.0.42 was upstream Plex's example in the retired docs/plex-openapi.json; both are
+# still in this file and the guard, so a live `git grep` finds them too.
 PUBLISHED = {"10.9.9.7", "10.0.0.42"}
 
 
@@ -173,8 +173,8 @@ CASES = [
     (ALLOW, 'git commit -m "sshpass -p alpine is webosbrew\'s published password"'),
     (ALLOW, 'git commit -m "rk=4 is shared by five cases, rk=1804 by three"'),   # under the floor
     (ALLOW, 'git commit -m "revert %s"' % GIT_SHA),                       # 40 hex, no id context
-    (ALLOW, 'git commit -m "plex-openapi: the 10.0.0.42 example"'),       # tracked → not a leak
-    (ALLOW, 'gh pr create --body "the stand-in LAN address is 10.9.9.7"'),  # docs/shared-servers.md
+    (ALLOW, 'git commit -m "the upstream 10.0.0.42 example"'),           # tracked → not a leak
+    (ALLOW, 'gh pr create --body "the stand-in LAN address is 10.9.9.7"'),  # docs/placeholders.md
     (ALLOW, 'gh pr create --body "the guard covers 172.16.0.0/12"'),      # CIDR names a range
     # THE debugging command of this repo: the real PMS address and the real token, sent to the
     # machine that issued them. Blocking it would be the guard's worst false positive.

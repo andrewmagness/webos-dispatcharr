@@ -2,7 +2,8 @@
 
 ## Project
 
-Dispatcharr TV is a production-quality native Plex client for rooted LG webOS 4.5 TVs. Most of the
+Dispatcharr TV is a production-quality native live-TV client for Dispatcharr servers, on rooted LG
+webOS TVs. Most of the
 application is Rust under `rust-modules/` (the application in `src/`, the layers in their own crates); `src/main.c` is the boot/crash shim,
 `src/starfish.c` is the StarfishMediaAPIs/ACB seam, and `src/svg.c` rasterizes SVGs. Keep changes
 properly factored and finished; "only a demo" is never a reason to leave a shortcut behind.

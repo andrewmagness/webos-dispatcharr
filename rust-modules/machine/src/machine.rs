@@ -734,7 +734,7 @@ pub enum InputKind<K> {
     SystemKeyboard(bool),
 }
 
-/// A whole keyboard commit preserves LG's prediction boundary (`docs/search.md`). Cloning an
+/// A whole keyboard commit preserves LG's prediction boundary (`docs/tv-keyboard.md`). Cloning an
 /// input retains immutable text rather than truncating it or splitting it into character events.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum TextEdit {

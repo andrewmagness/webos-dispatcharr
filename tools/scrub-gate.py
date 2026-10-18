@@ -85,7 +85,7 @@ def main(argv):
 
     # The shape rules -- private-range IPv4, token-shaped runs, 40-hex machine ids -- fire on
     # PLAUSIBLE values, not on known ones, so without this they also fire on every RFC1918 address
-    # a test fixture invents and every placeholder docs/shared-servers.md publishes on purpose.
+    # a test fixture invents and every placeholder docs/placeholders.md publishes on purpose.
     # `default_published` answers "is this value already in a tracked file", which is exactly the
     # question that separates a leak from a stand-in. The PreToolUse hook has always passed it;
     # this gate did not, and flagged six lines of its own test harness on the first real run.
@@ -119,7 +119,7 @@ def main(argv):
     if blocked:
         print(f"\nREFUSED: {len(blocked)} file(s) carry private data.")
         print("Scrub to placeholders before committing. The repo is PUBLIC and some of this data")
-        print("is not the maintainer's to publish; see docs/shared-servers.md for the stand-in table.")
+        print("is not the maintainer's to publish; see docs/placeholders.md for the stand-in table.")
         return 1
     print("\nOK: no private literals found.")
     return 0

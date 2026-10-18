@@ -512,8 +512,8 @@ line, real fonts rendering, and the session file rewritten `0600` under the app'
 `src/config.local.h`, + an entropy sweep). The real `PMS_TOKEN` and `DEMO_STREAM_URL` have **never**
 been committed; `src/config.local.h`, `local.env` and any `auth.json` have **never** been tracked.
 The only historical binaries are the two icons and one short-lived `pkg/threadprobe`. The
-`accessToken: transient-…` and `10.0.0.x` strings in `docs/plex-openapi.json` are from the upstream
-published spec, not this user.
+`accessToken: transient-…` and `10.0.0.x` strings in `docs/plex-openapi.json` (removed from the tree
+2026-10-18; still in history) are from the upstream published spec, not this user.
 
 *Caveat on method:* a needle search finds the **current** token. A previously-rotated token would not
 be found this way. Rotate the token regardless — it has been on disk in many places and injected into

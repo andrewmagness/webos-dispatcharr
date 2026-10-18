@@ -5,9 +5,8 @@
 //! The capability profile used to be a set of constants describing the author's television: HEVC
 //! yes, 4K yes, AAC/AC3/EAC3 yes. Every one of those claims is true on the 49SM9000PLA and was
 //! asserted to every server as if it were true of webOS. That is the bug class issue #22 named
-//! and `docs/plex-pass-audit.md` enumerates — **a claim true on the development environment,
-//! asserted as universal** — and the decode-capability assertion was its last standing member
-//! (the audit's closing section): a webOS set whose SoC lacks HEVC would be offered, and would
+//! — **a claim true on the development environment, asserted as universal** — and the
+//! decode-capability assertion was its last standing member: a webOS set whose SoC lacks HEVC would be offered, and would
 //! direct-play, streams it cannot decode, and nothing here could catch it because the only
 //! device this project owns decodes everything the constants claimed.
 //!
@@ -158,7 +157,7 @@ impl Caps {
     /// Load-payload guess and retranscode's codec record must name the codec the profile
     /// actually asked the server to produce, and as three hand-copied `if caps().hevc`
     /// expressions they could drift — a Load payload naming a codec the profile never requested
-    /// is exactly the payload/output mismatch of docs/plex-pass-audit.md row 1 (issue #22).
+    /// is exactly the payload/output mismatch of issue #22.
     /// `transcoder.rs::profile_for` builds the target list's head from this, and its test pins
     /// the agreement.
     pub fn encode_vcodec(&self) -> &'static str {

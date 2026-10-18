@@ -30,7 +30,7 @@ The account below is left as it was written, as the evidence.
 >
 > **No raw snapshot from that session may be pasted into this repository.** The same hour found
 > that `stream: GET /identity DNS FAILED host=…` carries a hostname past all three redaction
-> layers. Every identifier below is a placeholder per `docs/shared-servers.md`.
+> layers. Every identifier below is a placeholder per `docs/placeholders.md`.
 
 ## The defect
 

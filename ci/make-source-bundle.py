@@ -63,8 +63,7 @@ def main():
                 'snapshot_sha256': snapshot(files), 'files': files, 'dependencies': deps,
                 'build_environment': spec['build_environment'],
                 'excluded_inputs': spec.get('excluded_inputs', []),
-                'omitted_optional_files': {'docs/plex-openapi.json':
-                    'Optional upstream API reference; not required for build; credential-shaped examples omitted',
+                'omitted_optional_files': {
                     'docs/measurements/': 'Historical raw measurements are not build inputs; originals unchanged'},
                 'copied_document_transformations': transformations,
                 'rebuild_status': 'NOT_RUN'}

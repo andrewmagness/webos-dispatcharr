@@ -1105,7 +1105,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   `PRIVATE_NAMES` in `ci/source_bundle.py`); the LIST is `PRIVATE_FILES` in
   `.claude/hooks/outbound-guard.py`, not this sentence, which is why no count is given here. The rule for anything leaving the machine is **placeholders,
   always** — a PR body, an issue comment, a release note, a commit message — and
-  `docs/shared-servers.md` carries the stand-in table this repo actually uses. **It has already
+  `docs/placeholders.md` carries the stand-in table this repo actually uses. **It has already
   failed once as a convention, in these words.** A batch of subagents told to write device
   recipes "executable without me" each did the obviously helpful thing and pasted a friend's real
   server address, port, `machineIdentifier` and handle into **four PR bodies (#28-31) on
@@ -1555,7 +1555,7 @@ gates presents, so a screen that settles before frame N never reaches N. Arm
 `SDL_PushEvent` SIGSEGVs *inside SDL* — SDL3's text event carries a `char *text` where SDL2 carries
 an inline `char[32]`, and the shim dereferences it. No Rust panic, no log line, the process is just
 gone. The remote FIFO's key and `ck:` tokens are safe because every field they set is a scalar; see
-`docs/search.md` §3.
+`docs/tv-keyboard.md`.
 
 **Tier 2 — the device, which is still the real gate.** Nothing on the host decodes a frame or talks
 to Starfish/ACB, so playback correctness — and every pixel-level and perf question — is only
@@ -1905,7 +1905,7 @@ green.
   as `homeosc`; `libosc` shares the cadence and reverses at its document's ends instead, above). The
   oscillator does NOT reach the screen on its own: pair it with `dispatcharrtv-search`, and with a query
   the library actually matches, or `fps:search-type` has no shelves to sweep. Design, and the
-  on-screen-keyboard research behind the field (three traps, two dead ends): **`docs/search.md`**.
+  on-screen-keyboard research behind the field (three traps, two dead ends): **`docs/tv-keyboard.md`**.
   Plus
   `/tmp/dispatcharrtv-navosc[=<ratingKey>]` (bounce the ROUTE every 1400 ms through the real press path —
   the only scenes that change route, and so the only ones that sample the whole-screen page
@@ -2034,6 +2034,4 @@ green.
   alert it existed for (both retired 2026-09-03). Text
   entry is the **television's own keyboard**, raised by plain `SDL_StartTextInput` — the backend is
   in LG's Wayland driver, not the webOS extension API, which is why `SDL_webOS.h` looks like it has
-  no keyboard. The field, shelves, test seams and every trap in that path are documented in
-  **`docs/search.md`**. Search is **server-only** by decision — Plex
-  Discover / Watchlist catalog results are out of scope.
+  no keyboard. Every trap in that path is documented in **`docs/tv-keyboard.md`**.

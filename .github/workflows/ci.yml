@@ -61,7 +61,7 @@ on:
       - '!CLAUDE.md'
       # docs: nothing under docs/ is read by a gate except the re-include below
       # (docs/macos-app-readme.md is only copied into the macOS bundle by `make macapp`, which
-      # this workflow does not run; docs/plex-openapi.json and the images are referenced by prose)
+      # this workflow does not run; the images are referenced by prose)
       - '!docs/**'
       # replayed by tools/test_scrub_logs.py (make check): must stay a trigger
       - 'docs/measurements/*-logs/*.log'

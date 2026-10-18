@@ -5,9 +5,6 @@ use icu_plurals::{PluralCategory, PluralRules};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::OnceLock;
 
-pub const CONTRIBUTE_URL: &str =
-    "https://github.com/andrewmagness/webos-dispatcharr/blob/main/docs/localization.md";
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Preference {
@@ -45,19 +42,6 @@ impl Preference {
             Self::Es => "es",
             Self::Be => "be",
             Self::Fr => "fr",
-        }
-    }
-    /// Serde's `skip_serializing_if`: System is what an absent preference already means.
-    pub fn is_system(&self) -> bool {
-        *self == Self::System
-    }
-    pub fn native_name(self) -> &'static str {
-        match self {
-            Self::System => msg::core_system_default(),
-            Self::En => "English",
-            Self::Es => "Español",
-            Self::Be => "Беларуская",
-            Self::Fr => "Français",
         }
     }
 }
@@ -289,17 +273,6 @@ pub fn webos_release_line(info: &crate::tv::device::Info) -> String {
 static CURRENT: OnceLock<LocaleContext> = OnceLock::new();
 static SAVED_PREFERENCE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
-/// The confirmed next-launch setting. Reading it never touches credential storage.
-pub fn saved_preference() -> Preference {
-    match SAVED_PREFERENCE.load(std::sync::atomic::Ordering::Acquire) {
-        1 => Preference::En,
-        2 => Preference::Es,
-        3 => Preference::Be,
-        4 => Preference::Fr,
-        _ => Preference::System,
-    }
-}
-
 pub fn set_saved_preference(value: Preference) {
     let value = match value {
         Preference::System => 0,
@@ -309,14 +282,6 @@ pub fn set_saved_preference(value: Preference) {
         Preference::Fr => 4,
     };
     SAVED_PREFERENCE.store(value, std::sync::atomic::Ordering::Release);
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn saved_preference_for_test(value: Preference) -> Preference {
-    plx_base::testlock::assert_held("saved language preference");
-    let previous = saved_preference();
-    set_saved_preference(value);
-    previous
 }
 
 #[cfg(any(test, feature = "test-support"))]

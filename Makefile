@@ -2266,7 +2266,7 @@ FIXTURES_OUT ?= $(HOME)/dispatcharrtv-fixtures
 # $(FIXTURES_OUT) is QUOTED: it defaults under $(HOME), and a home directory with a space in it
 # would otherwise split into two arguments and fail as an unknown option.
 fixtures-pipeline:
-	python3 tests/fixtures/make_fixtures.py --tier pipeline --out "$(FIXTURES_OUT)/pipeline" $(FIXTURES_ARGS)
+	python3 tests/fixtures/make_fixtures.py --out "$(FIXTURES_OUT)/pipeline" $(FIXTURES_ARGS)
 
 # Retrieve whichever profiler JSONL the last run produced. Both are fetched best-effort because a
 # leg arms exactly one of the two modes, never both.

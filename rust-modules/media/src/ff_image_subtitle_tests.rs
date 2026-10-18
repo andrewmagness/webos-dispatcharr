@@ -65,8 +65,9 @@ pub(super) fn bind_host_ffmpeg() {
 ///   4. an SRT forced to `--compression 0:zlib` — text tracks take the demux loop's payload path,
 ///      not a decoder, so for them the proof is the packet bytes themselves.
 ///
-/// Regenerate from `tests/fixtures/`:
-/// `python3 -c 'import make_fixtures as m, pathlib; m.pgs_build(pathlib.Path("s.sup"), 9)'`
+/// Regenerate with the PGS writer the fixture generator carried until the live-TV clip pack dropped
+/// subtitles: `git show 605a96e8:tests/fixtures/make_fixtures.py > /tmp/mf/make_fixtures.py`, then
+/// from `/tmp/mf`: `python3 -c 'import make_fixtures as m, pathlib; m.pgs_build(pathlib.Path("s.sup"), 9)'`
 /// (one cue at 0 s, cleared at 8 s); `ffmpeg -f sup -i s.sup -map 0 -c:s dvdsub -s 1920x1080 v.mkv`;
 /// an SRT `t.srt` holding one cue `ZLIB TEXT CUE`; then `mkvmerge -o mkv_zlib_subs.mkv --no-date
 /// --disable-track-statistics-tags s.sup --compression 0:none s.sup v.mkv --compression 0:none

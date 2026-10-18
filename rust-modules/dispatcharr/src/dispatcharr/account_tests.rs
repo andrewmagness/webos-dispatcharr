@@ -167,3 +167,26 @@ fn the_debug_form_never_carries_the_key() {
     let shown = format!("{:?}", record("SECRETKEY"));
     assert!(!shown.contains("SECRETKEY"), "{shown}");
 }
+
+/// The signed-in username is household identity, so the log scrubber redacts it from every line —
+/// which it can only do if the account publishes it: on a load that finds it, on a save, and
+/// withdrawn again on sign-out. Red before 2026-10-18: nothing published it once the Plex session
+/// (the previous publisher) was removed, so `andrew` reached the event log verbatim.
+#[test]
+fn the_signed_in_username_is_redacted_from_the_log_and_released_on_sign_out() {
+    let _c = Candidates::new("identity", 2);
+    let line = "setup: signed in as andrew";
+    let scrub = || plx_base::eventlog::scrub::scrub_local(line);
+    plx_base::eventlog::scrub::set_identities(Vec::new());
+
+    assert_eq!(account::save(&record("KEY")), Ok(Saved::Durable));
+    assert_eq!(scrub(), "setup: signed in as <name>", "a save publishes the name");
+
+    // A fresh boot: nothing published yet, and the load is what publishes it.
+    plx_base::eventlog::scrub::set_identities(Vec::new());
+    assert!(matches!(account::load(), Loaded::Signed(..)));
+    assert_eq!(scrub(), "setup: signed in as <name>", "a load publishes the name");
+
+    account::clear();
+    assert_eq!(scrub(), line, "sign-out withdraws it");
+}

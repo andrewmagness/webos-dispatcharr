@@ -15,7 +15,7 @@ make fixtures-pipeline          # ~0.9 GB into $FIXTURES_OUT/pipeline; ~4 min, o
 ```
 
 `make fixtures-pipeline` needs an `ffmpeg` with libx264, ac3 and dca encoders
-(`tests/fixtures/make_fixtures.py --tier pipeline --list` reports what this machine can build). The
+(`tests/fixtures/make_fixtures.py --list` reports what this machine can build). The
 TV address comes from `tools/tv-config.sh` (this checkout's gitignored `.tv-host`, the main
 checkout's, then the per-user `~/.config/dispatcharrtv/tv-host` — set that one once and every
 worktree has it), else `--tv`. That is the whole configuration. The run takes the TV lock
@@ -229,7 +229,7 @@ the skip count beside it.
 ## Adding a case
 
 A case is one entry in `tests/manifest.json`'s `pipeline_cases`: a `fixture` (a shape
-`make_fixtures.py --tier pipeline` builds), the `declare` block that becomes the Load payload, a
+`make_fixtures.py` builds), the `declare` block that becomes the Load payload, a
 `run_secs` cap, `operations: [{"op": "play"}]`, and the `expect` block the assertions read
 (`codec`, `load_video`, `load_audio`, `min_pos_climb_s`, …). `tests/test_harness.py` checks every
 case's declaration against its fixture offline; run it (or `make check`) before the TV.

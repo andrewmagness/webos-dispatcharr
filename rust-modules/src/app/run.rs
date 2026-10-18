@@ -1,7 +1,7 @@
 //! The frame loop — phase 1b-ii's THIN COORDINATOR (restructure spec §13).
 //!
 //! `run` is the one `while app.running` loop; each phase of an iteration is a function below,
-//! cut VERBATIM out of `plex_run`'s former body at the eight `FRAMEDROP` stamps (spec §8.4) so
+//! cut VERBATIM out of `plx_run`'s former body at the eight `FRAMEDROP` stamps (spec §8.4) so
 //! that a diff of this commit is moves and renames only — `app.<field>` for what used to be a
 //! loop-local, `fr.<field>` ([`Frame`]) for the handful of per-iteration values that cross a
 //! phase boundary. Nothing is reordered;
@@ -75,7 +75,7 @@ impl Frame {
     }
 }
 
-/// The loop. `plex_run` calls this once, after `boot`, and `shutdown` after it returns.
+/// The loop. `plx_run` calls this once, after `boot`, and `shutdown` after it returns.
 ///
 /// **No `mt: &MainThread` parameter since phase 9.** The token is a FIELD now
 /// (`app.adapters.player`, see `player::adapter`), so the proof travels with `&mut App` — every
@@ -1425,7 +1425,7 @@ pub(crate) unsafe fn draw(app: &mut App, fr: &mut Frame) -> (i32, i32, i32, i32)
             // aspect, letterboxed rather than stretched or stuffed into a corner. See `surface`.
             let (vx, vy, vw, vh) = plx_base::surface::viewport();
             glViewport(vx, vy, vw, vh);
-            // EVERY screen draws inside ONE panic barrier. `plex_run` is `extern "C"` (main.c calls
+            // EVERY screen draws inside ONE panic barrier. `plx_run` is `extern "C"` (main.c calls
             // it), so a panic unwinding out of a screen's draw is UB the toolchain turns into
             // abort() — the app dies and a live Starfish session is torn down mid-Feed(), on a
             // device with no debugger. Guarding HERE, at the route→screen dispatch, is what makes

@@ -5,14 +5,10 @@ param(
     [string]$Action = "run",
 
     [string]$Distro = "Ubuntu-22.04",
-    [string]$PmsHost = "",
-    [ValidateRange(1, 65535)]
-    [int]$PmsPort = 32400,
     [string]$RuntimeDir = "",
     [string]$TargetDir = "",
     [string]$AssetDir = "",
     [string]$Output = "",
-    [switch]$StageToken,
 
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$InputTokens
@@ -137,14 +133,9 @@ $repoWindows = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $repoLinux = ConvertTo-WslPath $repoWindows
 $commonEnvironment = @{
     PLX_REPO = $repoLinux
-    PLX_PMS = $PmsHost
-    PLX_PORT = $(if ($PSBoundParameters.ContainsKey("PmsPort")) {
-        $PmsPort.ToString([System.Globalization.CultureInfo]::InvariantCulture)
-    } else { "" })
     PLX_RUNTIME = $RuntimeDir
     PLX_TARGET = $TargetDir
     PLX_ASSETS = $AssetDir
-    PLX_STAGE_TOKEN = $(if ($StageToken) { "1" } else { "" })
 }
 
 $prepare = @'
@@ -166,30 +157,6 @@ build_simulator() {
         mv -f "$staged" "$assets/$file"
     done
 }
-if [ "${PLX_STAGE_TOKEN:-}" = 1 ]; then
-    token=""
-    if [ -f "$repo/src/config.local.h" ]; then
-        token=$(sed -n 's/^#define[[:space:]]*PMS_TOKEN[[:space:]]*"\([^"]*\)".*/\1/p' "$repo/src/config.local.h" | head -n 1 || true)
-    fi
-    if [ -z "$token" ]; then
-        echo "No PMS_TOKEN was found in src/config.local.h." >&2
-        exit 1
-    fi
-    umask 077
-    printf '%s' "$token" > "$runtime/dispatcharrtv-token"
-    echo "Plex token staged in the private simulator runtime directory."
-elif [ -s "$runtime/dispatcharrtv-token" ]; then
-    echo "Using the token already staged in the simulator runtime directory."
-fi
-pms="${PLX_PMS:-}"
-if [ -z "$pms" ] && [ -f "$repo/src/config.local.h" ]; then
-    pms=$(sed -n 's/^#define[[:space:]]*PMS_HOST[[:space:]]*"\([^"]*\)".*/\1/p' "$repo/src/config.local.h" | head -n 1 || true)
-fi
-port="${PLX_PORT:-}"
-if [ -z "$port" ] && [ -f "$repo/src/config.local.h" ]; then
-    port=$(sed -n 's/^#define[[:space:]]*PMS_PORT[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$repo/src/config.local.h" | head -n 1 || true)
-fi
-port="${port:-32400}"
 export DISPATCHARRTV_RUNTIME_DIR="$runtime"
 export DISPATCHARRTV_APP_DIR="$assets"
 export DISPATCHARRTV_WIN=1920x1080
@@ -249,7 +216,7 @@ echo "Built $target/release/dispatcharrtv-sim"
         Invoke-WslShell -Environment $commonEnvironment -Script ($instanceLocks + "`n" + $prepare + "`n" + @'
 build_simulator
 printf '%s\n' "$$" > "$runtime/dispatcharrtv-sim.pid"
-exec "$target/release/dispatcharrtv-sim" "$pms" "$port"
+exec "$target/release/dispatcharrtv-sim"
 '@)
     }
     "shot" {
@@ -265,7 +232,7 @@ mkdir -p "$(dirname "$PLX_OUTPUT")"
 base="$runtime/windows-shot.png"
 captured="$runtime/windows-shot-1.png"
 rm -f "$base" "$captured"
-DISPATCHARRTV_SHOT="$base" "$target/release/dispatcharrtv-sim" "$pms" "$port" &
+DISPATCHARRTV_SHOT="$base" "$target/release/dispatcharrtv-sim" &
 pid=$!
 printf '%s\n' "$pid" > "$runtime/dispatcharrtv-sim.pid"
 cleanup() {

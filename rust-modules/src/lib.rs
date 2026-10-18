@@ -1,15 +1,15 @@
-//! Dispatcharr TV — an unofficial native Plex client for LG webOS.
+//! Dispatcharr TV — an unofficial native live-TV client for Dispatcharr, on LG webOS.
 //! Copyright © 2026 Gleb Linnik. Licensed under GPL-3.0-or-later; see LICENSE at the repository
 //! root, and THIRD-PARTY-NOTICES.md for the components this links or redistributes.
-//! Not affiliated with, endorsed by, or sponsored by Plex GmbH or LG Electronics.
+//! Not affiliated with, endorsed by, or sponsored by Dispatcharr or LG Electronics.
 //!
 //! dispatcharrtv — the Rust app core, built as a staticlib and linked into the C
-//! boot shim. The crate's C surface is tiny: C calls `plex_run` (port.rs), writes the fallback
+//! boot shim. The crate's C surface is tiny: C calls `plx_run` (port.rs), writes the fallback
 //! image marker through `plx_crash_write_image_marker`, re-enters the native-crash spool through
 //! `plx_sentry_spool_external`, and forwards the two Starfish callbacks (`sf_on_event`/
 //! `acb_on_event`, `plx_media`'s player/mod.rs). Everything else is Rust-internal (the per-module `repr(C)`
 //! shapes are migration legacy, not ABI).
-mod app; // run_application — the Rust app core / event loop (the entry inverted from main.c; port.rs's `plex_run` hands over to it)
+mod app; // run_application — the Rust app core / event loop (the entry inverted from main.c; port.rs's `plx_run` hands over to it)
 mod capture; // dev live UI capture stream: own-GLES-frame grab → MPEG1/TS or JPEG → TCP (UI plane only)
 mod coldstart; // retires old last-page bookmarks; authenticated cold boots now stay on Home
 mod dev; // the /tmp/dispatcharrtv-* trigger surface, behind one `devtriggers` feature — read it before adding a trigger
@@ -52,9 +52,9 @@ pub fn sim_events_log() -> std::path::PathBuf {
     plx_base::eventlog::events_log()
 }
 
-/// The port holds `plex_run`, the C entry the simulator binary calls too. It is reached by path
-/// (`dispatcharrtv::port::plex_run`) so the SAME entry the C shim calls is the one called, with
-/// the compiler checking the signature. It previously re-declared `plex_run` in its own `extern "C"`
+/// The port holds `plx_run`, the C entry the simulator binary calls too. It is reached by path
+/// (`dispatcharrtv::port::plx_run`) so the SAME entry the C shim calls is the one called, with
+/// the compiler checking the signature. It previously re-declared `plx_run` in its own `extern "C"`
 /// block, which meant the one binary whose whole premise is "cannot drift from the shipped boot
 /// path" was the one place a signature change would become a silent ABI mismatch instead of a
 /// compile error. There is deliberately no `pub use` here: a re-export would be a reference from

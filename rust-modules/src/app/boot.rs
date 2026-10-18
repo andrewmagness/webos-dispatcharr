@@ -251,7 +251,7 @@ mod seam_order_tests {
             "one production hand-in; a second could name a different version"
         );
         assert_eq!(
-            source.matches(concat!("enter_application(", "pms_host,pms_port)")).count(),
+            source.matches(concat!("enter_application(", ")")).count(),
             1,
             "enter_application has one caller, run_application"
         );
@@ -280,7 +280,7 @@ mod seam_order_tests {
         let telemetry = body
             .find("pre_boot_diagnostics();")
             .expect("telemetry's boot load");
-        let boot = body.find("boot(pms_host").expect("application boot");
+        let boot = body.find("boot(main_thread)").expect("application boot");
         assert!(
             eraser < telemetry && eraser < boot,
             "the eraser must be installed before telemetry loads and before anything can play"
@@ -326,7 +326,7 @@ mod seam_order_tests {
         let diagnostics = body
             .find("plx_platform::storage::diagnostics::start(")
             .expect("diagnostics start");
-        let boot = body.find("boot(pms_host").expect("application boot");
+        let boot = body.find("boot(main_thread)").expect("application boot");
         assert!(identity < diagnostics && diagnostics < boot);
     }
 
@@ -451,30 +451,24 @@ mod replay_budget_tests {
 
 /// Everything before the loop: SDL and the window, GL, text, the poster workers, the boot gate
 /// (login / token / session / picker), every dev trigger read once, and the `App` literal —
-/// `plex_run`'s former body up to `while app.running`, moved verbatim in phase 1b-ii. An early
-/// exit is the process exit code `plex_run` returns.
+/// `plx_run`'s former body up to `while app.running`, moved verbatim in phase 1b-ii. An early
+/// exit is the process exit code `plx_run` returns.
 ///
-/// `mt`, THE main-thread token, is minted once by `plex_run` itself (`plx_base::task::MainThread::
+/// `mt`, THE main-thread token, is minted once by `plx_run` itself (`plx_base::task::MainThread::
 /// assume()` — that function IS the SDL main thread) and MOVES into `App.adapters.player` here,
 /// from where a `&mut PlayerAdapter` is the proof it is still held: the ACB/Starfish seam takes
 /// `&MainThread` (which is `!Send`, so `task::spawn` rejects any closure that captured one), and
 /// the native session slot takes the adapter itself. See `task::MainThread` and `player::adapter`.
-pub(crate) unsafe fn boot(
-    pms_host: *const c_char,
-    pms_port: c_int,
-    mt: plx_base::task::MainThread,
-) -> Result<App, c_int> {
+pub(crate) unsafe fn boot(mt: plx_base::task::MainThread) -> Result<App, c_int> {
     // The dev frame probe's clock is `platform`'s, which `gfx` does not depend on.
     plx_gfx::gfx::install_clear_probe(
         plx_platform::tv::window::frame_probe_waiting,
         plx_platform::tv::window::frame_probe_acquired,
     );
-    construct(pms_host, pms_port, mt)
+    construct(mt)
 }
 
-pub(crate) unsafe fn construct(
-    _pms_host: *const c_char, _pms_port: c_int, mt: plx_base::task::MainThread,
-) -> Result<App, c_int> {
+pub(crate) unsafe fn construct(mt: plx_base::task::MainThread) -> Result<App, c_int> {
     SDL_SetMainReady();
     // DEAD END, measured 2026-07-31 — do not re-try this. The obvious answer to "a parked TV
     // should blank itself" is to stop inhibiting the platform screensaver here (and re-allow it

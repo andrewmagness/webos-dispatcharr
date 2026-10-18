@@ -2,7 +2,7 @@
 //! event loop, input decode, the per-frame tick, draw orchestration, app lifecycle,
 //! the buffer-feed pump orchestration, and the dev triggers. The C boot shim
 //! (main.c) sets up the log and fallback crash tracer, calls the Rust image-marker and native-spool
-//! entries when required, then calls `plex_run` (port.rs), which hands over to `run_application`.
+//! entries when required, then calls `plx_run` (port.rs), which hands over to `run_application`.
 //! The only application subsystem left in C is the starfish.c C++/ACB seam (the engine itself is
 //! Rust: plx_media::player).
 #![allow(non_upper_case_globals)]
@@ -451,7 +451,7 @@ unsafe fn run_and_shutdown(app: &mut App) -> c_int {
     0
 }
 
-fn enter_application(pms_host: *const c_char, pms_port: c_int) -> Result<App,c_int> {
+fn enter_application() -> Result<App,c_int> {
     // What the app reports as its version is this build's `PLX_VERSION`, which a
     // `cargo:rustc-env` makes visible to this crate only; before anything can build a header.
     plx_base::identity::set_version(env!("PLX_VERSION"));
@@ -471,14 +471,14 @@ fn enter_application(pms_host: *const c_char, pms_port: c_int) -> Result<App,c_i
     // Diagnostics probes `app_dir()` on its worker, so starting it earlier races that preamble.
     plx_platform::storage::diagnostics::start(env!("PLX_VERSION"));
     let main_thread = unsafe { plx_base::task::MainThread::assume() };
-    let mut app = unsafe { boot(pms_host,pms_port,main_thread) }?;
+    let mut app = unsafe { boot(main_thread) }?;
     app.telemetry_guard = Some(telemetry_guard);
     Ok(app)
 }
 
 /// The ten-line public skeleton: preflight/construction, then the ordinary loop and teardown.
-pub(crate) fn run_application(pms_host: *const c_char, pms_port: c_int) -> c_int {
-    let mut app = match enter_application(pms_host,pms_port) { Ok(app) => app, Err(code) => return code };
+pub(crate) fn run_application() -> c_int {
+    let mut app = match enter_application() { Ok(app) => app, Err(code) => return code };
     unsafe { run_and_shutdown(&mut app) }
 }
 

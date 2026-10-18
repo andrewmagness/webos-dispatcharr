@@ -2,7 +2,7 @@
 //! samples by (`LOOP_RE`/`FPS_RE` against `tests/manifest.json`'s `route`/`overlay` fields), and
 //! the same words the focus fingerprint, the diag `RouteEntered` event and the lab envelope print.
 //!
-//! It is its own module since D1's item 8, out of `app/mod.rs` — which is `plex_run`'s ten-line
+//! It is its own module since D1's item 8, out of `app/mod.rs` — which is `plx_run`'s ten-line
 //! skeleton and the `App` struct, and had grown four test modules that graded four other files'
 //! subjects (`ci/check-deps.sh`'s `testmod` gate). Everything the alphabet is made of came with
 //! the tests that grade it, because the point of [`heartbeat_word_tests`] is that the two tables

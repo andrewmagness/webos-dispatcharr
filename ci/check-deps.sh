@@ -493,7 +493,7 @@ else
 fi
 
 # fnlen: app/run.rs::run <= 200 lines, run_application (app/mod.rs, the D4 skeleton) <= 10 and
-# plex_run (port.rs: install, then hand over) <= 10 — counted by brace
+# plx_run (port.rs: install, then hand over) <= 10 — counted by brace
 # depth from the `fn` line to its matching close, not by grep pattern.
 fn_body_lines() {
   # fn_body_lines <file> <fn-name-pattern> — prints the line count of the first matching fn's body
@@ -512,9 +512,9 @@ else fail "fnlen: app/run.rs::run is ${run_len:-unknown} lines, budget 200 — a
 runapp_len=$(fn_body_lines "$SRC/app/mod.rs" 'run_application')
 if [ -n "$runapp_len" ] && [ "$runapp_len" -le 10 ]; then ok "fnlen: run_application (app/mod.rs) ($runapp_len lines)"
 else fail "fnlen: run_application (app/mod.rs) is ${runapp_len:-unknown} lines, budget 10"; fi
-plexrun_len=$(fn_body_lines "$SRC/port.rs" 'plex_run')
-if [ -n "$plexrun_len" ] && [ "$plexrun_len" -le 10 ]; then ok "fnlen: plex_run (port.rs) ($plexrun_len lines)"
-else fail "fnlen: plex_run (port.rs) is ${plexrun_len:-unknown} lines, budget 10"; fi
+plxrun_len=$(fn_body_lines "$SRC/port.rs" 'plx_run')
+if [ -n "$plxrun_len" ] && [ "$plxrun_len" -le 10 ]; then ok "fnlen: plx_run (port.rs) ($plxrun_len lines)"
+else fail "fnlen: plx_run (port.rs) is ${plxrun_len:-unknown} lines, budget 10"; fi
 
 # testmod: `#[cfg(test)] mod` count in app/mod.rs = 0 (D4/D8) — every test module named in D8's
 # table is meant to have moved to its subject's own file by the time this gate is added.

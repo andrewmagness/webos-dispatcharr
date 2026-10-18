@@ -1,10 +1,10 @@
-/* Dispatcharr TV — an unofficial native Plex client for LG webOS.
+/* Dispatcharr TV — an unofficial native live-TV client for Dispatcharr, on LG webOS.
  * Copyright © 2026 Gleb Linnik. Licensed under GPL-3.0-or-later; see LICENSE at the repository
  * root, and THIRD-PARTY-NOTICES.md for the components this links or redistributes.
- * Not affiliated with, endorsed by, or sponsored by Plex GmbH or LG Electronics.
+ * Not affiliated with, endorsed by, or sponsored by Dispatcharr or LG Electronics.
  *
- * dispatcharrtv — native webOS Plex client. BOOT SHIM only: the app core is Rust
- * plex_run() (rust-modules). This file stays C for the genuinely low-level
+ * dispatcharrtv — native webOS Dispatcharr client. BOOT SHIM only: the app core is Rust
+ * plx_run() (rust-modules). This file stays C for the genuinely low-level
  * bootstrap that must run before any Rust executes — the async-signal-safe crash
  * tracer, the event-log handle, stderr capture, and process bring-up. Everything
  * else (SDL, the event loop, input, playback orchestration, draw) is Rust. */
@@ -28,7 +28,7 @@ FILE *elogf = NULL;   /* shared event/diagnostic log (extern in app.h); used by 
  * boot-time image marker and the Rust panic hook (`app::boot`, through `eventlog::append_record`)
  * also append to the same file. */
 
-extern int plex_run(const char *pms_host, int pms_port);  /* Rust app core (no creds — session or /tmp/dispatcharrtv-token) */
+extern int plx_run(void);  /* the Rust app core; the server and API key come from the stored account */
 extern int plx_sentry_spool_external(const char *path); /* Sentry daemon's spool-only re-entry */
 extern void plx_crash_write_image_marker(int fd); /* identify this binary in the append-only log */
 
@@ -187,5 +187,5 @@ int main(int argc, char **argv) {
     plx_crash_install(event_fd, crash_fd);
     /* request BACK key delivery from the webOS access policy (before SDL init) */
     setenv("SDL_WEBOS_ACCESS_POLICY_KEYS_BACK", "true", 1);
-    return plex_run(PMS_HOST, PMS_PORT);
+    return plx_run();
 }

@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 const DATABASE_DIR: &str = "dispatcharrtv-sentry-db";
 const PENDING_DIR: &str = "dispatcharrtv-sentry-pending";
 
-/// Keep the capture backend alive until the app leaves `plex_run` cleanly (see the `Drop` impl).
+/// Keep the capture backend alive until the app leaves `plx_run` cleanly (see the `Drop` impl).
 pub struct Guard;
 
 /// Enough identity to pair a native envelope with the crash log's record of the same death. There
@@ -43,7 +43,7 @@ pub struct CrashKey {
 }
 
 /// **A Guard dropped by a panic's unwind leaves the backend armed.** The Guard lives in
-/// `plex_run`'s frame (inside `App`), so a panic that drops it is unwinding towards that
+/// `plx_run`'s frame (inside `App`), so a panic that drops it is unwinding towards that
 /// `extern "C"` boundary, and the boundary aborts the process. Tearing the backend down here — stopping it and deleting its
 /// database — would take the SIGABRT handler away microseconds before the abort it exists to
 /// capture, so no envelope would ever be written. Only a clean exit shuts it down.

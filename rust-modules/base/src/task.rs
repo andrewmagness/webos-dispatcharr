@@ -4,7 +4,7 @@
 //! `std::thread::spawn` **panics** when the OS refuses the thread — it unwraps `Builder::spawn`,
 //! whose `Err` is `pthread_create`'s EAGAIN (glibc returns it when `allocate_stack` cannot `mmap`
 //! the stack, or `clone(2)` hits `RLIMIT_NPROC`/`threads-max`). Almost every worker here is
-//! started from the SDL loop, so that panic unwinds out of `plex_run` through the C shim and
+//! started from the SDL loop, so that panic unwinds out of `plx_run` through the C shim and
 //! takes the app down. It would also fail at the worst possible moment: the caller has just armed
 //! an in-flight flag, so had the app survived, the screen would sit on a spinner that can never
 //! resolve.
@@ -128,7 +128,7 @@ impl OffFrame {
 pub struct MainThread(PhantomData<*const ()>);
 
 impl MainThread {
-    /// Mint the token. `plex_run` calls this once, at the top, and nothing else should.
+    /// Mint the token. `plx_run` calls this once, at the top, and nothing else should.
     ///
     /// # Safety
     /// The caller asserts this is the SDL main thread. It is not a memory-safety obligation in

@@ -114,7 +114,7 @@ static GUARD_RECOVERED: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 /// Run one UI entry point (a screen's `draw`/`update`/key handler) behind a panic barrier: a panic
 /// inside `f` unwinds only as far as this call, and the frame is abandoned instead of the process.
 ///
-/// **Why this exists — it is not defensive programming, it is an FFI requirement.** `plex_run` is
+/// **Why this exists — it is not defensive programming, it is an FFI requirement.** `plx_run` is
 /// `#[no_mangle] pub extern "C"` (the C boot shim in `src/main.c` calls it), and a panic that
 /// unwinds *out of* an `extern "C"` frame is undefined behaviour; the toolchain lowers it to an
 /// immediate `abort()`. Every UI draw runs inside that `extern "C"` frame, so on this device a

@@ -15,9 +15,10 @@ This sits between the TV and the PMS and makes the server misbehave on demand.
     │  app   │  :32401│ (this Mac)   │  :32400│         │
     └────────┘        └──────────────┘        └─────────┘
 
-The PMS runs on this same Mac, so the proxy only needs a second port; point the app at it by
-editing `PMS_PORT` in the gitignored `src/config.local.h`, then `make deploy` (the host/port are
-compiled into `main.c`'s `plex_run` call — there is no runtime override).
+Point the app at the proxy by making the proxy its server: sign in on Setup with this machine's
+address and the proxy's port, or, for the mock, `tools/tv-session.sh up --account
+mock=<this-machine>:<proxy-port>` with `tests/mock_dispatcharr.py` behind the proxy. Nothing about
+the server is compiled in, so no rebuild is needed.
 
 ## Modes
 

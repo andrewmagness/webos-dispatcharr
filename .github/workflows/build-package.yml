@@ -184,9 +184,8 @@ jobs:
           key: ffmpeg-${{ runner.arch }}-${{ hashFiles('ci/build-ffmpeg.sh') }}
 
       - name: Build + package
-        # No src/config.local.h exists in a clean checkout, so src/app.h's __has_include falls back
-        # to the YOUR_PMS_HOST placeholder. That is what makes the CI-built binary the leak-free
-        # one by construction rather than by discipline — check-elf.sh asserts it below.
+        # Nothing from a local config file is compiled (src/app.h), so the binary carries no LAN
+        # address by construction — check-elf.sh asserts it below.
         env:
           WEBOS_SDK: ${{ steps.ndk.outputs.sdk-dir }}
           RUST_NIGHTLY: ${{ vars.RUST_NIGHTLY || 'nightly-2026-07-02' }}

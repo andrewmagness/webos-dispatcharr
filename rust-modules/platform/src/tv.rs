@@ -46,7 +46,7 @@ pub struct Port {
 
 fn nothing() {}
 
-/// No port installed: host unit tests (nothing calls `plex_run`). Every entry is what today's
+/// No port installed: host unit tests (nothing calls `plx_run`). Every entry is what today's
 /// `cfg(any(hostsim, test))` arm answered, minus the off-device log lines the other entries would
 /// write (`deliver_toast` keeps its one).
 static ABSENT: Port = Port {
@@ -78,7 +78,7 @@ static ABSENT: Port = Port {
 
 static INSTALLED: OnceLock<&'static Port> = OnceLock::new();
 
-/// Once, first thing in `plex_run`. A second call is refused and changes nothing.
+/// Once, first thing in `plx_run`. A second call is refused and changes nothing.
 pub fn install(port: &'static Port) -> Result<(), &'static Port> { INSTALLED.set(port) }
 
 /// The installed port. Only `tv`'s own modules read the table, so no other module can issue a

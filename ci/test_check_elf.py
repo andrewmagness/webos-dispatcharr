@@ -65,7 +65,7 @@ def defaults():
         "readelf:-d": "Shared library: [libalpha.so]\nShared library: [libbeta.so]\n",
         "readelf:-d:dispatcharrtv-storage": "Shared library: [libgamma.so]\nShared library: [libalpha.so]\n",
         "objdump": "  00: dmb ish\n" * 101,
-        "strings": "YOUR_PMS_HOST\n",
+        "strings": "ordinary text\n",
     }.items()}
 
 
@@ -113,18 +113,18 @@ class ElfGateTests(unittest.TestCase):
     def test_small_valid_artifact(self):
         self.assert_pass(defaults())
 
-    def test_early_required_placeholder_with_large_tail(self):
+    def test_a_large_strings_dump_passes(self):
         spec = defaults()
-        spec["strings"]["output"] = "YOUR_PMS_HOST\n" + FILLER
+        spec["strings"]["output"] = "ordinary text\n" + FILLER
         self.assert_pass(spec)
 
-    def test_early_forbidden_strings_with_placeholder_at_eof(self):
+    def test_early_forbidden_strings_with_a_large_tail(self):
         for forbidden, diagnostic in [("/home/synthetic_builder/work/file.rs", "build-host paths"),
                                       ("/Users/synthetic_builder/work/file.rs", "build-host paths"),
                                       ("10.23.45.67", "private IP address")]:
             with self.subTest(forbidden=forbidden):
                 spec = defaults()
-                spec["strings"]["output"] = forbidden + "\n" + FILLER + "YOUR_PMS_HOST\n"
+                spec["strings"]["output"] = forbidden + "\n" + FILLER
                 result = self.run_gate(spec)
                 self.assertNotEqual(result.returncode, 0, "forbidden value was allowed: " + result.stdout)
                 self.assertIn(diagnostic, result.stdout)
@@ -186,7 +186,7 @@ class ElfGateTests(unittest.TestCase):
         for key, replacement in [("readelf:-A", "Tag_CPU_arch: v6\n"),
                                  ("readelf:-n", "Build ID: abc\n"),
                                  ("readelf:-d", "Shared library: [unexpected.so]\n"),
-                                 ("readelf:--dyn-syms", ""), ("strings", "no placeholder\n"),
+                                 ("readelf:--dyn-syms", ""), ("strings", "10.23.45.67\n"),
                                  ("objdump", "  00: dmb ish\n")]:
             with self.subTest(key=key):
                 spec = defaults()

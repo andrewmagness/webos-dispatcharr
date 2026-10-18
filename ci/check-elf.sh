@@ -163,20 +163,15 @@ fi
 
 echo "== build-host identity =="
 # docs/distribution.md §4: a public build must not carry the developer's LAN or home directory.
-# Those are TWO independent properties and this section used to conflate them, which is how the
-# one that gates everything went unverified for so long:
+# Both checks run on every build, dev and CI alike:
 #
-#   the LAN address comes from src/config.local.h, which is present on a dev machine BY DESIGN
-#   (src/app.h's __has_include falls back to YOUR_PMS_HOST only in a clean checkout) — so those
-#   assertions genuinely can only hold in CI;
+#   the HOME DIRECTORY arrives through `-Z build-std` compiling std and every dependency from
+#   absolute paths under $RUSTUP_HOME/$CARGO_HOME, and is fixed by the Makefile's
+#   --remap-path-prefix — the thing that makes the ipk's byte-for-byte reproducibility claim true;
 #
-#   the HOME DIRECTORY has nothing to do with config.local.h. It arrives through `-Z build-std`
-#   compiling std and every dependency from absolute paths under $RUSTUP_HOME/$CARGO_HOME, and
-#   it is fixed by the Makefile's --remap-path-prefix. That check can and should run everywhere.
-#
-# Skipping the whole section on a dev machine meant the host-path gate had never once executed
-# against a real build. It also cannot be left CI-only now: the remap is the thing that makes the
-# ipk's byte-for-byte reproducibility claim true, and a dev build is where it would be broken.
+#   a LAN ADDRESS has no way in any more: nothing from a local config file is compiled (`src/app.h`;
+#   until 2026-10-18 a gitignored `src/config.local.h` supplied a Plex host, and this half could
+#   only gate in CI's clean checkout).
 strings -a "$BIN" > "$AUDIT_TMP/strings" || fail "strings failed"
 if grep -qE '(^|[^[:alnum:]/_.-])/(Users|home)/[a-z]' "$AUDIT_TMP/strings"; then
   grep -oE '(^|[^[:alnum:]/_.-])/(Users|home)/[a-z][^ ]*' "$AUDIT_TMP/strings" | sort -u | sed -n '1,10p'
@@ -186,12 +181,6 @@ fi
 # the plex.tv endpoint '/api/v2/home/users' is a substring match and would fail every build.
 ok "no build-host paths"
 
-if [ -f src/config.local.h ] && [ "${CI:-}" != "true" ]; then
-  echo "  SKIP (private-IP + placeholder) — src/config.local.h present: a dev build, not a release."
-  echo "         (CI builds from a clean checkout, where these gate.)"
-  echo "all ELF assertions passed (config-dependent assertions skipped)"
-  exit 0
-fi
 # All alternatives include the first TWO octets. A bare `10` alternative would match
 # three-component locale/version data such as `10.11.12`, not an IPv4 address.
 # Dots also belong to the token: do not extract four components out of a longer
@@ -199,10 +188,8 @@ fi
 PRIVATE_IPV4_RE='(^|[^[:alnum:]_.])(10\.[0-9]{1,3}|172\.(1[6-9]|2[0-9]|3[01])|192\.168)\.[0-9]{1,3}\.[0-9]{1,3}($|[^[:alnum:]_.])'
 if grep -qE "$PRIVATE_IPV4_RE" "$AUDIT_TMP/strings"; then
   grep -oE "$PRIVATE_IPV4_RE" "$AUDIT_TMP/strings" | sort -u | sed -n '1,10p'
-  fail "private IP address baked into the binary — was this built with src/config.local.h present?"
+  fail "private IP address baked into the binary"
 fi
-grep -q YOUR_PMS_HOST "$AUDIT_TMP/strings" \
-  || fail "YOUR_PMS_HOST placeholder absent — a real PMS_HOST was compiled in"
-ok "no private IPs, placeholder present"
+ok "no private IPs"
 
 echo "all ELF assertions passed"

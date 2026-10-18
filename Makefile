@@ -775,22 +775,6 @@ ifneq ($(RUST_CFG),$(shell cat $(RUST_STAMP) 2>/dev/null))
 endif
 endif
 
-# `src/app.h` opportunistically pulls in the gitignored `src/config.local.h` via
-# `__has_include`, so its content (or absence) is a silent input to every C translation unit that
-# includes app.h — but `$(wildcard src/*.h)` below only lists files that exist AT PARSE TIME. A
-# `.o` built while config.local.h existed keeps that stale header baked in once the file is
-# deleted: the wildcard simply stops mentioning it, so make sees no prerequisite that changed and
-# leaves the object alone. CONFIG_LOCAL_STAMP records config.local.h's presence+hash (or `absent`)
-# and is rewritten only when that signature changes, so its mtime is a reliable signal the C
-# objects can depend on across the header appearing, changing, or disappearing.
-CONFIG_LOCAL_STAMP = pkg/.config-local-stamp
-CONFIG_LOCAL_SIG   = $(if $(wildcard src/config.local.h),$(shell $(SHA256SUM) src/config.local.h),absent)
-ifneq ($(PURE_QUERY),yes)
-ifneq ($(CONFIG_LOCAL_SIG),$(shell cat $(CONFIG_LOCAL_STAMP) 2>/dev/null))
-  $(shell mkdir -p pkg && printf '%s' '$(CONFIG_LOCAL_SIG)' > $(CONFIG_LOCAL_STAMP))
-endif
-endif
-
 RUST_TARGET = arm-unknown-linux-gnueabi
 RUST_LIB    = rust-modules/$(RUST_TDIR)/$(RUST_TARGET)/$(ARM_PROFILE)/libdispatcharrtv.a
 
@@ -801,10 +785,8 @@ OBJS = $(SRCS:.c=.o)
 
 all: pkg/dispatcharrtv pkg/dispatcharrtv-storage
 
-# per-file compile; each object depends on ALL headers so a header edit rebuilds all, plus the
-# config.local.h presence/hash stamp so its appearance, change or disappearance also rebuilds
-# (see CONFIG_LOCAL_STAMP above)
-src/%.o: src/%.c $(wildcard src/*.h) Makefile $(CONFIG_LOCAL_STAMP)
+# per-file compile; each object depends on ALL headers so a header edit rebuilds all
+src/%.o: src/%.c $(wildcard src/*.h) Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Rust staticlib (built-in arm-unknown-linux-gnueabi target = soft-float ABI,
@@ -2049,14 +2031,9 @@ dispatcharrtv-stackwalk: $(SENTRY_NATIVE_STAMP) tools/dispatcharrtv-stackwalk.c
 # instance root, so UI and data-layer work can proceed in parallel. It has NO video (the 29-symbol
 # Starfish/ACB seam does not exist off-device) and its frame rates describe this Mac, not the panel.
 #
-# `SIM_PMS` defaults to the host compiled into src/config.local.h so the common case needs no
-# argument. SIM_DIR is the instance root: give each concurrent simulator a different one.
-# Read one #define out of the gitignored header. `[^"]*`, NOT `.*`: the greedy form captures
-# everything up to the LAST quote on the line, so a trailing comment containing a quote silently
-# puts garbage in the value. tools/tv-session.sh and tests/run.py both already use this form.
-cfg_macro = $(shell sed -n 's/^\#define[ \t]*$(1)[ \t]*"\([^"]*\)".*/\1/p' src/config.local.h 2>/dev/null)
-SIM_PMS  ?= $(call cfg_macro,PMS_HOST)
-SIM_PORT ?= $(shell sed -n 's/^\#define[ \t]*PMS_PORT[ \t]*\([0-9]*\).*/\1/p' src/config.local.h 2>/dev/null)
+# SIM_DIR is the instance root: give each concurrent simulator a different one. The simulator signs
+# in like the television does: from the account file in that root (`dispatcharr.json`, written by
+# Setup or by hand for a mock), so it takes no server argument.
 SIM_DIR  ?= /tmp/dispatcharrtv-sim
 # Its OWN target dir, per this file's rule for feature-set splits: `make check` builds default
 # features on nightly, `make sim-macos` builds `hostsim` on the default toolchain. Sharing one dir makes
@@ -2090,8 +2067,7 @@ SIM_W ?=
 SIM_H ?=
 SIM_WIN = $(if $(and $(SIM_W),$(SIM_H)),DISPATCHARRTV_WIN=$(SIM_W)x$(SIM_H),)
 SIM_ENV = DISPATCHARRTV_RUNTIME_DIR=$(SIM_DIR) DISPATCHARRTV_APP_DIR=$(CURDIR)/pkg $(SIM_WIN)
-SIM_PRE = mkdir -p $(SIM_DIR); test -n "$(SIM_PMS)" || \
-          { echo "no PMS host — set SIM_PMS=<ip> or add PMS_HOST to src/config.local.h"; exit 1; }
+SIM_PRE = mkdir -p $(SIM_DIR)
 
 # **The simulator needs its own FFmpeg, and that is what makes it able to STREAM.** `ff.rs` opens
 # the bundled libraries by absolute path out of the app directory, where they are 32-bit ARM ELF —
@@ -2175,26 +2151,14 @@ sim-wsl: sim-linux
 sim-run: sim-macos-run
 sim-macos-run: sim-macos
 	@$(SIM_PRE)
-	$(SIM_ENV) $(SIM_MACOS_BIN) $(SIM_PMS) $(SIM_PORT)
+	$(SIM_ENV) $(SIM_MACOS_BIN)
 
 sim-shot: sim-macos-shot
 sim-macos-shot: sim-macos
 	@$(SIM_PRE)
 	$(SIM_ENV) DISPATCHARRTV_SHOT=$(SIM_SHOT) DISPATCHARRTV_SHOT_FRAME=$(SIM_FRAME) DISPATCHARRTV_SHOT_EXIT=1 \
-	  $(SIM_MACOS_BIN) $(SIM_PMS) $(SIM_PORT)
+	  $(SIM_MACOS_BIN)
 	@echo "wrote $(SIM_SHOT)"
-
-# Copy the owner token out of the gitignored header into this instance's root, so the simulator
-# boots straight to a signed-in Home. Same mechanism `tests/run.py` uses on the TV; the value is
-# never echoed. It is a SHORTCUT, not the only way in: plex.tv QR sign-in works on the desktop as
-# of 2026-08-16 (net.rs's candidate list gained macOS's libcurl, and `dynlib!` learned to bind a
-# variadic C function correctly) — this line used to say it could not.
-sim-token: sim-macos-token
-sim-macos-token:
-	@mkdir -p $(SIM_DIR)
-	@printf '%s' '$(call cfg_macro,PMS_TOKEN)' > $(SIM_DIR)/dispatcharrtv-token
-	@test -s $(SIM_DIR)/dispatcharrtv-token || { echo "no PMS_TOKEN in src/config.local.h"; rm -f $(SIM_DIR)/dispatcharrtv-token; exit 1; }
-	@echo "token staged in $(SIM_DIR)"
 
 # `make sim-play` — a REAL playback session on this Mac, with no television and no Plex.
 #
@@ -2211,7 +2175,7 @@ sim-macos-token:
 # pointers). Demuxing on a 64-bit host needs a second offset table and a host FFmpeg 9.0; until
 # then the STREAMING half of the pipeline stays device-only and this target covers the rest.
 #
-# Needs no PMS, so it does not go through SIM_PRE. `SIM_SECS` bounds it.
+# Needs no server, so it does not go through SIM_PRE. `SIM_SECS` bounds it.
 SIM_SAMPLE ?=
 SIM_SECS   ?= 20
 sim-play: sim-macos-play
@@ -2281,5 +2245,5 @@ fetch-profile:
 	-$(SCP) tv:$(RUNDIR)/dispatcharrtv-hwcnt.jsonl pkg/dispatcharrtv-hwcnt.jsonl
 	@ls -l pkg/dispatcharrtv-*.jsonl 2>/dev/null || echo "no profiler output in $(RUNDIR) on the TV ($(APPID))"
 
-.PHONY: libass libass-host  disk symbols symbols-libs sentry-symbols sentry-native all setup-env telemetry-local deploy verify-deploy run run-stream kill check check-unlocked check-ffmpeg lint test ipk clean tv-lock-require threadprobe sockprobe logmprobe mali-hwcnt-probe tv-capture-bench mali-irq-sample dispatcharrtv-stackwalk sim sim-macos sim-linux sim-wsl sim-run sim-macos-run sim-shot sim-macos-shot sim-token sim-macos-token sim-play sim-macos-play sim-clean sim-macos-clean macapp macapp-zip fixtures-pipeline fetch-profile \
+.PHONY: libass libass-host  disk symbols symbols-libs sentry-symbols sentry-native all setup-env telemetry-local deploy verify-deploy run run-stream kill check check-unlocked check-ffmpeg lint test ipk clean tv-lock-require threadprobe sockprobe logmprobe mali-hwcnt-probe tv-capture-bench mali-irq-sample dispatcharrtv-stackwalk sim sim-macos sim-linux sim-wsl sim-run sim-macos-run sim-shot sim-macos-shot sim-play sim-macos-play sim-clean sim-macos-clean macapp macapp-zip fixtures-pipeline fetch-profile \
         release-guard lab-guard install uninstall $(QUERY_GOALS)

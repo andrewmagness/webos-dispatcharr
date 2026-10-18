@@ -242,7 +242,7 @@ proves the references are gone and nothing more; L15b is open.
 | **L12** media owns its lifecycle seams — **done** | 7 / 28 | The foreground-resume reducer and the transport-pause contract are `player::lifecycle` (`app::lifecycle` re-exports them), the stats switch is `player::DIAG_READOUT_ON`, `Venc::open` takes the capture socket writer as an argument, and `route` takes the HUD context line as a parameter, with the up-next still prefetch a hook the app installs. |
 | **L13** tests move up to the layer that owns their parts — **done** | 41 / 96 | Part a moved the auth, plex, i18n, task and fontcov tests that named upper layers to `app/` (`session_*_tests.rs`), `screens/login_text_fit_tests.rs`, `plex`, `auth::owner` and `storage::client`, and moved `fontcov`'s `Measure` impl beside the trait, with `ui::machine`'s new `BareArg`/`BareMeasure` fixtures for the rest; part b moved the data, media and ui ones to `app/` (`dispatch_return_tests.rs`, `overscan_audit_tests.rs`) and `screens/` (`plaintext_question`, `library/labels_tests.rs`, `search/tests.rs`, `player`), and rewrote two against their own layer. |
 | **L14** session-layer presentation to screens — **done** | 2 / 4 | `auth::signed_in_reason` is a private fn of `screens::login`, its only caller, with its two tests; `auth` already handed over the plain account name. |
-| **L15** the webOS port — **gate-complete** | 44 / 205 | Everything outside `[port webos]` reaches the television through the `tv` interfaces in `platform` that the port fills at boot: `tv::{device, sandbox, secure, home, toast, window}`, `devcaps::dv`, and `tv::sink::VideoSink`, a Starfish-shaped verb trait that `player::ffi::StarfishSink` and `player::ffi_host::HostSink` implement. `plex_run` is `port::plex_run`. The allowlist is empty. Not "done": the sink is not OS-neutral and the simulator is not its own port (L15b). |
+| **L15** the webOS port — **gate-complete** | 44 / 205 | Everything outside `[port webos]` reaches the television through the `tv` interfaces in `platform` that the port fills at boot: `tv::{device, sandbox, secure, home, toast, window}`, `devcaps::dv`, and `tv::sink::VideoSink`, a Starfish-shaped verb trait that `player::ffi::StarfishSink` and `player::ffi_host::HostSink` implement. `plx_run` is `port::plx_run`. The allowlist is empty. Not "done": the sink is not OS-neutral and the simulator is not its own port (L15b). |
 | **L15b** the OS-neutral port — **open** | — | An OS-neutral video sink with the ACB bind sequence behind it, the simulator as its own port, and the webOS facts the gate cannot see. See below. |
 
 ### L15: the webOS port
@@ -257,8 +257,8 @@ their layers, so none of this held up the split.
 
 L15 moved every one of those references behind an interface in `platform`'s new `tv` module that
 the port fills at boot. `tv::Port` is a table of function pointers, installed once as the first
-statement of `port::plex_run`, before anything that reads it. With no port installed (host unit
-tests, where nothing calls `plex_run`) `tv::ABSENT` answers what the host arms answered before; a
+statement of `port::plx_run`, before anything that reads it. With no port installed (host unit
+tests, where nothing calls `plx_run`) `tv::ABSENT` answers what the host arms answered before; a
 shipping build that reaches it logs `tv: port not installed - using the no-port defaults` once.
 Only `tv`'s own modules read the table. The one thing that leaves it is the sink, through
 `tv::sink::installed()`, and `ci/check-deps.sh` (rule `sink`) fails on that name or `VideoSink`
@@ -274,15 +274,15 @@ published values rather than hooks: the webOS code writes them into `tv::device`
 | native-video availability and repair | `tv::sandbox::{blocks_native_video, context, repair, Verdict, State, Failure, FORCE_BLOCKED}`; the verdict is published by `webos::probe` and the repair is a port hook | `player`, `route`, `appkit::player_hud`, `screens::player`, `app::playback` |
 | video sink | `tv::sink::VideoSink`, implemented by `player::ffi::StarfishSink` and `player::ffi_host::HostSink`, installed in `Port.sink` and read through `tv::sink::installed` | `player::{engine, pump, threads}`, `player::claim_hold`'s tests |
 | secure store | `tv::secure::{seal, open, remove, Sealed, Backend}` | `plex::session` |
-| storage backend | `storage::client::install_activator`, which the port calls with `webos::activate_storage_helper` | `port::plex_run` |
+| storage backend | `storage::client::install_activator`, which the port calls with `webos::activate_storage_helper` | `port::plx_run` |
 | locale | `tv::system_locale` and `tv::LocaleReply`; `i18n` still owns the parse and the log lines | `i18n` |
 | window, surface, video plane, bus pump and frame probe | `tv::window` | `app::boot`, `app::run`, `app/mod.rs` |
 | home key | `tv::home::{go_home, poll, take_root_press, release_root_press}` | `app::input`, `app::run`, `app::adapters::session`, `app::lifecycle`'s tests |
 | system toast | `tv::toast::{toast, send, Identity, Outcome, Sent}` | `app::clock_notice`, `dev::scenarios::toast_probe` |
 
-`tv` may name only `base`, `machine` and `platform`. `port.rs` holds `plex_run` and the `PORT` table
+`tv` may name only `base`, `machine` and `platform`. `port.rs` holds `plx_run` and the `PORT` table
 that points each hook at the `webos`, `keymanager` and `system` function behind it. The C shim and
-the simulator both enter through `port::plex_run`; `app::run_application` is the two-line body it
+the simulator both enter through `port::plx_run`; `app::run_application` is the two-line body it
 hands over to. `lib.rs` declares the port but re-exports nothing from it, because a re-export would
 be a reference from the crate root into the port, which the gate refuses.
 
@@ -308,7 +308,7 @@ at the same `webos`, `keymanager` and `system` functions, whose `hostsim` arms a
 and whose sink is `HostSink`. So the simulator behaves as it did, but it is not yet a second
 implementation of the interfaces.
 
-L15 is gate-complete: no entry carries its tag, `plex_run`, which the C shim calls, lives in the
+L15 is gate-complete: no entry carries its tag, `plx_run`, which the C shim calls, lives in the
 port, and the gate fails on a new reference into it. That is all the gate can see. L15 also set out
 to put an OS-neutral sink with the bind sequence behind it and the simulator's stand-ins in their
 own port. Neither landed, so L15 is not called done. They are L15b.
@@ -350,7 +350,7 @@ L15b is done when the sink is OS-neutral, the simulator is its own port, and the
 port's. The port can then leave its layers for a crate of its own on top: it names `app` to start
 it, and nothing names it. `dispatcharrtv` stays the staticlib the Makefile links, now holding
 the port. Another TV OS is another port in that position. The simulator binary, `src/bin/sim.rs`,
-is already a separate crate there, and enters through `port::plex_run`.
+is already a separate crate there, and enters through `port::plx_run`.
 
 ### Then the split
 

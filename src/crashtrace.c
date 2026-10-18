@@ -1,4 +1,4 @@
-/* Dispatcharr TV — an unofficial native Plex client for LG webOS.
+/* Dispatcharr TV — an unofficial native live-TV client for Dispatcharr, on LG webOS.
  * Copyright © 2026 Gleb Linnik. Licensed under GPL-3.0-or-later; see LICENSE at the repository root.
  *
  * crashtrace.c — the fatal-signal tracer's I/O half: the descriptors, `write(2)`, the chunked read
@@ -325,7 +325,7 @@ void plx_crash_install(int ev_fd, int cr_fd) {
     sigaction(SIGTRAP, &sa, NULL);
 
     /* Ignore SIGPIPE for the whole process. A Rust program gets this from std::rt::init, but
-       our main() is C and calls plex_run() directly, so that never runs — leaving the DEFAULT
+       our main() is C and calls plx_run() directly, so that never runs — leaving the DEFAULT
        disposition (terminate). stream.rs sends the PMS request with flags 0, so a server that
        closes between connect and write (PMS restart, transcoder session reaped, keep-alive
        race) would kill the app outright, with no crash-log line: the tracer above handles only

@@ -32,12 +32,15 @@ simulators run at once, each with its own instance root, so parallel agents neve
 
 ```sh
 make sim-macos                 # build with host FFmpeg (cargo; no NDK or cross toolchain)
-make sim-macos-token           # stage the PMS token into the instance root (once per root)
 make sim-macos-shot            # headless: boot, settle, write ONE png, exit
 make sim-macos-run             # interactive: opens a window, Ctrl-C to quit
 ```
 
-The historical `sim`, `sim-token`, `sim-shot`, and `sim-run` names remain macOS aliases.
+The historical `sim`, `sim-shot`, and `sim-run` names remain macOS aliases. The simulator takes no
+server argument: like the television it signs in from the account file in its instance root
+(`$SIM_DIR/dispatcharr.json`, which Setup writes; write it by hand to point at
+`tests/mock_dispatcharr.py`, in the format `tools/tv-session.sh`'s `mock_account_json` prints),
+and boots to Setup without one.
 
 ### Windows 11 through WSLg
 
@@ -48,7 +51,6 @@ filesystem, and opens the SDL/OpenGL window through WSLg:
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/sim.ps1 setup
 powershell -ExecutionPolicy Bypass -File tools/sim.ps1 run
-powershell -ExecutionPolicy Bypass -File tools/sim.ps1 run -StageToken
 powershell -ExecutionPolicy Bypass -File tools/sim.ps1 shot -Output .\shot.png
 powershell -ExecutionPolicy Bypass -File tools/sim.ps1 send right ok shot
 ```
@@ -59,10 +61,8 @@ software renderer. `run` and `shot` default to a 1920×1080 drawable, request vs
 `~/.cache/dispatcharrtv-sim/target`, `~/.local/state/dispatcharrtv-sim`, and an isolated asset directory;
 override those with `-TargetDir`, `-RuntimeDir`, and `-AssetDir`; quoted paths containing spaces are
 supported. These three overrides are absolute Linux paths inside WSL, keeping Cargo and runtime
-files off the Windows-mounted checkout. `-StageToken` copies the token from gitignored
-`src/config.local.h` without printing it.
-The staged token persists in that runtime directory, so use a fresh `-RuntimeDir` for QR sign-in
-after staging one. `-PmsHost` overrides the header's PMS host.
+files off the Windows-mounted checkout. The account lives in that runtime directory, so a fresh
+`-RuntimeDir` boots to Setup.
 
 This path deliberately calls `make sim-wsl`, the Windows-facing compatibility alias for the native
 Linux `make sim-linux` target. Both skip bundled host FFmpeg. UI, sign-in, Plex browsing,
@@ -110,8 +110,7 @@ by `SIM_DIR` alone and takes no `FLAVOR`. Translate a device recipe by substitut
 for whatever runtime root it names — the trigger and log FILE names are identical either way,
 which is what makes the recipes transfer at all.
 
-`SIM_PMS`/`SIM_PORT` default to `src/config.local.h`. The host must be a **numeric IP**:
-`stream.rs` has no DNS resolver here either.
+The account's server must be a **numeric IP**: `stream.rs` has no DNS resolver here either.
 
 **A checkout on a mounted volume needs `SIM_TDIR`.** Network shares, SMB mounts and some external
 disks do not implement `flock`, and a cargo target dir on one fails before compiling anything —
@@ -130,8 +129,7 @@ point of the simulator is that it needs neither.
 
 ### What a second Mac needs
 
-On Windows, run `tools/sim.ps1 setup`; use `-PmsHost` for an explicit server and `-StageToken`
-when credentials should be copied from `src/config.local.h`.
+On Windows, run `tools/sim.ps1 setup`.
 
 Three things, and notably no webOS NDK and no nightly:
 
@@ -143,8 +141,8 @@ Three things, and notably no webOS NDK and no nightly:
 2. **rustup + stable.** Not nightly. `rust-modules/.cargo/config.toml` carries `[unstable]
    build-std`, which looks like it forces nightly, but that table is gated and stable cargo ignores
    it — it only applies to the ARM cross-build, which passes `cargo +nightly` explicitly.
-3. `src/config.local.h` for the PMS host and token. Gitignored, so a fresh clone has none: pass
-   `SIM_PMS=<ip>` and write the token into `$SIM_DIR/dispatcharrtv-token` by hand.
+3. An account: sign in on Setup, or write `$SIM_DIR/dispatcharr.json` by hand (see "Build and
+   boot").
 
 ## Boot into a specific screen
 
@@ -261,8 +259,7 @@ Report these ONLY from the device, via the **`tv-session`** skill (and `wake-tv`
   install), and `dynlib!` learned to bind a variadic C function correctly — Apple's ARM64 ABI puts
   variadic arguments on the stack, so the old non-variadic `curl_easy_setopt` binding SIGSEGV'd
   inside libcurl the instant it could open one. The QR flow, discovery and the who's-watching
-  roster all run here now. `make sim-macos-token` is still the faster way into a known server, and is
-  what headless recipes should keep using.
+  roster all run here now.
 - **Anything that smelled like a platform difference.** If a bug appears only in the simulator,
   suspect the simulator first — the seam is real code and it has had real bugs (a missing core-
   profile VAO drew nothing at all; a synthetic key layout mismatch swallowed every FIFO token).

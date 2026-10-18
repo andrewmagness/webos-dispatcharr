@@ -532,7 +532,7 @@ mod tests {
     }
 
     /// Invalid UTF-8 must not panic. This runs inside the SDL event loop, where a panic unwinds
-    /// out of `plex_run` and takes the app with it — `remote.rs` lost the app exactly this way to
+    /// out of `plx_run` and takes the app with it — `remote.rs` lost the app exactly this way to
     /// a multi-byte whitespace. The bytes come from the television's own IME, so "that cannot
     /// happen" is not a thing this file gets to assume.
     #[test]

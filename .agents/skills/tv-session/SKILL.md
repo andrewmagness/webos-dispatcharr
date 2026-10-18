@@ -105,7 +105,9 @@ before anything touches the set:
   to Setup. `--screen setup` implies it.
 - `mock=HOST:PORT[:KEY]`: the same move, then an account naming `tests/mock_dispatcharr.py` at
   HOST:PORT is written in its place, owned by the app's uid at mode 0600 (the app reads nothing
-  else). Start the mock first with `--host <this machine's LAN address> --port PORT --key KEY`
+  else). That uid is read off a file only the app writes — the account or prefs just set aside,
+  else its logs — never off the binary, which `make deploy` copies as root; an install the app has
+  never run on refuses, so launch it once first. Start the mock first with `--host <this machine's LAN address> --port PORT --key KEY`
   (KEY defaults to `SESSIONKEY`); `--ts FILE` gives every channel a stream, `--ts-hang S` makes it
   go silent.
 
@@ -424,7 +426,7 @@ channels.
 | `no route= heartbeat` after launch | Check the install-scoped PID with `fuser`. No PID: `crash-triage`; live PID: `profile-tv` / `tools/dispatcharrtv-sample snapshot`. |
 | Landed on the wrong screen | A stale trigger. Re-run `up` (it clears), or check `status`, which lists what is armed. |
 | Boot shows Setup when you wanted the Guide | No account: an earlier `--account none`/`mock` session was never handed back (`status` says so). `up` or `down` restores it. |
-| A mock session shows the real channels | The mock account was not read: it must be owned by the app's uid at 0600 (`up --account mock=…` does that), and the mock must run with the same `--key`. |
+| A mock session boots to Setup | The mock account was not read. The log says `the stored account was unreadable and has been removed` when its owner was not the app's uid (`up --account mock=…` chowns it to that uid); a sign-in failure points at the mock instead — it must listen on the LAN address with the same `--key`. |
 | `<appdir> does not exist … the <f> flavour is not installed` | The one thing a deploy cannot do. `make FLAVOR=<f> install` once, then re-run `up`. |
 | `deploy did not land (md5 still differs)` | The TV likely slept mid-scp. Re-run `up`. **Check the install first** — if the flavour was never installed, `up` says so in the line above and no amount of re-running fixes it. |
 | The log names an app id you did not ask for | You are reading the other install's log. The `install:` boot line is the witness; `make -s print-eventlog FLAVOR=<f>` is the path you meant. |

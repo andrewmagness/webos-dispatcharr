@@ -410,18 +410,19 @@ fn replace_quoted_value(s: &str, key: &str, close: char, placeholder: &str) -> S
 /// * **Disk I/O per log line.** `peek()` walks up to five candidate paths and `read`s each. The
 ///   log is written a few times a second, so that is a syscall storm for a string rewrite.
 ///
-/// So the list is PUSHED here by the session layer via [`set_identities`] whenever it changes, and
+/// So the list is PUSHED here by the account layer (`plx_dispatcharr::dispatcharr::account`, the
+/// signed-in username) via [`set_identities`] whenever it changes, and
 /// read under a short-lived lock this module owns end to end. Nothing inside that lock logs, so
 /// there is no cycle to re-create.
 ///
 /// **Cost of being a snapshot:** lines logged before the first `set_identities` are scrubbed
-/// without household names. That is the correct trade — the names are not KNOWN before the session
+/// without household names. That is the correct trade — the names are not KNOWN before the account
 /// loads, so there was nothing to redact — and every other pass (credentials, hosts, addresses,
 /// viewing identity) is independent of this list and runs from the first line.
 static IDENTITIES: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
 
-/// Publish the household names the scrubber should redact. Called by the session layer on load,
-/// save, user switch and sign-out. **Must not log while holding anything** — see [`identities`].
+/// Publish the household names the scrubber should redact. Called by the account layer on load,
+/// save and sign-out. **Must not log while holding anything** — see [`identities`].
 pub fn set_identities(mut v: Vec<String>) {
     v.retain(|s| s.chars().count() >= MIN_IDENTITY);
     // Longest first: "Ada Family Media" must be replaced before a shorter substring of it is, or

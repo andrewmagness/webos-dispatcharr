@@ -19,7 +19,7 @@
 //!   thing the counter cannot see. Blending stays ON (the renderer has one program), and is exact
 //!   because the source alpha is 1: the compile-time `assert!` on [`sentinel_alpha_is_one`]
 //!   and the test `the_sentinel_is_opaque_and_matches_its_byte_code` hold that line. The feature is
-//!   enabled by the dump build alone and is absent from every shipping and television build
+//!   enabled by no build target today and is absent from every shipping and television build
 //!   (`make check` compiles it, code and tests, so it keeps building).
 //!
 //! **Where the call goes — the one rule.** At the DRAW, never at a resolve. `HomeScreen::prefetch`
@@ -52,34 +52,30 @@
 //! it is on screen. `Dispatcher::held_page_image` says whether the page shown is an image and at
 //! what alpha. The sentinel does NOT survive an image: it is blended at the dip alpha, and it never
 //! carried a caption, so the pixel oracle cannot see a placeholder inside an image and the counter
-//! alone vouches for those frames. **In a frame dump no image is held** (`plx_gfx::dump`): every frame
-//! of the dip re-captures the page live (`PageImage::step_filmed`), so the capture's own draw is
-//! the frame's debt, counted directly, and the page is live the frame the dip ends.
+//! alone vouches for those frames.
 //!
-//! **What the dump driver (S5b) must do.** Call [`arm`] once at start; then for each frame
+//! **What a frame-capturing driver must do.** No driver arms the counter today (the frame-dump demo
+//! driver it was written for was removed with the Plex screens), so this is the contract for the
+//! next one. Call [`arm`] once at start; then for each frame
 //! [`reset`] BEFORE the frame's first walk, draw it, and [`take`] after the last walk, on the UI
 //! thread (the counter is per thread). That is the contract, in full:
 //!
 //! 1. **Force a live draw on every written frame.** A frame the app did not draw reads count 0.
 //! 2. **A held page image is a fact, not debt.** The image carries its capture's placeholders,
 //!    re-noted by [`renote`], so a spinner captured into it still holds the frame through the
-//!    counter. The driver does not hold on `Dispatcher::held_page_image` itself: it re-captures on
-//!    each repeat until the count is 0 (`plx_gfx::dump::held_repeat`), then writes the frame. A
-//!    dump holds no image at all, so a push films as a live page under the dip. Keep a negative test that delays
+//!    counter. The driver does not hold on `Dispatcher::held_page_image` itself: it re-captures
+//!    until the count is 0, then writes the frame. Keep a negative test that delays
 //!    `/library/metadata/<rk>` by 3 s across a push and asserts no written frame contains the
 //!    spinner or the "Loading" title.
 //! 3. **Zero or non-zero only** (see above); a frame with `count > 0` is a failure naming
 //!    `entries`, deduplicated.
 //! 4. **Reveal springs start after arrival.** Home's art spring starts at 0 when the texture lands,
 //!    and the dip alpha ramp likewise: the first frame after a hold shows the bare wash with count
-//!    0. Wait for them to settle before writing, or accept them as animation and say so. (An
-//!    `Xfade` In ramp IS one of them in a dump, and plays as the product plays it: the dump films
-//!    the page live under the dip, so a page that mounts hidden fades in over its own 140 ms
-//!    while the dip's In half runs.)
+//!    0. Wait for them to settle before writing, or accept them as animation and say so.
 //! 5. **Content that arrives late with no placeholder drawn** — Home shelves and Continue Watching,
 //!    Detail's related, cast, extras and ratings, Library shelves and the grid header, `Xfade` Hold
-//!    over a search's results — is invisible to both oracles. The landing predicate
-//!    (`landgate`) and `expect.complete` must cover them.
+//!    over a search's results — is invisible to both oracles. The driver's own landing predicate
+//!    must cover them.
 //! 6. **Logos and empty keys**: every hero title the storyboard shows must have a clearLogo, and the
 //!    driver fails on [`Frame::absent`] and on an entry with an empty key rather than holding.
 //! 7. **The scanner counts connected components, not scanline runs**, and compares written RGB to
@@ -243,7 +239,7 @@ fn armed() -> bool {
     ARMED_THREADS.load(Ordering::Relaxed) != 0 && ARMED.with(Cell::get)
 }
 
-/// Start recording on this thread. The dump driver calls it once; [`capture`] does it for a test.
+/// Start recording on this thread. A capturing driver calls it once; [`capture`] does it for a test.
 pub fn arm() {
     set_armed(true);
 }

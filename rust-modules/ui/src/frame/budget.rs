@@ -197,13 +197,6 @@ impl Budget {
     /// 3. **Forward progress** for the classes that fit: the FIRST take of a frame is always
     ///    admitted, so a queue cannot stall behind a ceiling it can never satisfy.
     pub fn take(&mut self, class: Class, now_us: u64) -> bool {
-        self.take_in(plx_gfx::dump::armed(), class, now_us)
-    }
-
-    /// [`Budget::take`] with the dump switch passed in (the half a host test can reach without
-    /// arming the process-wide switch under its neighbours).
-    #[inline]
-    fn take_in(&mut self, dump: bool, class: Class, now_us: u64) -> bool {
         if self.relaxed {
             // pre-phase-11: one pool of three, no clock at all.
             if self.poster_left == 0 {
@@ -220,12 +213,7 @@ impl Budget {
         if *self.left(class) == 0 {
             return self.refuse();
         }
-        // A frame dump admits on the QUOTAS and the classes' own worst cases alone: the microseconds
-        // already spent this frame are CPU speed, and how many frames an upload queue takes to
-        // drain decides which frame the page is quiescent on (`Dispatcher::page_quiescent`, which
-        // reads `has_queued_work`) and so which frame a page image is replaced on. `armed()` is a
-        // constant `false` outside the simulator.
-        let elapsed = if dump { 0 } else { now_us.saturating_sub(self.frame_start_us) };
+        let elapsed = now_us.saturating_sub(self.frame_start_us);
         if class.is_solo() {
             if self.window_admitted != 0 || elapsed + class.worst_us() > SOLO_MAX_US {
                 return self.refuse();
@@ -308,18 +296,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_dump_admits_on_the_quota_alone_whatever_the_clock_says() {
+    fn the_first_take_always_fits_and_a_second_past_the_ceiling_is_refused() {
         let late = 5000 + 10 * PREPARE_MAX_US;
         let mut b = Budget::new();
         b.begin_frame(5000);
-        assert!(b.take_in(false, Class::Poster, late), "the first take always fits");
-        assert!(!b.take_in(false, Class::Poster, late), "outside a dump a second take past the ceiling is refused");
-        let mut b = Budget::new();
-        b.begin_frame(5000);
-        for i in 0..Class::Poster.quota() {
-            assert!(b.take_in(true, Class::Poster, late), "in a dump take {i} is admitted whatever the clock says");
-        }
-        assert!(!b.take_in(true, Class::Poster, late), "the quota still bounds a frame");
+        assert!(b.take(Class::Poster, late), "the first take always fits");
+        assert!(!b.take(Class::Poster, late), "a second take past the ceiling is refused");
     }
 
     #[test]
@@ -377,21 +359,14 @@ mod tests {
         assert!(!Class::Poster.is_solo() && Class::Residency.is_solo());
     }
 
-    /// A fresh frame admits two measured-cost posters (about 2 ms each) and refuses the third, and
-    /// the same takes with a frame dump armed (`elapsed` is 0) admit the whole quota.
+    /// A fresh frame admits two measured-cost posters (about 2 ms each) and refuses the third.
     #[test]
     fn a_fresh_frame_admits_two_posters_and_refuses_the_third_when_the_clock_says_so() {
         let mut b = Budget::new();
         b.begin_frame(10_000);
-        assert!(b.take_in(false, Class::Poster, 10_000), "first: fresh clock");
-        assert!(b.take_in(false, Class::Poster, 10_000 + 2_200), "second: 2.2 ms spent, 2.5 ms still fits");
-        assert!(!b.take_in(false, Class::Poster, 10_000 + 4_400), "third: 4.4 ms spent, no room for 2.5 ms");
-
-        let mut b = Budget::new();
-        b.begin_frame(10_000);
-        let admitted = (0..4).filter(|_| b.take_in(true, Class::Poster, 10_000 + 4_400)).count();
-        assert_eq!(admitted, usize::from(Class::Poster.quota()), "a dump admits the full quota, never fewer");
-        assert!(usize::from(Class::Poster.quota()) >= 2);
+        assert!(b.take(Class::Poster, 10_000), "first: fresh clock");
+        assert!(b.take(Class::Poster, 10_000 + 2_200), "second: 2.2 ms spent, 2.5 ms still fits");
+        assert!(!b.take(Class::Poster, 10_000 + 4_400), "third: 4.4 ms spent, no room for 2.5 ms");
     }
 
     /// §15.1.

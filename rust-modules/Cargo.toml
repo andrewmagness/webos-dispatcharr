@@ -1,5 +1,5 @@
 # A cargo workspace with this package as its ROOT; the other members are the storage helper and the
-# layer crates split out of the application so far (base/, machine/, net/, platform/, gfx/, ui/, plex/, telemetry/, data/, session/, media/, appkit/, screens/;
+# layer crates split out of the application so far (base/, machine/, net/, platform/, gfx/, ui/, dispatcharr/, telemetry/, data/, media/, appkit/, screens/;
 # docs/module-layers.md).
 # The root keeps the literal `version` below (release tooling reads it), `make`/CI run their usual
 # commands from this directory against this package (a bare `cargo test`/`check`/`build` here still
@@ -13,7 +13,6 @@ members = [
     "platform",
     "gfx",
     "ui",
-    "plex",
     "dispatcharr",
     "telemetry",
     "data",
@@ -27,8 +26,8 @@ resolver = "2"
 [package]
 name = "dispatcharrtv"
 # THE version, in three places that ci/check-package.py keeps in step: here, pkg/appinfo.json
-# (which the ipk derives its filename and control entry from), and the X-Plex-Version this client
-# reports to both Plex services via plex/src/plex/identity.rs. What the app reports is DERIVED from this
+# (which the ipk derives its filename and control entry from), and the version in the User-Agent
+# this client sends (`plx_base::identity`). What the app reports is DERIVED from this
 # rather than equal to it: build.rs publishes `PLX_VERSION`, which is this number exactly for a
 # RELEASE build and the next minor plus `-dev` for every other build, so a working tree does not
 # report itself as the last published release.
@@ -39,7 +38,7 @@ edition = "2021"
 # with the repo's own LICENSE, which is the provenance a webosbrew reviewer reads. The manifest
 # asserting nothing while the root said MIT was a contradiction with no upside.
 license = "GPL-3.0-or-later"
-description = "Application core for Dispatcharr TV — an unofficial native Plex client for LG webOS."
+description = "Application core for Dispatcharr TV — an unofficial native live-TV client for Dispatcharr on LG webOS."
 repository = "https://github.com/andrewmagness/webos-dispatcharr"
 
 # Static library linked into the C app (hybrid migration): each ported module
@@ -92,7 +91,6 @@ devtriggers = [
     "plx_platform/devtriggers",
     "plx_gfx/devtriggers",
     "plx_ui/devtriggers",
-    "plx_plex/devtriggers",
     "plx_telemetry/devtriggers",
     "plx_data/devtriggers",
     "plx_media/devtriggers",
@@ -159,9 +157,9 @@ placeholder-sentinel = ["plx_ui/placeholder-sentinel"]
 # What it changes, and nothing else: the media seam (29 symbols that exist only on a television),
 # the GL context request (macOS has no GLES2 driver), the window flags, the keyboard event decode
 # (LG's SDL fork shifts SDL_KeyboardEvent; stock SDL2 does not), and the wayland/glib calls that
-# have no host equivalent. Everything else — all of `ui/`, the whole Plex data layer, the demux
+# have no host equivalent. Everything else — all of `ui/`, the Dispatcharr client, the demux
 # orchestration — is compiled identically for both.
-hostsim = ["dep:xxhash-rust", "plx_base/hostsim", "plx_machine/hostsim", "plx_platform/hostsim", "plx_gfx/hostsim", "plx_plex/hostsim", "plx_telemetry/hostsim", "plx_data/hostsim", "plx_media/hostsim"]
+hostsim = ["dep:xxhash-rust", "plx_base/hostsim", "plx_machine/hostsim", "plx_platform/hostsim", "plx_gfx/hostsim", "plx_telemetry/hostsim", "plx_data/hostsim", "plx_media/hostsim"]
 
 # Warnings are ERRORS, for both workspace packages, in every cargo invocation — build, check, test, clippy, the
 # ARM cross-build and the simulator alike. The tree reached zero warnings in all four
@@ -225,12 +223,8 @@ plx_net = { path = "net" }
 # The ui layer (ci/module-layers.ini `[ui]`): the UI library, with no application type in it. It
 # owns the QR encoder, so `qrcodegen` left this manifest.
 plx_ui = { path = "ui" }
-# The plex layer (ci/module-layers.ini `[plex]`): the typed Plex API, the session store, the grant
-# and probe logic and `http`, the one request door. It reports the app version it is handed
-# (`plex::identity::set_version`) rather than reading `PLX_VERSION`, which reaches one crate only.
-plx_plex = { path = "plex" }
 # The dispatcharr layer (ci/module-layers.ini `[dispatcharr]`): the typed Dispatcharr REST client —
-# sign-in, the per-user API key, channels and groups. A peer of `plx_plex`, not built on it.
+# sign-in, the per-user API key, channels and groups.
 plx_dispatcharr = { path = "dispatcharr" }
 # The telemetry layer (ci/module-layers.ini `[telemetry]`): consent, the opt-in crash and usage
 # channels (Sentry, PostHog), the spool and worker, and the typed usage-event schema. It reports the
@@ -240,9 +234,6 @@ plx_telemetry = { path = "telemetry" }
 # The data layer (ci/module-layers.ini `[data]`): the content stores and the catalog, browse, detail,
 # person, collection, search and view-state modules they own. No screen, widget or application type.
 plx_data = { path = "data" }
-# The session layer (ci/module-layers.ini `[session]`): plex.tv sign-in, server discovery, the
-# who's-watching picker and the install of the chosen profile's credentials, and the owner machine
-# that holds them. It reads no build variable: the version it reports is `plx_plex`'s.
 # The media layer (ci/module-layers.ini `[media]`): the bundled-FFmpeg demuxer, the HTTPS media plane,
 # HLS, adaptive bitrate, the buffer-feed player engine and route selection. It declares the Starfish/ACB
 # externs and the two C callbacks `src/starfish.c` calls, and links nothing on the television.
@@ -264,10 +255,9 @@ libc = "0.2"
 # column `tools/site_video.py` reads). Optional, and pulled by `hostsim` alone: no television or
 # shipping build compiles it.
 xxhash-rust = { version = "0.8", default-features = false, features = ["xxh3"], optional = true }
-# JSON parsing for the pms module (replaces the C's hand-rolled string scrape)
-# std exposes the writer API used to bound manifest encoding before any filesystem write.
+# JSON for the app's own state files and fixtures. std exposes the writer API used to bound manifest encoding before any filesystem write.
 serde_json = { version = "1", default-features = false, features = ["alloc", "std"] }
-# derive(Deserialize) for the typed plex API response models (plex/src/plex/models.rs)
+# derive(Serialize, Deserialize) for the app's own state records.
 serde = { version = "1", default-features = false, features = ["derive", "alloc", "rc"] }
 
 # The release profile (the ARM staticlib and storage helper of CI, `RELEASE=1`, `SYMBOLS=1` and
@@ -318,8 +308,6 @@ plx_gfx = { path = "gfx", features = ["test-support"] }
 plx_net = { path = "net", features = ["test-support"] }
 # Likewise the ui layer's seams (`table::assert_no_fit_failures`, `draw_census`, `tex::reset_for_test`, ...).
 plx_ui = { path = "ui", features = ["test-support"] }
-# Likewise the plex layer's session fixtures and `*_for_test` seams.
-plx_plex = { path = "plex", features = ["test-support"] }
 plx_dispatcharr = { path = "dispatcharr", features = ["test-support"] }
 # Likewise the telemetry layer's consent, spool and queue seams and the usage-event schema tables.
 plx_telemetry = { path = "telemetry", features = ["test-support"] }

@@ -68,7 +68,7 @@ CASES = [
     (FIRE, "the gfx layer crate's source", edit("/repo/rust-modules/gfx/src/gfx.rs"), ROOT),
     (FIRE, "the net layer crate's source", edit("/repo/rust-modules/net/src/net.rs"), ROOT),
     (FIRE, "the ui layer crate's source", edit("/repo/rust-modules/ui/src/widgets.rs"), ROOT),
-    (FIRE, "the plex layer crate's source", edit("/repo/rust-modules/plex/src/plex/session.rs"), ROOT),
+    (FIRE, "the dispatcharr layer crate's source", edit("/repo/rust-modules/dispatcharr/src/dispatcharr/api.rs"), ROOT),
     (FIRE, "the telemetry layer crate's source", edit("/repo/rust-modules/telemetry/src/telemetry/sender.rs"), ROOT),
     (FIRE, "the data layer crate\'s source", edit("/repo/rust-modules/data/src/pms.rs"), ROOT),
     (FIRE, "the media layer crate\\'s source", edit("/repo/rust-modules/media/src/player/mod.rs"), ROOT),

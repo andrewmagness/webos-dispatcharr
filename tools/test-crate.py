@@ -12,8 +12,8 @@ alone (plus, with `--deps`, the workspace crates that DIRECTLY depend on it, rea
 **The feature set is the part that has to be exactly right.** The application crate's default
 features (`devtriggers`, `devtools`, `threadcheck`) are what turn on the dev surface in every
 layer crate, and cargo only unifies features across the packages it was ASKED to build. A bare
-`cargo test -p plx_plex` therefore builds a different `plx_plex` (458 tests instead of 466 on
-2026-10-05: the `devtriggers` ones are missing) and a different `plx_base` under it, which
+`cargo test -p` of a layer crate therefore builds a different crate (the since-removed Plex
+crate ran 458 tests instead of 466 on 2026-10-05: the `devtriggers` ones were missing) and a different `plx_base` under it, which
 neither grades the same code nor shares a single compiled artifact with `make test-fast`. So the
 full suite's resolution is read first (`--unit-graph` on the whole `--suite`: nothing is
 compiled), and for every workspace crate the selected packages depend on, each feature the full

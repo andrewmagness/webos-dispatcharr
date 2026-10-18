@@ -56,19 +56,12 @@ from pathlib import Path
 import argparse
 import collections
 import configparser
-import importlib.util
 import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import rust_test_modules  # noqa: E402
 
-_spec = importlib.util.spec_from_file_location('check_plex_requests',
-                                               Path(__file__).with_name('check-plex-requests.py'))
-_plex = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_plex)
-without_test_items, code, impl_type = _plex.without_test_items, _plex.code, _plex.impl_type
-section_name, read_registry = _plex.section_name, _plex.read_registry
 
 REPO = Path(__file__).resolve().parent.parent
 MODULES = REPO / 'rust-modules'
@@ -84,6 +77,83 @@ CONST_TYPES = frozenset({'usize', 'u32', 'u16', 'u64', 'i32', 'i64', 'isize'})
 LITERAL_SUFFIX = re.compile(r'_?[0-9_]*(usize|u8|u16|u32|u64|i32|i64|isize)?\Z')
 ITEM_START = frozenset({None, ';', '{', '}', ']', 'unsafe', 'pub', ')'})
 TEST_FILE_NAMES = ('tests.rs',)
+
+
+
+# The token helpers the request registry gate (since removed with the Plex client) shared.
+def code(tokens, i):
+    """The text of token i when it is code, else None."""
+    if 0 <= i < len(tokens) and tokens[i][0] == 'code': return tokens[i][1]
+    return None
+
+
+def item_end(tokens, ends, j):
+    """The index that closes the item beginning at token j: its `;`, or the `}` of its body."""
+    n = len(tokens)
+    while j < n:
+        if tokens[j][0] == 'code':
+            text = tokens[j][1]
+            if text == '#' and code(tokens, j + 1) == '[' and (j + 1) in ends:
+                j = ends[j + 1] + 1; continue
+            if text == ';': return j
+            if text == '{': return ends.get(j, n - 1)
+            if text in ('(', '['): j = ends.get(j, n - 1) + 1; continue
+        j += 1
+    return n - 1
+
+
+def without_test_items(tokens):
+    """The tokens with every item a `#[cfg(test)]` attribute gates removed."""
+    ends = rust_test_modules.group_ends(tokens)
+    kept, i, n = [], 0, len(tokens)
+    while i < n:
+        if code(tokens, i) == '#' and code(tokens, i + 1) == '[' and (i + 1) in ends:
+            close = ends[i + 1]
+            attr = tokens[i + 2:close]
+            if attr and attr[0][1] == 'cfg' and rust_test_modules.cfg_without_tests(attr[2:-1]) == {False}:
+                i = item_end(tokens, ends, close + 1) + 1
+                continue
+        kept.append(tokens[i]); i += 1
+    return kept
+
+
+def impl_type(tokens, i):
+    """The type an `impl` at token i implements on: `impl<T> Tr for X<T>` → X, `impl X {` → X."""
+    depth, angle, first, after_for, j = 0, 0, None, None, i + 1
+    while j < len(tokens):
+        text = code(tokens, j)
+        if text is None: j += 1; continue
+        if text in ('{', ';') and depth == 0: break
+        if text == 'where' and depth == 0: break
+        if text in ('(', '['): depth += 1
+        elif text in (')', ']'): depth -= 1
+        elif text == '<': angle += 1
+        elif text == '>': angle -= 1
+        elif WORD.match(text) and angle == 0 and depth == 0:
+            if text == 'for' and after_for is None: after_for = ''
+            elif after_for == '' and WORD.match(text): after_for = text
+            elif first is None and text not in ('unsafe', 'dyn'): first = text
+        j += 1
+    return after_for or first
+
+
+
+
+def section_name(file, name):
+    return f'{file}::{name}'
+
+
+def read_registry(path):
+    """({section: {key: value}}, [problem]) for the ini; a malformed file is one problem."""
+    parser = configparser.ConfigParser(interpolation=None, comment_prefixes=('#',),
+                                       inline_comment_prefixes=None)
+    try:
+        with open(path, encoding='utf-8') as f:
+            parser.read_file(f)
+    except (OSError, configparser.Error) as error:
+        return {}, [f'{Path(path).name} does not parse: {error}']
+    return {name: dict(parser[name]) for name in parser.sections()}, []
+
 
 
 def cap_worded(name):

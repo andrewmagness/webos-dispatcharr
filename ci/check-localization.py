@@ -324,7 +324,7 @@ LAYER_SRCS = ('rust-modules/platform/src', 'rust-modules/gfx/src', 'rust-modules
 # also took `PlaybackQuality::label`, the quality row's text, out of the listed `route/decision.rs`)
 # a boundary naming one of its constants would pass unread.
 CONST_SRCS = (*LAYER_SRCS, 'rust-modules/base/src', 'rust-modules/machine/src', 'rust-modules/net/src',
-              'rust-modules/plex/src', 'rust-modules/telemetry/src', 'rust-modules/data/src',
+              'rust-modules/telemetry/src', 'rust-modules/data/src',
               'rust-modules/media/src',
               'rust-modules/appkit/src',
               'rust-modules/screens/src')
@@ -355,8 +355,6 @@ def source_paths(root: Path):
     # `metadata.rs` was listed under `rust-modules/src` until the data split.
     yield root / 'rust-modules/data/src/metadata.rs'
     yield root / LAYER_SRCS[1] / 'overdraw.rs'
-    # `PlaybackQuality::label` was `route/decision.rs`'s (listed above) until the plex split.
-    yield root / 'rust-modules/plex/src/plex/session.rs'
 
 
 def const_table(root: Path) -> dict[str, str]:

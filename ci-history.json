@@ -1,4 +1,4 @@
-{"updated":"2026-10-18T12:08:41Z",
+{"updated":"2026-10-18T12:09:04Z",
 "ci":[
 {"id":38635451190,"at":"2026-10-14T20:50:33Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"host unit tests (hostsim)":678,"host python/shell/C gates":242,"host harness tests":273,"host lint + type-checks":303,"host unit tests (default features)":876,"host checks (NOT a device gate)":4},"failed":["cross-build (armv7) + artifact assertions"]},
 {"id":38637798632,"at":"2026-10-14T21:07:46Z","sha":"72966a388","title":"Setup: example addresses from the documentation range, not a LAN one","pr":1,"event":"pull_request","conclusion":"success","attempt":1,"jobs":{"host harness tests":161,"host unit tests (default features)":507,"host lint + type-checks":151,"host unit tests (hostsim)":332,"host python/shell/C gates":150,"cross-build (armv7) + artifact assertions":404,"host checks (NOT a device gate)":4}},
@@ -150,7 +150,8 @@
 {"id":38937001335,"at":"2026-10-16T17:05:30Z","sha":"32b0df155","title":"make install: end the appinstalld subscription instead of hanging on it","pr":31,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":12},"failed":["ARM build + gates / build + verify"]},
 {"id":38971371925,"at":"2026-10-16T21:44:20Z","sha":"cc6432c03","title":"Merge remote-tracking branch 'origin/main' into install-wait","pr":31,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":12},"failed":["ARM build + gates / build + verify"]},
 {"id":39015208440,"at":"2026-10-17T07:51:41Z","sha":"a5a55c954","title":"tests: the TV-address tests read the overlay-free load_manifest","pr":32,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":12},"failed":["ARM build + gates / build + verify"]},
-{"id":39037737892,"at":"2026-10-17T13:43:27Z","sha":"10468e9b7","title":"Makefile: the Dispatcharr crate is an input of the TV library","pr":34,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":11},"failed":["ARM build + gates / build + verify"]}
+{"id":39037737892,"at":"2026-10-17T13:43:27Z","sha":"10468e9b7","title":"Makefile: the Dispatcharr crate is an input of the TV library","pr":34,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":11},"failed":["ARM build + gates / build + verify"]},
+{"id":39125769928,"at":"2026-10-18T12:04:13Z","sha":"9f0f77078","title":"make_fixtures: the clip pack only \u2014 the Plex library tier, HLS ladder clips, subtitles and markers go","pr":38,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":11},"failed":["ARM build + gates / build + verify"]}
 ],
 "cancelled":{"2026-10-15":{"push":1,"pull_request":0},"2026-10-16":{"push":2,"pull_request":0}},
 "daily":[]}

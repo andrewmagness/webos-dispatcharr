@@ -251,7 +251,7 @@ mod seam_order_tests {
             "one production hand-in; a second could name a different version"
         );
         assert_eq!(
-            source.matches(concat!("enter_application(", ")")).count(),
+            source.matches(concat!("match enter_", "application()")).count(),
             1,
             "enter_application has one caller, run_application"
         );

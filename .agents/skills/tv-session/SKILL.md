@@ -5,8 +5,9 @@ description: >
   screenshots or logs, and hand the TV back. Use for on-device UI or playback verification,
   reproducing a bug on the set, navigating a live screen, capturing the video plane, or giving
   the user a live view. Also covers off-network phone/Safari access through the authenticated
-  `up --remote` HTTPS tunnel, the `/tmp/dispatcharrtv-*` boot triggers, token and profile-picker boot
-  gates, remote key/click injection, and capture-source choice. Use this instead of generic
+  `up --remote` HTTPS tunnel, the `/tmp/dispatcharrtv-*` boot triggers, which Dispatcharr account
+  the app boots with (the set's own, none, or a mock server's), remote key/click injection, and
+  capture-source choice. Use this instead of generic
   run/verify commands when behavior must be proven on the cross-compiled ARM television.
 ---
 
@@ -33,13 +34,13 @@ the television and observe. That ritual has a lot of steps and each fails in its
 silent way, so it lives in one asserting driver.
 
 All paths are relative to the repo root. The TV address comes from the `Makefile`
-(override with `TV=…`); no addresses or credentials live in this skill. The PMS token is
-read from the gitignored `src/config.local.h` at runtime and never printed.
+(override with `TV=…`); no addresses or credentials live in this skill. The set's Dispatcharr
+account is never read off it or printed.
 
 ## The driver
 
 ```bash
-tools/tv-session.sh up [--flavor <f>] [--screen <name>] [--server <slot>] [--stream[=PORT]] [--remote[=PORT]] [--no-token]
+tools/tv-session.sh up [--flavor <f>] [--screen guide|setup] [--account real|none|mock=HOST:PORT[:KEY]] [--stream[=PORT]] [--remote[=PORT]]
 tools/tv-session.sh status [--flavor <f>]   # re-assert without disturbing the session
 tools/tv-session.sh key down down ok        # key tokens through the real handlers
 tools/tv-session.sh click 960 540           # authored 1920x1080 coords
@@ -71,7 +72,8 @@ v4 packet leaving the LAN and every DNS query, an `unreachable 2000::/3` route c
 TTL whatever happens to your shell. Read what the APP saw from its own log (`net: curl
 rc=6`, `pinned: … name resolved locally`), not from this command's status lines.
 
-`down` hands back the APP (triggers cleared, app closed and NOT relaunched); `tools/tv-lock.sh release` hands
+`down` hands back the APP (triggers cleared, app closed and NOT relaunched, and the set's own account
+put back if the session moved it aside); `tools/tv-lock.sh release` hands
 back the TELEVISION. Do both, in that order — a released lock with an automated app still on
 screen is the next lane's confusing morning.
 
@@ -85,39 +87,35 @@ fails at the FIFO rather than doing something to the wrong app.
 `up` asserts every step instead of assuming it: TV reachable (waking it if not) → the
 requested flavour is installed (a deploy cannot create one; see below) → deployed binary
 md5-matches your build (deploying and **re-verifying** if not, because a standby can
-truncate an scp mid-flight) → triggers cleared → requested triggers armed →
-token injected → close-first relaunch → process alive → the route heartbeat says you are
-on the screen you asked for → the remote FIFO exists. A live view is one flag away.
+truncate an scp mid-flight) → triggers cleared → the app closed and the account arranged (below)
+→ requested triggers armed → close-first relaunch → process alive → the route heartbeat says you
+are on the screen you asked for → the remote FIFO exists. A live view is one flag away.
 
-`--screen` accepts: `home` (default), `profiles`, `login`, `account`, `library[=N]`,
-`detail=<ratingKey>`, `collection=<ratingKey>`, `person=<MOVIE ratingKey>`, `player=<ratingKey>`,
-`itemmenu`.
-(That is the script's whole `case`; `tools/tv-session.sh --help` is the other copy.)
+`--screen` is `guide` (default) or `setup`. The app has three routes — `setup` (the Setup and
+Server pages), `guide` and `player` — and which one a boot lands on follows from the account: with
+one, the Guide (or the player, when Settings > Resume on launch replays the last channel); with
+none, Setup. A channel is reached from the Guide with keys (`key ok`), which plays it.
 
-For a multi-server boot, `--server <slot>` supplies the server half of a `detail=` or `player=`
-item identity. Use it instead of navigating through Search/Sources with key presses: for example,
-`--screen player=5469 --server 1` arms `dispatcharrtv-play` and `dispatcharrtv-server` together. The app
-refuses an invalid or unregistered explicit slot rather than falling back to the current server,
-because the same numeric rating key normally names a different item on each PMS. The option also
-selects the signed-in stored-session boot automatically: that is the credential source which
-restores the persisted multi-server roster. After launch the command requires both the requested
-route and the exact `ratingKey + server slot` success marker; a missing slot exits nonzero instead
-of printing a misleading `session up`.
+`--account` decides which Dispatcharr account the boot uses, and it is decided — and printed —
+before anything touches the set:
 
-`itemmenu` is the press-and-hold card context menu, and it is the only boot path to it. The
-interactive gesture is a real ≥500 ms hold (`press::LONG_MS`), which no boot trigger can express,
-so `dispatcharrtv-itemmenu` snaps into the grid and holds the focused card for you. Driving it by hand
-instead means the FIFO's split halves — `okdown`, sleep past 500 ms, `okup` — never the `ok` tap.
-To measure the hold's own animation (the card's press-in, the capsule fill, the menu opening and
-closing) rather than the settled menu, use the counted `dispatcharrtv-holdbench` trigger or the fps scenes
-`home-hold` / `collection-hold` (`home-tap` / `collection-tap` for press-and-cancel): they send a real
-OK-down, never an OK while the menu is up, and dismiss with Back. `docs/agent-reference.md` has the wire format.
+- `real` (default): the set's stored account, untouched. This is the household's real server and
+  login; never sign it out or into something else by hand.
+- `none`: every account and prefs file the app reads is renamed `*.session-aside`, so the app boots
+  to Setup. `--screen setup` implies it.
+- `mock=HOST:PORT[:KEY]`: the same move, then an account naming `tests/mock_dispatcharr.py` at
+  HOST:PORT is written in its place, owned by the app's uid at mode 0600 (the app reads nothing
+  else). That uid is read off a file only the app writes — the account or prefs just set aside,
+  else its logs — never off the binary, which `make deploy` copies as root; an install the app has
+  never run on refuses, so launch it once first. Start the mock first with `--host <this machine's LAN address> --port PORT --key KEY`
+  (KEY defaults to `SESSIONKEY`); `--ts FILE` gives every channel a stream, `--ts-hang S` makes it
+  go silent.
 
-`person` is the odd one: the actor page has **no boot trigger of its own** — it is *reached*
-from a detail page's cast row, so the rk you pass is the **movie's**, and `up` arms the three
-triggers that walk there (`detail=<rk>` + `detailsec=1` to drop focus onto Cast & Crew + the
-`detailok` press). Pick a movie whose FIRST cast member has titles in more than one library if
-you want both the Movies and Shows shelves populated.
+`down`, and the next `up --account real`, put the set's own files back exactly — owner and mode
+included — after removing whatever account the session left in their place. A mock account at a
+higher-priority path would otherwise shadow the restored one. `status` says when the real account
+is set aside. The `dispatcharrtv-dispatcharr` trigger does NOT do this: it signs in and logs a
+report, and stores nothing.
 
 ## Which install — and the one step `up` cannot do for you
 
@@ -181,16 +179,13 @@ file is exempt from trigger detection and is replaced only when diagnostic statu
 `sample.h264` and `sample.h265`, the raw Annex-B samples the player feeds instead of streaming.
 They moved into the runtime root with everything else — `$(make -s print-rundir FLAVOR=…)/sample.h264`,
 not a shared `/tmp/sample.h264` — and they are read through `devtrig::read_sample`, which resolves via
-`paths::in_runtime_dir` like every other dev read. A second consequence follows from the same
-missing prefix and is easy to want the other way round: `dev::any_trigger_present` matches on
-`dispatcharrtv-`, so **a sample does NOT mark the boot as automated** and does not suppress the
-who's-watching picker. Arm one on a multi-user account and you land on the picker, not on Home.
+`paths::in_runtime_dir` like every other dev read.
 
 The separator is a DOT, and that is structural rather than cosmetic. The **stable** install's
 runtime root *is* `/tmp`, and it treats every entry there whose name begins `dispatcharrtv-` as an
 armed trigger. So the flavour suffix has to stay outside that prefix namespace: a root named
-`/tmp/dispatcharrtv-debug` would sit in `/tmp` reading, to the *other* install, as a permanently armed
-trigger — silently suppressing the released app's who's-watching picker, with no line in any log.
+`/tmp/dispatcharrtv-debug` would sit in `/tmp` reading, to the *other* install's glob-clears and trigger
+listings, as a permanently armed trigger.
 `com.magness.dispatcharrtv.debug` contains no `dispatcharrtv-`, so it cannot. The rule is the **prefix**, not
 avoiding a clash with some file that happens to exist: there is no `dispatcharrtv-debug` trigger, and
 the dot is what makes it not matter if one is ever added. (`docs/two-installs.md` §4.1 has the
@@ -246,12 +241,6 @@ is removed).
    the event log — unlike `tests/run.py`, it does **not** clear triggers — so a by-hand
    run inherits whatever the last session armed. `tv-session.sh up` glob-clears first,
    in the runtime root of the flavour it was given.
-2. **Any non-DIAG trigger also suppresses the who's-watching picker.** The app treats the
-   presence of any `dispatcharrtv-*` file in its runtime root, outside an exemption list, as
-   "this is an automated boot" — which is why arming a live view does not change the boot
-   you are observing. **The exempt list is `dev::DIAG` in `rust-modules/src/dev.rs`, and
-   only that**; it has grown past the three `*.log` files and the four names this skill
-   used to spell out, and a count written here rots without anything failing.
 
 **The catalog is the source, not a doc.** There are ~40 triggers worth knowing and
 `docs/agent-reference.md` highlights only the common ones. **Run the two-part catalog command from
@@ -264,9 +253,9 @@ Two halves are needed and a single grep is the trap: a path literal now only eve
 COMMENT, and four triggers (`grid`, `h265`, `playidx`, `ptype`) are named nowhere but their
 `devtrig::flag`/`devtrig::read` call, so grepping paths alone silently under-reports the catalog.
 
-Boot gate order, when you care which identity you land as: `dispatcharrtv-login` forces the QR
-screen → `dispatcharrtv-token` beats any stored session → a stored session (with the picker
-for a multi-user account) → otherwise QR sign-in. Nothing is compiled into the binary.
+Which screen a boot lands on, when you care: a stored Dispatcharr account boots to the Guide (or
+the player, if Resume on launch replays the last channel); no account boots to Setup;
+`dispatcharrtv-playurl` plays its clip straight from boot. Nothing is compiled into the binary.
 
 ## Observing: pick the right capture source
 
@@ -316,7 +305,7 @@ log <regex>` is usually faster than looking.
 ## Watching from off-network (a phone, another house)
 
 ```bash
-tools/tv-session.sh up --screen home --remote     # prints an https:// URL + a generated password
+tools/tv-session.sh up --remote                   # prints an https:// URL + a generated password
 tools/tv-session.sh status                        # re-prints them; says the URL is LIVE
 tools/tv-session.sh down                          # revokes the URL, discards the password
 ```
@@ -374,10 +363,11 @@ prints that it revoked it, and `status` prints that it is live. Do not leave one
 
 ## Handback etiquette
 
-This is the user's actual television. When you are done, `tv-session.sh down` strips the
-token and every automation trigger and closes the app, leaving the TV as it was (it does not
-relaunch the app). Leaving an injected-token session up means the next person to turn on
-the TV is signed in as whatever the automation chose.
+This is the user's actual television. When you are done, `tv-session.sh down` strips every
+automation trigger, closes the app and puts the set's own Dispatcharr account back if the session
+moved it aside, leaving the TV as it was (it does not relaunch the app). Leaving a `none` or `mock`
+session up means the next person to open the app finds Setup or a fake lineup instead of their
+channels.
 
 ## Gotchas
 
@@ -435,8 +425,8 @@ the TV is signed in as whatever the automation chose.
 |---|---|
 | `no route= heartbeat` after launch | Check the install-scoped PID with `fuser`. No PID: `crash-triage`; live PID: `profile-tv` / `tools/dispatcharrtv-sample snapshot`. |
 | Landed on the wrong screen | A stale trigger. Re-run `up` (it clears), or check `status`, which lists what is armed. |
-| Boot shows the QR sign-in screen | No token — `src/config.local.h` is missing/unreadable, or you passed `--no-token`. |
-| Picker appeared during an automated run | You armed only DIAG-exempt triggers. Add any other trigger, or use `--screen profiles` deliberately. |
+| Boot shows Setup when you wanted the Guide | No account: an earlier `--account none`/`mock` session was never handed back (`status` says so). `up` or `down` restores it. |
+| A mock session boots to Setup | The mock account was not read. The log says `the stored account was unreadable and has been removed` when its owner was not the app's uid (`up --account mock=…` chowns it to that uid); a sign-in failure points at the mock instead — it must listen on the LAN address with the same `--key`. |
 | `<appdir> does not exist … the <f> flavour is not installed` | The one thing a deploy cannot do. `make FLAVOR=<f> install` once, then re-run `up`. |
 | `deploy did not land (md5 still differs)` | The TV likely slept mid-scp. Re-run `up`. **Check the install first** — if the flavour was never installed, `up` says so in the line above and no amount of re-running fixes it. |
 | The log names an app id you did not ask for | You are reading the other install's log. The `install:` boot line is the witness; `make -s print-eventlog FLAVOR=<f>` is the path you meant. |

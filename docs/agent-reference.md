@@ -2007,14 +2007,11 @@ green.
   into the audit on purpose, and `release.yml` REFUSES to publish without them. The distinction is
   the point, and this line read "NO credentials" flatly — which stops a reader before they reach
   it. A build with no credential compiled in cannot report at all, which is the guarantee that
-  replaced the cargo feature that used to claim it. PMS access comes
-  from the signed-in session (QR login) or, for automated runs only, `/tmp/dispatcharrtv-token`
-  (`tools/tv-session.sh up` reads the owner token from the gitignored `src/config.local.h` on the
-  HOST; that macro is never compiled in). An interactive boot lands
-  on the Dispatcharr Setup screen (`screens::setup`), which hands over to the Guide
-  (`screens::guide`) as soon as an account is stored, without activating the Plex session; the
-  Plex boot (and, with no Plex session, its QR sign-in screen) is reached only through
-  `/tmp/dispatcharrtv-login` or that dev token.
+  replaced the cargo feature that used to claim it. Server access comes from the Dispatcharr
+  account a sign-in on Setup stores (server + API key, 0600); a boot with one lands on the Guide,
+  a boot without one on Setup (`screens::setup`). Automated sessions arrange the account with
+  `tools/tv-session.sh up --account real|none|mock=…`, which moves the set's own aside and puts it
+  back; nothing is compiled in.
 - Normal interactive flow: who's-watching picker (multi-user, unless Automatically Sign In is on) → Home; D-pad/pointer to focus a
   card → **OK** opens the detail page → Play starts playback; OK toggles play/pause, LEFT/RIGHT
   scrub-seek, **BACK/Stop** returns. The strip's **last pill is Search** (a mark, not a word) — a

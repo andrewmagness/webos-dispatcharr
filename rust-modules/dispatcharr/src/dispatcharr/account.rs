@@ -82,7 +82,12 @@ pub fn load() -> Loaded {
             Ok(None) => continue,
             Ok(Some(bytes)) => {
                 let saved = if durable { Saved::Durable } else { Saved::UntilReboot };
-                return parse(&bytes).map_or(Loaded::Unreadable, |record| Loaded::Signed(record, saved));
+                let loaded = parse(&bytes).map_or(Loaded::Unreadable, |record| Loaded::Signed(record, saved));
+                publish_identity(match &loaded {
+                    Loaded::Signed(record, _) => Some(record),
+                    _ => None,
+                });
+                return loaded;
             }
             Err(()) => return Loaded::Unreadable,
         }
@@ -110,6 +115,7 @@ pub fn save(record: &Record) -> Result<Saved, SaveFailed> {
                     remove(other);
                 }
             }
+            publish_identity(Some(record));
             return Ok(if *durable { Saved::Durable } else { Saved::UntilReboot });
         }
     }
@@ -123,6 +129,15 @@ pub fn clear() {
     for (path, _) in candidates() {
         remove(&path);
     }
+    publish_identity(None);
+}
+
+/// Hand the log scrubber the signed-in username to redact (`plx_base::eventlog::scrub::
+/// set_identities`), or withdraw it. A username is household identity — often a person's name —
+/// and has no recognisable shape, so knowing it is the only way to keep it out of the event log.
+/// `set_identities` takes only its own lock and never logs, so this is safe under [`IO`].
+fn publish_identity(record: Option<&Record>) {
+    plx_base::eventlog::scrub::set_identities(record.map(|r| vec![r.username.clone()]).unwrap_or_default());
 }
 
 fn parse(bytes: &[u8]) -> Option<Record> {

@@ -410,18 +410,19 @@ fn replace_quoted_value(s: &str, key: &str, close: char, placeholder: &str) -> S
 /// * **Disk I/O per log line.** `peek()` walks up to five candidate paths and `read`s each. The
 ///   log is written a few times a second, so that is a syscall storm for a string rewrite.
 ///
-/// So the list is PUSHED here by the session layer via [`set_identities`] whenever it changes, and
+/// So the list is PUSHED here by the account layer (`plx_dispatcharr::dispatcharr::account`, the
+/// signed-in username) via [`set_identities`] whenever it changes, and
 /// read under a short-lived lock this module owns end to end. Nothing inside that lock logs, so
 /// there is no cycle to re-create.
 ///
 /// **Cost of being a snapshot:** lines logged before the first `set_identities` are scrubbed
-/// without household names. That is the correct trade — the names are not KNOWN before the session
+/// without household names. That is the correct trade — the names are not KNOWN before the account
 /// loads, so there was nothing to redact — and every other pass (credentials, hosts, addresses,
 /// viewing identity) is independent of this list and runs from the first line.
 static IDENTITIES: std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(Vec::new());
 
-/// Publish the household names the scrubber should redact. Called by the session layer on load,
-/// save, user switch and sign-out. **Must not log while holding anything** — see [`identities`].
+/// Publish the household names the scrubber should redact. Called by the account layer on load,
+/// save and sign-out. **Must not log while holding anything** — see [`identities`].
 pub fn set_identities(mut v: Vec<String>) {
     v.retain(|s| s.chars().count() >= MIN_IDENTITY);
     // Longest first: "Ada Family Media" must be replaced before a shorter substring of it is, or
@@ -964,12 +965,12 @@ mod tests {
         (
             ".title",
             "the item's own title — log `rk=`/`sid=` and the shape counts (metadata.rs)",
-            &[("auth.rs", "tile.title")],
+            &[],
         ),
         (
             "title}",
             "the item's own title as an inline capture — log `rk=`/`sid=` instead",
-            &[("auth.rs", "tile.title}")],
+            &[],
         ),
     ];
 
@@ -998,33 +999,17 @@ mod tests {
         offences
     }
 
-    /// **Finding 1, phase 11 review (2026-09-10).** Red before the fix: the exception used to be a
-    /// bare substring strip (`call.replace("tile.title", "")`) applied regardless of which file the
-    /// call came from, so a `tile.title()` receiver OUTSIDE `auth.rs` — exactly what
-    /// `ui::tile::Tile::title` (implemented for `pms::PmsMovie`, the library's own content item)
-    /// would spell at a call site — was silently exempted too. Scoping the exception to `auth.rs`
-    /// closes that: this call, attributed to an unrelated screen module, must still be caught.
+    /// A title logged from the Dispatcharr sign-in module is caught like one logged anywhere
+    /// else. Red before 2026-10-18: `.title` carried a `tile.title` exception scoped to any file
+    /// named `auth.rs` — written for the Plex roster's, it matched
+    /// `rust-modules/dispatcharr/src/dispatcharr/auth.rs` once that module existed.
     #[test]
-    fn the_tile_title_exception_does_not_exempt_a_content_tile_outside_auth_rs() {
-        let path = std::path::Path::new("rust-modules/ui/src/card_row.rs");
-        let call = "log(&format!(\"card: opened {}\", tile.title()));";
-        let hits = banned_hits_in_call(path, 1, call);
-        assert!(
-            !hits.is_empty(),
-            "a `tile.title()` receiver outside auth.rs must not be exempted from the `.title` ban: {hits:?}"
-        );
-    }
-
-    /// The counterpart: the exemption still holds where it is real — `auth.rs`'s own
-    /// switch-diagnostic lines, which log the roster tile's name as household identity.
-    #[test]
-    fn the_tile_title_exception_still_applies_inside_auth_rs() {
-        let path = std::path::Path::new("rust-modules/session/src/auth.rs");
-        let call = "log(&format!(\"auth: switch '{}' -> ok\", tile.title));";
-        assert!(
-            banned_hits_in_call(path, 1, call).is_empty(),
-            "the household-identity exception must still hold for its real, file-scoped case"
-        );
+    fn a_title_logged_from_any_auth_rs_is_still_caught() {
+        for path in ["rust-modules/dispatcharr/src/dispatcharr/auth.rs", "rust-modules/ui/src/card_row.rs"] {
+            let call = "log(&format!(\"card: opened {}\", tile.title()));";
+            let hits = banned_hits_in_call(std::path::Path::new(path), 1, call);
+            assert!(!hits.is_empty(), "{path}: a `tile.title()` must not be exempted from the `.title` ban");
+        }
     }
 
     /// **The mechanism for titles, pinned by reading the source.**
@@ -1051,34 +1036,33 @@ mod tests {
     /// could not have seen `d.title` however the needle was spelled. The two older needles are
     /// clean under the stricter read too — widening found no new hit for either.
     ///
-    /// Deliberately NOT banned: `.name` and `.title` on a server or a USER. Those are household
-    /// identity rather than viewing content, they are genuinely load-bearing in `auth.rs`'s
-    /// diagnostics, and `scrub_identities` removes them from the line at write time using the list
-    /// the session layer publishes. Two different problems, two different mechanisms — so the
-    /// `.title` needle carries ONE exception, `tile.title`: a roster tile's title IS the profile's
-    /// name, which is that identity case, and it is `auth.rs`'s seven switch-diagnostic lines.
+    /// Deliberately NOT banned: `.name` on a server or a USER. That is household identity rather
+    /// than viewing content, and `scrub_identities` removes it from the line at write time using
+    /// the list the account layer publishes. Two different problems, two different mechanisms.
     ///
-    /// **The exception is scoped by FILE, not by receiver name alone** (fixed 2026-09-10, phase 11
-    /// review, finding 1). It used to be a bare substring strip applied to every call in the tree —
-    /// but the base module `tile` (re-exported as `ui::tile::Tile`) defines
-    /// `pub trait Tile { fn title(&self) -> &str; … }`, the library's own
-    /// CONTENT item (implemented for `pms::PmsMovie`), whose idiomatic receiver name is also
-    /// `tile`. A future `log(&format!("… {} …", tile.title()))` over a content tile would spell the
-    /// exact exempted substring and this gate would stay silent on a real title leak. So [`BANNED`]
-    /// pairs each exception with the file it is legitimate in — today that is `auth.rs` alone, the
-    /// only file that logs a roster tile's own name — and [`banned_hits_in_call`] only strikes an
-    /// exception when the call came from that file. A new module logging `tile.title` through some
-    /// OTHER receiver is still the leak this entry exists for; only `auth.rs`'s switch diagnostics
-    /// are exempt.
+    /// [`BANNED`] can pair a needle with a FILE-scoped exception, struck only when the call came
+    /// from that file ([`banned_hits_in_call`]). None is left: the one there was — `tile.title` in
+    /// the Plex roster's `auth.rs`, where a profile tile's title was the user's name — went with
+    /// that module, and because the match is on the file NAME it had silently come to cover the
+    /// Dispatcharr sign-in module, which is also `auth.rs`. A new exception names the file it is
+    /// legitimate in and the reason, as that one did.
     #[test]
     fn no_log_call_site_interpolates_viewing_content() {
-        // Walk the source of EVERY crate that logs: this one and the application crate beside it
-        // (`rust-modules/src`, where nearly every log call lives). Resolved from the manifest dir
-        // so it is independent of the working directory the test runner happens to have. A layer
-        // crate split out of `rust-modules/src` later must be added here, or its log calls stop
-        // being read (`../machine/src`, `../net/src`, `../platform/src`, `../gfx/src`, `../ui/src`, `../plex/src`, `../telemetry/src`, `../data/src` and `../session/src` are the machine, net, platform, gfx, ui, plex, telemetry, data and session layers').
+        // Walk the source of EVERY crate in the workspace: the application crate
+        // (`rust-modules/src`, where most log calls live) and every `rust-modules/<crate>/src`
+        // beside this one, DISCOVERED rather than listed. The list this replaced was written by
+        // hand, and `walk` skips a directory that does not exist without a word, so it went on
+        // naming two deleted crates while missing `dispatcharr` and `storage` — the crate that
+        // handles channel and programme names was never read. Resolved from the manifest dir so it
+        // is independent of the working directory the test runner happens to have.
         let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let roots = [manifest.join("src"), manifest.join("../src"), manifest.join("../machine/src"), manifest.join("../net/src"), manifest.join("../platform/src"), manifest.join("../gfx/src"), manifest.join("../ui/src"), manifest.join("../plex/src"), manifest.join("../telemetry/src"), manifest.join("../data/src"), manifest.join("../session/src"), manifest.join("../media/src"), manifest.join("../appkit/src"), manifest.join("../screens/src")];
+        let roots = workspace_source_roots(manifest);
+        for must in ["src", "base/src", "dispatcharr/src", "media/src", "screens/src"] {
+            assert!(
+                roots.iter().any(|r| r.ends_with(must)),
+                "the walk does not read rust-modules/{must}: {roots:?}"
+            );
+        }
         let mut offences: Vec<String> = Vec::new();
         let mut files = 0usize;
         for src in &roots {
@@ -1229,6 +1213,23 @@ mod tests {
             "the span still stops at the real closing paren: {}",
             calls[0].1
         );
+    }
+
+    /// `rust-modules/src` plus every `rust-modules/<crate>/src`, found by listing the workspace
+    /// directory that holds `manifest` (this crate's own directory).
+    fn workspace_source_roots(manifest: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let workspace = manifest.join("..");
+        let mut roots = vec![workspace.join("src")];
+        if let Ok(rd) = std::fs::read_dir(&workspace) {
+            for e in rd.flatten() {
+                let src = e.path().join("src");
+                if e.path().join("Cargo.toml").is_file() && src.is_dir() {
+                    roots.push(src);
+                }
+            }
+        }
+        roots.sort();
+        roots
     }
 
     fn walk(dir: &std::path::Path, f: &mut impl FnMut(&std::path::Path, &str)) {

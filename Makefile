@@ -903,8 +903,10 @@ $(FFABI_STAMP): ci/ffabi-assert.c $(FFMPEG_INC)/libavformat/avformat.h Makefile
 # binary REPORTS, and it is not under rust-modules/src, so without naming it here an edit to that
 # rule would leave every later `make` linking a library built by the OLD one. Cargo's own
 # `rerun-if-changed` cannot save that — it is only consulted when make decides to invoke cargo at
-# all, and this target is an ordinary timestamp comparison.
-RUST_INPUTS := $(shell find rust-modules/src rust-modules/base rust-modules/machine rust-modules/net rust-modules/platform rust-modules/gfx rust-modules/ui rust-modules/telemetry rust-modules/data rust-modules/media rust-modules/appkit rust-modules/screens rust-modules/build_support locales assets -type f 2>/dev/null)
+# all, and this target is an ordinary timestamp comparison. For the same reason every workspace
+# member the library links must be listed (`storage` has its own rule below): `dispatcharr` was
+# missing until 2026-10-17, so an edit confined to it never rebuilt the binary. ci/test_rust_inputs.py.
+RUST_INPUTS := $(shell find rust-modules/src rust-modules/base rust-modules/machine rust-modules/net rust-modules/platform rust-modules/gfx rust-modules/ui rust-modules/dispatcharr rust-modules/telemetry rust-modules/data rust-modules/media rust-modules/appkit rust-modules/screens rust-modules/build_support locales assets -type f 2>/dev/null)
 $(RUST_LIB): LICENSE $(RUST_INPUTS) rust-modules/Cargo.toml rust-modules/Cargo.lock rust-modules/build.rs ci/install-identities.json rust-modules/.cargo/config.toml Makefile ci/check-staticlib-artifact.py $(FFABI_STAMP)
 	@# BEFORE the mkdir: the seed is only ever cloned into a target dir that does not exist yet.
 	$(CARGO_SEED) restore $(RUST_TDIR) rust-modules/$(RUST_TDIR)
@@ -2265,7 +2267,7 @@ FIXTURES_OUT ?= $(HOME)/dispatcharrtv-fixtures
 # $(FIXTURES_OUT) is QUOTED: it defaults under $(HOME), and a home directory with a space in it
 # would otherwise split into two arguments and fail as an unknown option.
 fixtures-pipeline:
-	python3 tests/fixtures/make_fixtures.py --tier pipeline --out "$(FIXTURES_OUT)/pipeline" $(FIXTURES_ARGS)
+	python3 tests/fixtures/make_fixtures.py --out "$(FIXTURES_OUT)/pipeline" $(FIXTURES_ARGS)
 
 # Retrieve whichever profiler JSONL the last run produced. Both are fetched best-effort because a
 # leg arms exactly one of the two modes, never both.

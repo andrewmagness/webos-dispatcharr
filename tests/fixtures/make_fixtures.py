@@ -1,34 +1,20 @@
 #!/usr/bin/env python3
-"""Synthesize the media SHAPES `tests/manifest.json` needs, out of nothing but ffmpeg.
+"""Synthesize the test clips `tests/manifest.json` plays, out of nothing but ffmpeg.
 
-WHY THIS EXISTS. `tests/run.py` grades the player against nine symbolic *item shapes*
-(`movie_h264_ac3_1080p`, `episode_hevc_4k_hdr10_eac3`, …) and `tests/manifest.local.json`
-maps each to a ratingKey on whatever PMS the contributor owns. That mapping is the whole
-barrier to entry: the shapes include a TrueHD default with an AC-3 sibling, a Dolby Vision
-profile 8.1 base layer, a PGS bitmap subtitle track and an eight-track audio file with
-English TrueHD at ordinal 6. Nobody has all of that lying around, and two of them (TrueHD,
-Dolby Vision) have no freely-licensed example anywhere in the world. So a contributor
-either owns an exotic library or cannot run the suite at all. This script removes that:
-it builds every shape from lavfi sources, lays them out in two Plex-scannable trees, and
-writes `fixtures.json` describing exactly what it proved about each file.
+WHY THIS EXISTS. `tests/run.py` plays each case's clip off this machine through
+`tests/serve_fixtures.py` and the `dispatcharrtv-playurl` trigger, which carries the URL *and* the
+Load payload declaration. The cases grade the player PIPELINE — the GET, the demux, the AU queues,
+the pump's `Feed()`, the ACB bind and the payload the engine builds — against clips whose codec,
+raster, frame rate, HDR signalling and audio lanes are known exactly. Several of those shapes (a
+Dolby Vision profile 8.1 base layer, an E-AC-3 track that starts eleven seconds late, an in-band
+resolution change) have no freely-licensed example anywhere, so this script builds every one from
+lavfi sources and writes `fixtures.json` describing exactly what it proved about each file.
 
 WHAT A GREEN RUN ON THIS MEDIA DOES AND DOES NOT CLAIM. These files are synthetic. They
-exercise the same code paths — route decision, demux, Starfish payload, ACB bind, timeline
-— but a real remux carries encoder quirks, odd GOP structures, container edge cases and
-metadata this generator will never produce. Read a pass here as "no regression against the
-shapes the suite names", never as "plays the world's media". `tests/README.md` makes the
-same distinction about `--fps` numbers; it applies with more force here.
-
-TWO TIERS, ONE GENERATOR (`--tier`). Everything above and below describes the INTEGRATION
-pack: the two Plex-scannable trees `tests/manifest.local.json` maps shape keys into.
-`--tier pipeline` builds a second, much smaller pack for the player-PIPELINE tier, which
-has no Plex in it at all — flat 60 s clips served off the dev Mac by
-`tests/serve_fixtures.py` and played through `/tmp/dispatcharrtv-playurl`, which carries the
-URL *and* the Load payload declaration. Both packs share every builder, every trap below
-and `verify()`; what differs is the table (`PIPE_SHAPES`), the on-disk layout, and the fact
-that nothing in that table is derived from Plex's watched threshold, its marker detector or
-a case's seek depth — because none of those exist down there. `PIPE_SHAPES`' own comment is
-where that tier's shapes, and the three it deliberately cannot contain, are argued.
+exercise the same code paths a live channel does — demux, Starfish payload, ACB bind — but a real
+broadcast carries encoder quirks, odd GOP structures, container edge cases and metadata this
+generator will never produce. Read a pass here as "no regression against the shapes the suite
+names", never as "plays the world's media".
 
 --------------------------------------------------------------------------------------
 THE TRAPS THIS SCRIPT IS BUILT AROUND. Every one of them fails SILENTLY — the command
@@ -41,13 +27,11 @@ out of the finished file with ffprobe, and a mismatch is a hard error naming bot
     to the NEXT input; written last it becomes an output option. On an unbounded lavfi
     source that means ffmpeg encodes FOREVER at 100% CPU. Every lavfi input below gets its
     own `-t` in front of it, audio graphs additionally carry `duration=` inside the filter,
-    and the muxes that mix bounded and unbounded inputs (the PGS one — a `.sup` is not a
-    timed input) also carry a trailing output `-t`. Measured: a 20 s video muxed with a
-    60 s `.sup` produced a 58-second file.
+    and every mux also carries a trailing output `-t`, so no input can run it long.
 
  2. THE AUTO-INSERTED SCALER OVERWRITES color_primaries/color_trc when it converts lavfi's
     rgb24 to yuv420p10le. `-color_primaries bt2020 -color_trc smpte2084` alone yields
-    `bt2020nc/unknown/unknown` and Plex will not label the file HDR. The colour stamp must
+    `bt2020nc/unknown/unknown`, which no player reads as HDR. The colour stamp must
     ride `setparams` AFTER an explicit `format=` in the same filter chain, which is why
     every video chain here ends `…,format=<pixfmt>,setparams=…`.
 
@@ -60,28 +44,19 @@ out of the finished file with ffprobe, and a mismatch is a hard error naming bot
     transfer is `-color_trc` written as an OUTPUT option with no `setparams`, and that
     form loses `color_primaries` too, which is the tell: a muxer that special-cased one
     transfer value would not also drop the primaries. So nothing here needs mkvmerge for
-    a colour reason, and whoever builds the `library_gaps` HLG clip needs `setparams`,
-    not mkvtoolnix. The Dolby Vision shape goes through `mkvmerge` for an unrelated
+    a colour reason, and whoever adds an HLG clip needs `setparams`, not mkvtoolnix.
+    The Dolby Vision shape goes through `mkvmerge` for an unrelated
     reason: ffmpeg's matroska muxer will not write the DV configuration record from a raw
     `.hevc`, and that record is precisely what the app reads back
     (`ff: … dovi=P8 bl_compat=1`).
 
- 4. PMS EXCLUDES FILES WITH "sample" IN THE NAME under 300 MB. Nothing here is ever named
-    sample*; the two raw ES intermediates are `_bl.hevc` / `_bl_rpu.hevc` inside `.work/`,
-    which is deleted, and outside the library trees regardless.
+ 4. (Retired: a Plex scanner rule, gone with the Plex library pack. Numbering kept so the
+    references elsewhere in this file still point at the right trap.)
 
  5. `testsrc` (v1) IS A NEAR-STATIC PATTERN: ~181 kbit/s at 1080p CRF18. `testsrc2` at
     identical settings is ~7,830 kbit/s — and real Creative-Commons footage measured 7,560,
-    i.e. 3% BELOW testsrc2. So testsrc2 is the base here, everywhere. Bitrate is not
-    cosmetic: `seek_rapid_h264` and `seek_rapid_hevc_4k` assert `coalesced=n>=1`, which
-    needs a seek still resolving ~50 ms after it was issued. Against a 181 kbit/s source
-    every seek in the burst completes before the next tap and nothing ever coalesces — the
-    case passes its other assertions and covers the merge path zero times. So the two
-    shapes carrying a rapid-seek case declare a `min_mbit` FLOOR, and `verify()` asserts
-    it out of the finished file. It is a floor and not a comment because a CRF is not a
-    bitrate: this file once carried a comment claiming those two shapes "get the higher
-    bitrates", while the H.264 seek shape sat at exactly the same CRF as the two shapes
-    with no seek case at all.
+    i.e. 3% BELOW testsrc2. So testsrc2 is the base here, everywhere: the socket and the AU
+    queues should see a real file's wire rate, not a trickle.
 
  6. `-preset ultrafast` SILENTLY FORCES H.264 CONSTRAINED BASELINE. The H.264 shapes use
     `veryfast` with an explicit `-profile:v high`. (x265 has no such coupling, so the HEVC
@@ -95,32 +70,17 @@ out of the finished file with ffprobe, and a mismatch is a hard error naming bot
     on an UNLABELLED pad (or `[out0]`); a trailing `[a]` fails with "Invalid outpad name".
     The per-channel audio graphs below therefore end bare on the `join`.
 
- 9. PLEX MARKS AN ITEM WATCHED PAST ~90% AND DROPS THE viewOffset THE HARNESS JUST SEEDED.
-    `subtitle_text_srt` seeds 843 s, so its item must run past 843/0.9 = 937 s or the case
-    silently becomes a play-from-zero test. Every duration below is the deepest seek /
-    resume / marker depth its cases reach, divided by 0.9, then rounded up with margin.
-    And nothing is ever shorter than 60 s even where the cases would allow 30: an item that
-    hits EOF inside its `run_secs` fires the finish → Up Next → auto-advance chain, which
-    contaminates `no_playing_error` and the teardown assertions of a case that was only
-    ever about playing.
+ 9. NOTHING ENDS INSIDE A CASE'S WINDOW. A clip that hits EOF while a case is still asserting
+    ends the session under its feet, so every clip is sized to outlast the case that plays it.
     ONE EXCEPTION, and it is the exception that proves the rule: `pipe_h264_ac3_short` is
     20 s BECAUSE ending is what it grades (LG item #46 — `tests/run.py::a_finished` for the
-    completion, `a_replayed` for the restart after it). It is the only shape in either table
-    allowed to be short, and the cases allowed to name it are exactly those declaring
-    `reaches_eos` — two today, `pipe_finish_eos` and `pipe_replay_after_eos`. The harness
-    enforces the OPPOSITE bound for them: `_resolve_fixtures` SKIPS such a case whose fixture
-    is longer than 0.6 × the case's cap PER VIEWING (a replaying case needs the clip twice).
-    Adding a second short clip means picking a side; whichever side the harness was not told
-    about, it will skip rather than fail.
-
-10. ffmpeg HAS A PGS DECODER AND NO PGS ENCODER, and refuses text→bitmap conversion
-    outright ("Subtitle encoding currently only possible from text to text or bitmap to
-    bitmap"). So this file contains a small HDMV PGS writer (`pgs_build`, below) that
-    authors the `.sup` directly. It is NOT a conformant Blu-ray authoring tool — single
-    window, single object, one palette, epoch-start per cue — but ffmpeg's own PGS decoder
-    reads it back as `num_rects=1` per cue and 0 per clear, which is exactly the display-set
-    stream `subtitle_image_pgs` grades. No external tool (SUPer, avs2bdnxml, BDSup2Sub) is
-    needed.
+    completion, `a_replayed` for the restart after it). It is the only shape allowed to be
+    short, and the cases allowed to name it are exactly those declaring `reaches_eos` — two
+    today, `pipe_finish_eos` and `pipe_replay_after_eos`. The harness enforces the OPPOSITE
+    bound for them: `_resolve_fixtures` SKIPS such a case whose fixture is longer than 0.6 ×
+    the case's cap PER VIEWING (a replaying case needs the clip twice). Adding a second short
+    clip means picking a side; whichever side the harness was not told about, it will skip
+    rather than fail.
 
 --------------------------------------------------------------------------------------
 TWO IDEAS BORROWED FROM iwalton3/stdjflib, both about making a WRONG FILE VISIBLE.
@@ -133,13 +93,9 @@ TWO IDEAS BORROWED FROM iwalton3/stdjflib, both about making a WRONG FILE VISIBL
     its full stream layout with a built-in 5x7 font into an RGBA PNG and `overlay` composites
     it TOP-centre. A media-source mix-up in the harness then shows up in a screen capture
     without anyone consulting a manifest. The banner text is generated FROM THE SAME
-    declarative spec that `verify()` asserts, so the two cannot drift.
-    TOP-centre, and not the bottom-centre it sat at until a verifier photographed the
-    result: at the bottom the plate lands in the band the app draws SUBTITLES in and the
-    band the PGS cues are authored in, so on the two shapes whose whole case is "is a
-    subtitle on the screen" the two texts overprinted each other. The top-LEFT corner is
-    testsrc2's own timecode box (measured: about 160x48 px at 1080p), so the plate starts
-    at H/12, below it.
+    declarative spec that `verify()` asserts, so the two cannot drift. It sits TOP-centre,
+    clear of the band a player draws subtitles in; the top-LEFT corner is testsrc2's own
+    timecode box (measured: about 160x48 px at 1080p), so the plate starts at H/12, below it.
 
  * EVERY AUDIO CHANNEL GETS ITS OWN PITCH. A 5.1 track is six sine sources joined with
     `join=inputs=6:channel_layout=5.1:map=…`, at musically distinct frequencies (LFE two
@@ -153,48 +109,14 @@ TWO IDEAS BORROWED FROM iwalton3/stdjflib, both about making a WRONG FILE VISIBL
     channel COUNT, which cannot see it.
 
 --------------------------------------------------------------------------------------
-ORDERING IS PART OF THE SPEC — the cases assert track POSITIONS, not just presence.
-`tests/README.md`: audio-tab row = the metadata audio index in file order; subtitle-tab
-row 0 is *Off* and row r is subtitle index r-1. So:
-
- * `audio_switch_transcode` picks audio row 6 on `movie_h264_ac3_many_audio` and expects a
-   transcode, so index 6 is the ENGLISH TrueHD track (TrueHD is outside the direct-play set).
- * `audio_switch_native` picks audio row 1 on `episode_hevc_4k_hdr10_eac3` and expects a
-   NATIVE switch, and its title says "foreign default + eng … file default picked at start".
-   So index 0 is a German E-AC-3 track carrying the default disposition and index 1 is the
-   English one: with no Plex language preference the route auto-picks the file's default
-   (German, row 0) at start (#210), and row 1 switches to the English track — both being
-   E-AC-3 keeps the switch native.
- * `subtitle_text_srt` picks subtitle row 3 = index 2 and expects English cues, so the four
-   text tracks are ordered [rus forced, rus, eng, eng-SDH] — the same order as the real
-   library item the case was written against.
- * `subtitle_image_pgs` picks subtitle row 1 = index 0, so the PGS track is index 0.
-
-WHAT THIS DOES NOT SOLVE, stated here rather than discovered later: intro/credits MARKERS.
-Plex's detector needs Plex Pass, ignores intros under 20 s, and will not detect an intro
-that ends past the halfway point. The episode pair does carry an identical 130 s intro
-segment over a 300 s episode (on by default; `--no-markers` turns it off), plus a 40 s
-black credits tail, placed to satisfy both constraints — but whether Plex's analyser fires
-on synthetic content is not something this script can assert, and the three `marker_*`
-cases stay a real-library concern. See README.md.
-
-WHICH MODALITY THE INTRO HAS TO BE IDENTICAL IN, because the first version of this got it
-exactly backwards and shipped: Plex fingerprints AUDIO and looks for the stretch that
-MATCHES between episodes of a season. The original pair differed only by a `hue` filter,
-i.e. in video, and its audio was one constant unmodulated tone from end to end — so the
-whole 300 s matched, the candidate ran past the halfway point, and there was nothing for a
-detector to bound. Meanwhile the intro WINDOW was the one stretch that differed, because
-the burned-in layout banner reads `S01E01` vs `S01E02` inside it. Both halves are now the
-other way round: the audio is a shared 3-tone intro melody and then a per-episode pitch
-after `intro_end` (and a distinct low bed under the credits tail), and the layout banner is
-only drawn AFTER `intro_end`, so the intro window really is frame-identical. `verify_pair`
-asserts all three out of the finished files rather than trusting the filter graph.
+ORDERING IS PART OF THE SPEC where a case selects an audio lane: `pipe_multiaudio_1080p` and the
+two-track HEVC clip are graded on the `a=#<idx>` the demuxer reports, so verify() asserts the
+track ORDER as well as each track's codec.
 """
 
 import argparse
 import json
 import os
-import pathlib
 import re
 import shutil
 import struct
@@ -204,7 +126,9 @@ import time
 import zlib
 from pathlib import Path
 
-GEN_VERSION = "1.0.0"
+# 2.0.0: the Plex library pack, the HLS ladder clips and the subtitle tracks are gone, and the
+# burned-in banner reads DTVTEST, so every 1.x clip rebuilds once.
+GEN_VERSION = "2.0.0"
 FPS = 24
 
 
@@ -212,7 +136,7 @@ def shape_fps(spec):
     """This shape's frame rate. `FPS` (24) unless `video.fps` says otherwise.
 
     An axis rather than a constant since 2026-08-22, and the reason is a gap nothing else could
-    see: every fixture in both packs ran at 24p while the television's own capability table
+    see: every fixture ran at 24p while the television's own capability table
     (`/etc/umediaserver/device_codec_capability_config.json`) claims 60 for H.264 and 120 for
     H.265 — so the rate the Load payload declares (`esInfo videoFps`, built by
     `engine.rs::fps_rational`) had exactly one value in the whole suite. `fps_rational` has
@@ -350,134 +274,6 @@ def banner_png(path, lines, scale):
 
 
 # ---------------------------------------------------------------------------------------
-# Text subtitles. Self-describing: every cue names its own track index, language and
-# timestamp, so a screen capture says which track is selected without a manifest.
-# ---------------------------------------------------------------------------------------
-SUB_STEP, SUB_HOLD = 10, 8
-
-
-def sub_cue_times(duration, step=SUB_STEP, hold=SUB_HOLD):
-    """The cue schedule, shared by the SRT writer, the PGS writer and verify().
-
-    One function rather than three copies of `range(0, dur - hold, step)`, because what
-    verify() has to assert about a subtitle track is not "it has cues" but "it has cues
-    WHERE THE CASE PLAYS" — `subtitle_text_srt` seeds 843 s and `subtitle_image_pgs` seeds
-    600 s, and a track whose only cue is at t=0 satisfies every other check in this file
-    while failing on the television as `no sub cue`, which reads as a demuxer regression.
-    """
-    cues = list(range(0, max(0, int(duration) - hold), step))
-    # A clip shorter than one cue's hold has to BUILD anyway. `--secs 8` or less made this
-    # schedule EMPTY, `write_srt` then wrote a zero-byte .srt, and ffmpeg refused it as an
-    # input — so the three subtitle-bearing shapes died with `Invalid data found when
-    # processing input`, naming a file in .work rather than the length that caused it.
-    # (Unreachable before `--secs`: `--quick` was pinned at 20 s.) One cue at t=0 keeps the
-    # media well-formed at any length, and because verify() reads this same schedule it then
-    # grades exactly what was written. Such a clip is development media either way — the
-    # cue-coverage rule this function exists for only means anything at declared length.
-    return cues or ([0] if int(duration) >= 1 else [])
-
-
-def write_srt(path, idx, label, duration, step=SUB_STEP, hold=SUB_HOLD, cover_end=False):
-    def ts(t):
-        return "%02d:%02d:%02d,000" % (t // 3600, t % 3600 // 60, t % 60)
-
-    out = []
-    times = sub_cue_times(duration, step, hold)
-    final = max(0, int(duration) - hold)
-    if cover_end and final not in times:
-        times.append(final)
-    for n, t in enumerate(times, start=1):
-        # The hold is CLAMPED into the clip. At declared length this is a no-op (the schedule
-        # never places a cue later than dur - hold), but the floor cue that keeps a very short
-        # `--secs` build alive would otherwise end past EOF — and a cue ending at 8 s inside a
-        # 2 s clip sets the MATROSKA DURATION to 8 s, which verify() then reports as a
-        # duration mismatch on a file whose video is exactly the length that was asked for.
-        end = t + max(1, min(hold, int(duration) - t))
-        out.append("%d\n%s --> %s\nS%d %s @ %ds\n" % (n, ts(t), ts(end), idx, label, t))
-    path.write_text("\n".join(out), encoding="utf-8")
-    return path
-
-
-def _pgs_render(text, scale=6, pad=12):
-    cw, ch, gap = GLYPH_W, GLYPH_H, 1
-    tw = len(text) * (cw + gap) * scale
-    w, h = tw + 2 * pad, ch * scale + 2 * pad
-    rows = [[2] * w for _ in range(h)]          # palette index 2 = translucent plate
-    for ci, c in enumerate(text.upper()):
-        g = FONT.get(c, FONT[' '])
-        ox = pad + ci * (cw + gap) * scale
-        for gy in range(ch):
-            for gx in range(cw):
-                if (g[gy] >> (cw - 1 - gx)) & 1:
-                    for sy in range(scale):
-                        r = rows[pad + gy * scale + sy]
-                        for sx in range(scale):
-                            r[ox + gx * scale + sx] = 1
-    return w, h, rows
-
-
-def _pgs_rle(w, h, rows):
-    out = bytearray()
-    for y in range(h):
-        row, x = rows[y], 0
-        while x < w:
-            c, n = row[x], 1
-            while x + n < w and row[x + n] == c and n < 16383:
-                n += 1
-            if c == 0:
-                out += bytes([0x00, n]) if n <= 63 else bytes([0x00, 0x40 | (n >> 8), n & 0xFF])
-            elif n <= 63:
-                out += bytes([c]) * n if n <= 2 else bytes([0x00, 0x80 | n, c])
-            else:
-                out += bytes([0x00, 0xC0 | (n >> 8), n & 0xFF, c])
-            x += n
-        out += b"\x00\x00"
-    return bytes(out)
-
-
-def _pgs_seg(pts90, stype, payload):
-    return b"PG" + struct.pack(">IIBH", pts90 & 0xFFFFFFFF, 0, stype, len(payload)) + payload
-
-
-def pgs_build(path, duration, canvas=(1920, 1080), step=SUB_STEP, hold=SUB_HOLD):
-    vw, vh = canvas
-    out = bytearray()
-    comp = 0
-    n = 0
-    for t in sub_cue_times(duration):
-        n += 1
-        w, h, rows = _pgs_render("PGS S0 ENG @%ds" % t)
-        rle = _pgs_rle(w, h, rows)
-        x = max(0, min((vw - w) // 2, vw - w))
-        # 80% down the canvas, where a real subtitle sits. Safe only because the layout
-        # banner moved to the TOP band: while the banner was bottom-centre the two
-        # overlapped exactly, on the one shape whose case is about reading a bitmap
-        # subtitle off the screen.
-        y = max(0, min(int(vh * 0.80) - h // 2, vh - h))
-        pcs = struct.pack(">HHBHBBBB", vw, vh, 0x10, comp, 0x80, 0x00, 0, 1) \
-            + struct.pack(">HBBHH", 0, 0, 0x00, x, y)
-        wds = struct.pack(">BBHHHH", 1, 0, x, y, w, h)
-        pal = {0: (16, 128, 128, 0), 1: (235, 128, 128, 255), 2: (16, 128, 128, 160)}
-        pds = struct.pack(">BB", 0, 0)
-        for idx, (Y, Cr, Cb, A) in pal.items():
-            pds += struct.pack(">BBBBB", idx, Y, Cr, Cb, A)
-        body = struct.pack(">HH", w, h) + rle
-        ods = struct.pack(">HBB", 0, 0, 0xC0) + struct.pack(">I", len(body))[1:] + body
-        pts = int(t * 90000)
-        out += _pgs_seg(pts, 0x16, pcs) + _pgs_seg(pts, 0x17, wds)
-        out += _pgs_seg(pts, 0x14, pds) + _pgs_seg(pts, 0x15, ods) + _pgs_seg(pts, 0x80, b"")
-        comp += 1
-        # Clamped into the clip, for the reason write_srt() gives: at declared length this is
-        # the hold unchanged, and on a floor-cue build it keeps the clear inside the file.
-        pts_end = int((t + max(1, min(hold, int(duration) - t))) * 90000)
-        clear = struct.pack(">HHBHBBBB", vw, vh, 0x10, comp, 0x00, 0x00, 0, 0)
-        out += _pgs_seg(pts_end, 0x16, clear) + _pgs_seg(pts_end, 0x17, wds) + _pgs_seg(pts_end, 0x80, b"")
-        comp += 1
-    path.write_bytes(bytes(out))
-    return n
-
-
-# ---------------------------------------------------------------------------------------
 # Process plumbing
 # ---------------------------------------------------------------------------------------
 class Fail(Exception):
@@ -555,35 +351,19 @@ CH_MAP = {2: "0.0-FL|1.0-FR",
           6: "0.0-FL|1.0-FR|2.0-FC|3.0-LFE|4.0-BL|5.0-BR"}
 
 
-def audio_graph(channels, base_hz, duration, segs=None):
+def audio_graph(channels, base_hz, duration):
     """A lavfi graph: one sine per channel, joined into a real multichannel layout.
 
     NB the graph ends on the bare `join` — the lavfi DEMUXER rejects a named output pad
     ("Invalid outpad name 'a'"), which is the one way this differs from a `-filter_complex`
     written for the same purpose. `duration=` inside each sine is what actually bounds the
     source; the `-t` in front of `-i` is the second belt (see trap 1).
-
-    `segs` is an optional list of `(pitch_multiplier, seconds)` spliced end to end with
-    `concat`, which is how the marker-bearing episodes get an audio track with STRUCTURE:
-    a shared intro melody, a per-episode body pitch, a distinct credits bed. Plex's marker
-    detector fingerprints audio, so this — not the picture — is the modality the intro has
-    to be identical in and the body has to differ in.
     """
     ratios = CH_RATIOS[channels]
-    segs = segs or [(1.0, duration)]
     parts = []
     for i, r in enumerate(ratios):
-        if len(segs) == 1:
-            parts.append("sine=frequency=%d:sample_rate=48000:duration=%s[c%d]"
-                         % (round(base_hz * r * segs[0][0]), _g(segs[0][1]), i))
-            continue
-        labs = []
-        for j, (mult, secs) in enumerate(segs):
-            labs.append("c%ds%d" % (i, j))
-            parts.append("sine=frequency=%d:sample_rate=48000:duration=%s[%s]"
-                         % (round(base_hz * r * mult), _g(secs), labs[-1]))
-        parts.append("".join("[%s]" % x for x in labs)
-                     + "concat=n=%d:v=0:a=1[c%d]" % (len(segs), i))
+        parts.append("sine=frequency=%d:sample_rate=48000:duration=%s[c%d]"
+                     % (round(base_hz * r), _g(duration), i))
     parts.append("".join("[c%d]" % i for i in range(channels))
                  + "join=inputs=%d:channel_layout=%s:map=%s"
                  % (channels, CH_LAYOUT[channels], CH_MAP[channels]))
@@ -609,20 +389,10 @@ CHAIN_PQ = ("format=yuv420p10le,setparams=color_primaries=bt2020:color_trc=smpte
 def venc_args(v):
     c = v["codec"]
     if c == "h264":
-        # `vbr` (kbps) switches from quality-targeted to RATE-TARGETED encoding. Only the ABR
-        # ladder clips use it, and they need it: the reachable buffer ceiling is
-        # `queue_bytes / media_rate`, so a pack whose rungs all decode to the same file cannot
-        # measure a bitrate-dependent ceiling at all — every rung would report the same reserve.
-        # CRF gives a bitrate that is a CONSEQUENCE; this gives one that is an input.
-        #
-        # `vbr_bufsize_ratio` narrows the rate-control WINDOW, and it exists for one measured
-        # reason. The validator grades SEGMENT 0, which is the segment carrying the opening IDR,
-        # and at 2x the target that window is two seconds wide — a whole segment — so the encoder
-        # is free to spend a full segment's budget on that one picture and pay it back later. At
-        # 1080p the overshoot stays inside the 1.30x band; at 3840x2160 the same IDR is four times
-        # the pixels and `pipe_abr_4k_22m` measured **1.40x**, failing its own gate. A narrower
-        # window forces the spend to be repaid within the segment it happens in, which is also
-        # what a real encoder feeding a real HLS rung has to do.
+        # `vbr` (kbps) switches from quality-targeted to RATE-TARGETED encoding: CRF gives a
+        # bitrate that is a CONSEQUENCE, this gives one that is an input. The late-audio clip
+        # needs it, because the video bytes ahead of its first audio packet are its whole point.
+        # `vbr_bufsize_ratio` sets the rate-control window as a multiple of the target.
         buf_ratio = v.get("vbr_bufsize_ratio", 2)
         rc = (["-b:v", f"{v['vbr']}k", "-maxrate", f"{v['vbr']}k",
                "-bufsize", f"{int(buf_ratio * v['vbr'])}k"]
@@ -640,8 +410,6 @@ def venc_args(v):
         if v.get("tag"):
             a += ["-tag:v", v["tag"]]
         return a
-    if c == "av1":
-        return ["-c:v", "libsvtav1", "-preset", "12", "-crf", str(v["crf"]), "-g", "48"]
     if c == "vp9":
         # Constant-quality (-b:v 0 + -crf), Profile 0 (8-bit 4:2:0): the shape every set's profile
         # advertises (the webOS 4 family also advertises Profile 2, which this recipe does not make).
@@ -651,10 +419,7 @@ def venc_args(v):
     raise Fail("no encoder recipe for video codec %r" % c)
 
 
-AENC = {
-    "ac3": ["ac3"], "eac3": ["eac3"], "aac": ["aac"], "truehd": ["truehd"],
-    "dts": ["dca"], "vorbis": ["vorbis"], "opus": ["libopus"], "flac": ["flac"],
-}
+AENC = {"ac3": ["ac3"], "eac3": ["eac3"], "aac": ["aac"], "dts": ["dca"]}
 
 
 # ---------------------------------------------------------------------------------------
@@ -662,10 +427,9 @@ AENC = {
 # metadata, and recorded in fixtures.json. Derived from the SAME spec that verify()
 # asserts, so the burn-in cannot drift away from what the file actually is.
 # ---------------------------------------------------------------------------------------
-def layout_lines(key, spec, dur, ep=None):
+def layout_lines(key, spec, dur):
     v = spec["video"]
-    name = key if ep is None else "%s S01E%02d" % (key, ep)
-    lines = ["PLXTEST FIXTURE * " + name.replace("_", " ")]
+    lines = ["DTVTEST FIXTURE * " + key.replace("_", " ")]
     # The Dolby Vision shape's picture is a plain HDR10 base layer, so without this line
     # its burn-in was byte-identical to the two HDR10 shapes' — on the one file where a
     # mix-up is least recoverable from the picture itself.
@@ -682,12 +446,7 @@ def layout_lines(key, spec, dur, ep=None):
         lines.append("A%d %s %s %s%s"
                      % (i, a["codec"].upper(), CH_LAYOUT[a["ch"]].upper(), a["lang"].upper(),
                         " DEFAULT" if a.get("default") else ""))
-    for i, s in enumerate(spec.get("subs", [])):
-        lines.append("S%d %s %s%s%s"
-                     % (i, s["codec"].upper(), s["lang"].upper(),
-                        " FORCED" if s.get("forced") else "",
-                        " SIDECAR" if s.get("sidecar") else ""))
-    lines.append("SHAPE KEY: " + (spec["extra_key"] if ep == 2 and spec.get("extra_key") else key))
+    lines.append("SHAPE KEY: " + key)
     return lines
 
 
@@ -702,237 +461,40 @@ def fit_scale(lines, vw, vh):
     return 1
 
 
-# =======================================================================================
-# THE SHAPE TABLE
-#
-# `duration` is the deepest depth the shape's cases reach (setup.viewOffset_ms, seek
-# target_s/final_s, resume offset_s, skip min_pos_after_s + min_climb_after_s, expect.
-# min_timeline_climb_s), divided by 0.9 for Plex's watched threshold (trap 9), rounded up
-# with margin, and floored at 1.5x the longest `run_secs` of any case that names the shape
-# — never at 60 flat, which is what four shapes carried while their cases capped at exactly
-# `run_secs: 60`. Zero margin is invisible on the PASSING path (the harness ends a case the
-# moment its assertions are satisfied) and stacks a spurious finish -> Up Next -> teardown
-# failure on top of a real one whenever a case FAILS or runs under `--no-early`, which is
-# the hardest kind of harness output to read. `rate` is encode-seconds per second of
-# output measured on an Apple-silicon Mac with this Homebrew ffmpeg — it exists only to
-# print an honest ETA, and it is the number to re-measure if the ETA drifts.
-#
-# `crf` is chosen per shape against the size budget: the whole set is ~2.5 GB. The two
-# shapes carrying a rapid-seek case (movie_h264_ac3_1080p, episode_hevc_4k_hdr10_eac3)
-# additionally declare `min_mbit`, a measured floor verify() reads back out of the finished
-# file — because seek COALESCING is what those cases grade and a thin stream never
-# coalesces (trap 5). This comment used to claim those two "get the higher bitrates" while
-# the H.264 one sat at the same CRF as the two shapes with no seek case at all; a CRF is
-# not a bitrate, which is why the floor is asserted now instead of narrated.
-# =======================================================================================
-SHAPES = {
-    "movie_h264_ac3_1080p": {
-        "kind": "movie", "library_title": "PlxTest H264 AC3 1080p (2001)", "ext": "mkv",
-        "duration": 1080, "rate": 0.06, "min_mbit": 5.5,
-        # 1080 s because subtitle_text_srt seeds viewOffset 843 s: 843/0.9 = 937 s floor.
-        # crf 20, not the 25 this shape shipped with: at 25 it measured 3.7 Mbit/s of
-        # video, half the testsrc2 reference trap 5 is written against, on the shape that
-        # carries BOTH rapid-seek cases' H.264 half.
-        "video": {"codec": "h264", "size": "1920x1080", "crf": 20},
-        "audio": [{"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
-                   "default": True, "title": "AC-3 5.1 English"}],
-        # Order is the spec: subtitle_text_srt picks row 3 = index 2 and expects English.
-        "subs": [{"codec": "subrip", "lang": "rus", "forced": True, "title": "Russian (Forced)"},
-                 {"codec": "subrip", "lang": "rus", "title": "Russian"},
-                 {"codec": "subrip", "lang": "eng", "title": "English"},
-                 {"codec": "subrip", "lang": "eng", "title": "English (SDH)"}],
-    },
-    "episode_hevc_4k_hdr10_eac3": {
-        "kind": "episode", "library_title": "PlxTest HDR Show (2010)", "ext": "mkv",
-        "episodes": 2, "extra_key": "episode_hevc_4k_hdr10_eac3_next",
-        "duration": 300, "rate": 0.65, "min_mbit": 5.0,
-        "intro": (0, 130), "credits": 40,
-        # 300 s: seek_rapid_hevc_4k lands at 160 s (160/0.9 = 178) and the marker cases want
-        # an intro ending >= 100 s AND before the midpoint, i.e. anywhere in (100, 150).
-        # 130 sits in the MIDDLE of that window on purpose. It was 105 first, which satisfies
-        # both constraints on paper and leaves five seconds of margin against a detector whose
-        # boundary precision nobody here has measured -- Plex matches audio fingerprints and is
-        # free to trim its match. Land at 98 and `marker_intro_press` (min_pos_after_s: 100)
-        # fails while every piece of evidence on screen points at the app's skip-intro latch.
-        # There is nothing to buy with the margin, so do not spend it.
-        # `credits` is the black-plate + distinct-audio-bed tail marker_credits_up_next
-        # needs: Plex derives a `final` credits marker from a credits-LIKE tail, and
-        # testsrc2 runs full-brightness with an unchanging tone to the last frame, so
-        # before this there was nothing on disk for that case at all.
-        "video": {"codec": "hevc", "size": "3840x2160", "crf": 30, "hdr": True},
-        # index 0 is the FOREIGN default and index 1 English — see the ordering note in the
-        # module docstring: audio_switch_native picks row 0 and expects a native switch.
-        "audio": [{"codec": "eac3", "ch": 6, "lang": "deu", "br": "384k", "pitch": 330,
-                   "default": True, "title": "E-AC-3 5.1 Deutsch"},
-                  {"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 220,
-                   "title": "E-AC-3 5.1 English"}],
-        "subs": [],
-    },
-    "movie_hevc_4k_hdr10_truehd": {
-        "kind": "movie", "library_title": "PlxTest HEVC 4K HDR10 TrueHD (2002)", "ext": "mkv",
-        "duration": 90, "rate": 0.58,
-        "video": {"codec": "hevc", "size": "3840x2160", "crf": 30, "hdr": True},
-        # The smart-direct-play shape: a TrueHD default the TV cannot take, with an AC-3
-        # sibling it can. No freely-licensed TrueHD exists anywhere; ffmpeg's own encoder
-        # (experimental, hence the global -strict -2) is the only way to get this shape.
-        "audio": [{"codec": "truehd", "ch": 6, "lang": "eng", "pitch": 220,
-                   "default": True, "title": "TrueHD 5.1 English"},
-                  {"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
-                   "title": "AC-3 5.1 English"}],
-        "subs": [],
-    },
-    "movie_hevc_4k_dovi_p8": {
-        "kind": "movie", "library_title": "PlxTest HEVC 4K DoVi P8 (2003)", "ext": "mkv",
-        "duration": 90, "rate": 0.60, "builder": "dovi", "dovi": True,
-        "tools": ["dovi_tool", "mkvmerge"],
-        "video": {"codec": "hevc", "size": "3840x2160", "crf": 30, "hdr": True},
-        "audio": [{"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 262,
-                   "default": True, "title": "E-AC-3 5.1 English"}],
-        # `dp_hevc_eac3_dovi_p8` covers `embedded-srt-many` and its title says "many
-        # embedded SRT", so the many-track text stack belongs HERE. It was built onto
-        # movie_h264_ac3_1080p instead (whose own covers says only `embedded-srt`), which
-        # left a declared coverage axis with no file behind it — invisibly, because the
-        # case asserts nothing about subtitles. Nothing here asserts an ORDER; the stack
-        # mirrors the h264 shape's so a reader comparing the two is not surprised.
-        "subs": [{"codec": "subrip", "lang": "rus", "forced": True, "title": "Russian (Forced)"},
-                 {"codec": "subrip", "lang": "rus", "title": "Russian"},
-                 {"codec": "subrip", "lang": "eng", "title": "English"},
-                 {"codec": "subrip", "lang": "eng", "title": "English (SDH)"}],
-    },
-    "movie_hevc_aac_mp4": {
-        "kind": "movie", "library_title": "PlxTest HEVC AAC MP4 (2004)", "ext": "mp4",
-        "duration": 90, "rate": 0.14,
-        "video": {"codec": "hevc", "size": "1920x1080", "crf": 26, "tag": "hvc1"},
-        # Stereo, and NO `title`. Two deliberate differences from every other shape here.
-        # Stereo because this case is the mov-demuxer/ADTS-reframing path and a real-world
-        # mp4 is usually 2.0 — 5.1 AAC coverage lives on episode_h264_aac — while
-        # Auto enforces the device table's channel ceiling, so a stereo-only AAC decoder
-        # still direct-plays this container case. No title because mp4 does not carry a
-        # per-track title through this path at all: the spec used to claim one, the file
-        # never had one, and verify() asserted neither.
-        "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 294,
-                   "default": True}],
-        # Sidecar, not embedded: this shape's case is the mov-demuxer-over-HTTP path and
-        # Plex serves the sidecar as its own stream.
-        "subs": [{"codec": "subrip", "lang": "eng", "sidecar": True, "title": "English"}],
-    },
-    "episode_h264_aac": {
-        "kind": "episode", "library_title": "PlxTest SDR Show (2011)", "ext": "mkv",
-        "episodes": 1, "duration": 90, "rate": 0.06,
-        "video": {"codec": "h264", "size": "1920x1080", "crf": 25},
-        "audio": [{"codec": "aac", "ch": 6, "lang": "eng", "br": "256k", "pitch": 196,
-                   "default": True, "title": "AAC 5.1 English"}],
-        "subs": [],
-    },
-    "movie_h264_ac3_many_audio": {
-        "kind": "movie", "library_title": "PlxTest Many Audio (2005)", "ext": "mkv",
-        # 120 s, not 90: audio_switch_transcode caps at run_secs 70 and the floor is 1.5x
-        # the longest run_secs of any case naming the shape.
-        "duration": 120, "rate": 0.08,
-        "video": {"codec": "h264", "size": "1920x1080", "crf": 25},
-        # EIGHT tracks, and the ORDER is asserted: audio_switch_transcode picks row 6 and
-        # expects a transcode, so index 6 is English TrueHD (outside the direct-play set).
-        "audio": [
-            {"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 200,
-             "default": True, "title": "AC-3 5.1 English"},
-            {"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 250,
-             "title": "E-AC-3 5.1 English Commentary"},
-            {"codec": "aac", "ch": 2, "lang": "eng", "br": "256k", "pitch": 300,
-             "title": "AAC 2.0 English"},
-            {"codec": "ac3", "ch": 6, "lang": "spa", "br": "448k", "pitch": 350,
-             "title": "AC-3 5.1 Espanol"},
-            {"codec": "ac3", "ch": 6, "lang": "fra", "br": "448k", "pitch": 400,
-             "title": "AC-3 5.1 Francais"},
-            {"codec": "aac", "ch": 2, "lang": "deu", "br": "256k", "pitch": 450,
-             "title": "AAC 2.0 Deutsch"},
-            {"codec": "truehd", "ch": 6, "lang": "eng", "pitch": 500,
-             "title": "TrueHD 5.1 English"},
-            {"codec": "vorbis", "ch": 2, "lang": "jpn", "pitch": 550,
-             "title": "Vorbis 2.0 Japanese"},
-        ],
-        "subs": [],
-    },
-    "movie_av1_no_dp_audio": {
-        "kind": "movie", "library_title": "PlxTest AV1 Opus (2006)", "ext": "mkv",
-        "duration": 780, "rate": 0.30,
-        # 780 s: resume_transcode seeds 600 s (600/0.9 = 667 floor) and then plays on.
-        # Deliberately SDR: the client never demuxes this file — the server transcodes it —
-        # so an HDR claim here would be a property nothing verifies end to end.
-        "video": {"codec": "av1", "size": "3840x2160", "crf": 50},
-        "audio": [{"codec": "opus", "ch": 6, "lang": "eng", "br": "256k", "pitch": 620,
-                   "default": True, "title": "Opus 5.1 English"}],
-        "subs": [],
-    },
-    "movie_hevc_4k_pgs_subs": {
-        "kind": "movie", "library_title": "PlxTest HEVC 4K PGS Subs (2007)", "ext": "mkv",
-        "duration": 780, "rate": 0.65,
-        "video": {"codec": "hevc", "size": "3840x2160", "crf": 34, "hdr": True},
-        "audio": [{"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 700,
-                   "default": True, "title": "E-AC-3 5.1 English"}],
-        # index 0, because subtitle_image_pgs picks row 1 (row 0 is Off).
-        "subs": [{"codec": "hdmv_pgs_subtitle", "lang": "eng", "title": "English (PGS)"}],
-    },
-}
-
-def aliases(shapes):
-    """The second output key of a multi-episode shape -> the shape key itself, so `--only`
-    takes either. Per TABLE rather than a module constant: the pipeline tier has no episode
-    pairs and therefore no aliases, and a constant built from `SHAPES` would have quietly
-    offered the integration tier's names to a run that cannot build them."""
-    return {s["extra_key"]: k for k, s in shapes.items() if s.get("extra_key")}
-
-
 QUICK_SECS = 20
 
 
 # =======================================================================================
-# THE PIPELINE TIER — a second, much smaller table, for a suite tier with NO PLEX IN IT.
+# THE SHAPE TABLE.
 #
-# `tests/serve_fixtures.py` serves a directory of these clips off the dev Mac, and
+# `tests/serve_fixtures.py` serves a directory of these clips off this machine, and
 # `/tmp/dispatcharrtv-playurl` hands the app one URL plus the Load payload DECLARATION to play
-# it with (`player::playurl::PlayUrl` -> `route::set_stream_declaration`). Everything from the socket
-# down is then the same code a real playback runs — `stream.rs`' GET, `ff.rs`' AVIO and
-# demux, the `aq.rs` queues, the pump's `Feed()`, the ACB bind — with the server, the
-# `/decision`, the PlayQueue, the timeline and the watched state all absent. So this tier
-# grades the pipeline and the payload the engine builds for it, and nothing above them.
+# it with (`player::playurl::PlayUrl`). Everything from the socket down is then the same code a
+# live channel runs — `stream.rs`' GET, `ff.rs`' AVIO and demux, the `aq.rs` queues, the pump's
+# `Feed()`, the ACB bind — so these clips grade the pipeline and the payload the engine builds
+# for it, and nothing above them.
 #
-# WHY A SECOND TABLE AND NOT MORE ROWS IN `SHAPES`. Every constant up there is derived from
-# something that does not exist down here. A duration is the deepest seek/resume/marker
-# depth a Plex CASE reaches divided by Plex's 90% watched threshold (trap 9); nothing here
-# seeds a viewOffset, marks anything watched, or has an Up Next to fire, so the length
-# constraints left are TWO, in opposite directions: "do not hit EOF while a case is still
-# asserting" for fourteen of the fifteen clips, and "DO end, inside the cap" for
-# `pipe_h264_ac3_short`, which exists to run out. The harness enforces both and skips rather
-# than fails on either side. The LAYOUT differs
-# for the same kind of reason: the Plex trees exist for a SCANNER, and the thing reading
-# these is a static file server (see `out_paths`).
-#
-# WHAT THIS TIER DELIBERATELY DOES NOT CONTAIN, written down so nobody adds it back as an
-# oversight — each of the three looks like an obvious gap and is not:
+# WHAT THIS TABLE DELIBERATELY DOES NOT CONTAIN, written down so nobody adds it back as an
+# oversight — each looks like an obvious gap and is not:
 #   * TrueHD / Atmos. The correct LG Load-payload audio string for TrueHD does not exist
 #     anywhere in this repo, so the shape could not be DECLARED — and the declaration is
-#     this tier's entire subject. A `declare` that is a guess grades a guess.
-#   * PGS and SRT subtitles. The demuxer would carry them, but the `sub cue` / `image cue`
-#     log lines a case would grade sit behind `desired_sub_idx`, which only the Plex path
-#     ever writes — so a subtitle case down here would assert nothing at all.
-#   * AV1. The dev set's codec table lists no AV1 decoder, so this tier's TV declares no AV1
-#     video codec, and the AV1 fixtures (`movie_av1_no_dp_audio`) expect a TRANSCODE there. On a
-#     set whose table lists an AV1 decoder the same file would direct-stream video with converted
-#     audio.
+#     what these cases grade. A `declare` that is a guess grades a guess.
+#   * Subtitles. The demuxer would carry them, but no case has a subtitle line to grade.
+#   * AV1. The dev set's codec table lists no AV1 decoder, so no AV1 clip could direct-play.
 #
 # `declare` IS THE TRIGGER'S PLAYBACK HALF, recorded verbatim into fixtures.json so the
 # harness writes `/tmp/dispatcharrtv-playurl` FROM the pack instead of restating it, and read
 # back against the finished file by verify(). A declaration that drifts from its own media
-# is precisely the fault this tier cannot otherwise see: the app builds the payload the
+# is precisely the fault these cases cannot otherwise see: the app builds the payload the
 # declaration asked for, never looks at the container, and the case then fails pointing
 # squarely at the player.
 # =======================================================================================
-# 60 s, and the reason is trap 9's second half rather than any depth: a clip that hits EOF
-# inside a case's window ends the session under the assertions' feet. Every assertion this
-# tier can make — the `load:` payload line, the first `Feed`, the ACB bind, `a=#<idx>` —
+# 60 s, and the reason is trap 9: a clip that hits EOF inside a case's window ends the session
+# under the assertions' feet. Every assertion a case can make — the `load:` payload line, the first `Feed`, the ACB bind, `a=#<idx>` —
 # lands in the first seconds, so nothing here wants length for its own sake, and 60 s is
 # what keeps the whole pack to minutes of encoding.
 PIPE_SECS = 60
+QUICK_SECS = 20
 
 # The player's video-lane byte cap, BY VALUE: `player::engine::AQ_VIDEO_BYTES` (`aq_caps().0`),
 # 10 MiB. Only `late_audio` shapes read it -- "more video than this precedes the first audio
@@ -947,15 +509,11 @@ PIPE_SHAPES = {
         "kind": "clip", "ext": "mkv",
         "duration": PIPE_SECS, "rate": 0.06,
         "declare": {"vcodec": "h264", "acodec": "ac3", "fps": float(FPS), "atmos": False},
-        # crf 20 is movie_h264_ac3_1080p's, carried across so the socket and the queues see
-        # a real library file's wire rate rather than a near-static trickle (trap 5) — it
-        # measured 7.24 Mbit/s at 60 s. No `min_mbit` floor: up there the floor exists for
-        # the two rapid-seek CASES, and this tier has no such case today — add the floor
-        # with the case that needs it, not before it.
+        # crf 20, so the socket and the queues see a real file's wire rate rather than a
+        # near-static trickle (trap 5) — it measured 7.24 Mbit/s at 60 s.
         "video": {"codec": "h264", "size": "1920x1080", "crf": 20},
         "audio": [{"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
                    "default": True, "title": "AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_h264_dts_1080p": {
         "kind": "clip", "ext": "mkv",
@@ -964,7 +522,6 @@ PIPE_SHAPES = {
         "video": {"codec": "h264", "size": "1920x1080", "crf": 20},
         "audio": [{"codec": "dts", "ch": 6, "lang": "eng", "br": "1411k", "pitch": 440,
                    "default": True, "title": "DTS core 5.1 English"}],
-        "subs": [],
     },
     "pipe_hevc_eac3_4k_hdr10": {
         # H265 payload selection AND the "AC3 PLUS" naming trap in one file: `eac3` is the
@@ -973,10 +530,8 @@ PIPE_SHAPES = {
         "kind": "clip", "ext": "mkv",
         "duration": PIPE_SECS, "rate": 0.65,
         # The AC-3 track beside it is not decoration: `H265 + AC3` is one of the six Load payload
-        # combinations the player can direct-play, and it was the LAST one this tier could not
-        # reach — covered on the server tier only, by the TrueHD-default-falls-back-to-its-AC-3-
-        # sibling case, i.e. by a library shape almost nobody owns. Two tracks in one file make
-        # it a declaration away instead of a fixture away. `declare` still names the E-AC-3 lane;
+        # combinations the player can direct-play, and two tracks in one file make it a
+        # declaration away instead of a fixture away. `declare` still names the E-AC-3 lane;
         # the case that wants the other one overrides `acodec` and reads a=#2.
         "declare": {"vcodec": "hevc", "acodec": "eac3", "fps": float(FPS), "atmos": False},
         "video": {"codec": "hevc", "size": "3840x2160", "crf": 30, "hdr": True},
@@ -984,13 +539,11 @@ PIPE_SHAPES = {
                    "default": True, "title": "E-AC-3 5.1 English"},
                   {"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
                    "title": "AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_hevc_eac3_4k_dovi_p8": {
         # The `option.externalStreamingInfo.contents.DolbyHdrInfo` splice, end to end on the
         # hardware. Profile 8.1 is the one DV shape that can be synthesized at all (see
-        # build_dovi), and the DECLARATION is what puts the node in the payload, so this is
-        # the only fixture in the repo that reaches that code with no PMS decision behind it.
+        # build_dovi), and the DECLARATION is what puts the node in the payload.
         "kind": "clip", "ext": "mkv",
         "duration": PIPE_SECS, "rate": 0.60, "builder": "dovi", "dovi": True,
         "tools": ["dovi_tool", "mkvmerge"],
@@ -999,7 +552,6 @@ PIPE_SHAPES = {
         "video": {"codec": "hevc", "size": "3840x2160", "crf": 30, "hdr": True},
         "audio": [{"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 262,
                    "default": True, "title": "E-AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_hevc_aac_mp4": {
         # A second CONTAINER through the AVIO — the mov demuxer seeks differently from
@@ -1010,18 +562,14 @@ PIPE_SHAPES = {
         "duration": PIPE_SECS, "rate": 0.14,
         "declare": {"vcodec": "hevc", "acodec": "aac", "fps": float(FPS), "atmos": False},
         "video": {"codec": "hevc", "size": "1920x1080", "crf": 26, "tag": "hvc1"},
-        # Stereo and no per-track title, for movie_hevc_aac_mp4's reasons: mp4 does not carry
-        # a track title through this path at all, so a declared one would be a claim nothing
-        # reads back.
+        # Stereo, and no per-track title: mp4 does not carry a track title through this path
+        # at all, so a declared one would be a claim nothing reads back.
         "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 294,
                    "default": True}],
-        "subs": [],
     },
     "pipe_h264_aac_mp4": {
-        # H.264 in mp4 — the single most ordinary file in the world, and until 2026-08-22 the
-        # one direct-play combination NEITHER tier touched. Both packs reached mp4 only through
-        # an HEVC shape, so `part_is_streamable`'s mp4 arm, the mov demuxer's AVCC->Annex-B path
-        # and the AAC/ADTS reframe had never been exercised together with the H264 payload.
+        # H.264 in mp4 — the single most ordinary file in the world: the mov demuxer's
+        # AVCC->Annex-B path and the AAC/ADTS reframe together with the H264 payload.
         "kind": "clip", "ext": "mp4",
         "duration": PIPE_SECS, "rate": 0.06,
         "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
@@ -1029,7 +577,6 @@ PIPE_SHAPES = {
         # Stereo, no track title: mp4 carries neither through this path (see pipe_hevc_aac_mp4).
         "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 233,
                    "default": True}],
-        "subs": [],
     },
     "pipe_vp9_aac_1080p": {
         # VP9 Profile 0 in MKV. The dev set's codec table lists a VP9 row, so this direct-plays
@@ -1041,14 +588,12 @@ PIPE_SHAPES = {
         "video": {"codec": "vp9", "size": "1920x1080", "crf": 33},
         "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 261,
                    "default": True}],
-        "subs": [],
     },
     "pipe_h264_1080p5994": {
         # The FRAME-RATE axis, broadcast half. 59.94 is not a round number by accident: it is
         # the only rate here that reaches `engine.rs::fps_rational`'s 1001-denominator branch,
         # which converts it to 60000/1001 for the Load payload's `esInfo videoFps`. Every other
-        # fixture in both packs is 24p, so that branch — and every rational branch beside it —
-        # had never run against a real stream. The television's own capability table claims 60
+        # fixture is 24p, so without this clip that branch never runs against a real stream. The television's own capability table claims 60
         # for H.264, so this is inside the hardware envelope, not at its edge.
         "kind": "clip", "ext": "mkv",
         "duration": PIPE_SECS, "rate": 0.13,
@@ -1056,35 +601,23 @@ PIPE_SHAPES = {
         "video": {"codec": "h264", "size": "1920x1080", "crf": 22, "fps": 59.94},
         "audio": [{"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
                    "default": True, "title": "AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_hevc_4k_60fps": {
         # The frame-rate axis at the hardware's stated bound: the device table's `HEVC` row is
         # 4096x2176 at 60, and this is 3840x2160 at exactly 60 — the most demanding thing this
         # panel claims to decode, in the codec it claims it for. Integer rate on purpose, so the
         # pair with pipe_h264_1080p5994 covers both sides of `fps_rational`'s split.
-        #
-        # NB the app never BOUNDS frame rate: `devcaps` reads the table's width/height and
-        # explicitly ignores `maxFrameRate`, so the profile sent to PMS carries no fps
-        # limitation at all. This fixture cannot test that gap — nothing synthetic can, because
-        # the gap is on the server-decision side — but it does establish that the pipeline half
-        # survives the rate, which is the half that would be blamed first.
         "kind": "clip", "ext": "mkv",
         "duration": PIPE_SECS, "rate": 1.35,
         "declare": {"vcodec": "hevc", "acodec": "eac3", "fps": 60.0, "atmos": False},
         "video": {"codec": "hevc", "size": "3840x2160", "crf": 32, "hdr": True, "fps": 60},
         "audio": [{"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 330,
                    "default": True, "title": "E-AC-3 5.1 English"}],
-        "subs": [],
     },
     # -----------------------------------------------------------------------------------
     # THE RESOLUTION x CODEC MATRIX — LG App Self Checklist #50 / #51.
     #
-    # That item is graded as a MATRIX, and until 2026-08-23 this repo could only answer it as
-    # "pieces are covered": the pack was 1080p everywhere plus one 4K HEVC, so SD and HD had
-    # never been played at all and 4K H.264 existed in neither pack (`library_gaps` lists it —
-    # every 4K item in the maintainer's library is HEVC or AV1, which is a fact about one
-    # library, not about the app). Six shapes below complete it:
+    # That item is graded as a MATRIX, so the pack carries every cell of it:
     #
     #                 h264 / AC-3 5.1 mkv          hevc / E-AC-3 5.1 mkv
     #     SD   720x480    pipe_h264_ac3_480p           pipe_hevc_eac3_480p
@@ -1107,7 +640,7 @@ PIPE_SHAPES = {
     #    constant bitrate, and 4K H.264 at the 1080p rung's crf 20 measures ~30 Mbit/s, i.e. a
     #    quarter-gigabyte clip in service of no assertion; crf 26 lands at ~11.8 Mbit/s, which
     #    is inside the band real 4K H.264 ships in. Nothing here declares `min_mbit`: that floor
-    #    exists for the rapid-seek cases (trap 5) and no case in this matrix seeks.
+    #    would exist for a seek case, and no case in this matrix seeks.
     #  * SDR 8-BIT THROUGHOUT, which makes the UHD/HEVC cell the odd one — it is the existing
     #    HDR10 Main10 fixture. Deliberate: HDR is a third axis, that cell is the one already
     #    device-verified (2026-08-22), and an SDR 4K HEVC twin would differ from it only in
@@ -1126,7 +659,6 @@ PIPE_SHAPES = {
         "video": {"codec": "h264", "size": "720x480", "crf": 20},
         "audio": [{"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
                    "default": True, "title": "AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_h264_ac3_720p": {
         "kind": "clip", "ext": "mkv",
@@ -1135,38 +667,16 @@ PIPE_SHAPES = {
         "video": {"codec": "h264", "size": "1280x720", "crf": 20},
         "audio": [{"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
                    "default": True, "title": "AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_h264_ac3_2160p": {
-        # The cell NEITHER pack could reach: 4K H.264. See the CRF note above for why this one
-        # is crf 26 where its 1080p sibling is 20.
+        # 4K H.264. See the CRF note above for why this one is crf 26 where its 1080p sibling
+        # is 20.
         "kind": "clip", "ext": "mkv",
         "duration": PIPE_SECS, "rate": 0.20,
         "declare": {"vcodec": "h264", "acodec": "ac3", "fps": float(FPS), "atmos": False},
         "video": {"codec": "h264", "size": "3840x2160", "crf": 26},
         "audio": [{"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
                    "default": True, "title": "AC-3 5.1 English"}],
-        "subs": [],
-    },
-    # **The 4K source the ABR ladder can actually be driven from.** Its sibling above is the
-    # resolution matrix's cell and carries AC-3 5.1, which is right for what THAT case grades and
-    # wrong here for two independent reasons: the harness checks a case's `declare` against the
-    # streams its fixture really carries, and the declaration must ALSO describe what is decoded —
-    # which under `auto_network.start_hls` is the ABR ladder, and every rung of that ladder is
-    # AAC. No single case can declare both. So the Uhd case gets a source whose audio matches the
-    # ladder it plays; the raster is what it is really for, since that is what makes the 4K
-    # actuator feasible at all (`HlsActuatorCatalog::limited_to`).
-    #
-    # NOT `pipe_abr_4k_22m`, which is a LADDER clip: its unsuffixed file is segment 0 alone, two
-    # seconds, and a source has to outlast the case's own `min_pos_climb_s`.
-    "pipe_h264_aac_2160p": {
-        "kind": "clip", "ext": "mkv",
-        "duration": PIPE_SECS, "rate": 0.20,
-        "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
-        "video": {"codec": "h264", "size": "3840x2160", "crf": 26},
-        "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 240,
-                   "default": True, "title": "AAC 2.0 English"}],
-        "subs": [],
     },
     "pipe_hevc_eac3_480p": {
         "kind": "clip", "ext": "mkv",
@@ -1175,7 +685,6 @@ PIPE_SHAPES = {
         "video": {"codec": "hevc", "size": "720x480", "crf": 26},
         "audio": [{"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 330,
                    "default": True, "title": "E-AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_hevc_eac3_720p": {
         "kind": "clip", "ext": "mkv",
@@ -1184,20 +693,16 @@ PIPE_SHAPES = {
         "video": {"codec": "hevc", "size": "1280x720", "crf": 26},
         "audio": [{"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 330,
                    "default": True, "title": "E-AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_hevc_eac3_1080p": {
         # 1080p HEVC in MKV with E-AC-3. `pipe_hevc_aac_mp4` is also 1920x1080 HEVC and is NOT
-        # this cell: it is mp4 + stereo AAC, i.e. two axes away, and reading it as the matrix's
-        # FHD/HEVC rung is exactly the "some of the shapes this library happens to own" answer
-        # #50/#51 is asking us to stop giving.
+        # this cell: it is mp4 + stereo AAC, i.e. two axes away.
         "kind": "clip", "ext": "mkv",
         "duration": PIPE_SECS, "rate": 0.14,
         "declare": {"vcodec": "hevc", "acodec": "eac3", "fps": float(FPS), "atmos": False},
         "video": {"codec": "hevc", "size": "1920x1080", "crf": 26},
         "audio": [{"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 330,
                    "default": True, "title": "E-AC-3 5.1 English"}],
-        "subs": [],
     },
     # -----------------------------------------------------------------------------------
     # ONE LOAD, THREE CODED RASTERS. This is not another cell in the static matrix above:
@@ -1220,108 +725,12 @@ PIPE_SHAPES = {
         },
         "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 233,
                    "default": True, "title": "AAC 2.0 English"}],
-        "subs": [],
-    },
-    # Four independently decodable two-second MPEG-TS segments for the no-Plex Auto network-profile
-    # case. `serve_fixtures.py` exposes each at both bitrate rungs sharing its raster, so the real
-    # HLS controller can prime/swap fixed sessions without a PMS. Shortness is intentional here:
-    # these are HLS segment bodies, never top-level playback fixtures.
-    "pipe_abr_240p": {
-        "kind": "clip", "ext": "ts", "duration": 12, "rate": 0.02, "hls_segment": True,
-        "hls_segments": 6,
-        "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
-        "video": {"codec": "h264", "size": "426x240", "vbr": 320 - 96},
-        "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "96k", "pitch": 180,
-                   "default": True, "title": "AAC 2.0 English"}],
-        "subs": [],
-    },
-    "pipe_abr_480p": {
-        "kind": "clip", "ext": "ts", "duration": 12, "rate": 0.03, "hls_segment": True,
-        "hls_segments": 6,
-        "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
-        "video": {"codec": "h264", "size": "854x480", "vbr": 720 - 128},
-        "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "128k", "pitch": 200,
-                   "default": True, "title": "AAC 2.0 English"}],
-        "subs": [],
-    },
-    "pipe_abr_720p": {
-        "kind": "clip", "ext": "ts", "duration": 12, "rate": 0.05, "hls_segment": True,
-        "hls_segments": 6,
-        "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
-        "video": {"codec": "h264", "size": "1280x720", "vbr": 2000 - 160},
-        "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "160k", "pitch": 220,
-                   "default": True, "title": "AAC 2.0 English"}],
-        "subs": [],
-    },
-    # Rung 4000's OWN clip. It shared `pipe_abr_720p` until 2026-08-26, so rungs 2000 and 4000
-    # delivered the identical 3 183 kbps (measured — `docs/measurements/p1-transaction-anatomy.md`
-    # §6): the ladder was non-monotone in relief there and an adjacent-pair experiment across that
-    # step measured nothing. Same raster as rung 2000 BY DESIGN — ABR_RASTER puts both at
-    # 1280x720, so what separates the two rungs is the bitrate and only the bitrate.
-    "pipe_abr_720p_4m": {
-        "kind": "clip", "ext": "ts", "duration": 12, "rate": 0.05, "hls_segment": True,
-        "hls_segments": 6,
-        "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
-        "video": {"codec": "h264", "size": "1280x720", "vbr": 4000 - 160},
-        "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "160k", "pitch": 220,
-                   "default": True, "title": "AAC 2.0 English"}],
-        "subs": [],
-    },
-    "pipe_abr_1080p": {
-        "kind": "clip", "ext": "ts", "duration": 12, "rate": 0.08, "hls_segment": True,
-        "hls_segments": 6,
-        "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
-        "video": {"codec": "h264", "size": "1920x1080", "crf": 20},
-        "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 240,
-                   "default": True, "title": "AAC 2.0 English"}],
-        "subs": [],
-    },
-    # The rate-targeted 1080p ladder. One clip per mid/high rung, because the four-clip pack
-    # above serves ONE file for every rung from 6000 up — which is fine for grading which rung a
-    # controller picked, and useless for measuring what that rung costs. The reachable reserve is
-    # `queue_bytes / media_rate` (`docs/adaptive-playback-plan.md` §0.1), so measurement step M4
-    # needs each rung to actually deliver its own bitrate. Video target = rung request minus the
-    # 192 kbps audio track, so the muxed stream lands on the rung's wire rate.
-    #
-    # Cost: eight clips x 2 s x <= 20 Mbit/s is about 25 MB, against a ~0.7 GB pipeline pack.
-    **{
-        f"pipe_abr_1080p_{mbit}m": {
-            "kind": "clip", "ext": "ts", "duration": 12, "rate": 0.08, "hls_segment": True,
-            "hls_segments": 6,
-            "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
-            "video": {"codec": "h264", "size": "1920x1080", "vbr": mbit * 1000 - 192},
-            "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 240,
-                       "default": True, "title": "AAC 2.0 English"}],
-            "subs": [],
-        }
-        for mbit in (6, 8, 10, 12, 14, 16, 18, 20)
-    },
-    # **The 4K rung, and the only ABR clip in either pack above 1080p.** The ladder's Uhd point is
-    # feasible only for a UHD source, so until this existed no `auto_network` case could reach it
-    # — which is what kept the plan's I9 blocked, since `Uhd = 2100` and the 1080p anchor are the
-    # two `production_load_pm` entries the table calls empirical.
-    #
-    # It is the most expensive clip in the ABR set (12 s at ~22 Mbit/s, about 33 MB) and it is the
-    # smallest thing that can answer the question: the acceptance test is `hls_raster_within`, so a
-    # 22000 rung serving 1080p would be ADMITTED and would prove nothing.
-    "pipe_abr_4k_22m": {
-        "kind": "clip", "ext": "ts", "duration": 12, "rate": 0.08, "hls_segment": True,
-        "hls_segments": 6,
-        "declare": {"vcodec": "h264", "acodec": "aac", "fps": float(FPS), "atmos": False},
-        "video": {"codec": "h264", "size": "3840x2160", "vbr": 22 * 1000 - 192,
-                  # See `vbr_bufsize_ratio`: at 4K the opening IDR overshoots segment 0 to 1.40x
-                  # of target inside the default two-second window, which is the clip's own gate
-                  # failing. Half a segment forces it to be repaid where it is spent.
-                  "vbr_bufsize_ratio": 0.5},
-        "audio": [{"codec": "aac", "ch": 2, "lang": "eng", "br": "192k", "pitch": 240,
-                   "default": True, "title": "AAC 2.0 English"}],
-        "subs": [],
     },
     # -----------------------------------------------------------------------------------
-    # ...and the one shape in either pack that is SUPPOSED to run out — LG item #46.
+    # ...and the one shape that is SUPPOSED to run out — LG item #46.
     "pipe_h264_ac3_short": {
-        # 20 s, and the short length IS the feature: every other clip in both packs is sized so
-        # that it CANNOT hit EOF inside a case's window (trap 9's second half), because a finish
+        # 20 s, and the short length IS the feature: every other clip is sized so that it
+        # CANNOT hit EOF inside a case's window (trap 9), because a finish
         # tears the session down under assertions that were only ever about playing. This one
         # exists to reach the end — `pipe_finish_eos` grades the `EOS reached: … → ended` line
         # and the clean teardown behind it, and `pipe_replay_after_eos` then starts it AGAIN,
@@ -1336,14 +745,13 @@ PIPE_SHAPES = {
         "video": {"codec": "h264", "size": "720x480", "crf": 20},
         "audio": [{"codec": "ac3", "ch": 6, "lang": "eng", "br": "448k", "pitch": 220,
                    "default": True, "title": "AC-3 5.1 English"}],
-        "subs": [],
     },
     "pipe_h264_eac3_late_audio": {
         # **An E-AC-3 track that starts 11.008 s after the video** -- the container `Delay` of the
         # film that buffered forever at 0:00 (PR #603). There is no audio packet for the first
         # 11 s, so the demuxer reads more than `AQ_VIDEO_BYTES` of video before it reaches the
         # first one: the video lane fills, the demux thread parks on the push, the pipeline will
-        # not start its clock without audio, and nothing moves. The pipeline tier is the only place
+        # not start its clock without audio, and nothing moves. These clips are the only place
         # that reaches it end to end (real socket, real lanes, the pump's stale-audio drop and
         # feed-ahead throttle, Starfish's own clock); the host test `ff::late_audio_tests` covers
         # the demux half.
@@ -1364,7 +772,6 @@ PIPE_SHAPES = {
         "video": {"codec": "h264", "size": "1920x1080", "vbr": 12000, "vbr_bufsize_ratio": 1},
         "audio": [{"codec": "eac3", "ch": 6, "lang": "eng", "br": "384k", "pitch": 330,
                    "default": True, "title": "E-AC-3 5.1 English", "delay": 11.008}],
-        "subs": [],
         "late_audio": {"min_video_bytes_before_audio": AQ_VIDEO_BYTES},
     },
     "pipe_multiaudio_1080p": {
@@ -1386,18 +793,8 @@ PIPE_SHAPES = {
                    "title": "E-AC-3 5.1 English"},
                   {"codec": "aac", "ch": 2, "lang": "eng", "br": "256k", "pitch": 300,
                    "title": "AAC 2.0 English"}],
-        "subs": [],
     },
 }
-
-# Which tier a shape belongs to, stamped once here rather than written into every literal:
-# it is a property of the TABLE, and a shape that disagreed with the table it lives in would
-# mislabel its own record. verify() copies it into fixtures.json, which is what tells a
-# reader — and `tests/run.py` — which suite tier a pack can be pointed at. Note this is NOT
-# derivable from the duration: the integration table has 90 s shapes.
-# Stamped below, from TIERS itself — a second hand-written pairing of tier name to shape table
-# is one registry a third tier gets added to and another it gets forgotten in.
-
 
 def shape_duration(spec, secs=None):
     """The length to BUILD this shape at: what it declares, or this run's override.
@@ -1406,95 +803,37 @@ def shape_duration(spec, secs=None):
     the Makefile and the README already use). It is a property of the RUN, never of the
     shape: `spec["duration"]` stays the length the shape is DEFINED at, which is what
     verify() grades a file's `quick` flag against — so a deliberately shortened clip still
-    says so in fixtures.json, whichever tier it came from.
+    says so in fixtures.json.
     """
     return spec["duration"] if secs is None else secs
 
 
-def out_paths(root, key, spec):
-    """Where this shape's file(s) go — one layout per tier.
-
-    (The `quick` parameter this carried until the pipeline tier landed was never read:
-    length has never been part of a path, and a shortened clip deliberately overwrites the
-    full-length file it is a short copy of.)
-    """
-    # A clip is flat by definition: the Plex tree exists for a SCANNER, and nothing scans the
-    # pipeline pack — tests/serve_fixtures.py serves a directory. (`flat` was a second key set on
-    # exactly the shapes whose kind was already "clip", and read only here.)
-    if spec["kind"] == "clip":
-        # The pipeline tier. `tests/serve_fixtures.py` serves a DIRECTORY — the trees below
-        # exist for a Plex scanner and this tier has none — and the file is named for the
-        # shape key, so a `dispatcharrtv-playurl` URL says which shape it is playing
-        # (`…/pipe_hevc_eac3_4k_dovi_p8.mkv`) without a lookup. The `pipe_` prefix and the
-        # separate root are also what keep the two tiers off one path: main()'s "longer on
-        # disk, keep it" rule would otherwise hand a 60 s pipeline run the full-length
-        # integration file and rebuild nothing, and report it as `already correct`.
-        return [(key, root / ("%s.%s" % (key, spec["ext"])))]
-    # Plex-scannable layout. Movies and shows MUST be separate libraries; the scanners
-    # assume the two content types live apart, and a mixed root matches badly or not at all.
-    n = spec.get("episodes", 1)
-    if spec["kind"] == "movie":
-        t = spec["library_title"]
-        return [(key, root / "Movies" / t / ("%s.%s" % (t, spec["ext"])))]
-    show = spec["library_title"]
-    out = []
-    for ep in range(1, n + 1):
-        k = key if ep == 1 else spec["extra_key"]
-        out.append((k, root / "TV Shows" / show / "Season 01"
-                    / ("%s - s01e%02d.%s" % (show, ep, spec["ext"]))))
-    return out
+def out_path(root, key, spec):
+    """Where this shape's file goes: flat, named for the shape key, so a `dispatcharrtv-playurl`
+    URL says which shape it is playing (`…/pipe_hevc_eac3_4k_dovi_p8.mkv`) without a lookup.
+    Length is never part of the path: a shortened clip deliberately overwrites the full-length
+    file it is a short copy of."""
+    return root / ("%s.%s" % (key, spec["ext"]))
 
 
-def shape_index(shapes):
-    """Output key -> (shape key, spec, episode number). The reverse of out_paths, so a
-    record read back out of an existing fixtures.json can be re-verified without knowing
-    which run wrote it. Built from the RUN'S table, not from every table there is: each tier
-    keeps its own fixtures.json beside its own media, and a key from the other one is a key
-    that does not belong in this document."""
-    idx = {}
-    for k, spec in shapes.items():
-        for out_key, _ in out_paths(Path("."), k, spec):
-            ep = None
-            if spec["kind"] == "episode" and spec.get("episodes", 1) > 1:
-                ep = 1 if out_key == k else 2
-            idx[out_key] = (k, spec, ep)
-    return idx
-
-
-# Measured wire rate per shape (Mbit/s, video+audio) — used only for the up-front size
-# estimate. Re-measure alongside `rate` if the CRFs above ever move, and take the sample
-# from a FULL-LENGTH build: a 20-second clip is I-frame-heavy and reads 20-30% high (the
-# 4K HDR10 episode measured 9.1 Mbit/s over 20 s and 7.6 over its real 300). These numbers
-# therefore run slightly conservative, which is the safe direction for a disk-space warning.
-MBIT = {
-    "movie_h264_ac3_1080p": 7.50, "episode_hevc_4k_hdr10_eac3": 8.80,
-    "movie_hevc_4k_hdr10_truehd": 11.0, "movie_hevc_4k_dovi_p8": 9.80,
-    "movie_hevc_aac_mp4": 5.00, "episode_h264_aac": 4.60,
-    "movie_h264_ac3_many_audio": 8.10, "movie_av1_no_dp_audio": 4.40,
-    "movie_hevc_4k_pgs_subs": 5.50,
-}
-
-# The pipeline tier's estimate. ONE of these is measured: `pipe_h264_ac3_1080p` built at its
-# full 60 s came out at 7.24 Mbit/s (54.3 MB) on an Apple-silicon Mac with this ffmpeg, and
-# the same shape at 5 s read 7.19 — so at these lengths that shape shows none of the
-# short-clip inflation the comment above records, which was measured on the 4K HDR10 x265
-# shape and should not be assumed to carry to a different encoder. The other four numbers are
-# the integration table's, carried across from the shape each pipeline clip is a short copy
-# of (named beside each) and NOT re-measured; re-measure the first time an estimate here is
-# visibly wrong. The multi-audio clip borrows the eight-track shape's number and so
-# over-estimates by the five tracks it does not have, which is the safe direction for a
+# Wire rate per shape (Mbit/s, video+audio) — used only for the up-front size estimate.
+# `pipe_h264_ac3_1080p` built at its full 60 s came out at 7.24 Mbit/s (54.3 MB) on an
+# Apple-silicon Mac, and the same shape at 5 s read 7.19. The rows marked "measured" were taken
+# from full-length builds; the rest were carried across from a longer library-length encode of
+# the same settings and NOT re-measured — re-measure the first time an estimate here is visibly
+# wrong. A short clip is I-frame-heavy and reads HIGH, which is the safe direction for a
 # disk-space warning.
 PIPE_MBIT = {
     "pipe_h264_dts_1080p": 8.20,        # baseline picture + 1.4 Mbit/s DTS 5.1
     "pipe_h264_ac3_1080p": 7.24,        # measured, from a full 60 s build
-    "pipe_hevc_eac3_4k_hdr10": 8.80,    # = episode_hevc_4k_hdr10_eac3 (hevc 4K crf 30 HDR)
-    "pipe_hevc_eac3_4k_dovi_p8": 9.80,  # = movie_hevc_4k_dovi_p8
-    "pipe_hevc_aac_mp4": 5.00,          # = movie_hevc_aac_mp4         (hevc 1080p crf 26)
+    "pipe_hevc_eac3_4k_hdr10": 8.80,    # hevc 4K crf 30 HDR
+    "pipe_hevc_eac3_4k_dovi_p8": 9.80,  # the same base layer plus its RPU
+    "pipe_hevc_aac_mp4": 5.00,          # hevc 1080p crf 26
     "pipe_h264_aac_mp4": 6.40,          # measured, from a full 60 s build
     "pipe_vp9_aac_1080p": 6.10,         # measured, from a full 60 s build (vp9 1080p crf 33)
     "pipe_h264_1080p5994": 9.48,        # measured; NB 2.5x the frames cost only 1.3x the bits
     "pipe_hevc_4k_60fps": 9.40,         # measured, at crf 32 (crf 30 would be well over 15)
-    "pipe_multiaudio_1080p": 8.10,      # = movie_h264_ac3_many_audio, minus five tracks
+    "pipe_multiaudio_1080p": 8.10,      # over-estimated from an eight-track encode
     "pipe_h264_eac3_late_audio": 12.4,  # rate-targeted: 12 Mbit/s video + 384 kbps E-AC-3
     # The resolution matrix. Video measured 2026-08-23 over a 5 s encode at each rung's own
     # settings, plus its audio track's nominal rate — so these run HIGH for the reason the note
@@ -1502,121 +841,44 @@ PIPE_MBIT = {
     "pipe_h264_ac3_480p": 1.71,         # 1.26 video + 0.45 AC-3
     "pipe_h264_ac3_720p": 3.73,         # 3.28 + 0.45
     "pipe_h264_ac3_2160p": 12.2,        # 11.77 + 0.45
-    "pipe_h264_aac_2160p": 12.0,        # same 4K video, stereo AAC instead of AC-3 5.1
     "pipe_hevc_eac3_480p": 1.34,        # 0.96 video + 0.38 E-AC-3
     "pipe_hevc_eac3_720p": 2.50,        # 2.12 + 0.38
     "pipe_hevc_eac3_1080p": 4.90,       # 4.52 + 0.38
     "pipe_h264_aac_resolution_spike": 4.40,  # 8s 720p + 8s 1080p + long 720p tail, AAC
-    "pipe_abr_240p": 0.32,
-    "pipe_abr_480p": 0.72,
-    "pipe_abr_720p": 2.00,
-    "pipe_abr_720p_4m": 4.00,
-    "pipe_abr_1080p": 20.0,
-    # Rate-targeted, so these are the TARGET rather than an estimate: video `vbr` plus the
-    # 192 kbps audio track, i.e. the rung's own request. That is the point of them.
-    **{f"pipe_abr_1080p_{mbit}m": float(mbit) for mbit in (6, 8, 10, 12, 14, 16, 18, 20)},
-    "pipe_abr_4k_22m": 22.0,
     "pipe_h264_ac3_short": 1.71,        # = pipe_h264_ac3_480p, of which it is a 20 s copy
 }
 
-# The two tiers as data: which table, which wire-rate estimate, and which subdirectory of
-# `--out` the pack lives in. `subdir` is what keeps the packs apart on disk — the flat
-# `pipe_` names and the Plex trees could share a root without a filename collision, but
-# fixtures.json could not, and that document is read as ground truth by everything
-# downstream.
-TIERS = {
-    "integration": {"shapes": SHAPES, "mbit": MBIT, "subdir": None},
-    "pipeline": {"shapes": PIPE_SHAPES, "mbit": PIPE_MBIT, "subdir": "pipeline"},
-}
-
-for _tier, _t in TIERS.items():          # see the note above the tables
-    for _spec in _t["shapes"].values():
-        _spec["tier"] = _tier
+# The subdirectory of `--out` the pack lives in. `make fixtures-pipeline`, `tests/run.py` and
+# `tests/serve_fixtures.py` all name `$FIXTURES_OUT/pipeline`, so that is where the files go.
+SUBDIR = "pipeline"
 
 
 # ---------------------------------------------------------------------------------------
 # Builders
 # ---------------------------------------------------------------------------------------
-# The marker segments' audio, as pitch multipliers. The intro melody is SHARED by every
-# episode (that identity is the thing Plex's fingerprinter looks for) and has three steps
-# rather than one held tone, because a constant sine gives an aligner nothing to lock onto.
-# The body pitch is per-episode, so the match STOPS at intro_end instead of running the
-# whole episode and past the halfway point where Plex discards the candidate.
-INTRO_MELODY = (1.0, 1.335, 1.189)
-BODY_PITCH = {1: 1.0, 2: 1.19}
-CREDITS_PITCH = 0.5
-
-
-def marker_plan(ctx, spec, dur):
-    """`(intro_end, credits_start)` in seconds — or `(None, None)` for a shape/run with no
-    markers.
-
-    MARKERS ONLY AT THE SHAPE'S FULL DECLARED LENGTH. The guard used to read `not
-    ctx.quick`, which said the same thing by accident for as long as QUICK_SECS was the only
-    other length there was. `intro` and `credits` are ABSOLUTE seconds against the declared
-    duration, so at any shorter build they are not approximate but broken, and broken
-    SILENTLY: at 60 s the episode pair's `intro: (0, 130)` puts intro_end past the end of the
-    clip, so the banner overlay's `enable='gte(t,130)'` never fires — which verify() cannot
-    see, because it compares the container's description TAG and never the pixels — while
-    `audio_segments` goes on to ask lavfi for a body segment of `60 - 40 - 130 = -110`
-    seconds. Markers are a Plex-detector concern
-    to the last inch — a tier with no Plex in it never wants them, and no pipeline shape
-    declares an `intro` either.
-    """
-    if not (ctx.markers and spec.get("intro") and dur >= spec["duration"]):
-        return None, None
-    credits = spec.get("credits") or 0
-    return spec["intro"][1], (dur - credits if credits else None)
-
-
-def audio_segments(spec, dur, ep, intro_end, credits_start):
-    """The `segs` list for `audio_graph` — see INTRO_MELODY. None when there are no markers."""
-    if intro_end is None:
-        return None
-    step = intro_end / float(len(INTRO_MELODY))
-    segs = [(m, step) for m in INTRO_MELODY]
-    body_end = credits_start or dur
-    segs.append((BODY_PITCH.get(ep or 1, 1.0), body_end - intro_end))
-    if credits_start:
-        segs.append((CREDITS_PITCH, dur - credits_start))
-    return segs
-
-
 def container_title(key, spec):
-    """The container's own `title` tag: the library title where there is one, since that is
-    what a Plex scanner matches on, and the shape key for a flat pipeline clip, which has no
-    library, no scanner and nothing for a title to be matched against."""
-    return spec.get("library_title") or key
+    """The container's own `title` tag: the shape key."""
+    return key
 
 
-def _assets(ctx, key, spec, dur, ep, work):
-    """Banner PNGs and subtitle assets for one output file."""
+def _banner(key, spec, dur, work):
+    """The layout lines and the banner PNG for one output file."""
     v = spec["video"]
     vw, vh = (int(x) for x in v["size"].split("x"))
-    lines = layout_lines(key, spec, dur, ep)
-    scale = fit_scale(lines, vw, vh)
-    tag = "%s%s" % (key, "_e%d" % ep if ep else "")
-    banner = banner_png(work / ("banner_%s.png" % tag), lines, scale)
-    intro = None
-    if marker_plan(ctx, spec, dur)[0] is not None:
-        intro = banner_png(work / ("intro_%s.png" % key),
-                           ["INTRO SEGMENT", "IDENTICAL IN EVERY EPISODE",
-                            "SKIP-INTRO MARKER BAIT"], scale + 2)
-    return lines, banner, intro
+    lines = layout_lines(key, spec, dur)
+    return lines, banner_png(work / ("banner_%s.png" % key), lines, fit_scale(lines, vw, vh))
 
 
-def build_generic(ctx, key, spec, dur, ep, dest, work, video_only=False):
-    """One ffmpeg invocation: lavfi video + banner overlay + N audio graphs + M sub files.
+def build_generic(key, spec, dur, dest, work, video_only=False):
+    """One ffmpeg invocation: lavfi video + banner overlay + N audio graphs.
 
     Input order is fixed and the maps are computed from it, because ffmpeg's stream
     specifiers are positional and a hand-counted `-map 4:a` is exactly the kind of thing
-    that silently produces the wrong track ORDER — which is the one property several cases
-    assert (see the module docstring).
+    that silently produces the wrong track ORDER — which is the one property the lane-selection
+    cases assert (see the module docstring).
     """
     v = spec["video"]
-    lines, banner, intro = _assets(ctx, key, spec, dur, ep, work)
-    intro_end, credits_start = marker_plan(ctx, spec, dur)
-    segs = audio_segments(spec, dur, ep, intro_end, credits_start)
+    lines, banner = _banner(key, spec, dur, work)
 
     argv = ["ffmpeg", "-y", "-v", "error", "-nostdin"]
     # -t BEFORE -i, always (trap 1).
@@ -1627,13 +889,8 @@ def build_generic(ctx, key, spec, dur, ep, dest, work, video_only=False):
              "-i", "testsrc2=size=%s:rate=%s" % (v["size"], _rate_arg(v.get("fps", FPS)))]
     argv += ["-i", str(banner)]
     idx = 2
-    intro_idx = None
-    if intro is not None:
-        argv += ["-i", str(intro)]
-        intro_idx = idx
-        idx += 1
 
-    a_idx, s_idx = [], []
+    a_idx = []
     if not video_only:
         for a in spec.get("audio", []):
             # `delay` (seconds) is a Matroska-style track Delay: `-itsoffset` shifts the NEXT
@@ -1643,54 +900,20 @@ def build_generic(ctx, key, spec, dur, ep, dest, work, video_only=False):
             if a.get("delay"):
                 argv += ["-itsoffset", _g(a["delay"])]
             argv += ["-t", str(dur), "-f", "lavfi",
-                     "-i", audio_graph(a["ch"], a["pitch"], dur, segs)]
+                     "-i", audio_graph(a["ch"], a["pitch"], dur)]
             a_idx.append(idx)
-            idx += 1
-        for i, s in enumerate(spec.get("subs", [])):
-            if s.get("sidecar"):
-                continue
-            if s["codec"] == "subrip":
-                p = write_srt(work / ("sub_%s_%d.srt" % (key, i)), i,
-                              "%s %s" % (s["lang"].upper(), s.get("title", "")), dur)
-            else:
-                p = work / ("sub_%s_%d.sup" % (key, i))
-                pgs_build(p, dur)
-            argv += ["-i", str(p)]
-            s_idx.append((idx, i, s))
             idx += 1
 
     # ---- filter chain. overlay's default eof_action is `repeat`, which is what lets a
     # single-frame PNG input persist for the whole clip without -loop/-framerate games.
-    # TOP-centre at H/12: below testsrc2's own timecode box, and clear of both the band the
-    # app renders subtitles in and the band pgs_build authors its cues in. And gated OFF
-    # during the intro window — the banner's first line carries `S01E01` vs `S01E02`, so
-    # while it was drawn there the intro was the one stretch of the two episodes that was
-    # NOT identical, which is precisely backwards for a detector looking for a match.
+    # TOP-centre at H/12: below testsrc2's own timecode box.
     fc = "[0:v][1:v]overlay=(W-w)/2:H/12"
-    if intro_end is not None:
-        fc += ":enable='gte(t,%d)'" % intro_end
-        fc += "[bg];[bg][%d:v]overlay=(W-w)/2:(H-h)/2:enable='lt(t,%d)'" % (intro_idx, intro_end)
-    if ep == 2:
-        # Episode 2 must not be a byte-identical twin of episode 1, or "which episode is
-        # this" becomes unanswerable from a capture. Tint AFTER the intro only, so the
-        # intro segment stays the identical stretch Plex's detector is looking for. NB the
-        # tint is for the HUMAN reading a capture; the episodes' real difference is in the
-        # AUDIO (see audio_segments), which is what Plex actually fingerprints.
-        fc += ",hue=h=140:enable='gte(t,%d)'" % (intro_end or 0)
-    if credits_start is not None:
-        # A credits-like tail: black picture under a distinct audio bed. Plex derives the
-        # `final` credits marker marker_credits_up_next needs from exactly this, and
-        # testsrc2 runs full-brightness colour bars to the last frame.
-        fc += (",drawbox=x=0:y=0:w=iw:h=ih:color=black@1.0:t=fill:enable='gte(t,%d)'"
-               % credits_start)
     # format= BEFORE setparams=, or the auto-scaler eats the colour stamp (trap 2).
     fc += "," + (CHAIN_PQ if v.get("hdr") else CHAIN_SDR) + "[v]"
     argv += ["-filter_complex", fc, "-map", "[v]"]
 
     for i in a_idx:
         argv += ["-map", "%d:a" % i]
-    for i, _, _ in s_idx:
-        argv += ["-map", "%d:s" % i]
 
     argv += venc_args(v)
     if video_only:
@@ -1699,8 +922,8 @@ def build_generic(ctx, key, spec, dur, ep, dest, work, video_only=False):
         return lines
 
     # ffmpeg writes an explicit FlagDefault=0 on the video track unless told otherwise, so
-    # every ffmpeg-muxed shape here disagreed with the mkvmerge-muxed one (and with every
-    # real library file). Nothing in the app reads the video default flag today — this is
+    # every ffmpeg-muxed shape here disagreed with the mkvmerge-muxed one (and with almost
+    # every real file). Nothing in the app reads the video default flag today — this is
     # consistency, not a fix — but the asymmetry was invisible because verify() checked the
     # flag on audio streams only. It checks the video one now too.
     argv += ["-disposition:v:0", "default"]
@@ -1713,23 +936,8 @@ def build_generic(ctx, key, spec, dur, ep, dest, work, video_only=False):
         argv += ["-metadata:s:a:%d" % n, "title=" + a.get("title", "")]
         # Dispositions are set EXPLICITLY on every track, including the zeros: ffmpeg marks
         # the first stream of a type default on its own, and a second "default" audio track
-        # changes which one the route auto-picks.
+        # changes which one a player auto-picks.
         argv += ["-disposition:a:%d" % n, "default" if a.get("default") else "0"]
-
-    embedded = [s for s in spec.get("subs", []) if not s.get("sidecar")]
-    if embedded:
-        # One `-c:s` for the whole output, so a shape mixing text and bitmap tracks would
-        # need a per-stream codec list. No shape does today; fail loudly rather than
-        # transcode a .sup into subrip (which ffmpeg refuses anyway — see trap 10).
-        kinds = {x["codec"] == "subrip" for x in embedded}
-        if len(kinds) != 1:
-            raise Fail("shape %r mixes text and bitmap subtitle tracks; build_generic "
-                       "emits a single -c:s" % key)
-        argv += ["-c:s", "srt" if embedded[0]["codec"] == "subrip" else "copy"]
-    for n, s in enumerate(embedded):
-        argv += ["-metadata:s:s:%d" % n, "language=" + s["lang"]]
-        argv += ["-metadata:s:s:%d" % n, "title=" + s.get("title", "")]
-        argv += ["-disposition:s:%d" % n, "forced" if s.get("forced") else "0"]
 
     desc = "\n".join(lines)
     argv += ["-metadata", "title=" + container_title(key, spec),
@@ -1737,76 +945,14 @@ def build_generic(ctx, key, spec, dur, ep, dest, work, video_only=False):
              "-metadata", "comment=" + desc]
     if spec["ext"] == "mp4":
         argv += ["-movflags", "+faststart"]
-    # -strict -2 once, globally: truehd, dca and the native vorbis encoder are all marked
-    # experimental in ffmpeg and refuse to run without it.
+    # -strict -2 once, globally: ffmpeg marks its dca (DTS) encoder experimental and it
+    # refuses to run without it.
     argv += ["-strict", "-2"]
-    # A trailing output -t as well: a .sup is not a timed input, so without this the mux
-    # runs to the LONGEST stream and the container duration comes out wrong (measured: a
-    # 20 s video muxed with a 60 s .sup produced a 58 s file).
+    # A trailing output -t as well (trap 1): the mux then cannot run past the declared length.
     argv += ["-t", str(dur), str(dest)]
     dest.parent.mkdir(parents=True, exist_ok=True)
     run(argv)
-    cut_hls_segments(spec, dur, dest)
-
-    # A Plex sidecar is "<video basename>.<lang>.srt" and must carry the video's FINAL
-    # basename, which is the library title — not the shape key it was generated under.
-    for s in spec.get("subs", []):
-        if s.get("sidecar"):
-            lang2 = SIDECAR_LANG.get(s["lang"], s["lang"])
-            write_srt(dest.parent / (dest.stem + "." + lang2 + ".srt"),
-                      0, s["lang"].upper() + " SIDECAR", dur)
     return lines
-
-
-def cut_hls_segments(spec, dur, dest):
-    """Cut an ABR ladder clip into the K independently decodable segments the server hands out.
-
-    **This is the fix for the corpus having ten data points.** `serve_fixtures.py` advertises 90
-    segments per rung but resolved every `sequence=N` to ONE file, so 593 logged segments in the
-    P1 device run carried exactly ten distinct byte sizes -- each of them a file size on disk.
-    `bytes` was not merely collinear with `rung`, it was an exact function of it, and no amount of
-    playback could add a degree of freedom. See `docs/measurements/p1-transaction-anatomy.md` §6.
-
-    The split is a STREAM COPY of the clip this function was just handed, so the encode is
-    untouched and each segment is exactly what the encoder produced for those two seconds. `-g 48`
-    with `-sc_threshold 0` puts an IDR on every 2 s boundary at 24 fps, which is what makes the
-    cut land cleanly; `-reset_timestamps` gives each segment a zero base, matching the measured
-    PMS contract and the existing one-file pack.
-
-    Segment 0 KEEPS THE ORIGINAL NAME. That is deliberate and is what makes this backward
-    compatible: an old pack, `ABR_FALLBACK`, `fixtures.json` and `verify()` all still find the
-    file they expect, and a server that has not learned about the extra segments still serves a
-    correct -- if repetitive -- stream.
-
-    Measured on the current recipe: six real cuts of a 12 s 1080p clip span 2 403 956 to
-    2 757 772 bytes, a 1.15x spread. Quality-targeted encodes give LESS spread, not more (CRF
-    1.07x, VBR-with-headroom 1.09x), because the source complexity is near-constant and those
-    modes smooth what little there is -- so the existing rate-targeted recipe is kept.
-    """
-    count = int(spec.get("hls_segments") or 0)
-    if count < 2:
-        return []
-    seg_secs = float(dur) / count
-    work = dest.parent / (dest.stem + "__cut")
-    work.mkdir(parents=True, exist_ok=True)
-    run(["ffmpeg", "-y", "-v", "error", "-nostdin", "-i", str(dest),
-         "-c", "copy", "-map", "0", "-f", "segment",
-         "-segment_time", _g(seg_secs), "-reset_timestamps", "1",
-         str(work / ("part_%02d." + spec["ext"]))])
-    parts = sorted(work.glob("part_*." + spec["ext"]))
-    if len(parts) < count:
-        raise Fail("splitting %s gave %d segment(s), wanted %d — the GOP length and the segment "
-                   "time disagree, so the cut cannot land on an IDR"
-                   % (dest.name, len(parts), count))
-    written = []
-    for i, part in enumerate(parts[:count]):
-        target = dest if i == 0 else dest.with_name("%s_%02d.%s" % (dest.stem, i, spec["ext"]))
-        part.replace(target)
-        written.append(target)
-    for leftover in work.glob("*"):
-        leftover.unlink()
-    work.rmdir()
-    return written
 
 
 def resolution_spike_plan(spec, dur):
@@ -1831,7 +977,7 @@ def resolution_spike_plan(spec, dur):
     return plan
 
 
-def build_resolution_spike(ctx, key, spec, dur, ep, dest, work):
+def build_resolution_spike(key, spec, dur, dest, work):
     """H.264 720p -> 1080p -> 720p inside one Matroska video track.
 
     One encoder cannot change dimensions in place, so each raster is encoded as an Annex-B
@@ -1846,7 +992,7 @@ def build_resolution_spike(ctx, key, spec, dur, ep, dest, work):
     if len(spec.get("audio", [])) != 1 or spec["audio"][0]["codec"] != "aac":
         raise Fail("resolution_spike currently requires one continuous AAC track")
 
-    lines = layout_lines(key, spec, dur, ep)
+    lines = layout_lines(key, spec, dur)
     fps = spec["video"].get("fps", FPS)
     elementary = []
     for i, (size, seg_secs) in enumerate(resolution_spike_plan(spec, dur)):
@@ -1906,20 +1052,19 @@ def build_resolution_spike(ctx, key, spec, dur, ep, dest, work):
     return lines
 
 
-def build_dovi(ctx, key, spec, dur, ep, dest, work):
+def build_dovi(key, spec, dur, dest, work):
     """Dolby Vision profile 8.1, synthesized end to end — no donor file involved.
 
     8.1 means the base layer IS plain HDR10, which is why this can be built at all: encode
     the HDR10 base, have `dovi_tool generate` author an RPU from a JSON description, inject
     it, and let mkvmerge write the container's DV configuration record. ffmpeg's matroska
     muxer will NOT write that record from a raw .hevc, and it is exactly what the app reads
-    back (`ff: … dovi=P8 bl_compat=1`) and what `dp_hevc_eac3_dovi_p8` is the regression
-    guard for. x265 needs aud/hrd/vbv here so the injected RPU NALs land in a conformant
+    back (`ff: … dovi=P8 bl_compat=1`). x265 needs aud/hrd/vbv here so the injected RPU NALs land in a conformant
     access-unit structure.
     """
     v = dict(spec["video"], x265_extra="aud=1:hrd=1:vbv-maxrate=50000:vbv-bufsize=50000")
     bl = work / ("%s_bl.hevc" % key)
-    lines = build_generic(ctx, key, dict(spec, video=v), dur, ep, bl, work, video_only=True)
+    lines = build_generic(key, dict(spec, video=v), dur, bl, work, video_only=True)
 
     cfg = work / ("%s_dovi.json" % key)
     cfg.write_text(json.dumps({
@@ -1936,12 +1081,10 @@ def build_dovi(ctx, key, spec, dur, ep, dest, work):
     bl_rpu = work / ("%s_bl_rpu.hevc" % key)
     run(["dovi_tool", "inject-rpu", "-i", str(bl), "--rpu-in", str(rpu), "-o", str(bl_rpu)])
 
-    intro_end, credits_start = marker_plan(ctx, spec, dur)
-    segs = audio_segments(spec, dur, ep, intro_end, credits_start)
     a = spec["audio"][0]
     mka = work / ("%s_audio.mka" % key)
     run(["ffmpeg", "-y", "-v", "error", "-nostdin",
-         "-t", str(dur), "-f", "lavfi", "-i", audio_graph(a["ch"], a["pitch"], dur, segs)]
+         "-t", str(dur), "-f", "lavfi", "-i", audio_graph(a["ch"], a["pitch"], dur)]
         + ["-c:a"] + AENC[a["codec"]] + (["-b:a", a["br"]] if a.get("br") else [])
         + ["-ac", str(a["ch"]), "-strict", "-2", "-t", str(dur), str(mka)])
 
@@ -1965,20 +1108,8 @@ def build_dovi(ctx, key, spec, dur, ep, dest, work):
             "--default-track", "0:yes", str(bl_rpu),
             "--language", "0:" + a["lang"], "--track-name", "0:" + a.get("title", ""),
             "--default-track", "0:yes", str(mka)]
-    srts = []
-    for i, s in enumerate(spec.get("subs", [])):
-        if s.get("sidecar"):
-            continue
-        if s["codec"] != "subrip":
-            raise Fail("build_dovi muxes text subtitles only; %r wants %r" % (key, s["codec"]))
-        p = write_srt(work / ("sub_%s_%d.srt" % (key, i)), i,
-                      "%s %s" % (s["lang"].upper(), s.get("title", "")), dur)
-        srts.append(p)
-        argv += ["--language", "0:" + s["lang"], "--track-name", "0:" + s.get("title", ""),
-                 "--forced-track", "0:%s" % ("yes" if s.get("forced") else "no"),
-                 "--default-track", "0:no", str(p)]
     run(argv)
-    for p in (bl, bl_rpu, mka, rpu, cfg, tags, *srts):
+    for p in (bl, bl_rpu, mka, rpu, cfg, tags):
         p.unlink(missing_ok=True)
     return lines
 
@@ -1994,9 +1125,8 @@ def _xml_escape(s):
 # PLAYER regressed and the evidence all points at the app. Everything a shape CLAIMS is
 # read back out of the finished file; a mismatch names both sides and is fatal.
 # ---------------------------------------------------------------------------------------
-VCODEC_NAME = {"h264": "h264", "hevc": "hevc", "av1": "av1", "vp9": "vp9"}
-ACODEC_NAME = {"ac3": "ac3", "eac3": "eac3", "aac": "aac", "truehd": "truehd",
-               "dts": "dts", "vorbis": "vorbis", "opus": "opus", "flac": "flac"}
+VCODEC_NAME = {"h264": "h264", "hevc": "hevc", "vp9": "vp9"}
+ACODEC_NAME = {"ac3": "ac3", "eac3": "eac3", "aac": "aac", "dts": "dts"}
 
 
 def _rate(s):
@@ -2098,20 +1228,6 @@ def boundary_packet_nals(path, boundary_s):
     if not candidates:
         return []
     return h264_nal_types(_ffprobe_data_bytes(min(candidates, key=lambda x: x[0])[1].get("data")))
-
-
-def first_key_packet_nals(path):
-    """NAL types in an independent segment's first key packet, irrespective of TS PTS offset."""
-    try:
-        doc = json.loads(run([
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_packets", "-show_data",
-            "-show_entries", "packet=flags,data", "-of", "json", str(path),
-        ]))
-    except (Fail, ValueError):
-        return []
-    packet = next((p for p in doc.get("packets", []) if "K" in (p.get("flags") or "")), None)
-    return h264_nal_types(_ffprobe_data_bytes((packet or {}).get("data")))
 
 
 def physical_av_interleave(packets, video_index, audio_index):
@@ -2325,7 +1441,7 @@ def verify_resolution_spike(path, spec, dur, rec, problems):
                         % (max_interleave * 1000))
 
 
-def verify(key, spec, dur, path, ep=None):
+def verify(key, spec, dur, path):
     problems, rec = [], {}
     if not path.exists():
         return {}, ["missing file %s" % path]
@@ -2338,30 +1454,6 @@ def verify(key, spec, dur, path, ep=None):
     # A property of the FILE, not of the invocation that happened to look at it — which is
     # what makes the document's top-level flag derivable rather than a per-run stamp.
     rec["quick"] = measured < spec["duration"] * 0.9
-    # Which suite tier the pack is for, out of the table this shape came from — and NOT
-    # derivable from anything else in the record: a 60 s file is a full-length pipeline clip
-    # and a stunted integration one, and `quick` above can only tell those apart once you
-    # already know which table to compare it against.
-    rec["tier"] = spec["tier"]
-    # An `hls_segments` shape is ENCODED at `duration` and then cut, so the file this verifies
-    # is one segment of it. Checking the pre-cut length here would fail every ABR ladder clip.
-    cuts = int(spec.get("hls_segments") or 0)
-    if cuts >= 2:
-        dur = float(dur) / cuts
-        rec["hls_segments"] = cuts
-        # The SIBLINGS have to be here too, and this check is load-bearing rather than tidy: with
-        # the duration expectation divided by `cuts`, an OLD un-cut 2 s clip measures exactly the
-        # 2 s a cut segment should, passes every other assertion, and is skipped as "already
-        # correct" — which is how the first attempt at this silently regenerated nothing.
-        stem = pathlib.Path(path)
-        missing = [i for i in range(1, cuts)
-                   if not stem.with_name("%s_%02d%s" % (stem.stem, i, stem.suffix)).is_file()]
-        if missing:
-            problems.append("cut into %d segment(s) but %d sibling(s) are absent (%s) — this is "
-                            "an un-cut clip from before the split, and the rung it serves would "
-                            "deliver one byte size for the whole playback"
-                            % (cuts, len(missing),
-                               ", ".join("_%02d" % i for i in missing[:3])))
     tol = max(2.0, dur * 0.03)
     if abs(measured - dur) > tol:
         # DUR_LONGER_MARK: main() reads this exact prefix to tell "the file on disk is
@@ -2375,12 +1467,9 @@ def verify(key, spec, dur, path, ep=None):
         # A RATE-TARGETED shape has to land on its target, and this is the only place that can be
         # checked against the file rather than against the ffmpeg arguments. It exists because
         # nothing else notices a `crf` -> `vbr` change: the duration, raster, codec and track
-        # layout are all identical either way, so a stale quality-targeted clip is skipped as
-        # "already correct" and the rung quietly keeps delivering the wrong bitrate. Measured
-        # 2026-08-26: the rate-targeted clips land at 0.90-1.14x of target while the three
-        # quality-targeted ones sat at 1.58-1.90x, so the band below separates them with room.
-        # It is wide because what is measured here is SEGMENT 0, not the whole clip, and real
-        # per-segment variation is up to 1.20x peak-to-peak by design.
+        # layout are all identical either way, so a stale quality-targeted clip would be skipped
+        # as "already correct". Measured 2026-08-26: rate-targeted clips land at 0.90-1.14x of
+        # target while quality-targeted ones sat at 1.58-1.90x, so the band below separates them.
         want = spec["video"].get("vbr")
         if want:
             want_mbit = (want + sum(int(str(a.get("br", "0k")).rstrip("k") or 0)
@@ -2388,14 +1477,8 @@ def verify(key, spec, dur, path, ep=None):
             ratio = rec["bitrate_mbit"] / want_mbit if want_mbit else 0
             if not 0.70 <= ratio <= 1.30:
                 problems.append("bitrate %.2f Mbit against a %.2f Mbit target (%.2fx) — this "
-                                "clip is not encoded to its rate, so the rung it serves does not "
-                                "deliver its own bitrate"
+                                "clip is not encoded to its rate"
                                 % (rec["bitrate_mbit"], want_mbit, ratio))
-        floor = spec.get("min_mbit")
-        if floor and rec["bitrate_mbit"] < floor:
-            problems.append("%.2f Mbit/s, wanted at least %.2f — a rapid-seek case grades "
-                            "seek COALESCING and a thin stream never coalesces (trap 5)"
-                            % (rec["bitrate_mbit"], floor))
 
     # The burned-in layout, read back out of the container rather than restated from the
     # spec. fixtures.json used to record `layout` from layout_lines() alone, so it asserted
@@ -2406,17 +1489,16 @@ def verify(key, spec, dur, path, ep=None):
     # whatever the file was built at, and grading a full-length file during a --quick run
     # must produce exactly ONE complaint (the duration), which is what main() keys the
     # "longer than asked, keep it" rule on.
-    want_desc = "\n".join(layout_lines(key, spec, int(round(measured)) or dur, ep))
+    want_desc = "\n".join(layout_lines(key, spec, int(round(measured)) or dur))
     got_desc = tags.get("description") or tags.get("comment")
     rec["description_ok"] = (got_desc or "").strip() == want_desc.strip()
-    if not rec["description_ok"] and not spec.get("hls_segment"):
+    if not rec["description_ok"]:
         problems.append("container description does not match the burned-in layout "
                         "(got %r)" % ((got_desc or "")[:60]))
 
     streams = j.get("streams", [])
     vs = [s for s in streams if s["codec_type"] == "video"]
     aus = [s for s in streams if s["codec_type"] == "audio"]
-    ss = [s for s in streams if s["codec_type"] == "subtitle"]
 
     v = spec["video"]
     want_w, want_h = (int(x) for x in v["size"].split("x"))
@@ -2436,8 +1518,8 @@ def verify(key, spec, dur, path, ep=None):
             # `hvc1` vs `hev1` decides whether some players will touch the file at all, and
             # it is one `-tag:v` away from wrong. A hev1 copy of this shape verified clean.
             problems.append("codec tag %r, wanted %r" % (s.get("codec_tag_string"), v["tag"]))
-        if not (s.get("disposition") or {}).get("default") and not spec.get("hls_segment"):
-            problems.append("video track is not flagged default (real library files are)")
+        if not (s.get("disposition") or {}).get("default"):
+            problems.append("video track is not flagged default")
         want_codec = VCODEC_NAME[v["codec"]]
         if s.get("codec_name") != want_codec:
             problems.append("video codec %r, wanted %r" % (s.get("codec_name"), want_codec))
@@ -2482,14 +1564,9 @@ def verify(key, spec, dur, path, ep=None):
                     problems.append("dv_bl_signal_compatibility_id %r, wanted 1 (8.1 means "
                                     "an HDR10-compatible base layer)"
                                     % dv[0].get("dv_bl_signal_compatibility_id"))
-                # `metadata::Dovi::base_layer_unusable()` has THREE disqualifiers —
-                # el_present, profile 5, bl_compat 0 — and this block asserted two of them.
-                # An el_present=1 file makes the route refuse direct play, so
-                # dp_hevc_eac3_dovi_p8 fails on `decision` with every piece of evidence
-                # pointing at metadata::Dovi while the fixture verified clean.
+                # A dual-layer file is not profile 8.1 and the declaration says el_present 0.
                 if dv[0].get("el_present_flag"):
-                    problems.append("el_present_flag=1 — a dual-layer base layer, which "
-                                    "route.rs refuses to direct-play (base_layer_unusable)")
+                    problems.append("el_present_flag=1 — a dual-layer file, not profile 8.1")
                 if not dv[0].get("bl_present_flag"):
                     problems.append("bl_present_flag=0 — no base layer in the record")
                 if not dv[0].get("rpu_present_flag"):
@@ -2504,13 +1581,6 @@ def verify(key, spec, dur, path, ep=None):
                                 "(dovi_tool inject-rpu did not land)")
         if spec.get("resolution_spike"):
             verify_resolution_spike(path, spec, dur, rec, problems)
-        if spec.get("hls_segment"):
-            nals = first_key_packet_nals(path)
-            rec["video"]["first_key_nals"] = nals
-            missing = {5, 7, 8} - set(nals)
-            if missing:
-                problems.append("independent HLS segment first key packet NALs %s; missing %s"
-                                % (nals, sorted(missing)))
 
     want_audio = spec.get("audio", [])
     rec["audio"] = [{"codec": s.get("codec_name"), "channels": s.get("channels"),
@@ -2524,19 +1594,19 @@ def verify(key, spec, dur, path, ep=None):
             want_name = ACODEC_NAME[w["codec"]]
             if got.get("codec_name") != want_name:
                 problems.append("audio[%d] codec %r, wanted %r — ORDER is asserted by the "
-                                "track-menu cases" % (i, got.get("codec_name"), want_name))
+                                "lane-selection cases" % (i, got.get("codec_name"), want_name))
             if got.get("channels") != w["ch"]:
                 problems.append("audio[%d] %r channels, wanted %d" % (i, got.get("channels"), w["ch"]))
             lang = (got.get("tags") or {}).get("language")
             if lang != w["lang"]:
                 problems.append("audio[%d] language %r, wanted %r" % (i, lang, w["lang"]))
             dflt = bool((got.get("disposition") or {}).get("default"))
-            if dflt != bool(w.get("default")) and not spec.get("hls_segment"):
+            if dflt != bool(w.get("default")):
                 problems.append("audio[%d] default=%s, wanted %s" % (i, dflt, bool(w.get("default"))))
             # Track titles are checked for MATROSKA only: mp4 does not carry a per-track
             # title through this path, which is why the mp4 shape declares none. A spec
             # field nothing reads back is a claim, and this file had three of them.
-            if spec["ext"] not in ("mp4", "ts") and w.get("title"):
+            if spec["ext"] != "mp4" and w.get("title"):
                 title = (got.get("tags") or {}).get("title")
                 if title != w["title"]:
                     problems.append("audio[%d] title %r, wanted %r" % (i, title, w["title"]))
@@ -2544,81 +1614,10 @@ def verify(key, spec, dur, path, ep=None):
     if spec.get("late_audio"):
         verify_late_audio(path, spec, streams, rec, problems)
 
-    want_subs = [s for s in spec.get("subs", []) if not s.get("sidecar")]
-    rec["subtitles"] = [{"codec": s.get("codec_name"),
-                         "language": (s.get("tags") or {}).get("language"),
-                         "title": (s.get("tags") or {}).get("title"),
-                         "forced": (s.get("disposition") or {}).get("forced")} for s in ss]
-    want_cues = sub_cue_times(dur)
-    if len(ss) != len(want_subs):
-        problems.append("%d subtitle streams, wanted %d" % (len(ss), len(want_subs)))
-    else:
-        for i, (got, w) in enumerate(zip(ss, want_subs)):
-            if got.get("codec_name") != w["codec"]:
-                problems.append("subtitle[%d] codec %r, wanted %r"
-                                % (i, got.get("codec_name"), w["codec"]))
-            lang = (got.get("tags") or {}).get("language")
-            if lang != w["lang"]:
-                problems.append("subtitle[%d] language %r, wanted %r" % (i, lang, w["lang"]))
-            if bool((got.get("disposition") or {}).get("forced")) != bool(w.get("forced")):
-                problems.append("subtitle[%d] forced flag mismatch" % i)
-            if spec["ext"] != "mp4" and w.get("title"):
-                title = (got.get("tags") or {}).get("title")
-                if title != w["title"]:
-                    problems.append("subtitle[%d] title %r, wanted %r" % (i, title, w["title"]))
-            if w["codec"] == "subrip":
-                # WHERE the cues are, not merely that the track exists. This was the one
-                # vacuous corner left in verify(): a stunted SRT with a single cue at t=0
-                # kept its codec, language and forced flag and verified clean, while
-                # `subtitle_text_srt` — which seeds 843 s — failed on the television as
-                # `no sub cue`, i.e. as a demuxer regression. One ffprobe per track.
-                try:
-                    pk = json.loads(run(["ffprobe", "-v", "error", "-select_streams", "s:%d" % i,
-                                         "-show_packets", "-show_entries", "packet=pts_time",
-                                         "-of", "json", str(path)]))
-                    pts = sorted(float(p["pts_time"]) for p in pk.get("packets", [])
-                                 if p.get("pts_time") not in (None, "N/A"))
-                except (Fail, ValueError):
-                    pts = []
-                rec["subtitles"][i]["cue_count"] = len(pts)
-                rec["subtitles"][i]["last_cue_s"] = round(pts[-1], 2) if pts else None
-                if len(pts) < len(want_cues):
-                    problems.append("subtitle[%d] carries %d cues, wanted %d"
-                                    % (i, len(pts), len(want_cues)))
-                elif want_cues and pts[-1] < want_cues[-1] - 1.0:
-                    problems.append("subtitle[%d] last cue at %.1fs, wanted one at %ds — a "
-                                    "track with no cue where the case PLAYS fails on device "
-                                    "as `no sub cue`" % (i, pts[-1], want_cues[-1]))
-            if w["codec"] == "hdmv_pgs_subtitle":
-                # Presence is not enough for a hand-written .sup: prove ffmpeg's own PGS
-                # decoder produces display sets out of it (num_rects 1 on a cue, 0 on the
-                # clear). This is the property `subtitle_image_pgs` actually grades.
-                try:
-                    f = json.loads(run(["ffprobe", "-v", "error", "-select_streams", "s:%d" % i,
-                                        "-show_frames", "-of", "json", str(path)]))
-                    frames = f.get("frames", [])
-                    rects = [fr.get("num_rects", 0) for fr in frames]
-                    cues = sorted(float(fr.get("pts_time") or 0) for fr in frames
-                                  if fr.get("num_rects"))
-                except (Fail, ValueError):
-                    rects, cues = [], []
-                rec["subtitles"][i]["decoded_display_sets"] = len(rects)
-                rec["subtitles"][i]["decoded_cues"] = len(cues)
-                rec["subtitles"][i]["last_cue_s"] = round(cues[-1], 2) if cues else None
-                if not any(rects):
-                    problems.append("subtitle[%d] PGS decoded 0 rects — the .sup did not "
-                                    "survive the mux" % i)
-                # Same coverage rule as the text tracks, and for the same reason:
-                # `subtitle_image_pgs` seeds 600 s and only ever looks from there on, so
-                # "some display set exists" is not the property it grades.
-                elif len(cues) < len(want_cues):
-                    problems.append("subtitle[%d] PGS decoded %d cues, wanted %d"
-                                    % (i, len(cues), len(want_cues)))
-                elif want_cues and cues[-1] < want_cues[-1] - 1.0:
-                    problems.append("subtitle[%d] last PGS cue at %.1fs, wanted one at %ds"
-                                    % (i, cues[-1], want_cues[-1]))
+    if ss := [s for s in streams if s["codec_type"] == "subtitle"]:
+        problems.append("%d subtitle stream(s), and no shape carries one" % len(ss))
 
-    # ---- THE DECLARATION (pipeline tier). What `/tmp/dispatcharrtv-playurl` will tell the
+    # ---- THE DECLARATION. What `/tmp/dispatcharrtv-playurl` will tell the
     # television this stream IS, read back against what it actually is. The app builds its
     # Load payload from the declaration and never consults the container, so a declaration
     # that has drifted from its own media is invisible everywhere but the panel — an H264
@@ -2663,112 +1662,32 @@ def verify(key, spec, dur, path, ep=None):
                 problems.append("declares dovi %s=%d, the container's DV record says %d"
                                 % (f, int(want_dv.get(f) or 0), int(got_dv.get(f) or 0)))
         if dec.get("atmos"):
-            # No shape in this tier can carry Atmos — PIPE_SHAPES says why TrueHD is absent —
-            # so this is a declaration with no media under it.
-            problems.append("declares atmos, and no shape in this tier carries it")
-
-    for s in spec.get("subs", []):
-        if s.get("sidecar"):
-            lang2 = SIDECAR_LANG.get(s["lang"], s["lang"])
-            side = path.parent / (path.stem + "." + lang2 + ".srt")
-            rec.setdefault("sidecars", []).append(side.name)
-            if not side.exists():
-                problems.append("sidecar %s missing" % side.name)
-    return rec, problems
-
-
-SIDECAR_LANG = {"eng": "en", "rus": "ru", "spa": "es", "fra": "fr", "deu": "de"}
-
-
-# ---------------------------------------------------------------------------------------
-# The marker segments, verified ACROSS the episode pair. verify() grades one file against
-# its spec and structurally cannot see this: "the intro is identical in both episodes and
-# the body is not" is a property of the PAIR, and it is the property three cases depend on.
-# It is also the one this generator got backwards on its first pass — differing in video,
-# identical in audio, which is the opposite of what Plex's fingerprinter reads.
-# ---------------------------------------------------------------------------------------
-def _seg_md5(path, kind, start, secs):
-    """md5 of DECODED video or audio over a window — content, not container bytes."""
-    argv = ["ffmpeg", "-v", "error", "-nostdin", "-ss", _g(start), "-t", _g(secs), "-i", str(path)]
-    argv += ["-map", "0:v:0", "-an"] if kind == "v" else ["-map", "0:a:0", "-vn"]
-    return run(argv + ["-f", "md5", "-"]).strip()
-
-
-def _mean_luma(path, at):
-    """Mean luma of one frame, 0-255. Cheap black-frame test with no filter dependencies."""
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-ss", _g(at), "-i", str(path),
-                          "-frames:v", "1", "-vf", "scale=64:36", "-pix_fmt", "gray",
-                          "-f", "rawvideo", "-"], stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE).stdout
-    return (sum(raw) / len(raw)) if raw else -1.0
-
-
-def verify_markers(ctx, spec, dur, paths):
-    """(rec, problems) for the intro/credits segments of an episode PAIR."""
-    intro_end, credits_start = marker_plan(ctx, spec, dur)
-    if intro_end is None or len(paths) < 2:
-        return {}, []
-    p1, p2 = paths[0], paths[1]
-    rec, problems = {"intro_end_s": intro_end, "credits_start_s": credits_start}, []
-
-    mid = max(0.0, intro_end / 2.0 - 1.5)
-    a_intro = [_seg_md5(p, "a", mid, 3.0) for p in (p1, p2)]
-    rec["intro_audio_identical"] = a_intro[0] == a_intro[1]
-    if not rec["intro_audio_identical"]:
-        problems.append("the intro audio DIFFERS between the two episodes — Plex "
-                        "fingerprints audio and looks for the matching stretch, so nothing "
-                        "would be detected")
-
-    a_body = [_seg_md5(p, "a", intro_end + 10, 3.0) for p in (p1, p2)]
-    rec["body_audio_differs"] = a_body[0] != a_body[1]
-    if not rec["body_audio_differs"]:
-        problems.append("the audio AFTER the intro is identical in both episodes — the "
-                        "match then runs past the halfway point, which Plex discards")
-
-    v_intro = [_seg_md5(p, "v", mid, 2.0) for p in (p1, p2)]
-    rec["intro_video_identical"] = v_intro[0] == v_intro[1]
-    if not rec["intro_video_identical"]:
-        problems.append("the intro PICTURE differs between the episodes — something "
-                        "per-episode (the layout banner names S01E01/S01E02) is being drawn "
-                        "inside the intro window")
-
-    if credits_start:
-        luma = [_mean_luma(p, credits_start + 10) for p in (p1, p2)]
-        rec["credits_mean_luma"] = [round(x, 1) for x in luma]
-        if max(luma) > 12.0:
-            problems.append("the credits tail is not black (mean luma %.1f) — Plex derives "
-                            "a `final` credits marker from a credits-LIKE tail" % max(luma))
-        a_cred = _seg_md5(p1, "a", credits_start + 10, 3.0)
-        rec["credits_audio_differs"] = a_cred != a_body[0]
-        if not rec["credits_audio_differs"]:
-            problems.append("the credits tail carries the same audio bed as the body")
+            # No shape can carry Atmos — PIPE_SHAPES says why TrueHD is absent — so this is a
+            # declaration with no media under it.
+            problems.append("declares atmos, and no shape carries it")
     return rec, problems
 
 
 # ---------------------------------------------------------------------------------------
 # Preflight. Missing OPTIONAL tooling SKIPS its shapes with a printed reason and never
-# aborts — the same skip channel `tests/run.py` uses for an unmapped item, and the house
+# aborts — the same skip channel `tests/run.py` uses for a missing fixture, and the house
 # rule: a partial set that says what it is beats an all-or-nothing failure.
 # ---------------------------------------------------------------------------------------
 EXPERIMENTAL_ENC = ("this ffmpeg has no %s encoder (experimental; a build can omit it).\n"
-                    "            ffmpeg -hide_banner -encoders | grep -E ' truehd| dca| vorbis'\n"
-                    "            Homebrew's ffmpeg normally has all three.")
+                    "            ffmpeg -hide_banner -encoders | grep ' dca'\n"
+                    "            Homebrew's ffmpeg normally has it.")
 
 BREW = {
     "ffmpeg": "brew install ffmpeg",
     "libx264": "brew install ffmpeg          # libx264 ships with it",
     "libx265": "brew install ffmpeg          # libx265 ships with it",
-    "libsvtav1": "brew install ffmpeg          # libsvtav1 ships with it",
-    "libopus": "brew install ffmpeg          # libopus ships with it",
+    "libvpx-vp9": "brew install ffmpeg          # libvpx ships with it",
     "ac3": "brew install ffmpeg", "eac3": "brew install ffmpeg",
     "aac": "brew install ffmpeg",
-    # truehd/dca/vorbis are EXPERIMENTAL encoders a build can be configured without, and
-    # anyone reading this line already has ffmpeg — "brew install ffmpeg" was the thing
-    # that just failed them. Name the check instead.
-    "truehd": EXPERIMENTAL_ENC % "truehd",
+    # dca is an EXPERIMENTAL encoder a build can be configured without, and anyone reading
+    # this line already has ffmpeg — "brew install ffmpeg" was the thing that just failed
+    # them. Name the check instead.
     "dca": EXPERIMENTAL_ENC % "dca",
-    "vorbis": EXPERIMENTAL_ENC % "vorbis",
-    "flac": "brew install ffmpeg",
     "mkvmerge": "brew install mkvtoolnix",
     "dovi_tool": "brew install dovi_tool",
 }
@@ -2776,7 +1695,7 @@ BREW = {
 
 def shape_requirements(key, spec):
     encs = set()
-    encs.add({"h264": "libx264", "hevc": "libx265", "av1": "libsvtav1", "vp9": "libvpx-vp9"}[spec["video"]["codec"]])
+    encs.add({"h264": "libx264", "hevc": "libx265", "vp9": "libvpx-vp9"}[spec["video"]["codec"]])
     for a in spec.get("audio", []):
         encs.add(AENC[a["codec"]][0])
     return sorted(encs), list(spec.get("tools", []))
@@ -2793,14 +1712,10 @@ def preflight(keys, shapes):
         "ffmpeg": (tool_version("ffmpeg", ["-version"]) or "").replace("ffmpeg version ", ""),
         "mkvmerge": tool_version("mkvmerge"),
         "dovi_tool": tool_version("dovi_tool"),
-        "SUPer": tool_version("supercli") or tool_version("SUPer"),
     }
     print("  ffmpeg      %s" % versions["ffmpeg"])
     for t in ("mkvmerge", "dovi_tool"):
         print("  %-11s %s" % (t, versions[t] or "MISSING"))
-    print("  %-11s %s" % ("SUPer",
-                          (versions["SUPer"] or "absent") +
-                          "  (not required — this script writes PGS itself; see trap 10)"))
 
     plan, skipped = [], []
     for k in keys:
@@ -2829,30 +1744,21 @@ def fmt_secs(s):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(
-        description="Generate the media shapes tests/manifest.json needs, from lavfi.",
+        description="Generate the test clips tests/manifest.json plays, from lavfi.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="integration tier: point two Plex libraries (Movies, TV Shows) at <out> with "
-               "the 'Personal Media' agents, then map the shape keys from fixtures.json into "
-               "tests/manifest.local.json. pipeline tier: no Plex — serve <out>/pipeline with "
-               "tests/serve_fixtures.py. See README.md.")
-    ap.add_argument("--tier", choices=sorted(TIERS), default="integration",
-                    help="which pack to build. `integration` (the default, so every existing "
-                         "invocation is unchanged) is the Plex-scannable set the on-device "
-                         "suite maps; `pipeline` is the flat %ds clips the player-pipeline "
-                         "tier plays over HTTP with no Plex anywhere. They land in different "
-                         "directories and keep separate fixtures.json documents."
-                         % PIPE_SECS)
+        epilog="Serve <out>/%s with tests/serve_fixtures.py; tests/run.py plays it. "
+               "See README.md." % SUBDIR)
     ap.add_argument("--out", default=os.environ.get("FIXTURES_OUT")
                     or str(Path.home() / "dispatcharrtv-fixtures"),
                     help="output root (default: $FIXTURES_OUT, else ~/dispatcharrtv-fixtures). "
-                         "Never inside the repo. `--tier pipeline` writes to <out>/pipeline.")
+                         "Never inside the repo. The clips land in <out>/%s." % SUBDIR)
     # `--quick` and `--secs` are one knob under two names, hence the exclusive group: given
-    # both, the loser would silently decide the length of a 20-minute build.
+    # both, the loser would silently decide the length of the build.
     length = ap.add_mutually_exclusive_group()
     length.add_argument("--quick", action="store_true",
                         help="build every shape at ~%ds so the run takes a couple of minutes. "
-                             "Shapes are structurally correct but TOO SHORT for the suite's "
-                             "seeks and resumes — development only." % QUICK_SECS)
+                             "Shapes are structurally correct but SHORTER than a case's "
+                             "window — development only." % QUICK_SECS)
     length.add_argument("--secs", type=int, metavar="N",
                         help="build every shape at N seconds instead of the length it "
                              "declares. The general form of --quick, and it carries the same "
@@ -2867,55 +1773,38 @@ def main(argv=None):
                     help="rebuild even if the output verifies (also the only way to SHORTEN "
                          "an existing full-length file with --quick/--secs)")
     ap.add_argument("--keep-work", action="store_true", help="keep intermediates in <out>/.work")
-    ap.add_argument("--no-markers", "--no-intro", dest="markers", action="store_false",
-                    default=True,
-                    help="do not splice the shared intro segment and black credits tail "
-                         "into the episode pair")
     args = ap.parse_args(argv)
     if args.secs is not None and args.secs < 1:
         print("--secs must be at least 1", file=sys.stderr)
         return 2
 
-    only_names = [name for chunk in args.only
-                  for name in (x.strip() for x in chunk.split(",")) if name]
-    tier = TIERS[args.tier]
-    shapes = tier["shapes"]
+    shapes = PIPE_SHAPES
     # One name for "the length this run builds at", None meaning "whatever each shape says".
     secs = QUICK_SECS if args.quick else args.secs
 
     if args.list:
-        label = Path("<out>") / tier["subdir"] if tier["subdir"] else Path("<out>")
-        print("%-34s %-8s %-9s %s" % ("shape", "kind", "duration", "output"))
+        label = Path("<out>") / SUBDIR
+        print("%-34s %-9s %s" % ("shape", "duration", "output"))
         for k, spec in shapes.items():
-            for kk, pth in out_paths(label, k, spec):
-                print("%-34s %-8s %8ds  %s"
-                      % (kk, spec["kind"], shape_duration(spec, secs), pth))
+            print("%-34s %8ds  %s" % (k, shape_duration(spec, secs), out_path(label, k, spec)))
         # ...and the tooling report, because `--list` is what the README sends a newcomer to FIRST
         # and "which shapes can this machine actually build" is the only question they have at that
-        # point. Without this the table above reads as ten happy rows to somebody with no
-        # `dovi_tool`, who then learns otherwise twenty minutes into a build.
+        # point. Without this the table above reads as happy rows to somebody with no
+        # `dovi_tool`, who then learns otherwise partway into a build.
         print()
         preflight(list(shapes), shapes)
         return 0
 
     root = Path(args.out).expanduser()
-    if tier["subdir"] and root.name != tier["subdir"]:
-        # A subdirectory rather than a second `--out`: the two packs are generated by the same
-        # command and read by the same people, and one place to point at is one place to
-        # delete. Nothing scans it — a Plex library is pointed at <out>/Movies and
-        # <out>/TV Shows, so a sibling directory of clips is invisible to the scanner.
-        #
-        # The `root.name != subdir` half makes the append IDEMPOTENT, and that is not
-        # defensive habit — this seam has two sides and they disagreed. `make
-        # fixtures-pipeline` passes `$(FIXTURES_OUT)/pipeline`, while `tests/run.py
-        # --pipeline` and `tests/serve_fixtures.py` both default their root to
-        # `$FIXTURES_OUT/pipeline`. Appending blind wrote the pack to
-        # `<out>/pipeline/pipeline`: still outside the repo, so the guard below stayed quiet,
-        # and every pipeline case then skipped with "no fixture … in <out>/pipeline — run
-        # `make fixtures-pipeline`" — the suite telling you to re-run the command that had
-        # just succeeded, with nothing on either side erroring. Accepting BOTH spellings of
-        # the same directory is what keeps that from depending on which lane lands last.
-        root = root / tier["subdir"]
+    if root.name != SUBDIR:
+        # The `root.name != SUBDIR` test makes the append IDEMPOTENT, and that is not defensive
+        # habit — this seam has two sides. `make fixtures-pipeline` passes
+        # `$(FIXTURES_OUT)/pipeline`, while `tests/run.py` and `tests/serve_fixtures.py` both
+        # default their root to `$FIXTURES_OUT/pipeline`. Appending blind once wrote the pack to
+        # `<out>/pipeline/pipeline`, and every case then skipped with "no fixture … run `make
+        # fixtures-pipeline`" — the suite telling you to re-run the command that had just
+        # succeeded. Accepting BOTH spellings of the same directory keeps that from recurring.
+        root = root / SUBDIR
     root = root.resolve()
     try:
         root.relative_to(REPO_ROOT)
@@ -2928,54 +1817,39 @@ def main(argv=None):
 
     wanted = list(shapes)
     if args.only:
-        alias = aliases(shapes)
         wanted = []
         for chunk in args.only:
             for name in [x.strip() for x in chunk.split(",") if x.strip()]:
-                k = alias.get(name, name)
-                if k not in shapes:
+                if name not in shapes:
                     print("unknown shape %r (see --list)" % name, file=sys.stderr)
                     return 2
-                if k not in wanted:
-                    wanted.append(k)
+                if name not in wanted:
+                    wanted.append(name)
 
     plan, skipped, versions = preflight(wanted, shapes)
     if not plan and not skipped:
         print("\nnothing to build.")
         return 2
 
-    total_secs = sum(shape_duration(shapes[k], secs) * shapes[k]["rate"]
-                     * shapes[k].get("episodes", 1) for k in plan)
-    total_bytes = sum(shape_duration(shapes[k], secs) * tier["mbit"][k] / 8 * 1e6
-                      * shapes[k].get("episodes", 1) for k in plan)
+    total_secs = sum(shape_duration(shapes[k], secs) * shapes[k]["rate"] for k in plan)
+    total_bytes = sum(shape_duration(shapes[k], secs) * PIPE_MBIT[k] / 8 * 1e6 for k in plan)
     tag = " [QUICK]" if args.quick else (" [%ds]" % secs if secs is not None else "")
-    print("\n== plan: %d shape(s)%s%s -> %s"
-          % (len(plan), tag, "" if args.tier == "integration" else " [%s]" % args.tier, root))
+    print("\n== plan: %d shape(s)%s -> %s" % (len(plan), tag, root))
     print("   estimated encode time ~%s, estimated size ~%.2f GB"
           % (fmt_secs(total_secs), total_bytes / 1e9))
     # An EMPTY plan is not an error and does not return early: everything asked for was
     # skipped for missing optional tooling, which is the documented skip contract ("it
     # never aborts") — and the run still has work to do, because the records those shapes
     # left in an earlier fixtures.json have to be re-checked and dropped if they no longer
-    # describe what is on disk. Returning here (which is what this did) left a document
-    # claiming `dovi: {profile: 8}` over a file somebody had since replaced, on the machine
-    # least able to notice. It also used to exit 1 while the same condition with one
-    # buildable shape beside it exited 0.
+    # describe what is on disk. Returning here left a document claiming `dovi: {profile: 8}`
+    # over a file somebody had since replaced, on the machine least able to notice.
     if not plan:
         print("   (every shape asked for was skipped — re-checking the existing records)")
-    if args.quick:
-        print("   QUICK: every clip is %ds. Structurally right, but every seek, resume and\n"
-              "   marker depth the suite asserts is DEEPER than that, and a %ds item hits EOF\n"
-              "   inside a case's run_secs and fires the finish -> Up Next chain. Do not point\n"
-              "   the harness at a --quick set and read the result as a player verdict."
-              % (QUICK_SECS, QUICK_SECS))
-    elif secs is not None and any(secs < shapes[k]["duration"] for k in plan):
-        # The same warning for the general knob, and it has to be said for BOTH tiers: down
-        # in the pipeline tier there is no Up Next to fire, but a clip that reaches EOF still
-        # ends the session while a case is still reading the log.
+    if secs is not None and any(secs < shapes[k]["duration"] for k in plan):
         print("   %ds clips: shorter than the length these shapes declare, so every one of\n"
               "   them is recorded `quick` in fixtures.json. Development media — a clip that\n"
-              "   hits EOF inside a case's window ends the session under it." % secs)
+              "   hits EOF inside a case's window ends the session under it. Do not read a\n"
+              "   run against it as a player verdict." % secs)
 
     work = root / ".work"
     work.mkdir(parents=True, exist_ok=True)
@@ -2988,159 +1862,106 @@ def main(argv=None):
             doc = {}
     shapes_doc = doc.get("shapes", {})
 
-    ctx = args_ctx(args)
-    built, reused, failed, marker_bad = [], [], [], []
+    built, reused, failed = [], [], []
     t0 = time.time()
     for k in plan:
         spec = shapes[k]
         dur = shape_duration(spec, secs)
-        for out_key, dest in out_paths(root, k, spec):
-            ep = None
-            if spec["kind"] == "episode" and spec.get("episodes", 1) > 1:
-                ep = 1 if out_key == k else 2
-            label = "%-34s %5ds" % (out_key, dur)
-            if dest.exists() and not args.force:
-                rec, problems = verify(k, spec, dur, dest, ep)
-                # LONGER than this run asked for is not a defect: it is a full-length file
-                # and a later `--quick` run must not silently shorten it. Before this, a
-                # `--quick` iteration on one shape rebuilt the whole finished set at 20 s,
-                # and the README's own "a quick set is not suite-valid" warning then applied
-                # to media the contributor believed was full length. `--force` still shortens.
-                longer = ((rec.get("duration_s") or 0) > dur
-                          and problems and all(p.startswith("duration ") for p in problems))
-                if not problems or longer:
-                    print("  skip  %s  (%s)"
-                          % (label, "already correct" if not problems else
-                             "%.0fs on disk, longer than asked — kept" % rec["duration_s"]))
-                    rec["path"] = str(dest.relative_to(root))
-                    rec["layout"] = layout_lines(k, spec, int(round(rec["duration_s"])), ep)
-                    if spec.get("library_title"):
-                        rec["library_title"] = spec["library_title"]
-                    rec["kind"] = spec["kind"]
-                    shapes_doc[out_key] = rec
-                    reused.append(out_key)
-                    continue
-                print("  redo  %s  (%s)" % (label, problems[0]))
-            print("  build %s ..." % label, end="", flush=True)
-            ts = time.time()
-            try:
-                if spec.get("builder") == "dovi":
-                    lines = build_dovi(ctx, k, spec, dur, ep, dest, work)
-                elif spec.get("builder") == "resolution_spike":
-                    lines = build_resolution_spike(ctx, k, spec, dur, ep, dest, work)
-                else:
-                    lines = build_generic(ctx, k, spec, dur, ep, dest, work)
-            except Fail as e:
-                print(" FAILED")
-                print("        %s" % str(e).replace("\n", "\n        "))
-                # Drop any record a PREVIOUS run left for this key: fixtures.json is read
-                # as ground truth by whatever fills manifest.local.json, and a stale entry
-                # describing a file that is now half-written is worse than no entry.
-                shapes_doc.pop(out_key, None)
-                failed.append((out_key, str(e).splitlines()[0]))
+        dest = out_path(root, k, spec)
+        label = "%-34s %5ds" % (k, dur)
+        if dest.exists() and not args.force:
+            rec, problems = verify(k, spec, dur, dest)
+            # LONGER than this run asked for is not a defect: it is a full-length file and a
+            # later `--quick` run must not silently shorten it. `--force` still shortens.
+            longer = ((rec.get("duration_s") or 0) > dur
+                      and problems and all(p.startswith("duration ") for p in problems))
+            if not problems or longer:
+                print("  skip  %s  (%s)"
+                      % (label, "already correct" if not problems else
+                         "%.0fs on disk, longer than asked — kept" % rec["duration_s"]))
+                rec["path"] = str(dest.relative_to(root))
+                rec["layout"] = layout_lines(k, spec, int(round(rec["duration_s"])))
+                shapes_doc[k] = rec
+                reused.append(k)
                 continue
-            rec, problems = verify(k, spec, dur, dest, ep)
-            if problems:
-                print(" WRONG SHAPE")
-                for p in problems:
-                    print("        - %s" % p)
-                shapes_doc.pop(out_key, None)
-                failed.append((out_key, problems[0]))
-                continue
-            print(" ok  %s  %.0f MB" % (fmt_secs(time.time() - ts), rec["size_bytes"] / 1e6))
-            rec["path"] = str(dest.relative_to(root))
-            rec["layout"] = lines
-            # Only where there IS one. A flat pipeline clip has no library and no title for a
-            # scanner to match, and a record carrying an invented one would read as a shape
-            # somebody could point a Plex library at.
-            if spec.get("library_title"):
-                rec["library_title"] = spec["library_title"]
-            rec["kind"] = spec["kind"]
-            shapes_doc[out_key] = rec
-            built.append(out_key)
-
-        # The intro/credits segments are a property of the PAIR, so they are graded once
-        # both episodes are on disk — see verify_markers. A failure here does NOT drop the
-        # records: the files are still correct fixtures for the shape's other five cases.
-        if marker_plan(ctx, spec, dur)[0] is not None:
-            paths = [d for _, d in out_paths(root, k, spec)]
-            if all(p.exists() for p in paths):
-                mrec, mprobs = verify_markers(ctx, spec, dur, paths)
-                mrec["ok"] = not mprobs
-                for out_key, _ in out_paths(root, k, spec):
-                    if out_key in shapes_doc:
-                        shapes_doc[out_key]["markers"] = mrec
-                if mprobs:
-                    print("  MARKERS %-32s the intro/credits premise is broken:" % k)
-                    for p in mprobs:
-                        print("        - %s" % p)
-                    marker_bad.append(k)
-                else:
-                    print("  marker %-32s intro shared, body distinct, credits black" % k)
+            print("  redo  %s  (%s)" % (label, problems[0]))
+        print("  build %s ..." % label, end="", flush=True)
+        ts = time.time()
+        try:
+            if spec.get("builder") == "dovi":
+                lines = build_dovi(k, spec, dur, dest, work)
+            elif spec.get("builder") == "resolution_spike":
+                lines = build_resolution_spike(k, spec, dur, dest, work)
+            else:
+                lines = build_generic(k, spec, dur, dest, work)
+        except Fail as e:
+            print(" FAILED")
+            print("        %s" % str(e).replace("\n", "\n        "))
+            # Drop any record a PREVIOUS run left for this key: fixtures.json is read as ground
+            # truth by the harness, and a stale entry describing a file that is now half-written
+            # is worse than no entry.
+            shapes_doc.pop(k, None)
+            failed.append((k, str(e).splitlines()[0]))
+            continue
+        rec, problems = verify(k, spec, dur, dest)
+        if problems:
+            print(" WRONG SHAPE")
+            for p in problems:
+                print("        - %s" % p)
+            shapes_doc.pop(k, None)
+            failed.append((k, problems[0]))
+            continue
+        print(" ok  %s  %.0f MB" % (fmt_secs(time.time() - ts), rec["size_bytes"] / 1e6))
+        rec["path"] = str(dest.relative_to(root))
+        rec["layout"] = lines
+        shapes_doc[k] = rec
+        built.append(k)
 
     if not args.keep_work:
         shutil.rmtree(work, ignore_errors=True)
 
-    # ---- Records this run did not touch. fixtures.json accumulates ACROSS runs — a
-    # `--only` run, or a run on a machine without dovi_tool, leaves every other key in the
-    # document — and until now those were copied through verbatim under a fresh
-    # `generated_at`, never re-checked and not even tested for the file still existing. The
-    # document is what a resolver maps into tests/manifest.local.json, so a carried-forward
-    # record pointing at a deleted or replaced file maps a shape key onto media that is not
-    # that shape, and the harness then fails as if the player had regressed. Re-verify each
-    # one (~50 ms) and drop the ones that no longer hold. That also covers the tool-SKIPPED
+    # ---- Records this run did not touch. fixtures.json accumulates ACROSS runs — a `--only`
+    # run, or a run on a machine without dovi_tool, leaves every other key in the document. A
+    # carried-forward record pointing at a deleted or replaced file describes media that is not
+    # that shape, and the harness then fails as if the player had regressed. Re-verify each one
+    # (~50 ms) and drop the ones that no longer hold — which also covers the tool-SKIPPED
     # shapes, whose whole point is that their file may be stale from an earlier build.
     touched = set(built) | set(reused) | {x for x, _ in failed}
-    index = shape_index(shapes)
-    for out_key in sorted(shapes_doc):
-        if out_key in touched:
+    for k in sorted(shapes_doc):
+        if k in touched:
             continue
-        ent = index.get(out_key)
-        if ent is None:
-            print("  drop  %-34s (no such shape any more)" % out_key)
-            shapes_doc.pop(out_key, None)
+        spec2 = shapes.get(k)
+        if spec2 is None:
+            print("  drop  %-34s (no such shape any more)" % k)
+            shapes_doc.pop(k, None)
             continue
-        kk, spec2, ep2 = ent
-        dest2 = root / shapes_doc[out_key].get("path", "")
-        if not shapes_doc[out_key].get("path") or not dest2.exists():
-            print("  drop  %-34s (file is gone)" % out_key)
-            shapes_doc.pop(out_key, None)
+        dest2 = root / shapes_doc[k].get("path", "")
+        if not shapes_doc[k].get("path") or not dest2.exists():
+            print("  drop  %-34s (file is gone)" % k)
+            shapes_doc.pop(k, None)
             continue
-        # Graded at ITS OWN length — the length the RECORD says this file was built at, so
-        # a shortened clip carried through a full-length run is still correct and vice versa,
-        # and a file somebody has since REPLACED still fails on the duration it no longer has.
-        #
-        # This was a two-valued derivation (`QUICK_SECS if measured < declared*0.9 else
-        # declared`), which is exactly as many lengths as the script used to have. It was the
-        # single most load-bearing line for adding a third: a 60 s pipeline record that this
-        # run never asked about was graded at 20 s, failed on `duration 60.02s, wanted 20s
-        # (+-2.0)`, and was dropped — silently, out of a document nobody had touched, on the
-        # only path that never prints what it built.
-        dur2 = shapes_doc[out_key].get("duration_s")
+        # Graded at ITS OWN length — the length the RECORD says this file was built at, so a
+        # shortened clip carried through a full-length run is still correct and vice versa, and
+        # a file somebody has since REPLACED still fails on the duration it no longer has.
+        dur2 = shapes_doc[k].get("duration_s")
         if not dur2:
             # A record from before duration_s existed, or one hand-edited: ask the file.
             try:
                 dur2 = float(probe(dest2)["format"]["duration"])
             except (Fail, KeyError, ValueError):
                 dur2 = spec2["duration"]
-        rec2, probs2 = verify(kk, spec2, dur2, dest2, ep2)
+        rec2, probs2 = verify(k, spec2, dur2, dest2)
         if probs2:
-            print("  drop  %-34s (%s)" % (out_key, probs2[0]))
-            shapes_doc.pop(out_key, None)
+            print("  drop  %-34s (%s)" % (k, probs2[0]))
+            shapes_doc.pop(k, None)
             continue
-        rec2["path"] = shapes_doc[out_key]["path"]
-        rec2["layout"] = layout_lines(kk, spec2, round(rec2["duration_s"]), ep2)
-        if spec2.get("library_title"):
-            rec2["library_title"] = spec2["library_title"]
-        rec2["kind"] = spec2["kind"]
-        if "markers" in shapes_doc[out_key]:
-            rec2["markers"] = shapes_doc[out_key]["markers"]
-        shapes_doc[out_key] = rec2
+        rec2["path"] = shapes_doc[k]["path"]
+        rec2["layout"] = layout_lines(k, spec2, round(rec2["duration_s"]))
+        shapes_doc[k] = rec2
 
     # `quick` is a property of each FILE (verify() derives it from the measured duration),
-    # never of the invocation. Stamped per-run over a cross-run document it could say
-    # `false` over a set that was still 20 s clips — the single machine-readable warning
-    # that a set is not suite-valid, positively lying.
+    # never of the invocation. Stamped per-run over a cross-run document it could say `false`
+    # over a set that was still 20 s clips.
     quicks = {bool(r.get("quick")) for r in shapes_doc.values()}
     quick_flag = "mixed" if len(quicks) > 1 else (quicks.pop() if quicks else bool(args.quick))
 
@@ -3148,29 +1969,21 @@ def main(argv=None):
         "generator": "tests/fixtures/make_fixtures.py",
         "generator_version": GEN_VERSION,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        # Which SUITE TIER this pack is for. Per-record as well (verify() stamps it from the
-        # shape's own table), because the two packs keep separate documents today and a
-        # top-level word alone would not survive anyone merging them.
-        "tier": args.tier,
         "quick": quick_flag,
         "skipped": {k: why for k, why, _ in skipped},
         "tool_versions": versions,
         "synthetic": True,
         "_comment": ("Shape key -> the file that shape was built as, plus every property "
-                     "verify() read back out of it. A resolver fills tests/manifest.local.json "
-                     "'items' from the keys here. Synthetic media: a green suite run against "
-                     "it is a no-regression claim about the shapes the suite names, not a "
-                     "claim about real-world media. Every record here was verified against "
-                     "the file on disk during the run that wrote this document, including "
-                     "the ones the run did not rebuild. `quick` per shape means that file is "
-                     "SHORTER than its shape declares (a --quick or --secs development clip) "
-                     "and is NOT suite-valid; the top-level `quick` "
-                     "is true/false/\"mixed\" over the whole set. `tier` says which suite "
-                     "tier the pack serves: `integration` records map to ratingKeys in "
-                     "tests/manifest.local.json, while a `pipeline` record is a file served "
-                     "over HTTP by tests/serve_fixtures.py and its `declare` block is the "
-                     "playback half of the /tmp/dispatcharrtv-playurl trigger, verified here "
-                     "against the media it describes."),
+                     "verify() read back out of it. Each file is served over HTTP by "
+                     "tests/serve_fixtures.py, and its `declare` block is the playback half of "
+                     "the /tmp/dispatcharrtv-playurl trigger, verified here against the media "
+                     "it describes. Synthetic media: a green run against it is a no-regression "
+                     "claim about the shapes the suite names, not a claim about real-world "
+                     "media. Every record here was verified against the file on disk during "
+                     "the run that wrote this document, including the ones the run did not "
+                     "rebuild. `quick` per shape means that file is SHORTER than its shape "
+                     "declares (a --quick or --secs development clip) and is NOT suite-valid; "
+                     "the top-level `quick` is true/false/\"mixed\" over the whole set."),
         "shapes": shapes_doc,
     }
     manifest_path.write_text(json.dumps(doc, indent=2, sort_keys=False) + "\n")
@@ -3180,8 +1993,6 @@ def main(argv=None):
           % (len(built), len(reused), len(failed), len(skipped)))
     for k, why in failed:
         print("   FAILED %-32s %s" % (k, why))
-    for k in marker_bad:
-        print("   MARKER %-32s files are usable; the three marker_* cases are not" % k)
     for k, why, _ in skipped:
         print("   SKIP   %-32s needs %s" % (k, why))
     if quick_flag == "mixed":
@@ -3189,32 +2000,15 @@ def main(argv=None):
               "      flag in fixtures.json). It is not suite-valid as it stands.")
     print("   manifest: %s" % manifest_path)
     if built or reused:
-        if args.tier == "pipeline":
-            # No Plex, no scan, no mapping step: the next thing that touches these files is a
-            # static file server on this Mac. The port is the one serve_fixtures.py documents
-            # as its own default; the harness picks its own.
-            print("\n   Next: serve this directory to the television —")
-            print("     ./tests/serve_fixtures.py --root %s --port 8020" % root)
-            print("   Each case then arms /tmp/dispatcharrtv-playurl with a URL into that server")
-            print("   plus the `declare` block recorded beside the file in fixtures.json.")
-            print("   Start it ONCE with a human at the keyboard: the macOS application")
-            print("   firewall drops the TV's connections to a new python listener silently.")
-        else:
-            print("\n   Next: add TWO Plex libraries with the 'Personal Media' agents —")
-            print("     Movies    -> %s" % (root / "Movies"))
-            print("     TV Shows  -> %s" % (root / "TV Shows"))
-            print("   then map the keys from fixtures.json into tests/manifest.local.json.")
-    return 1 if (failed or marker_bad) else 0
-
-
-class args_ctx:
-    """The build-time knob the builders need, without passing argparse around.
-
-    It was two until the length knob became `--secs`: `marker_plan` used to ask `not
-    ctx.quick`, and now decides from the LENGTH it is handed, which is the only form of the
-    question that stays right at a third length."""
-    def __init__(self, args):
-        self.markers = args.markers
+        # The next thing that touches these files is a static file server on this machine. The
+        # port is the one serve_fixtures.py documents as its own default; the harness picks its own.
+        print("\n   Next: serve this directory to the television —")
+        print("     ./tests/serve_fixtures.py --root %s --port 8020" % root)
+        print("   Each case then arms /tmp/dispatcharrtv-playurl with a URL into that server")
+        print("   plus the `declare` block recorded beside the file in fixtures.json.")
+        print("   Start it ONCE with a human at the keyboard: the macOS application")
+        print("   firewall drops the TV's connections to a new python listener silently.")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

@@ -1232,8 +1232,7 @@ class LateAudioFixture(unittest.TestCase):
                                   side_effect=lambda argv, quiet=True: captured.append(list(argv)) or ""):
             work = fixturegen.Path(d)
             fixturegen.build_generic(
-                mock.Mock(markers=False), self.KEY, fixturegen.PIPE_SHAPES[self.KEY], 4, None,
-                work / "out.mkv", work)
+                self.KEY, fixturegen.PIPE_SHAPES[self.KEY], 4, work / "out.mkv", work)
         argv = captured[0]
         self.assertEqual(argv.count("-itsoffset"), 1, "only the delayed track is offset")
         at = argv.index("-itsoffset")

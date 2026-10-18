@@ -21,12 +21,11 @@ impl std::fmt::Debug for Account {
     }
 }
 
-/// The television's wall clock in Unix seconds: the one reading behind the guide's "now" and a
-/// live tune's "on now". Read here, in the data layer, so the app's logical clock stays ticks.
+/// "Now" in Unix seconds: the one reading behind the guide's "now" and a live tune's "on now". The
+/// television's wall clock, corrected by the server's when the two disagree ([`super::clock`]).
+/// Read here, in the data layer, so the app's logical clock stays ticks.
 pub fn unix_now() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs() as i64)
+    super::clock::now()
 }
 
 impl Account {

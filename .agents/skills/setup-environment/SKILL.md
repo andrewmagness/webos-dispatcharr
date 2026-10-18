@@ -58,7 +58,7 @@ make                  # -> pkg/dispatcharrtv
 
 ### With a TV but no Dispatcharr server
 
-The build needs no private data, and neither does driving the TV: the app can sign in to the
+The build needs no private data, and neither does driving the TV: the app can use the
 synthetic `tests/mock_dispatcharr.py`, which serves a generated lineup, guide and logos (and, with
 `--ts FILE`, an MPEG-TS for every channel).
 
@@ -66,24 +66,26 @@ synthetic `tests/mock_dispatcharr.py`, which serves a generated lineup, guide an
 mkdir -p ~/.config/dispatcharrtv     # ONCE per machine: every checkout and worktree reads these (tools/tv-config.sh)
 echo '<tv-host>' > ~/.config/dispatcharrtv/tv-host   # the TV's address, one line
 echo '<tv-mac>'  > ~/.config/dispatcharrtv/tv-mac    # optional: only Wake-on-LAN needs it (cached from ARP once the TV is up)
-make && make deploy                                   # take the TV lock first (tv-lock skill)
-python3 tests/mock_dispatcharr.py --host <this-machine-lan-ip> --port 9192   # the default binds loopback only
-printf '%s\n' http://<this-machine-lan-ip>:9192 admin admin > <runtime root>/dispatcharrtv-dispatcharr   # on the TV; dev builds only
+make                                                  # tv-session.sh deploys it; take the TV lock first (tv-lock skill)
+python3 tests/mock_dispatcharr.py --host <this-machine-lan-ip> --port 9192 --key SESSIONKEY   # the default binds loopback only
+tools/tv-session.sh up --account mock=<this-machine-lan-ip>:9192   # moves the set's account aside, writes the mock's
+tools/tv-session.sh down                                           # puts the set's own account back
 ```
 
 The TV address and MAC are per-USER, not per-checkout: `${PLX_TV_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/dispatcharrtv}`,
 so a fresh worktree needs nothing seeded for them and no setup hook (a copied file would go stale). A
 `.tv-host` / `.tv-mac` in a checkout (or in the main checkout) still works and takes precedence, as a
-per-checkout override. `make -s print-rundir` names the install's runtime root;
-`make FLAVOR=debug install` is needed only on a TV that has never had the debug build.
+per-checkout override. `make FLAVOR=debug install` is needed only on a TV that has never had the
+debug build.
 
-**A sign-in stores an account.** On a set that already holds the owner's Dispatcharr account, move
-`dispatcharr.json` (and `dispatcharr-prefs.json`) in the app directory aside first and restore them
-afterwards — owner uid 6030, mode 600, from a trap so a failure still restores them (the
-television-safety rule in `AGENTS.md`). `tests/run.py` does that itself for its clip cases.
+**The set may hold the owner's real account.** `up --account mock=…` renames it (and the prefs) to
+`*.session-aside` and writes an account naming the mock, owned by the app's uid at 0600; `down`, or
+the next plain `up`, puts the real files back exactly (the `tv-session` skill has the details).
+`tests/run.py` moves it aside itself for its clip cases. The `dispatcharrtv-dispatcharr` trigger is
+not a way to use the mock: it signs in, logs a report and stores nothing.
 
-Without a TV, `make check` and `make sim` need no account either; the simulator signs in to the
-same mock. `tests/run.py` does not deploy the binary, so deploy the build you mean to test first;
+Without a TV, `make check` and `make sim` need no account either; the simulator reads an account
+file naming the same mock from its runtime directory (`dispatcharr.json`, mode 0600). `tests/run.py` does not deploy the binary, so deploy the build you mean to test first;
 for FPS or frame pacing build with `ARM_PROFILE=release` (`make ARM_PROFILE=release deploy`),
 because a bare `make deploy` ships the no-LTO `tvdev` build, which `tools/profile-graphics`
 refuses to grade (see `docs/agent-reference.md` "ARM_PROFILE").

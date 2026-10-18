@@ -121,6 +121,9 @@ pub(crate) fn send(
         None,
     )
     .ok_or(Error::Unreachable)?;
+    if let Some(date) = net::last_response_date() {
+        super::clock::observe(date);
+    }
     match Error::from_status(resp.status) {
         None => Ok(resp.body),
         Some(err) => Err(err),

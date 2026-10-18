@@ -29,6 +29,7 @@ pub mod api; // channels/groups reads with the API key
 pub mod auth; // sign-in: version probe, JWT, existing-or-new API key
 pub mod discover; // finding a Dispatcharr on the local network: a private-subnet scan of its web port
 pub mod client; // the one request door: URL, auth header, body, status → Error
+pub mod clock; // the server's clock, for a television whose own one is wrong
 pub mod error; // what went wrong, in the terms a Setup screen explains to a person
 pub mod guide; // programmes per channel: the tvg_id mapping and the rolling window
 pub mod models; // the response shapes

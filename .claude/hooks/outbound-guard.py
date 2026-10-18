@@ -2,10 +2,11 @@
 """PreToolUse guard: nothing carrying this repo's private values may be published.
 
 WHY A HOOK AND NOT A CONVENTION. The convention already exists, in writing, and it already failed.
-`docs/shared-servers.md` opens with "none of that data is ours" and a table of stand-ins — and its
-own next paragraph records that the rule "stood here, in these words, while the repo published the
-friend's handle, their machine name, their library name, their real port and their LAN address
-across ~139 sites in committed code and four PR bodies (2026-08-14)". Those four (PRs #28-31) were
+the retired `docs/shared-servers.md` opened with "none of that data is ours" and a table of
+stand-ins (now `docs/placeholders.md`) — and its own next paragraph recorded that the rule "stood
+here, in these words, while the repo published the friend's handle, their machine name, their
+library name, their real port and their LAN address across ~139 sites in committed code and four PR
+bodies (2026-08-14)". Those four (PRs #28-31) were
 a batch of subagents told to write device-verification recipes "executable without me"; each did
 the obviously helpful thing and pasted the real credentials block in. All four were redacted, but
 GitHub keeps PR-body edit history, so those values are permanently public. The data was the
@@ -123,10 +124,9 @@ WHAT IT MATCHES. Two halves, and they fail in opposite directions on purpose.
       literal half covers the token that actually exists here) for not refusing ordinary links.
     * A PRIVATE QUAD THAT A TRACKED FILE ALREADY CONTAINS IS NOT A LEAK, so shape hits on the
       IPv4 and 40-hex rules are dropped when `git grep -F` finds the value in a tracked file. This
-      is not a loophole, it is the whole point: `docs/shared-servers.md`'s stand-in table nominates
-      `10.9.9.7` as the LAN-address placeholder — RFC1918 on purpose, "as the real one is", and it
-      is now in five tracked files including `plex/account.rs` and `plex/probe.rs` — and
-      `docs/plex-openapi.json` carries `10.0.0.42` eight times as upstream Plex's own example.
+      is not a loophole, it is the whole point: `docs/placeholders.md`'s stand-in table nominates
+      `10.9.9.7` as the LAN-address placeholder — RFC1918 on purpose, "as a real one is" — and
+      `10.0.0.42` was upstream Plex's own example in the since-retired `docs/plex-openapi.json`.
       Without this rule the guard refuses the very placeholder the docs tell you to use. It is
       applied to those two shape rules and NOT to the literal half or the token rules: a real
       credential sitting in a tracked file is an incident to clean up, never a licence to republish.
@@ -181,7 +181,7 @@ THE ESCAPE HATCH is a prefix on the command itself — `PLX_PUBLISH_BYPASS=1 gh 
 for a human publishing something the scanner mis-read (a doc that must quote a real-looking address
 is the realistic case). An agent reaching for it is deciding, on the maintainer's behalf and
 usually on a third party's behalf, to publish an address that cannot be un-published. Use a
-stand-in from `docs/shared-servers.md`'s table instead, or ask.
+stand-in from `docs/placeholders.md`'s table instead, or ask.
 
 FAIL-OPEN ON ITS OWN BUGS, fail-closed on the answer: a crash in this file must not wedge every
 Bash call in the session, but a match is a refusal. Contract: exit 0 allows, exit 2 blocks and
@@ -490,7 +490,7 @@ def findings(text, secrets, published=None):
         if CIDR_TAIL.match(text[m.end():m.end() + 2]):
             continue                    # `172.16.0.0/12` names a range, not a host
         if pub(m.group(0)):
-            continue                    # already in a tracked file — see docs/shared-servers.md
+            continue                    # already in a tracked file — see docs/placeholders.md
         note("a private-range IPv4 address", "shape rule")
         break
     return hits
@@ -1192,7 +1192,7 @@ def main():
         "redacted, but GitHub keeps PR-body edit history, so those values are permanently public —\n"
         "and they were the FRIEND's, not this project's to publish.\n"
         "\n"
-        "Use a stand-in. docs/shared-servers.md carries the table this repo actually uses:\n"
+        "Use a stand-in. docs/placeholders.md carries the table this repo actually uses:\n"
         "  handle `friend` · machine `nas-home` · library `Film Club` · port `31234`\n"
         "  LAN address `10.9.9.7` · public address `203.0.113.9` (RFC 5737 TEST-NET-3)\n"
         "  a machine id: `aaaabbbb…` runs, never a real 40-hex one\n"

@@ -381,8 +381,7 @@ impl<'a> Parts<'a> {
 /// A pin is built ONLY for a TLS origin whose host is a dashed-address `*.plex.direct` label, and
 /// only when the address that label ENCODES equals the address stored beside it — the
 /// `Connection.address` plex.tv advertised, persisted as `ServerRef::address` / `SourceRef::address`.
-/// The stored address is what is dialled (data copied from plex.tv, per `docs/shared-servers.md`
-/// §1); the decode is the cross-check. Two consequences:
+/// The stored address is what is dialled (data copied from plex.tv); the decode is the cross-check. Two consequences:
 ///
 /// * a mismatch, an undecodable label, a plain hostname or a literal host yields `None`, and the
 ///   request resolves through DNS exactly as before — a wrong guess can only COST a pin, never

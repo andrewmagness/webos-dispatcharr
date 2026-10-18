@@ -36,7 +36,7 @@ impl TextBuffer {
         self.caret += text.len();
     }
 
-    /// LG sends a whole prediction without a corresponding deletion event (docs/search.md).
+    /// LG sends a whole prediction without a corresponding deletion event (docs/tv-keyboard.md).
     /// Preserve the commit boundary: splitting it into chars loses that replacement signal.
     pub fn commit(&mut self, text: &str) {
         if let Some(start) = replaces_word_at(&self.text, self.caret, text) {

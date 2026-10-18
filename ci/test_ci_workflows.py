@@ -571,7 +571,7 @@ class CiPathFilter(unittest.TestCase):
         ".github/CODEOWNERS", ".github/dependabot.yml",
         "README.md", "CONTRIBUTING.md", "SECURITY.md", "AGENTS.md", "CLAUDE.md",
         "docs/agent-reference.md", "docs/troubleshooting.md", "docs/release-notes/v0.8.0.md",
-        "docs/plex-openapi.json", "docs/assets/sentry-wordmark-dark.svg",
+        "docs/assets/sentry-wordmark-dark.svg",
         "docs/webosbrew-package.yml", "docs/measurements/m2-verbose-rerun.txt",
         "rust-modules/media/src/player/CLAUDE.md", ".agents/skills/ui-sim/SKILL.md",
         ".claude/settings.json", ".claude/workflows/swarm-gate.js", ".claude/agents/doc-claim-auditor.md",

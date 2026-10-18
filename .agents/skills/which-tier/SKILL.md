@@ -162,7 +162,7 @@ named here only so you can tell them from a regression in your own edit.
 - **A synthetic `SDL_TEXTINPUT` SIGSEGVs inside SDL** — macOS `libSDL2` is sdl2-compat forwarding
   into SDL3, whose text event carries a `char *text` where SDL2 carries an inline `char[32]`. No
   Rust panic, no log line, the process is just gone. The FIFO's key and `ck:` tokens are safe
-  because every field they set is a scalar. `docs/search.md` §3.
+  because every field they set is a scalar. `docs/tv-keyboard.md`.
 
 ### Tier 2 — the device
 

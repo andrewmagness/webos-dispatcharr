@@ -62,8 +62,8 @@ def safe_name(name):
 
 def allowed(name):
     p = safe_name(name)
-    # Optional upstream API reference contains credential-shaped public examples; not a build input.
-    if name == 'docs/plex-openapi.json' or name.startswith('docs/measurements/'):
+    # Historical raw measurements are not build inputs.
+    if name.startswith('docs/measurements/'):
         return False
     if name in {'ipkroot/ctl/control', '.agents/skills/wake-tv/wake-tv.sh'} or name.startswith('.claude/hooks/'):
         return True

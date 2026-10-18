@@ -18,7 +18,7 @@
 // `version_is_the_package_or_the_next_minor_dev` below exercises the end-to-end behavior (the
 // emitted `PLX_VERSION` itself, as `plx_base::identity::version()` reports it once the
 // application has handed it in); the tests above it are the unit-level half. That test lives here
-// rather than in `plx_plex` because `PLX_VERSION` and `CARGO_PKG_VERSION` are the application
+// rather than in `plx_base` because `PLX_VERSION` and `CARGO_PKG_VERSION` are the application
 // crate's, not the layer's.
 
 /// Parse a `RELEASE_LINE` file's content (`"X.Y"`, with or without a trailing newline) into its

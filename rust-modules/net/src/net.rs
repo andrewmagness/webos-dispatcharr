@@ -2310,13 +2310,6 @@ fn shipped_ca_bundle(dir: &std::path::Path) -> Option<String> {
 /// debugging a 400 and guessing at one.
 const TELEMETRY_MAX_REPLY: usize = 4096;
 
-/// Redirect-following HTTPS GET for a PUBLIC, credential-free resource. The QR image fetch is the
-/// only caller: at most five HTTP(S)-only redirects are followed, and an HTTPS request may never
-/// downgrade. Account/PMS requests keep redirects off because replayed headers/URLs carry tokens.
-pub fn https_get_public(url: &str) -> Option<Resp> {
-    request(url, &[], "GET", None, API, true, None, None)
-}
-
 /// The `nowan` gate shared by the three resolver doors ([`request_tls_result`],
 /// [`crate::curlio`] and [`crate::stream`]): `true` when `/tmp/dispatcharrtv-nowan` is armed and
 /// `host` is a NAME rather than a literal, i.e. when a dead resolver would have refused it. The

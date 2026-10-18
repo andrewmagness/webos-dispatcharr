@@ -171,7 +171,6 @@ dependencies = [
  "plx_media",
  "plx_net",
  "plx_platform",
- "plx_plex",
  "plx_screens",
  "plx_telemetry",
  "plx_ui",
@@ -609,7 +608,6 @@ dependencies = [
  "plx_machine",
  "plx_media",
  "plx_platform",
- "plx_plex",
  "plx_telemetry",
  "plx_ui",
 ]
@@ -627,11 +625,9 @@ name = "plx_data"
 version = "0.0.0"
 dependencies = [
  "plx_base",
- "plx_data",
  "plx_machine",
  "plx_net",
  "plx_platform",
- "plx_plex",
  "plx_telemetry",
  "serde",
  "serde_json",
@@ -677,7 +673,6 @@ dependencies = [
  "plx_media",
  "plx_net",
  "plx_platform",
- "plx_plex",
  "plx_telemetry",
  "serde",
  "serde_json",
@@ -713,19 +708,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "plx_plex"
-version = "0.0.0"
-dependencies = [
- "libc",
- "plx_base",
- "plx_machine",
- "plx_net",
- "plx_platform",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "plx_screens"
 version = "0.0.0"
 dependencies = [
@@ -739,7 +721,6 @@ dependencies = [
  "plx_media",
  "plx_net",
  "plx_platform",
- "plx_plex",
  "plx_screens",
  "plx_telemetry",
  "plx_ui",

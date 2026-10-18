@@ -595,7 +595,7 @@ fn rows(ps: &plx_media::route::PlaybackSession, d: &plx_media::player::Diag, pre
 
 fn pipeline_rows(ps: &plx_media::route::PlaybackSession, d: &plx_media::player::Diag, prev: (i64, i64, u32), now: u32) -> Vec<Field> {
     let mut v = Vec::with_capacity(LEFT_ROWS);
-    v.push(Field::new(plx_platform::i18n::msg::browse_diagnostics_field_route(), route_line(ps)));
+    v.push(Field::new(plx_platform::i18n::msg::browse_diagnostics_field_route(), route_line()));
 
     let mut video = chain(
         plx_media::route::source_vcodec(ps),
@@ -761,18 +761,13 @@ fn fps_milli_str(fps_milli: i64) -> String {
     }
 }
 
-fn route_line(ps: &plx_media::route::PlaybackSession) -> String {
-    let transport = if plx_media::route::is_segmented_hls(ps) {
-        "HLS"
-    } else {
-        plx_platform::i18n::msg::browse_diagnostics_progressive()
-    };
-    let transform = match (plx_media::route::is_transcoding(ps), plx_media::route::is_remux(ps)) {
-        (false, _) => plx_platform::i18n::msg::browse_diagnostics_direct_play(),
-        (true, true) => plx_platform::i18n::msg::browse_diagnostics_remux(),
-        (true, false) => plx_platform::i18n::msg::browse_diagnostics_transcode(),
-    };
-    format!("{transport} · {transform}")
+/// A stream is fed as the server sends it: one progressive transport, played directly.
+fn route_line() -> String {
+    format!(
+        "{} · {}",
+        plx_platform::i18n::msg::browse_diagnostics_progressive(),
+        plx_platform::i18n::msg::browse_diagnostics_direct_play()
+    )
 }
 
 /// The video plane's whole state as one sentence, and whether it is a fault. Split out because the

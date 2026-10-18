@@ -8,8 +8,9 @@ L14, which a split hides from them, and the gate does not check impl coherence. 
 off behind a port, so that another TV OS can be a second port. L15 is **gate-complete**: its 44
 entries are gone, and the gate fails on any reference from outside the port to a member of it. It
 is not done in the sense of its own goal. L15b, the OS-neutral port, is open (below). Neither holds
-up the split. (Dispatcharr TV has since deleted the `session` crate, plex.tv sign-in, with the Plex
-client; the record below is the split as it was done.) **Thirteen of the fourteen layers, `base`, `machine`, `platform`, `gfx`, `net`, `ui`,
+up the split. (Dispatcharr TV has since deleted the `session` crate, plex.tv sign-in, and the
+`plex` crate, the Plex API and request door, with the Plex client, and added the `dispatcharr`
+crate; the record below is the split as it was done.) **Thirteen of the fourteen layers, `base`, `machine`, `platform`, `gfx`, `net`, `ui`,
 `plex`, `telemetry`, `data`, `session`, `media`, `appkit` and `screens`, are their own crates,
 `plx_base`, `plx_machine`, `plx_platform`, `plx_gfx`, `plx_net`, `plx_ui`, `plx_plex`, `plx_telemetry`,
 `plx_data`, `plx_session`, `plx_media`, `plx_appkit` and `plx_screens`** (`rust-modules/base/`,
@@ -1190,7 +1191,7 @@ taught is mostly about what would have gone quiet:
   after the move, and the `test-support` build needed only the three reverts above. Nothing named
   `crate::telemetry` or `crate::diag` except the application's own references, which the script
   rewrote.
-- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_plex -p plx_dispatcharr -p plx_telemetry`) in the
+- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_dispatcharr -p plx_telemetry`) in the
   Makefile, the workflow, `tools/build-bench.py` and the tests that pin them, and in the docs that
   quote them; `--src rust-modules/telemetry/src` for the line budget (450,644 lines counted, limit
   485,000); `RUST_INPUTS`; `ci/test_no_host_staticlib.py` holds the crate to `rlib`; and `make

@@ -906,7 +906,7 @@ $(FFABI_STAMP): ci/ffabi-assert.c $(FFMPEG_INC)/libavformat/avformat.h Makefile
 # all, and this target is an ordinary timestamp comparison. For the same reason every workspace
 # member the library links must be listed (`storage` has its own rule below): `dispatcharr` was
 # missing until 2026-10-17, so an edit confined to it never rebuilt the binary. ci/test_rust_inputs.py.
-RUST_INPUTS := $(shell find rust-modules/src rust-modules/base rust-modules/machine rust-modules/net rust-modules/platform rust-modules/gfx rust-modules/ui rust-modules/plex rust-modules/dispatcharr rust-modules/telemetry rust-modules/data rust-modules/media rust-modules/appkit rust-modules/screens rust-modules/build_support locales assets -type f 2>/dev/null)
+RUST_INPUTS := $(shell find rust-modules/src rust-modules/base rust-modules/machine rust-modules/net rust-modules/platform rust-modules/gfx rust-modules/ui rust-modules/dispatcharr rust-modules/telemetry rust-modules/data rust-modules/media rust-modules/appkit rust-modules/screens rust-modules/build_support locales assets -type f 2>/dev/null)
 $(RUST_LIB): LICENSE $(RUST_INPUTS) rust-modules/Cargo.toml rust-modules/Cargo.lock rust-modules/build.rs ci/install-identities.json rust-modules/.cargo/config.toml Makefile ci/check-staticlib-artifact.py $(FFABI_STAMP)
 	@# BEFORE the mkdir: the seed is only ever cloned into a target dir that does not exist yet.
 	$(CARGO_SEED) restore $(RUST_TDIR) rust-modules/$(RUST_TDIR)
@@ -1498,7 +1498,7 @@ check-cargo-lint: lint
 	@# gate has nothing to reuse a cache for. No `pkg/lab.json` is involved — that file is `make
 	@# LAB=1`'s requirement (a live session secret), not the compiler's.
 	@set -e; cd rust-modules && CARGO_INCREMENTAL=0 PATH="$$HOME/.cargo/bin:$$PATH" \
-	  cargo +$(RUST_NIGHTLY) check --lib --tests -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --features lab-diagnostics
+	  cargo +$(RUST_NIGHTLY) check --lib --tests -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --features lab-diagnostics
 	@# And the placeholder pixel oracle, `placeholder-sentinel`: in no default set, so this line is
 	@# what keeps it compiling (its code AND its tests, `--tests`). `plx_ui` is the only crate with a
 	@# `cfg` on it.
@@ -1516,7 +1516,7 @@ check-cargo-lint: lint
 # `-p` lists in the recipes below (those stay literal because ci/test_ci_split.py greps for them);
 # ci/test_test_crate.py pins the two equal.
 UNIT_RUN = python3 ../tools/cargo-test-parallel.py
-UNIT_SUITE = dispatcharrtv plx_base plx_machine plx_platform plx_gfx plx_net plx_ui plx_plex plx_dispatcharr plx_telemetry plx_data plx_media plx_appkit plx_screens
+UNIT_SUITE = dispatcharrtv plx_base plx_machine plx_platform plx_gfx plx_net plx_ui plx_dispatcharr plx_telemetry plx_data plx_media plx_appkit plx_screens
 
 # The default-feature unit suite and everything that drives cargo through ci/ self-tests.
 check-cargo-unit-default:
@@ -1545,7 +1545,7 @@ check-cargo-unit-default:
 	cd rust-modules && PATH="$$HOME/.cargo/bin:$$PATH" DISPATCHARRTV_RUNTIME_DIR="$$d" \
 	  $(TELEMETRY_ENV) \
 	  $(HOST_ENV) \
-	  $(UNIT_RUN) -- cargo +$(RUST_NIGHTLY) test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens
+	  $(UNIT_RUN) -- cargo +$(RUST_NIGHTLY) test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens
 	RUST_NIGHTLY=$(RUST_NIGHTLY) python3 ci/test_storage_service_package.py
 	cd rust-modules && PATH="$$HOME/.cargo/bin:$$PATH" cargo +$(RUST_NIGHTLY) test -p dispatcharrtv-storage --bin dispatcharrtv-storage
 	@# The helper is its own package, so building it compiles no copy of the app library; this reads
@@ -1579,7 +1579,7 @@ check-cargo-unit-hostsim:
 	cd rust-modules && PATH="$$HOME/.cargo/bin:$$PATH" DISPATCHARRTV_RUNTIME_DIR="$$d" \
 	  $(TELEMETRY_ENV) \
 	  $(HOST_ENV) \
-	  $(UNIT_RUN) -- cargo +$(RUST_NIGHTLY) test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --features hostsim
+	  $(UNIT_RUN) -- cargo +$(RUST_NIGHTLY) test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --features hostsim
 
 # OPT-IN incremental inner loop: the default-feature unit suite (the same `cargo test --lib` as
 # `check-cargo-unit-default`, same throwaway runtime root and telemetry env) with
@@ -1603,7 +1603,7 @@ test-fast:
 	  PATH="$$HOME/.cargo/bin:$$PATH" DISPATCHARRTV_RUNTIME_DIR="$$d" \
 	  $(TELEMETRY_ENV) \
 	  $(HOST_ENV) \
-	  $(UNIT_RUN) $(if $(T),--filter '$(T)') -- cargo +$(RUST_NIGHTLY) test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens
+	  $(UNIT_RUN) $(if $(T),--filter '$(T)') -- cargo +$(RUST_NIGHTLY) test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens
 
 # `make test-crate C=plx_ui [T=filter] [DEPS=1]` -- build and run ONLY the named crate's lib tests, in
 # the same incremental `$(TEST_FAST_TDIR)` tree and with the same flags as `test-fast`, so the two
@@ -1612,8 +1612,9 @@ test-fast:
 # `C` is a crate name with or without `plx_` (`C=ui`, `C=plx_ui`; the application crate is
 # `C=app`), several allowed. `DEPS=1` adds the crates that DIRECTLY depend on it, read from
 # `cargo metadata` by tools/test-crate.py. The feature set is reconstructed from the full suite's
-# resolution (see that file) so a crate gets its `devtriggers` tests: a bare `cargo test -p
-# plx_plex` runs 458 tests where the suite runs 466. Refused under RELEASE=1 like `test-fast`.
+# resolution (see that file) so a crate gets its `devtriggers` tests: a bare `cargo test -p` of a
+# layer crate ran 458 tests where the suite ran 466 (measured 2026-10-05 on the since-removed Plex
+# crate). Refused under RELEASE=1 like `test-fast`.
 .PHONY: test-crate
 test-crate:
 	@$(if $(RELEASE),echo "make test-crate: refused under RELEASE=1 -- it runs the default-feature host unit tests incrementally; RELEASE=1 is the shipping feature set (use make check for gates)." >&2; exit 1,:)

@@ -880,21 +880,23 @@ mod tests {
         out
     }
 
-    /// A film's failure reports its own origin and the plain playback fingerprint.
+    /// **A live failure's report says why its tune was made, under the plain playback
+    /// fingerprint.** A reconnect that the sandbox preflight refuses is reported as `recovery`
+    /// with the failure's own kind, and the fingerprint is `["playback-error", kind]`.
     #[test]
-    fn a_film_failure_keeps_its_origin_and_the_playback_fingerprint() {
+    fn a_live_failure_reports_its_origin_under_the_playback_fingerprint() {
         let _g = plx_base::testlock::serial();
         consented(|| {
             let mut ps = crate::route::PlaybackSession::default();
-            crate::route::refuse_for_test(&mut ps, crate::route::PlayVerdict::DirectPlayDisabled);
-            requested(AttemptOrigin::Fresh);
-            observe(&ps, S::Resolving);
+            ps.jail_load_blocked = true;
+            requested(AttemptOrigin::Recovery);
+            observe(&ps, S::Connecting);
             observe(&ps, S::Error);
-            assert_eq!(error_context().attempt_origin, AttemptOrigin::Fresh);
+            assert_eq!(error_context().attempt_origin, AttemptOrigin::Recovery);
             let v = event_for(&ps);
-            let kind = v["tags"]["playback.kind"].as_str().expect("kind tag").to_owned();
-            assert_eq!(v["fingerprint"], serde_json::json!(["playback-error", kind]));
-            assert_eq!(v["tags"]["playback.attempt_origin"], "fresh");
+            assert_eq!(v["tags"]["playback.kind"], "jail_missing_rtkmem");
+            assert_eq!(v["fingerprint"], serde_json::json!(["playback-error", "jail_missing_rtkmem"]));
+            assert_eq!(v["tags"]["playback.attempt_origin"], "recovery");
         });
     }
 

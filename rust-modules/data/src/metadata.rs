@@ -82,12 +82,9 @@ impl Dovi {
     ///
     /// - the direct-play gate **when no node will be sent** (`presentation` is written in terms of
     ///   this, so the two can never contradict each other), and
-    /// - the server's permission to **COPY** the video — a remux or a `directStream` transcode
-    ///   hands us the identical elementary stream one container down, and the Load payload built
-    ///   for that path declares nothing. `route::build_stream` reads it for both
-    ///   ([`plx_plex::plex::TranscodeSpec::no_video_copy`] and the `remux` gate) and that is why a
-    ///   declared Profile 5 still refuses a copy: the declaration rides the DIRECT PLAY, not the
-    ///   file, so the same pixels arriving by another route are as wrong as they ever were.
+    /// - whether the same pixels may arrive by another route at all: the declaration rides the
+    ///   DIRECT PLAY, not the file, so a declared Profile 5 copied one container down is as wrong
+    ///   as it ever was.
     ///
     /// Two disqualifiers, and they are found by different fields:
     /// - **an enhancement layer** (`el_present`, Profile 7) — one elementary stream is all the
@@ -103,11 +100,8 @@ impl Dovi {
     /// `present` guards the outer question and a KNOWN `profile` guards the compat-id test, so a
     /// server that reports `DOVIPresent` and nothing else falls through to the existing gates
     /// unchanged. That direction is deliberate, and the price of getting it wrong is higher than
-    /// it first looks: a true answer here does not merely reroute an item, it also withdraws the
-    /// server's permission to COPY the video
-    /// ([`plx_plex::plex::TranscodeSpec::no_video_copy`] — without which the refusal accomplishes
-    /// nothing at all), and a server that cannot encode the result then refuses the playback
-    /// outright. So a false positive costs the film, not just its 4K and its HDR10. The same
+    /// it first looks: a true answer here refuses the stream's direct play outright, so a false
+    /// positive costs the playback, not just its 4K and its HDR10. The same
     /// misread-degrades-to-assumed rule `crate::route::video_direct_plays` applies to an unknown
     /// frame size, applied to a field whose silence is indistinguishable from a legitimate zero.
     ///

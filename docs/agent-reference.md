@@ -196,7 +196,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   what the user can reach, which is the only class that is tracked rather than accepted; `--sites` lists every hit with its class.
   CI runs the three cargo targets plus those two as five parallel jobs
   (`host-lint`, `host-unit-default`, `host-unit-hostsim`, `host-python`, `host-python-harness`) behind an aggregator named
-  `host checks (NOT a device gate)`; `ci/test_ci_split.py` pins that no gate falls between them. The cargo half runs `cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens`
+  `host checks (NOT a device gate)`; `ci/test_ci_split.py` pins that no gate falls between them. The cargo half runs `cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens`
   **twice: once on the default feature set and once with `--features hostsim`**, which is not a
   duplicate run. The host feed seam (`player/ffi_host.rs`) exists ONLY in the hostsim
   configuration, so every test that drives an access unit through `sf_feed` is compiled out of the
@@ -227,7 +227,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   failed build returns cargo's status. `ci/test_cargo_test_parallel.py` pins those. CI is
   unchanged: its unit jobs call the same make targets. Measured the same day on the 10-core Mac
   (binaries already built): 78.8 s sequential -> 17.9 s with 4 jobs and 14 s with 6 or more, after
-  the fixes to the 16 s test and to `plx_plex`'s TEST-NET connect-timeout test. The remaining long
+  the fixes to the 16 s test and to the (since-removed) Plex crate's TEST-NET connect-timeout test. The remaining long
   pole is `plx_media`'s chain of `serial()` tests (about 12 s end to end even alone).
 - `make lint` — three **named** clippy lints (`ifs_same_cond`, `same_functions_in_if_condition`,
   `if_same_then_else`) over the whole crate, `-A clippy::all` first so nothing else can *fail* the
@@ -237,7 +237,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   SDL event loop where no host test can see it. Needs the **clippy component on nightly** (rustup's
   default profile ships it; a `--profile minimal` nightly does not).
 - `make test-fast [T=filter]` — **opt-in** incremental inner loop: the same default-feature
-  `cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens` as `check-cargo-unit-default` (throwaway runtime root, telemetry env), but
+  `cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens` as `check-cargo-unit-default` (throwaway runtime root, telemetry env), but
   with `CARGO_INCREMENTAL=1` in its own `rust-modules/target-fast` (gitignored). `T=route::`
   is the test-name filter, handed to every one of the 14 test binaries; each prints its own libtest
   `test result:` line (the counts are per crate, never one total), followed by the wrapper's summary line. Use it for a long series of
@@ -251,14 +251,15 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   `ci/test_test_fast.py` pins that the `check*` and `lint` recipes never name `CARGO_INCREMENTAL=1`
   or `target-fast`, and that `tools/cargo-seed.py` and `tools/build-gc.sh` treat the dir correctly.
 - `make test-crate C=plx_ui [T=filter] [DEPS=1]` — **test what you touched**: builds and runs only
-  the named crate's lib tests (several crates: `C='plx_ui plx_plex'`; the application crate is
+  the named crate's lib tests (several crates: `C='plx_ui plx_media'`; the application crate is
   `C=app`; `plx_` is optional) in the SAME `target-fast` tree and with the same environment as
   `test-fast`. An edit in a low crate makes `test-fast` rebuild and relink every dependent's test
   binary; this builds the one crate. `DEPS=1` adds the workspace crates that DIRECTLY depend on it,
   read from `cargo metadata` (`tools/test-crate.py`; no list kept anywhere). **The features are the
   point**: the application crate's defaults (`devtriggers`, `devtools`, `threadcheck`) are what turn
   on the dev surface in every layer, and cargo unifies features only across the packages it is asked
-  to build, so a bare `cargo test -p plx_plex` runs 458 tests where the suite runs 466. The tool
+  to build, so a bare `cargo test -p` of a layer crate ran 458 tests where the suite ran 466
+  (measured on the since-removed Plex crate). The tool
   reads the full suite's resolution (`--unit-graph`, nothing compiled) and passes each feature the
   full build enables on the selected crate and on the crates it names in its `Cargo.toml` as
   explicit `--features crate/feature` flags. Cargo only lets `--features` address those, so a
@@ -278,12 +279,12 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
 - **CI build health** — four tools keep the build from growing unnoticed, and none of them is a
   device gate.
   - *Timings artifact.* `host-unit-default` compiles the test binary in its own step with
-    `cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --timings`, then `make check-cargo-unit-default` runs against what that
+    `cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --timings`, then `make check-cargo-unit-default` runs against what that
     built (`--timings` is not part of cargo's fingerprint: checked 2026-10-02 by building with and
     without it and getting `Fresh` for `dispatcharrtv` both ways, so the step moves the compile
     rather than adding one). Download `cargo-timings-host-unit-default` from the run page
     ("Artifacts", kept 14 days) and open `cargo-timing.html`: it names the crates on the critical
-    path. Locally: `cd rust-modules && cargo +nightly test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --timings` writes
+    path. Locally: `cd rust-modules && cargo +nightly test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --timings` writes
     `target/cargo-timings/cargo-timing.html`.
   - *Trends.* `tools/ci-durations.py [--runs 30] [--recent 5] [--json]` reads the last 30 successful
     `main` runs of CI and Simulator CI through `gh api` and prints, per job, the median and p90 and
@@ -314,10 +315,10 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   before/after table instead of an ad-hoc scratch-script number. It prints a Markdown table (median /
   min / max over `--runs`, default 3, the scenarios interleaved round by round) and, with `--json`,
   a machine-readable document (git sha, `rustc +nightly -V`, host, per-run load and swap). Rows:
-  a **no-op** host test build (`cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run`; it reports from cargo's JSON `fresh`
+  a **no-op** host test build (`cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run`; it reports from cargo's JSON `fresh`
   flag whether the app crate was rebuilt and flags a recompile as UNEXPECTED, the
   `ci/test_build_not_always_dirty.py` hazard); an **edit-rebuild** after appending a comment to a
-  leaf file of each crate (`plx_base`'s `cbuf.rs`, `plx_machine`'s `landgate.rs`, `plx_platform`'s `devcaps.rs`, `plx_gfx`'s `overdraw.rs`, `plx_net`'s `stream_redirect.rs`, `plx_ui`'s `dwell.rs`, `plx_plex`'s `retry.rs`, `plx_telemetry`'s `window.rs`, `plx_data`'s `metadata/track_names.rs`, `plx_media`'s `units.rs`, `plx_appkit`'s `live_banner.rs`, `plx_screens`'s `player/ass_subtitles.rs`, the application's `coldstart.rs`) and to a hub (`plx_ui`'s `lib.rs`), non-incremental (`CARGO_INCREMENTAL=0`, the
+  leaf file of each crate (`plx_base`'s `cbuf.rs`, `plx_machine`'s `landgate.rs`, `plx_platform`'s `devcaps.rs`, `plx_gfx`'s `overdraw.rs`, `plx_net`'s `stream_redirect.rs`, `plx_ui`'s `dwell.rs`, `plx_dispatcharr`'s `time.rs`, `plx_telemetry`'s `window.rs`, `plx_data`'s `metadata/track_names.rs`, `plx_media`'s `units.rs`, `plx_appkit`'s `live_banner.rs`, `plx_screens`'s `player/ass_subtitles.rs`, the application's `coldstart.rs`) and to a hub (`plx_ui`'s `lib.rs`), non-incremental (`CARGO_INCREMENTAL=0`, the
   default `target`) and incremental (`CARGO_INCREMENTAL=1`, `target-fast`; skipped with a note when
   that tree is absent unless `--cold`); the **unit suite** run on a warm tree, through the same
   `tools/cargo-test-parallel.py` wrapper the Makefile's recipes use (`UNIT_RUN` in `print-bench-config`), with its `test
@@ -819,11 +820,8 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   playback deep-dive; read it before touching playback**), `ff.rs` (THE demuxer — the **bundled,
   pinned** libavformat shipped beside the binary, *not* the TV's), `aq.rs` (the AU pipeline behind
   `plx_net`'s HTTP socket, `rust-modules/net/src/stream.rs`; libcurl/TLS is `rust-modules/net/src/net.rs`),
-  `curlio.rs`, `hls.rs`, `abr/` and `route/`; and the Plex layer (`rust-modules/plex/`, crate `plx_plex`: `plex/` and `http.rs` — **its own
-  `rust-modules/plex/src/plex/CLAUDE.md`**, which the rest of this file never pointed at: read it before
-  adding a PMS query, and before assuming there is one server. There is a REGISTRY behind
-  `client()` now — the app can hold a friend's shared server beside your own, each with its own
-  token, `ratingKey` space and watch state. `docs/shared-servers.md` is the design note).
+  `curlio.rs`, `abr/` and `route/`; and the Dispatcharr client (`rust-modules/dispatcharr/`, crate
+  `plx_dispatcharr`: sign-in, the per-user API key, channels, groups and the guide).
 - `rust-modules/ui/src/` (workspace crate `plx_ui`) — **the UI, as a shared design system**: `theme.rs` tokens, the retui core
   (`lib.rs` `Painter`/`View`), reusable components (`widgets.rs`/`table.rs`/`label.rs`/`icons.rs`),
   and, since phase 9 (Player was the last), no legacy screens at all — every route mounts an owned
@@ -1095,8 +1093,6 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   jail template, the ONE video plane, `/media/developer`, `splash.png`, the `requiredMemory`
   budget), the two name traps, and the ordered list of what only a television can settle. Read it
   before adding anything per-install, and before assuming a log came from the install you meant.
-- `docs/pms-api.md` — **verified** PMS REST reference (sections, hubs, metadata, image transcode,
-  direct-play URLs, timeline). The authoritative spec for the data layer.
 - `docs/buffer-feed-plan.md` — historical design note for the buffer-feed pivot (partly outdated).
 
 ## Non-obvious conventions & gotchas (all verified in code)
@@ -1420,7 +1416,7 @@ behaviour; real GL copies, glyphs and presentation still need a device capture w
 There **is** a host unit suite, and it is not the real gate — both halves matter, and conflating
 them is how this section used to be wrong in three files at once.
 
-**Tier 1 — `make check` (host).** `cd rust-modules && cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens` (a bare `cargo test --lib` runs the application crate only and skips every layer crate: `plx_base`, `plx_machine`, `plx_platform`, `plx_gfx`, `plx_net`, `plx_ui`, `plx_plex`, `plx_telemetry`, `plx_data`, `plx_media`, `plx_appkit`, `plx_screens`) runs the whole
+**Tier 1 — `make check` (host).** `cd rust-modules && cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens` (a bare `cargo test --lib` runs the application crate only and skips every layer crate: `plx_base`, `plx_machine`, `plx_platform`, `plx_gfx`, `plx_net`, `plx_ui`, `plx_dispatcharr`, `plx_telemetry`, `plx_data`, `plx_media`, `plx_appkit`, `plx_screens`) runs the whole
 host suite on the dev Mac, no TV involved — and `make check` runs it a SECOND time under
 `--features hostsim`, because the host feed seam only exists there and the tests that need it are
 compiled out of the first pass (see the build section). **Treat every test COUNT in this section as
@@ -1429,7 +1425,7 @@ documented 59 before that, which was five times stale before anyone noticed — 
 of this paragraph was stale within one *commit*, because two agents were adding tests to the same
 batch that documented it. Three numbers have now rotted here, so do not add a fourth: the only
 count worth having is the one you take yourself, with
-`cd rust-modules && cargo +nightly test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_plex -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens -- --list | grep -c ': test'`. **The per-module counts
+`cd rust-modules && cargo +nightly test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens -- --list | grep -c ': test'`. **The per-module counts
 below have the same disease and are worse**, because a stale one reads as precise rather than round
 — several were written when the module was a third its present size, and two bullets have now
 outlived the file they named: `ui/home.rs` (retired to `screens/home/`) and `route.rs` (split in

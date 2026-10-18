@@ -94,20 +94,6 @@ static RETAINED: Mutex<Retained> = Mutex::new(Retained {
     jobs: std::collections::VecDeque::new(), retry_at: None,
 });
 
-pub fn submit_retained<R: Send + 'static>(operation: impl FnOnce() -> R + Send + 'static)
-    -> TypedTicket<R> {
-    let (reply, result) = mpsc::channel();
-    let (done, worker) = mpsc::channel();
-    let job: Job = Box::new(move || {
-        let _done = done;
-        let _ = reply.send(operation());
-    });
-    let mut retained = RETAINED.lock().unwrap_or_else(|e| e.into_inner());
-    retained.jobs.push_back(job);
-    pump_retained_locked(&mut retained);
-    TypedTicket { result, worker }
-}
-
 pub fn pump_retained() {
     pump_retained_locked(&mut RETAINED.lock().unwrap_or_else(|e| e.into_inner()));
 }

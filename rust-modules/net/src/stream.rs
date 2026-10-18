@@ -1127,34 +1127,6 @@ pub fn http_open(
     ))
 }
 
-/// [`http_open`] with the whole-chain connect and stalled-I/O ceiling selected by the caller.
-/// Candidate discovery is the one caller that knows whether a connection is local or remote; the
-/// ordinary request path keeps [`CONNECT_TIMEOUT_MS`] and never infers a tier from an address.
-pub fn http_open_probe(
-    hs: *mut HttpStream,
-    host: *const c_char,
-    port: c_int,
-    path: *const c_char,
-    extra: *const c_char,
-    method: &str,
-    timeout_ms: c_int,
-) -> c_int {
-    legacy_open_result(http_open_with_timeouts(
-        hs,
-        host,
-        port,
-        path,
-        extra,
-        method,
-        timeout_ms,
-        timeout_ms,
-        timeout_ms,
-        None,
-        false,
-        &mut NoCheckpoint,
-    ))
-}
-
 /// Open a candidate media request inside one absolute setup snapshot. Unlike
 /// [`http_open_probe`], this bound applies to the whole connect/send/header chain and is removed
 /// after successful headers; body reads receive their own current projection from the caller.
@@ -1846,47 +1818,6 @@ pub struct BodyReceipt {
     /// decrypted — by the query itself, and the read that later copies them out will not see
     /// that work. The caller counts the query's time as body transfer time exactly then.
     pub stepped: bool,
-}
-
-/// [`BodyReceipt`] for the plaintext socket. `recv` reads straight into the caller's buffer, so
-/// what it holds ahead is the header block's leftover bytes plus the kernel's receive queue
-/// (`FIONREAD`). A chunked body counts nothing ahead: its buffered bytes are interleaved with
-/// framing, and its end is the terminator [`finish_body`] records.
-pub fn http_body_receipt(hs: *const HttpStream) -> BodyReceipt {
-    let nothing = BodyReceipt {
-        ahead: 0,
-        finished: false,
-        stepped: false,
-    };
-    if hs.is_null() {
-        return nothing;
-    }
-    let hs = unsafe { &*hs };
-    if hs.body_is_done() {
-        return BodyReceipt {
-            ahead: 0,
-            finished: true,
-            stepped: false,
-        };
-    }
-    if hs.chunked != 0 {
-        return nothing;
-    }
-    let buffered = (hs.blen - hs.bpos).max(0) as i64;
-    let fd = hs.fd();
-    let mut queued: c_int = 0;
-    if fd < 0 || unsafe { libc::ioctl(fd, libc::FIONREAD as _, &mut queued) } < 0 {
-        queued = 0;
-    }
-    let mut ahead = buffered + queued.max(0) as i64;
-    if hs.content_length >= 0 {
-        ahead = ahead.min((hs.content_length - hs.consumed).max(0));
-    }
-    BodyReceipt {
-        ahead,
-        finished: false,
-        stepped: false,
-    }
 }
 
 unsafe fn hs_compact_buf(hs: &mut HttpStream) {

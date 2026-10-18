@@ -3,7 +3,7 @@
 
 The property that silently breaks is the feature set. The application crate's default features turn
 on the dev surface in every layer crate, and cargo unifies features only across the packages it is
-asked to build, so a bare `-p plx_plex` compiles a different crate (458 tests instead of 466) that
+asked to build, so a bare `-p` of a layer crate compiles a different crate (458 tests instead of 466, measured on the since-removed Plex crate) that
 shares no artifact with `make test-fast`. These tests pin that the command carries the full
 suite's per-crate features, that `DEPS=1` and the name aliases resolve from `cargo metadata`
 rather than a list, and that the Makefile's recipe is wired to `test-fast`'s tree and refusals.

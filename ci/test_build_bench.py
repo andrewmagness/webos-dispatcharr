@@ -57,7 +57,7 @@ def read(p):
         return open(p).read()
     except OSError:
         return ""
-EDITED = ("base/src/cbuf.rs", "machine/src/landgate.rs", "platform/src/devcaps.rs", "gfx/src/overdraw.rs", "net/src/stream_redirect.rs", "ui/src/dwell.rs", "plex/src/plex/retry.rs", "telemetry/src/telemetry/window.rs", "data/src/metadata/track_names.rs", "media/src/abr/units.rs", "appkit/src/live_banner.rs", "screens/src/player/ass_subtitles.rs", "src/coldstart.rs", "ui/src/lib.rs")
+EDITED = ("base/src/cbuf.rs", "machine/src/landgate.rs", "platform/src/devcaps.rs", "gfx/src/overdraw.rs", "net/src/stream_redirect.rs", "ui/src/dwell.rs", "dispatcharr/src/dispatcharr/time.rs", "telemetry/src/telemetry/window.rs", "data/src/metadata/track_names.rs", "media/src/abr/units.rs", "appkit/src/live_banner.rs", "screens/src/player/ass_subtitles.rs", "src/coldstart.rs", "ui/src/lib.rs")
 if os.environ.get("FAKE_FAIL_ON_EDIT") and "build-bench edit" in "".join(read(p) for p in EDITED):
     sys.stderr.write("error: fake cargo failed on the edited tree\n")
     sys.exit(101)
@@ -95,7 +95,6 @@ if "--no-run" in args:
     art('/gfx', 'plx_gfx', '0.0.0')
     art('/net', 'plx_net', '0.0.0')
     art('/ui', 'plx_ui', '0.0.0')
-    art('/plex', 'plx_plex', '0.0.0')
     art('/dispatcharr', 'plx_dispatcharr', '0.0.0')
     art('/telemetry', 'plx_telemetry', '0.0.0')
     art('/data', 'plx_data', '0.0.0')
@@ -127,7 +126,7 @@ PLATFORM_LEAF = "rust-modules/platform/src/devcaps.rs"
 GFX_LEAF = "rust-modules/gfx/src/overdraw.rs"
 NET_LEAF = "rust-modules/net/src/stream_redirect.rs"
 UI_LEAF = "rust-modules/ui/src/dwell.rs"
-PLEX_LEAF = "rust-modules/plex/src/plex/retry.rs"
+DISPATCHARR_LEAF = "rust-modules/dispatcharr/src/dispatcharr/time.rs"
 TELEMETRY_LEAF = "rust-modules/telemetry/src/telemetry/window.rs"
 DATA_LEAF = "rust-modules/data/src/metadata/track_names.rs"
 MEDIA_LEAF = "rust-modules/media/src/abr/units.rs"
@@ -135,7 +134,7 @@ APPKIT_LEAF = "rust-modules/appkit/src/live_banner.rs"
 SCREENS_LEAF = "rust-modules/screens/src/player/ass_subtitles.rs"
 APP_LEAF = "rust-modules/src/coldstart.rs"
 HUB = "rust-modules/ui/src/lib.rs"
-SRC_FILES = {LEAF: "pub fn leaf() {}\n", MACHINE_LEAF: "pub fn machine() {}\n", PLATFORM_LEAF: "pub fn platform() {}\n", GFX_LEAF: "pub fn gfx() {}\n", NET_LEAF: "pub fn net() {}\n", UI_LEAF: "pub fn ui() {}\n", PLEX_LEAF: "pub fn plex() {}\n", TELEMETRY_LEAF: "pub fn telemetry() {}\n", DATA_LEAF: "pub fn data() {}\n", MEDIA_LEAF: "pub fn media() {}\n", APPKIT_LEAF: "pub fn appkit() {}\n", SCREENS_LEAF: "pub fn screens() {}\n", APP_LEAF: "pub fn app() {}\n", HUB: "pub fn hub() {}",
+SRC_FILES = {LEAF: "pub fn leaf() {}\n", MACHINE_LEAF: "pub fn machine() {}\n", PLATFORM_LEAF: "pub fn platform() {}\n", GFX_LEAF: "pub fn gfx() {}\n", NET_LEAF: "pub fn net() {}\n", UI_LEAF: "pub fn ui() {}\n", DISPATCHARR_LEAF: "pub fn dispatcharr() {}\n", TELEMETRY_LEAF: "pub fn telemetry() {}\n", DATA_LEAF: "pub fn data() {}\n", MEDIA_LEAF: "pub fn media() {}\n", APPKIT_LEAF: "pub fn appkit() {}\n", SCREENS_LEAF: "pub fn screens() {}\n", APP_LEAF: "pub fn app() {}\n", HUB: "pub fn hub() {}",
              "rust-modules/src/lib.rs": "mod coldstart;\n"}
 
 
@@ -198,11 +197,11 @@ class ShapeTests(unittest.TestCase):
             (sb.repo / "rust-modules" / "target").mkdir(parents=True)
             (sb.repo / "rust-modules" / "target" / "blob").write_bytes(b"x" * 4096)
             out = sb.repo.parent / "out.json"
-            proc = sb.run("--runs", "2", "--only", "noop,leaf,machine,platform,gfx,net,ui,plex,telemetry,data,media,appkit,screens,hub,tests,sizes", "--json", str(out))
+            proc = sb.run("--runs", "2", "--only", "noop,leaf,machine,platform,gfx,net,ui,dispatcharr,telemetry,data,media,appkit,screens,hub,tests,sizes", "--json", str(out))
             self.assertEqual(proc.returncode, 0, proc.stderr)
             md = proc.stdout
             self.assertIn("| Scenario | Runs | Median | Min | Max | Notes |", md)
-            for title in (bb.TITLES["noop"], bb.TITLES["leaf"], bb.TITLES["machine"], bb.TITLES["platform"], bb.TITLES["gfx"], bb.TITLES["net"], bb.TITLES["ui"], bb.TITLES["plex"], bb.TITLES["telemetry"], bb.TITLES["data"], bb.TITLES["media"], bb.TITLES["appkit"], bb.TITLES["screens"], bb.TITLES["hub"],
+            for title in (bb.TITLES["noop"], bb.TITLES["leaf"], bb.TITLES["machine"], bb.TITLES["platform"], bb.TITLES["gfx"], bb.TITLES["net"], bb.TITLES["ui"], bb.TITLES["dispatcharr"], bb.TITLES["telemetry"], bb.TITLES["data"], bb.TITLES["media"], bb.TITLES["appkit"], bb.TITLES["screens"], bb.TITLES["hub"],
                           bb.TITLES["tests"]):
                 self.assertRegex(md, re.escape(f"| {title} | 2 | ") + r"[\d.]+ s \| [\d.]+ s \| [\d.]+ s \|")
             self.assertIn("app crate rebuilt: no", md)   # the no-op row
@@ -219,7 +218,7 @@ class ShapeTests(unittest.TestCase):
             self.assertGreaterEqual(doc["host"]["cores"], 1)
             self.assertEqual(doc["runs"], 2)
             self.assertTrue(doc["restored_clean"])
-            self.assertEqual([s["id"] for s in doc["scenarios"]], ["noop", "leaf", "machine", "platform", "gfx", "net", "ui", "plex", "telemetry", "data", "media", "appkit", "screens", "hub", "tests", "sizes"])
+            self.assertEqual([s["id"] for s in doc["scenarios"]], ["noop", "leaf", "machine", "platform", "gfx", "net", "ui", "dispatcharr", "telemetry", "data", "media", "appkit", "screens", "hub", "tests", "sizes"])
             for sc in doc["scenarios"]:
                 if sc["id"] == "sizes":
                     continue
@@ -242,8 +241,8 @@ class ShapeTests(unittest.TestCase):
             self.assertIn("plx_net rebuilt: yes", md)
             self.assertTrue(all(s["ui_rebuilt"] and s["app_rebuilt"] for s in by_id["ui"]["samples"]))
             self.assertIn("plx_ui rebuilt: yes", md)
-            self.assertTrue(all(s["plex_rebuilt"] and s["app_rebuilt"] for s in by_id["plex"]["samples"]))
-            self.assertIn("plx_plex rebuilt: yes", md)
+            self.assertTrue(all(s["dispatcharr_rebuilt"] and s["app_rebuilt"] for s in by_id["dispatcharr"]["samples"]))
+            self.assertIn("plx_dispatcharr rebuilt: yes", md)
             self.assertTrue(all(s["telemetry_rebuilt"] and s["app_rebuilt"] for s in by_id["telemetry"]["samples"]))
             self.assertIn("plx_telemetry rebuilt: yes", md)
             self.assertTrue(all(s["data_rebuilt"] and s["app_rebuilt"] for s in by_id["data"]["samples"]))

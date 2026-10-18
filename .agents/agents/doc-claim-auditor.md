@@ -94,8 +94,8 @@ Ranked by blast radius, which is also the order to report findings in:
 
 1. **`AGENTS.md`** (root). Loaded into every Codex session and imported by Claude, so a false claim
    here is repeated to every agent. A finding here outranks the identical finding anywhere else.
-2. **`docs/agent-reference.md` and the three nested `docs/agent-reference.md` guides** under
-   `rust-modules/ui/src/`, `rust-modules/plex/src/plex/`, and `rust-modules/media/src/player/`. The long-form
+2. **`docs/agent-reference.md` and the nested `CLAUDE.md` guides** under
+   `rust-modules/ui/src/`, `rust-modules/screens/src/` and `rust-modules/media/src/player/`. The long-form
    reference is imported by Claude and routed from `AGENTS.md`; each nested guide is the "read this
    before touching X" file for its directory,
    and the root file delegates whole subjects to them (the Starfish/ACB ABI and bind-order rules
@@ -111,8 +111,8 @@ Ranked by blast radius, which is also the order to report findings in:
    two ways, because they are not one tier:
    - **cited-as-live-authority**: the ones `AGENTS.md` and `docs/agent-reference.md` send you to.
      Derive the set, do not
-     copy it — `git grep -oh 'docs/[a-z0-9-]*\.md' docs/agent-reference.md | sort -u` (13 files today). A false
-     claim in `docs/pms-api.md` ("The authoritative spec for the data layer") ranks with tier 2.
+     copy it — `git grep -oh 'docs/[a-z0-9-]*\.md' docs/agent-reference.md | sort -u`. A false
+     claim in one of those ranks with tier 2.
    - **dated investigation records**: everything else. Lower rank, and see the benign shapes below
      before reporting one at all.
 6. **`//!` module docs** on the touched Rust files. Prose, and they rot identically — `dev.rs`'s

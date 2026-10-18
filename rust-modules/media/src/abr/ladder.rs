@@ -124,15 +124,6 @@ impl Rung {
         }
     }
 
-    pub fn ceiling(self) -> plx_plex::plex::Ceiling {
-        let (width, height) = self.raster();
-        plx_plex::plex::Ceiling {
-            max_kbps: i64::from(self.kbps()),
-            max_w: i64::from(width),
-            max_h: i64::from(height),
-        }
-    }
-
     pub fn index(self) -> usize {
         LADDER.iter().position(|r| *r == self).unwrap_or(0)
     }
@@ -144,15 +135,6 @@ impl Rung {
         LADDER[self.index().saturating_sub(1)]
     }
 
-    /// Recover the controller's starting rung from the exact ceiling stored in the playback
-    /// route. Auto owns only these canonical values; an arbitrary/manual ceiling is not an ABR
-    /// state and therefore has no answer here.
-    pub fn from_ceiling(ceiling: plx_plex::plex::Ceiling) -> Option<Self> {
-        LADDER
-            .iter()
-            .copied()
-            .find(|rung| rung.ceiling() == ceiling)
-    }
 }
 
 /// One PMS operating point. `request_kbps` is what goes on the wire as the ceiling; the other two

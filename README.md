@@ -84,8 +84,9 @@ the Plex transcode machinery (seek and quality flights, Original trials, the fil
 the Plex adaptive-bitrate and HLS playback engine, the Plex play resolve, timeline reporting
 and subtitle routing (side reader, sidecars, server burns), the Plex library data stores
 (Home, Library, Detail, Search, Person, Collection, watch state, subtitle search), the Plex player
-settings, and the Plex fields of the optional crash and analytics reports have been removed; the
-Plex client library the player still links is being removed in stages.
+settings, the Plex fields of the optional crash and analytics reports, and the Plex client library
+itself (the typed Plex API, its sign-in and server registry, and the poster art path) have been
+removed. Some design notes under `docs/` still describe the Plex client and are being retired.
 
 ## Licence
 

@@ -129,7 +129,9 @@ pub fn aq_destroy(q: *mut AuQueue) {
 }
 
 /// Producer: append one AU (copies `len` bytes). Blocks over the queue's `max_bytes` cap
-/// unless aborting. Returns 0 on success, -1 if aborting or OOM.
+/// unless aborting. Returns 0 on success, -1 if aborting or OOM. The queue's tests and the
+/// engine's fill it through this; the demuxer uses [`aq_push_with_drain`].
+#[cfg(test)]
 pub fn aq_push(
     q: *mut AuQueue,
     data: *const c_uchar,
@@ -460,43 +462,10 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
-    /// A full queue parks its producer; headroom granted on top of the base cap lets the same
-    /// push through, and taking the headroom away restores the base cap for the next push. This
-    /// is the video lane's shape when a file's audio starts late (an audio `Delay`): the base cap
-    /// alone parks the demuxer before it ever reaches the first audio packet.
-    #[test]
-    fn headroom_admits_a_push_the_base_cap_parks_and_zero_restores_it() {
-        let mut q = aq_new(100);
-        let qp = &mut *q as *mut AuQueue;
-        let au = [0u8; 120];
-        assert_eq!(aq_push(qp, au.as_ptr(), au.len() as c_int, 0, 1, 1), 0);
-        assert_eq!(aq_bytes(qp), 120, "over the base cap now");
-
-        // Without headroom the next push parks until something drains or aborts.
-        let addr = qp as usize;
-        let parked = std::thread::spawn(move || {
-            let au = [0u8; 10];
-            aq_push(addr as *mut AuQueue, au.as_ptr(), au.len() as c_int, 1, 0, 1)
-        });
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(!parked.is_finished(), "the base cap parks the producer");
-
-        // Granting headroom releases the parked push without anything being popped.
-        aq_set_headroom(qp, 1_000);
-        assert_eq!(parked.join().unwrap(), 0);
-        assert_eq!(aq_bytes(qp), 130);
-
-        // Back to the base cap: the queue is over it again, so a further push would park.
-        aq_set_headroom(qp, 0);
-        let parked = std::thread::spawn(move || {
-            let au = [0u8; 10];
-            aq_push(addr as *mut AuQueue, au.as_ptr(), au.len() as c_int, 2, 0, 1)
-        });
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        assert!(!parked.is_finished(), "zero headroom restores the base cap");
-        aq_abort(qp);
-        assert_eq!(parked.join().unwrap(), -1);
-        aq_destroy(qp);
+    fn pop_one(q: *mut AuQueue) {
+        let n = aq_pop(q, ptr::null_mut());
+        assert!(!n.is_null(), "the queue had an AU to pop");
+        unsafe { libc::free(n as *mut c_void) };
     }
 
     fn push_n(q: *mut AuQueue, n: usize, len: usize) {
@@ -504,12 +473,6 @@ mod tests {
         for i in 0..n {
             assert_eq!(aq_push(q, au.as_ptr(), len as c_int, i as i64, 0, 1), 0);
         }
-    }
-
-    fn pop_one(q: *mut AuQueue) {
-        let n = aq_pop(q, ptr::null_mut());
-        assert!(!n.is_null(), "the queue had an AU to pop");
-        unsafe { libc::free(n as *mut c_void) };
     }
 
     /// **The demuxer's shape.** The video lane holds far more than its base cap (headroom was
@@ -565,6 +528,38 @@ mod tests {
         aq_destroy(sp as *mut AuQueue);
     }
 
+    #[test]
+    fn a_drain_that_still_has_room_is_called_more_than_once_before_the_consumer_pops() {
+        use std::sync::atomic::AtomicUsize;
+        let mut q = aq_new(8);
+        let q_addr = (&mut *q as *mut AuQueue) as usize;
+        let data = [1u8; 16];
+        assert_eq!(aq_push(&mut *q, data.as_ptr(), 16, 0, 1, 1), 0);
+        let drained = Arc::new(AtomicUsize::new(0));
+        let drained_worker = Arc::clone(&drained);
+        let worker = std::thread::spawn(move || {
+            aq_push_with_drain(q_addr as *mut AuQueue, data.as_ptr(), 16, 0, 1, 1, || {
+                drained_worker.fetch_add(1, Ordering::AcqRel);
+                true
+            })
+        });
+        let started = std::time::Instant::now();
+        while drained.load(Ordering::Acquire) < 2
+            && started.elapsed() < std::time::Duration::from_secs(1)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(
+            drained.load(Ordering::Acquire) >= 2,
+            "a drain that reports room must be polled again before the consumer pops"
+        );
+        let n = aq_pop(&mut *q, ptr::null_mut());
+        assert!(!n.is_null());
+        unsafe { libc::free(n as *mut c_void) };
+        assert_eq!(worker.join().unwrap(), 0);
+        aq_destroy(&mut *q);
+    }
+
     /// After a release the cap follows the occupancy down on every pop and ends at the base, at
     /// which point the queue is an ordinary one again.
     #[test]
@@ -589,6 +584,122 @@ mod tests {
         aq_destroy(qp);
     }
 
+    /// Teardown still reaches a producer parked after a release.
+    #[test]
+    fn abort_wakes_a_producer_parked_behind_a_released_cap() {
+        let mut q = aq_new(100);
+        let qp = &mut *q as *mut AuQueue;
+        aq_set_headroom(qp, 1_000);
+        push_n(qp, 4, 100);
+        aq_release_headroom(qp);
+        push_n(qp, 1, 100); // the one push the release admits
+        let addr = qp as usize;
+        let parked = std::thread::spawn(move || {
+            let au = [0u8; 10];
+            aq_push(addr as *mut AuQueue, au.as_ptr(), 10, 0, 0, 1)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        assert!(!parked.is_finished());
+        assert!(aq_would_park(qp));
+        aq_abort(qp);
+        assert_eq!(parked.join().unwrap(), -1);
+        aq_destroy(qp);
+    }
+
+    /// A full queue parks its producer; headroom granted on top of the base cap lets the same
+    /// push through, and taking the headroom away restores the base cap for the next push. This
+    /// is the video lane's shape when a file's audio starts late (an audio `Delay`): the base cap
+    /// alone parks the demuxer before it ever reaches the first audio packet.
+    #[test]
+    fn headroom_admits_a_push_the_base_cap_parks_and_zero_restores_it() {
+        let mut q = aq_new(100);
+        let qp = &mut *q as *mut AuQueue;
+        let au = [0u8; 120];
+        assert_eq!(aq_push(qp, au.as_ptr(), au.len() as c_int, 0, 1, 1), 0);
+        assert_eq!(aq_bytes(qp), 120, "over the base cap now");
+
+        // Without headroom the next push parks until something drains or aborts.
+        let addr = qp as usize;
+        let parked = std::thread::spawn(move || {
+            let au = [0u8; 10];
+            aq_push(addr as *mut AuQueue, au.as_ptr(), au.len() as c_int, 1, 0, 1)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(!parked.is_finished(), "the base cap parks the producer");
+
+        // Granting headroom releases the parked push without anything being popped.
+        aq_set_headroom(qp, 1_000);
+        assert_eq!(parked.join().unwrap(), 0);
+        assert_eq!(aq_bytes(qp), 130);
+
+        // Back to the base cap: the queue is over it again, so a further push would park.
+        aq_set_headroom(qp, 0);
+        let parked = std::thread::spawn(move || {
+            let au = [0u8; 10];
+            aq_push(addr as *mut AuQueue, au.as_ptr(), au.len() as c_int, 2, 0, 1)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(!parked.is_finished(), "zero headroom restores the base cap");
+        aq_abort(qp);
+        assert_eq!(parked.join().unwrap(), -1);
+        aq_destroy(qp);
+    }
+
+    #[test]
+    fn a_full_bounce_does_not_spin_the_drain_at_ten_ms() {
+        use std::sync::atomic::AtomicUsize;
+        let mut q = aq_new(8);
+        let q_addr = (&mut *q as *mut AuQueue) as usize;
+        let data = [1u8; 16];
+        assert_eq!(aq_push(&mut *q, data.as_ptr(), 16, 0, 1, 1), 0);
+        let drained = Arc::new(AtomicUsize::new(0));
+        let drained_worker = Arc::clone(&drained);
+        let worker = std::thread::spawn(move || {
+            aq_push_with_drain(q_addr as *mut AuQueue, data.as_ptr(), 16, 0, 1, 1, || {
+                drained_worker.fetch_add(1, Ordering::AcqRel);
+                false
+            })
+        });
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        let calls = drained.load(Ordering::Acquire);
+        aq_abort(&mut *q);
+        assert_eq!(worker.join().unwrap(), -1);
+        assert!(
+            calls <= 2,
+            "drain returning false must cond_wait, not wake at 10 ms; got {calls} calls"
+        );
+        aq_destroy(&mut *q);
+    }
+
+    #[test]
+    fn abort_still_tears_down_a_draining_push() {
+        let mut q = aq_new(8);
+        let q_addr = (&mut *q as *mut AuQueue) as usize;
+        let data = [1u8; 16];
+        assert_eq!(aq_push(&mut *q, data.as_ptr(), 16, 0, 1, 1), 0);
+        let worker = std::thread::spawn(move || {
+            aq_push_with_drain(q_addr as *mut AuQueue, data.as_ptr(), 16, 0, 1, 1, || false)
+        });
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        aq_abort(&mut *q);
+        assert_eq!(worker.join().unwrap(), -1);
+        aq_destroy(&mut *q);
+    }
+
+    /// Releasing a queue that holds no more than its base cap is a plain restore to the base, and
+    /// leaves nothing pending.
+    #[test]
+    fn releasing_an_under_full_queue_restores_the_base_at_once() {
+        let mut q = aq_new(100);
+        let qp = &mut *q as *mut AuQueue;
+        aq_set_headroom(qp, 1_000);
+        push_n(qp, 1, 50);
+        aq_release_headroom(qp);
+        assert_eq!(aq_cap(qp), 100);
+        assert_eq!(unsafe { (*qp).releasing }, 0);
+        aq_destroy(qp);
+    }
+
     /// A standing grant is not released by pops: only [`aq_release_headroom`] starts that.
     #[test]
     fn a_standing_grant_is_not_walked_down_by_pops() {
@@ -599,24 +710,6 @@ mod tests {
         pop_one(qp);
         pop_one(qp);
         assert_eq!(aq_cap(qp), 1_100, "pops leave a granted headroom alone");
-        aq_destroy(qp);
-    }
-
-    /// The pop counter is monotonic and counts only real pops: an empty pop is not one.
-    #[test]
-    fn the_pop_counter_counts_aus_the_consumer_took() {
-        let mut q = aq_new(1_000);
-        let qp = &mut *q as *mut AuQueue;
-        assert_eq!(aq_pops(qp), 0);
-        push_n(qp, 3, 10);
-        assert_eq!(aq_pops(qp), 0, "pushing is not draining");
-        pop_one(qp);
-        pop_one(qp);
-        assert_eq!(aq_pops(qp), 2);
-        pop_one(qp);
-        assert!(aq_pop(qp, std::ptr::null_mut()).is_null(), "empty");
-        assert_eq!(aq_pops(qp), 3, "an empty pop is not a pop");
-        assert_eq!(aq_pops(std::ptr::null_mut()), 0);
         aq_destroy(qp);
     }
 
@@ -637,42 +730,6 @@ mod tests {
         assert_eq!(aq_cap(qp), 1_100, "the release was cancelled by the grant");
         aq_release_headroom(qp);
         assert_eq!(aq_cap(qp), 400, "a later release starts from the occupancy then");
-        aq_destroy(qp);
-    }
-
-    /// Releasing a queue that holds no more than its base cap is a plain restore to the base, and
-    /// leaves nothing pending.
-    #[test]
-    fn releasing_an_under_full_queue_restores_the_base_at_once() {
-        let mut q = aq_new(100);
-        let qp = &mut *q as *mut AuQueue;
-        aq_set_headroom(qp, 1_000);
-        push_n(qp, 1, 50);
-        aq_release_headroom(qp);
-        assert_eq!(aq_cap(qp), 100);
-        assert_eq!(unsafe { (*qp).releasing }, 0);
-        aq_destroy(qp);
-    }
-
-    /// Teardown still reaches a producer parked after a release.
-    #[test]
-    fn abort_wakes_a_producer_parked_behind_a_released_cap() {
-        let mut q = aq_new(100);
-        let qp = &mut *q as *mut AuQueue;
-        aq_set_headroom(qp, 1_000);
-        push_n(qp, 4, 100);
-        aq_release_headroom(qp);
-        push_n(qp, 1, 100); // the one push the release admits
-        let addr = qp as usize;
-        let parked = std::thread::spawn(move || {
-            let au = [0u8; 10];
-            aq_push(addr as *mut AuQueue, au.as_ptr(), 10, 0, 0, 1)
-        });
-        std::thread::sleep(std::time::Duration::from_millis(80));
-        assert!(!parked.is_finished());
-        assert!(aq_would_park(qp));
-        aq_abort(qp);
-        assert_eq!(parked.join().unwrap(), -1);
         aq_destroy(qp);
     }
 
@@ -708,76 +765,21 @@ mod tests {
         aq_destroy(&mut *q);
     }
 
+    /// The pop counter is monotonic and counts only real pops: an empty pop is not one.
     #[test]
-    fn abort_still_tears_down_a_draining_push() {
-        let mut q = aq_new(8);
-        let q_addr = (&mut *q as *mut AuQueue) as usize;
-        let data = [1u8; 16];
-        assert_eq!(aq_push(&mut *q, data.as_ptr(), 16, 0, 1, 1), 0);
-        let worker = std::thread::spawn(move || {
-            aq_push_with_drain(q_addr as *mut AuQueue, data.as_ptr(), 16, 0, 1, 1, || false)
-        });
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        aq_abort(&mut *q);
-        assert_eq!(worker.join().unwrap(), -1);
-        aq_destroy(&mut *q);
-    }
-
-    #[test]
-    fn a_full_bounce_does_not_spin_the_drain_at_ten_ms() {
-        use std::sync::atomic::AtomicUsize;
-        let mut q = aq_new(8);
-        let q_addr = (&mut *q as *mut AuQueue) as usize;
-        let data = [1u8; 16];
-        assert_eq!(aq_push(&mut *q, data.as_ptr(), 16, 0, 1, 1), 0);
-        let drained = Arc::new(AtomicUsize::new(0));
-        let drained_worker = Arc::clone(&drained);
-        let worker = std::thread::spawn(move || {
-            aq_push_with_drain(q_addr as *mut AuQueue, data.as_ptr(), 16, 0, 1, 1, || {
-                drained_worker.fetch_add(1, Ordering::AcqRel);
-                false
-            })
-        });
-        std::thread::sleep(std::time::Duration::from_millis(80));
-        let calls = drained.load(Ordering::Acquire);
-        aq_abort(&mut *q);
-        assert_eq!(worker.join().unwrap(), -1);
-        assert!(
-            calls <= 2,
-            "drain returning false must cond_wait, not wake at 10 ms; got {calls} calls"
-        );
-        aq_destroy(&mut *q);
-    }
-
-    #[test]
-    fn a_drain_that_still_has_room_is_called_more_than_once_before_the_consumer_pops() {
-        use std::sync::atomic::AtomicUsize;
-        let mut q = aq_new(8);
-        let q_addr = (&mut *q as *mut AuQueue) as usize;
-        let data = [1u8; 16];
-        assert_eq!(aq_push(&mut *q, data.as_ptr(), 16, 0, 1, 1), 0);
-        let drained = Arc::new(AtomicUsize::new(0));
-        let drained_worker = Arc::clone(&drained);
-        let worker = std::thread::spawn(move || {
-            aq_push_with_drain(q_addr as *mut AuQueue, data.as_ptr(), 16, 0, 1, 1, || {
-                drained_worker.fetch_add(1, Ordering::AcqRel);
-                true
-            })
-        });
-        let started = std::time::Instant::now();
-        while drained.load(Ordering::Acquire) < 2
-            && started.elapsed() < std::time::Duration::from_secs(1)
-        {
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        assert!(
-            drained.load(Ordering::Acquire) >= 2,
-            "a drain that reports room must be polled again before the consumer pops"
-        );
-        let n = aq_pop(&mut *q, ptr::null_mut());
-        assert!(!n.is_null());
-        unsafe { libc::free(n as *mut c_void) };
-        assert_eq!(worker.join().unwrap(), 0);
-        aq_destroy(&mut *q);
+    fn the_pop_counter_counts_aus_the_consumer_took() {
+        let mut q = aq_new(1_000);
+        let qp = &mut *q as *mut AuQueue;
+        assert_eq!(aq_pops(qp), 0);
+        push_n(qp, 3, 10);
+        assert_eq!(aq_pops(qp), 0, "pushing is not draining");
+        pop_one(qp);
+        pop_one(qp);
+        assert_eq!(aq_pops(qp), 2);
+        pop_one(qp);
+        assert!(aq_pop(qp, std::ptr::null_mut()).is_null(), "empty");
+        assert_eq!(aq_pops(qp), 3, "an empty pop is not a pop");
+        assert_eq!(aq_pops(std::ptr::null_mut()), 0);
+        aq_destroy(qp);
     }
 }

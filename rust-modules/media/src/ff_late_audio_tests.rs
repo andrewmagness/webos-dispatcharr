@@ -289,7 +289,7 @@ impl DemuxRun {
             SendPtr(&mut *audio as *mut AuQueue),
             SendPtr(&mut *hs as *mut HttpStream),
         );
-        let origin = plx_plex::plex::Origin::http("127.0.0.1", port as i32);
+        let origin = plx_net::net::origin::Origin::http("127.0.0.1", port as i32);
         let thread = std::thread::spawn(move || {
             // `acodec` is the Load payload's audio codec: the demuxer feeds the track that matches.
             demux(origin, "/library/parts/1/file.mkv".into(), "eac3".into(), vp, ap, hp)

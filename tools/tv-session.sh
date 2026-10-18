@@ -420,6 +420,17 @@ account_aside_cmd() {
   printf '%s;%s true' "$(account_restore_cmd)" "$mv"
 }
 
+# The remote shell that prints the uid the app runs as, read off a file only the app writes: the
+# real account or prefs (set aside by now), else its own logs. NOT the binary's or the app
+# directory's owner: `make deploy` copies them as root, while the app runs jailed under its own
+# uid (6030 on the dev set, 2026-10-18) and reads only an account file that uid owns.
+app_uid_cmd() {
+  local cands="" p
+  for p in $(account_paths); do cands="$cands '$p$ASIDE' '$p'"; done
+  cands="$cands '$EVENTLOG' '$RUNDIR/dispatcharrtv-stderr.log' '$RUNDIR/dispatcharrtv-crash.log'"
+  printf 'for f in%s; do [ -e "$f" ] && { stat -c %%u "$f"; exit 0; }; done; exit 1' "$cands"
+}
+
 # The account file a mock session writes. The app reads only a file its own uid owns.
 mock_account_json() {  # $1 = http://HOST:PORT, $2 = key
   printf '{"format":"dispatcharr-account","version":1,"server":"%s","username":"admin","api_key":"%s"}' "$1" "$2"
@@ -560,10 +571,8 @@ cmd_up() {
       *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
   done
-  local want_route=""
   case "$screen" in
-    guide) want_route=guide ;;
-    setup) want_route=setup ;;
+    guide|setup) ;;
     *) echo "unknown --screen: $screen (guide | setup)" >&2; exit 2 ;;
   esac
   # --remote is --stream plus a front door: there is nothing to publish without a stream, so it
@@ -591,6 +600,10 @@ cmd_up() {
   # --dry-run never has to touch the set to answer "what would this do".
   resolve_account || exit 2
   info "account: $account_desc"
+  # The route the boot must reach follows from the account: none boots to Setup, an account to the
+  # Guide — or, with the set's own account, to the player when Resume on launch replays a channel.
+  local want_route=guide
+  [ "$account" = none ] && want_route=setup
 
   if [ "$dry_run" = 1 ]; then
     echo "== DRY RUN ($screen) on $APPID [$FLAVOR] — nothing below touches the television"
@@ -607,7 +620,8 @@ cmd_up() {
     esac
     echo "  would run: make -C $REPO FLAVOR=$FLAVOR kill"
     echo "  would run: tools/tv-ssh ssh tv luna-send -i luna://com.webos.applicationManager/launch '{\"id\":\"$APPID\"}'"
-    echo "  would then require: route=$want_route"
+    if [ "$account" = real ]; then echo "  would then require: route=guide (or route=player, a resumed channel)"
+    else echo "  would then require: route=$want_route"; fi
     echo "== dry run complete — account: $account_desc"
     return 0
   fi
@@ -638,8 +652,13 @@ cmd_up() {
       tv "$(account_aside_cmd)" || { bad "could not move the account aside"; exit 1; }
       ok "account moved aside (\`down\` restores it)"
       # Owned by the uid the app runs as (that of its binary), or the app refuses to read it.
+      local uid; uid=$(tvq "$(app_uid_cmd)")
+      case "$uid" in
+        ''|*[!0-9]*|0) bad "cannot tell which uid the app runs as (no account, prefs or log of its own yet)"
+             info "launch it once with \`up --account real\` (or by hand), then retry"; exit 1 ;;
+      esac
       mock_account_json "$mock_url" "$mock_key" | tv "umask 077; cat > $APPDIR/dispatcharr.json && \
-          chown \$(stat -c %u $APPDIR/dispatcharrtv) $APPDIR/dispatcharr.json && chmod 600 $APPDIR/dispatcharr.json" \
+          chown $uid $APPDIR/dispatcharr.json && chmod 600 $APPDIR/dispatcharr.json" \
         || { bad "could not write the mock account"; exit 1; }
       ok "account: mock server $mock_url (key not printed)" ;;
   esac
@@ -663,9 +682,12 @@ cmd_up() {
   relaunch
   assert_running || { info "check: tools/crash-report.sh --flavor $FLAVOR"; exit 1; }
   assert_install || true
-  # With the real account the boot may resume the last channel (Settings > Resume on launch), which
-  # lands on route=player rather than the guide; that is a boot that arrived, said so below.
-  assert_route "$want_route" || [ "$account" != real ] || info "(a resumed channel boots to the player)"
+  if [ "$account" = real ] && tvq "grep -oE 'route=[a-z]+' $EVENTLOG 2>/dev/null | tail -1" | grep -qx route=player; then
+    assert_route player || true
+    info "(the set's own account resumed its last channel: Settings > Resume on launch)"
+  else
+    assert_route "$want_route" || true
+  fi
 
   if [ -n "$stream" ]; then
     # fully detach: without </dev/null the child keeps the caller's stdout pipe open and

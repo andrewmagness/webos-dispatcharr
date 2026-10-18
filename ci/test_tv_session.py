@@ -345,7 +345,7 @@ class Account(unittest.TestCase):
         rc, out = self._dry()
         self.assertEqual(rc, 0, out)
         self.assertIn("account: the set's stored account, untouched", out)
-        self.assertIn("would then require: route=guide", out)
+        self.assertIn("would then require: route=guide (or route=player, a resumed channel)", out)
         self.assertNotIn("would write:", out)
 
     def test_none_moves_the_account_aside_and_setup_implies_it(self):
@@ -353,14 +353,16 @@ class Account(unittest.TestCase):
             rc, out = self._dry(*args)
             self.assertEqual(rc, 0, out)
             self.assertIn("move every account/prefs file to *.session-aside", out)
-        rc, out = self._dry("--screen", "setup")
-        self.assertIn("would then require: route=setup", out)
+            # with no account the app can only boot to Setup, whichever flag asked for it
+            self.assertIn("would then require: route=setup", out)
 
     def test_a_mock_account_names_the_mock_and_never_prints_the_key(self):
         rc, out = self._dry("--account", "mock=10.0.0.5:9192:SECRETKEY1")
         self.assertEqual(rc, 0, out)
         self.assertIn("naming http://10.0.0.5:9192 (key not printed)", out)
         self.assertNotIn("SECRETKEY1", out)
+        # a mock account is a fresh one: nothing to resume, so only the guide will do
+        self.assertIn("would then require: route=guide\n", out)
 
     def test_bad_accounts_and_the_plex_identities_are_refused(self):
         for args in (("--account", "mock=10.0.0.5"), ("--account", "guest"),

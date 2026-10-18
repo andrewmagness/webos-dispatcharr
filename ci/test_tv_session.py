@@ -293,11 +293,13 @@ class EnsureBinary(unittest.TestCase):
         )
 
 
-class Identity(unittest.TestCase):
-    """`resolve_identity` decides the identity `up` boots with, before any TV contact: the owner
-    token by default and with --owner, nothing with --no-token. It never calls ssh/tv, so it is
-    unit-tested directly. `--guest` and `--mock` went with the Plex test harness and are refused
-    as unknown options rather than accepted and ignored."""
+class Account(unittest.TestCase):
+    """`up --account` decides which Dispatcharr account the app boots with, before any TV contact:
+    the set's own (untouched), none (moved aside, so Setup), or a mock server's (the real one moved
+    aside and a mock account written). `--dry-run` says exactly that and touches nothing. The Plex
+    identities (`--guest`, `--mock`, `--owner`, `--no-token`, `--server`) are refused as unknown
+    options rather than accepted and ignored. The move-aside/restore commands themselves are run
+    against a temporary tree by `tv-session.sh selftest` (`make check`)."""
 
     def _run(self, script_body):
         with tempfile.TemporaryDirectory() as directory:
@@ -326,7 +328,7 @@ class Identity(unittest.TestCase):
             environment = os.environ.copy()
             environment["PATH"] = f"{bin_dir}:{environment['PATH']}"
             result = subprocess.run(
-                ["bash", "-c", harness, "identity", str(script_link)],
+                ["bash", "-c", harness, "account", str(script_link)],
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -336,41 +338,38 @@ class Identity(unittest.TestCase):
             )
             return result.returncode, result.stdout
 
-    def test_owner_identity_is_explicit(self):
-        rc, out = self._run(
-            'owner=1; no_token=0; server_set=0; server_slot=""\n'
-            'resolve_identity; echo "RC:$?"\necho "PUSH_OWNER:$push_owner"\necho "DESC:$identity_desc"\n'
-        )
-        self.assertEqual(rc, 0, out)
-        self.assertIn("RC:0", out)
-        self.assertIn("PUSH_OWNER:1", out)
-        self.assertIn("DESC:owner", out)
+    def _dry(self, *args):
+        return self._run("cmd_up --dry-run " + " ".join(args) + '\necho "AFTER:$?"\n')
 
-    def test_bare_up_identity_defaults_to_owner(self):
-        # What a plain `tv-session.sh up` resolves to, said BEFORE cmd_up goes near the television.
-        rc, out = self._run(
-            'owner=0; no_token=0; server_set=0; server_slot=""\n'
-            'resolve_identity; echo "RC:$?"\necho "PUSH_OWNER:$push_owner"\necho "DESC:$identity_desc"\n'
-        )
+    def test_the_default_leaves_the_stored_account_alone(self):
+        rc, out = self._dry()
         self.assertEqual(rc, 0, out)
-        self.assertIn("PUSH_OWNER:1", out)
-        self.assertIn("DESC:owner", out)
+        self.assertIn("account: the set's stored account, untouched", out)
+        self.assertIn("would then require: route=guide", out)
+        self.assertNotIn("would write:", out)
 
-    def test_no_token_identity_is_the_stored_session_not_an_owner_path(self):
-        rc, out = self._run(
-            'owner=0; no_token=1; server_set=0; server_slot=""\n'
-            'resolve_identity; echo "RC:$?"\necho "PUSH_OWNER:$push_owner"\necho "DESC:$identity_desc"\n'
-        )
+    def test_none_moves_the_account_aside_and_setup_implies_it(self):
+        for args in (("--account", "none"), ("--screen", "setup")):
+            rc, out = self._dry(*args)
+            self.assertEqual(rc, 0, out)
+            self.assertIn("move every account/prefs file to *.session-aside", out)
+        rc, out = self._dry("--screen", "setup")
+        self.assertIn("would then require: route=setup", out)
+
+    def test_a_mock_account_names_the_mock_and_never_prints_the_key(self):
+        rc, out = self._dry("--account", "mock=10.0.0.5:9192:SECRETKEY1")
         self.assertEqual(rc, 0, out)
-        self.assertIn("PUSH_OWNER:0", out)
-        self.assertIn("stored session", out)
+        self.assertIn("naming http://10.0.0.5:9192 (key not printed)", out)
+        self.assertNotIn("SECRETKEY1", out)
 
-    def test_guest_and_mock_are_refused(self):
-        for flag in ("--guest", "--mock"):
-            rc, out = self._run(f'cmd_up {flag} --dry-run\necho "AFTER:$?"\n')
-            self.assertEqual(rc, 2, out)
+    def test_bad_accounts_and_the_plex_identities_are_refused(self):
+        for args in (("--account", "mock=10.0.0.5"), ("--account", "guest"),
+                     ("--screen", "setup", "--account", "mock=10.0.0.5:9192"),
+                     ("--screen", "home"), ("--guest",), ("--mock",), ("--owner",),
+                     ("--no-token",), ("--server", "1")):
+            rc, out = self._dry(*args)
+            self.assertEqual(rc, 2, f"{args}: {out}")
             self.assertNotIn("AFTER:", out)
-            self.assertIn(f"unknown option: {flag}", out)
 
 
 class HeartbeatWords(unittest.TestCase):

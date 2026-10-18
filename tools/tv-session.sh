@@ -22,16 +22,22 @@
 #                     the close, the launch, the triggers and the log all follow it.
 #
 # `up` options:
-#   --screen <name>   home (default) | profiles | library[=N] | detail=<rk> | collection=<rk> | person=<movie rk>
-#                     | player=<rk> | login | account | itemmenu
-#   --server <slot>   open detail=/player= on this registered Plex server slot instead of the
-#                     current one; boots through the signed-in stored roster so secondary slots
-#                     exist (an already-armed dispatcharrtv-servers also survives with --keep)
-#   --owner           boot as the household account (the config.local.h owner token). This is
-#                     also what a bare `up` does — spelling it out is for a script that wants the
-#                     choice to be visible in its own command line.
-#   --dry-run         resolve and print the identity `up` would use and the shape of the
-#                     commands it would run, then exit 0 without contacting the television at all.
+#   --screen <name>   guide (default) | setup. `setup` is the boot with no account (it implies
+#                     --account none); the guide needs one, real or mock.
+#   --account <a>     which Dispatcharr account the app boots with:
+#                       real (default)     the set's stored account, untouched;
+#                       none               no account: the real one is moved aside, so the app
+#                                          boots to Setup;
+#                       mock=HOST:PORT[:KEY]
+#                                          tests/mock_dispatcharr.py at HOST:PORT (start it with
+#                                          --host <lan ip> --port PORT --key KEY; KEY defaults to
+#                                          SESSIONKEY): the real account is moved aside and an
+#                                          account naming the mock is written in its place.
+#                     Every account file is renamed `*.session-aside`, never deleted, and `down`
+#                     (or the next `up --account real`) puts it back exactly — owner and mode
+#                     included — after removing whatever account the session left in its place.
+#   --dry-run         print the account plan and the commands `up` would run, then exit 0
+#                     without contacting the television at all.
 #   --stream[=PORT]   also start tools/stream-screen.py for a live browser view (default 8909)
 #                     STREAM_RES=480x270 makes mpeg encode ~4x cheaper (see the skill)
 #   --remote[=PORT]   like --stream, but ALSO publish an authenticated, D-pad-only page over an
@@ -39,12 +45,9 @@
 #                     (default dpad port 8908). Prints a URL + generated password; `down` revokes
 #                     both. Needs cloudflared (brew install cloudflared). See the skill for why
 #                     this is a tunnel and never a router port forward.
-#   --no-token        boot with no injected token (exercises the QR sign-in flow, or the
-#                     who's-watching picker for a stored session — an identity distinct
-#                     from --owner)
 #   --arm NAME[=VAL]  also arm trigger dispatcharrtv-NAME (repeatable), written with the screen's own
 #                     triggers BEFORE the launch, which is the only time a boot trigger is read.
-#                     For a scene's extras, e.g. `--arm menu=1 --arm submenuosc=900 --arm framedrop=25`
+#                     For a scene's extras, e.g. `--arm stats --arm framedrop=25`
 #   --keep            do not clear existing triggers first (rarely what you want)
 #
 # SCREEN OFF is a panel state, not an app state. `luna://com.webos.service.tvpower/power/
@@ -94,7 +97,7 @@
 # WHY THIS EXISTS: every on-device task needs the same fragile ritual, and each step fails
 # silently in its own way — a sleeping TV makes every assertion read as a regression, a
 # stale binary means you are testing yesterday's build, a leftover trigger silently changes
-# which screen you land on AND suppresses the who's-watching picker, and SAM keeps stale
+# which screen you land on, and SAM keeps stale
 # "running" state so a launch without a close-first is a no-op — and there are now TWO installs
 # on the one television, so every step also has to say which of them it meant, or the ticks below
 # are green against the other app's log. This asserts each step instead of assuming it.
@@ -102,9 +105,9 @@
 #
 # Config: TV host from $TV, else the Makefile's TV default. The app id, the install directory
 # and the runtime root are ASKED FOR (`make -s print-…`), never restated here — see the block
-# under REPO for why a literal copy of them is a bug waiting to happen. The PMS token is read
-# from the gitignored src/config.local.h at runtime, written straight to the TV in its own ssh
-# round-trip, and never printed. Nothing about the network or any credential lives here.
+# under REPO for why a literal copy of them is a bug waiting to happen. The set's own Dispatcharr
+# account is never read off it or printed; a mock session's key is written straight to the TV in
+# its own ssh round-trip. Nothing about the network or any credential lives here.
 set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -252,7 +255,7 @@ ensure_awake() {
 # The runtime root has to exist, and it has to be 1777, BEFORE anything writes into it — and the
 # chmod is separate from the mkdir on purpose, because the umask masks mkdir's mode and would
 # leave it owner-only. Two uids write here and neither can be made to go second: this script arms
-# triggers and pushes the token AS ROOT over ssh before the app has ever booted, while the app runs
+# triggers AS ROOT over ssh before the app has ever booted, while the app runs
 # jailed under its own uid and creates the event log there. Owner-only locks one of them out, and a
 # root-owned event log the app cannot write stays 0 bytes — which every tool in this repo, this one
 # included, reports as "no line found", i.e. indistinguishable from a total regression.
@@ -375,38 +378,79 @@ if [ -e dispatcharrtv ] || [ -L dispatcharrtv ]; then printf 'present\\n'; else 
 
 # ------------------------------------------------------------ triggers -------
 # GLOB-clear, exactly like tests/run.py: a newly-added app trigger can never bleed in
-# from a previous session, and any leftover non-DIAG file also suppresses the picker.
+# from a previous session.
 clear_triggers() {
   tv "for f in $RUNDIR/dispatcharrtv-*; do case \"\$f\" in *.log) ;; *) rm -f \"\$f\";; esac; done" 2>/dev/null
   ok "triggers cleared ($RUNDIR)"
 }
 
-# token: read host-side, pushed in its own round-trip, never echoed
-push_token() {
-  local tok
-  tok=$(sed -n 's/.*PMS_TOKEN *"\([^"]*\)".*/\1/p' "$REPO/src/config.local.h" 2>/dev/null | head -1)
-  [ -n "$tok" ] || { bad "no PMS_TOKEN in src/config.local.h (gitignored) — boot will hit QR sign-in"; return 1; }
-  printf '%s' "$tok" | tv "cat > $RUNDIR/dispatcharrtv-token" || return 1
-  ok "token injected (value not printed)"
+# The account and prefs files the app reads, in its own order (`plx_base::paths::
+# dispatcharr_candidates`): the two persistent locations, the app directory, the runtime root.
+# `ACCOUNT_ROOT` prefixes the two fixed locations for the selftest only; it is never set otherwise.
+ASIDE=".session-aside"
+account_paths() {
+  local stem
+  for stem in dispatcharr dispatcharr-prefs; do
+    printf '%s\n' "${ACCOUNT_ROOT:-}/media/developer/$APPID-$stem.json" \
+      "${ACCOUNT_ROOT:-}/media/internal/.$APPID-$stem.json" \
+      "$APPDIR/$stem.json" "$RUNDIR/$stem.json"
+  done
 }
 
-# Decide the Plex identity this boot will use, and do it BEFORE a single trigger is armed or the
-# television is touched — so --dry-run can print exactly the decision a real `up` would make.
-# Reads the CALLER's (cmd_up's, or cmd_selftest's) locals owner/no_token/server_set/server_slot by
-# Bash's dynamic scope — the same convention configure_direct_screen above already uses — and sets
-# the caller's identity_desc/push_owner the same way.
-resolve_identity() {
-  identity_desc=""; push_owner=0
-  if [ "$no_token" = 1 ]; then
-    if [ "$server_set" = 1 ]; then
-      identity_desc="stored session — restoring the signed-in multi-server roster for slot $server_slot"
-    else
-      identity_desc="stored session / picker — boots as a real user would (picker, or QR if $APPID has no session)"
-    fi
-    return 0
+# The remote shell that puts the real account back. Only when something was moved aside: then the
+# account the session left in its place (a mock's, or one signed in by hand on Setup) is removed
+# first, since a file at a higher-priority path would otherwise shadow the restored one. With
+# nothing aside it does nothing at all, so a session that never moved the account cannot touch it.
+account_restore_cmd() {
+  local p any="" drop="" back=""
+  for p in $(account_paths); do
+    any="$any [ -e '$p$ASIDE' ] ||"
+    drop="$drop rm -f '$p';"
+    back="$back [ ! -e '$p$ASIDE' ] || mv -f '$p$ASIDE' '$p';"
+  done
+  printf 'if%s false; then%s%s fi; true' "$any" "$drop" "$back"
+}
+
+# The remote shell that moves the real account out of the way: a leftover of an interrupted
+# session is restored first, so an aside file is never the only copy a second move overwrites.
+# `mv` keeps owner and mode.
+account_aside_cmd() {
+  local p mv=""
+  for p in $(account_paths); do mv="$mv [ ! -e '$p' ] || mv -f '$p' '$p$ASIDE';"; done
+  printf '%s;%s true' "$(account_restore_cmd)" "$mv"
+}
+
+# The account file a mock session writes. The app reads only a file its own uid owns.
+mock_account_json() {  # $1 = http://HOST:PORT, $2 = key
+  printf '{"format":"dispatcharr-account","version":1,"server":"%s","username":"admin","api_key":"%s"}' "$1" "$2"
+}
+
+# Decide the account this boot will use, BEFORE a single trigger is armed or the television is
+# touched, so --dry-run can print exactly the decision a real `up` would make. Reads the caller's
+# locals account/screen by Bash's dynamic scope and sets the caller's account_desc/mock_url/mock_key.
+resolve_account() {
+  account_desc=""; mock_url=""; mock_key=""
+  if [ "$screen" = setup ]; then
+    case "$account" in
+      real|none) account=none ;;
+      *) bad "--screen setup is the boot with no account; it cannot combine with --account $account"; return 1 ;;
+    esac
   fi
-  identity_desc="owner (household account) — the config.local.h token"
-  push_owner=1
+  case "$account" in
+    real) account_desc="the set's stored account, untouched" ;;
+    none) account_desc="no account: the real one is moved aside (\`down\` restores it)" ;;
+    mock=*)
+      local spec="${account#mock=}" host port key
+      host=$(printf '%s' "$spec" | cut -d: -f1)
+      port=$(printf '%s' "$spec" | cut -s -d: -f2)
+      key=$(printf '%s' "$spec" | cut -s -d: -f3)
+      case "$host:$port" in
+        :*|*:|*[!A-Za-z0-9.:-]*) bad "--account mock=HOST:PORT[:KEY], got: $account"; return 1 ;;
+      esac
+      mock_url="http://$host:$port"; mock_key="${key:-SESSIONKEY}"
+      account_desc="mock server $mock_url: the real account is moved aside (\`down\` restores it)" ;;
+    *) bad "unknown --account: $account (real | none | mock=HOST:PORT[:KEY])"; return 1 ;;
+  esac
 }
 
 # ------------------------------------------------------------- launch --------
@@ -446,7 +490,7 @@ assert_install() {
   line=$(tvq "grep '^install: id=' $EVENTLOG 2>/dev/null | head -1")
   if [ -z "$line" ]; then
     bad "no install: line in $EVENTLOG — that is the FIRST thing the app writes"
-    info "so this log is another install's leftover, or the app died before plex_run:"
+    info "so this log is another install's leftover, or the app died before it could write one:"
     info "    tools/crash-report.sh --flavor $FLAVOR"
     return 1
   fi
@@ -457,16 +501,12 @@ assert_install() {
   return 1
 }
 
-# The heartbeat carries TWO words since UI-restructure phase 10: the PAGE as `route=` and the top
-# `ModalStack` surface's own `Screen::name` as ` overlay=`. A surface that used to be a route of
-# its own — the account sheet, the press-and-hold card menu — therefore prints
-# `route=home overlay=account`, never the retired `route=account`.
-#
-# Reading only the page word is not merely imprecise here, it is unable to fail: every one of
-# those surfaces sits over Home, so `route=home` is already true the instant the app boots, and a
-# trigger the app REFUSED would be graded as having arrived. So a caller that names an overlay
-# gets both halves checked. ` overlay=none` (what the player prints with nothing up) normalises
-# to "no overlay" so a caller naming only a page still matches it.
+# The heartbeat carries TWO words: the PAGE as `route=` and the top `ModalStack` surface's own
+# `Screen::name` as ` overlay=`. A surface sits over a page and prints `route=<page>
+# overlay=<surface>`. Reading only the page word cannot tell a surface that arrived from one the
+# app refused (the page is already true the instant the app boots), so a caller that names an
+# overlay gets both halves checked. ` overlay=none` (what the player prints with nothing up)
+# normalises to "no overlay" so a caller naming only a page still matches it.
 assert_route() {
   local want="$1" want_overlay="${2:-}" seen seen_route seen_overlay
   seen=$(tvq "grep -oE 'route=[a-z]+( overlay=[a-z]+)?' $EVENTLOG 2>/dev/null | tail -1")
@@ -498,124 +538,21 @@ assert_route() {
   return 1
 }
 
-# Resolve everything implied by `--server` in one testable place. Bash's dynamic local scope is
-# intentional here: cmd_up and cmd_selftest each own these names, and this helper fills that
-# caller-owned state without globals or Bash-4 namerefs (the host still ships Bash 3.2).
-configure_direct_screen() {
-  [ "$server_set" = 1 ] || return 0
-  [ -n "$server_slot" ] || { bad "--server needs a registry slot"; return 2; }
-  case "$server_slot" in
-    *[!0-9]*) bad "--server must be a numeric registry slot, got: $server_slot"; return 2 ;;
-  esac
-  # The app logs ServerId's numeric value, so accept only the one spelling that can round-trip
-  # through that identity marker. `01` used to arm slot 1 successfully and then make this command
-  # reject its own `server=1 start` proof because it was waiting for `server=01 start`.
-  case "$server_slot" in
-    0|[1-9]|[1-9][0-9]*) ;;
-    *) bad "--server must use canonical decimal (no leading zero), got: $server_slot"; return 2 ;;
-  esac
-  case "$screen" in
-    detail=*|collection=*|player=*) ;;
-    *) bad "--server applies only to --screen detail=<rk>, collection=<rk>, or player=<rk>"; return 2 ;;
-  esac
-  direct_kind="${screen%%=*}"
-  direct_rk="${screen#*=}"
-  case "$direct_rk" in
-    ''|*[!0-9]*) bad "a server-qualified ratingKey must be numeric, got: $direct_rk"; return 2 ;;
-  esac
-
-  # A singular dev token installs only the compiled primary PMS. The signed-in session, on the
-  # other hand, restores its persisted multi-server roster before the direct trigger fires. Make
-  # that the supported path automatically; requiring an undocumented `--no-token` was exactly the
-  # reason `--server 1` could otherwise select a slot the same command had just erased.
-  no_token=1
-  case "$direct_kind" in
-    player) direct_marker="dispatcharrtv-play: rk=$direct_rk server=$server_slot start" ;;
-    detail) direct_marker="dispatcharrtv-detail: rk=$direct_rk server=$server_slot start" ;;
-  esac
-}
-
-# Pure decision core for the bounded direct-screen waiter below. Keeping this separate lets the
-# host selftest exhaust the meaningful states without sleeping or touching the television.
-direct_poll_state() {
-  local marker_seen="$1" route_seen="$2" refused_seen="$3" alive="$4"
-  [ "$refused_seen" = 1 ] && { printf '%s\n' refused; return; }
-  [ "$alive" = 1 ] || { printf '%s\n' dead; return; }
-  if [ "$marker_seen" = 1 ] && [ "$route_seen" = 1 ]; then
-    printf '%s\n' ready
-  else
-    printf '%s\n' wait
-  fi
-}
-
-# Direct item triggers deliberately perform a synchronous metadata fetch before they route: two
-# PMS API calls for a movie and up to five for a show. Each API call has the documented 25-second
-# total deadline, so an 8-second launch snapshot cannot distinguish a slow healthy remote PMS from
-# a rejected trigger. Poll through the structural 5*25-second upper bound plus launch slack, while
-# still returning immediately on an explicit refusal or process death. This is tooling patience,
-# not a playback/ABR heuristic.
-await_direct_screen() {
-  local marker="$1" want_route="$2" max_wait_s=130 waited=0 snapshot=""
-  local marker_seen=0 route_seen=0 refused_seen=0 alive=0 state=""
-  while [ "$waited" -le "$max_wait_s" ]; do
-    snapshot=$(tvq "
-      if grep -F '$marker' $EVENTLOG >/dev/null 2>&1; then echo marker=1; fi
-      if grep -F 'dispatcharrtv-$direct_kind: refused:' $EVENTLOG >/dev/null 2>&1; then echo refused=1; fi
-      grep -oE 'route=[a-z]+' $EVENTLOG 2>/dev/null | tail -1
-      if fuser $APPDIR/dispatcharrtv >/dev/null 2>&1; then echo alive=1; fi
-    ")
-    marker_seen=0; route_seen=0; refused_seen=0; alive=0
-    printf '%s\n' "$snapshot" | grep -qx 'marker=1' && marker_seen=1
-    printf '%s\n' "$snapshot" | grep -qx "route=$want_route" && route_seen=1
-    printf '%s\n' "$snapshot" | grep -qx 'refused=1' && refused_seen=1
-    printf '%s\n' "$snapshot" | grep -qx 'alive=1' && alive=1
-    state=$(direct_poll_state "$marker_seen" "$route_seen" "$refused_seen" "$alive")
-    case "$state" in
-      ready)
-        ok "direct identity confirmed ($direct_kind rk=$direct_rk server=$server_slot)"
-        ok "on the requested screen (route=$want_route)"
-        return 0
-        ;;
-      refused)
-        bad "$direct_kind rk=$direct_rk on server $server_slot was explicitly refused"
-        info "see the dispatcharrtv-$direct_kind: refused line in $EVENTLOG"
-        return 1
-        ;;
-      dead)
-        bad "$APPID died while opening $direct_kind rk=$direct_rk on server $server_slot"
-        info "check: tools/crash-report.sh --flavor $FLAVOR"
-        return 1
-        ;;
-    esac
-    [ "$waited" -eq "$max_wait_s" ] && break
-    sleep 1
-    waited=$((waited + 1))
-  done
-  bad "direct screen did not become ready within ${max_wait_s}s"
-  [ "$marker_seen" = 1 ] || info "missing identity: $marker"
-  [ "$route_seen" = 1 ] || info "last route: $(printf '%s\n' "$snapshot" | grep '^route=' | tail -1)"
-  return 1
-}
-
 # ------------------------------------------------------------ commands -------
 cmd_up() {
-  local screen=home owner=0 dry_run=0 stream="" no_token=0 keep=0 remote="" server_slot="" server_set=0
-  local direct_kind="" direct_rk="" direct_marker="" extra_arm=()
-  local identity_desc="" push_owner=0
+  local screen=guide account=real dry_run=0 stream="" keep=0 remote="" extra_arm=()
+  local account_desc="" mock_url="" mock_key=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --screen) screen="$2"; shift 2 ;;
+      --screen) screen="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
       --screen=*) screen="${1#*=}"; shift ;;
-      --server) [ $# -ge 2 ] || { bad "--server needs a registry slot"; exit 2; }
-                server_slot="$2"; server_set=1; shift 2 ;;
-      --server=*) server_slot="${1#*=}"; server_set=1; shift ;;
-      --owner) owner=1; shift ;;
+      --account) account="${2:-}"; shift; [ $# -gt 0 ] && shift ;;
+      --account=*) account="${1#*=}"; shift ;;
       --dry-run) dry_run=1; shift ;;
       --stream) stream=8909; shift ;;
       --stream=*) stream="${1#*=}"; shift ;;
       --remote) remote=8908; shift ;;
       --remote=*) remote="${1#*=}"; shift ;;
-      --no-token) no_token=1; shift ;;
       --keep) keep=1; shift ;;
       --arm) [ $# -ge 2 ] || { bad "--arm needs NAME[=VALUE]"; exit 2; }
              extra_arm+=("$2"); shift 2 ;;
@@ -623,7 +560,12 @@ cmd_up() {
       *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
   done
-  configure_direct_screen || exit 2
+  local want_route=""
+  case "$screen" in
+    guide) want_route=guide ;;
+    setup) want_route=setup ;;
+    *) echo "unknown --screen: $screen (guide | setup)" >&2; exit 2 ;;
+  esac
   # --remote is --stream plus a front door: there is nothing to publish without a stream, so it
   # turns one on rather than making the caller remember to pass both.
   if [ -n "$remote" ]; then
@@ -633,85 +575,40 @@ cmd_up() {
     fi
   fi
 
-  # screen -> triggers. Triggers are read ONCE at boot, so they must all be in place before the
-  # launch below; anything live goes through the FIFO afterwards. Computed here, BEFORE the
-  # television is touched at all, so identity resolution (next) and --dry-run (after that) can
-  # both see the final, fully-resolved no_token — including the two screens that force it
-  # themselves (profiles, and --server via configure_direct_screen above).
-  local files=() want_route="" want_overlay=""
-  case "$screen" in
-    home)      want_route=home ;;
-    # The picker is what an ORDINARY boot shows: it needs the stored session and NO
-    # automation. An injected token suppresses it (token beats session), and
-    # dispatcharrtv-pickuser forces it only to auto-pick a tile and move straight on — so
-    # neither reaches it. Hence: no token, no triggers.
-    # The session is PER-INSTALL (paths::session_candidates names auth.json for the app id,
-    # and the legacy in-app-dir entry is offered only to the shipped install), so this screen
-    # is reachable on the flavour that signed itself in and lands on QR on the other. That is
-    # the design — two installs are two devices to the account — not a broken picker.
-    profiles)  no_token=1; want_route=profiles ;;
-    login)     files+=("dispatcharrtv-login="); want_route=login ;;
-    # The account sheet and the card menu are SURFACES on the shared ModalStack since
-    # UI-restructure phase 10, not routes: the heartbeat prints the host page as `route=` and
-    # the surface's own `Screen::name` as ` overlay=`. Both halves are named, because the host
-    # page alone is Home — true from the first heartbeat of any boot — so naming only it would
-    # grade a refused trigger as a success. `tests/manifest.json` re-keyed its `home-acct-glass`
-    # and `item-menu` scenes the same way and for the same reason.
-    account)   files+=("dispatcharrtv-acct="); want_route=home; want_overlay=account ;;
-    # the press-and-hold card menu: the trigger snaps into the grid and holds the focused
-    # card for us, because a real hold is a live gesture no boot trigger can express
-    itemmenu)  files+=("dispatcharrtv-itemmenu="); want_route=home; want_overlay=itemmenu ;;
-    library)   files+=("dispatcharrtv-library="); want_route=library ;;
-    library=*) files+=("dispatcharrtv-library=${screen#*=}"); want_route=library ;;
-    detail=*)  files+=("dispatcharrtv-detail=${screen#*=}"); want_route=detail ;;
-    collection=*) files+=("dispatcharrtv-collection=${screen#*=}"); want_route=collection ;;
-    # the person page has no boot trigger of its own — it is REACHED, by opening a movie's
-    # detail page, walking focus down to Cast & Crew (a movie's second section) and pressing
-    # OK on the first headshot. So the rk here is the MOVIE's, not the person's.
-    person=*)  files+=("dispatcharrtv-detail=${screen#*=}" "dispatcharrtv-detailsec=1" "dispatcharrtv-detailok=")
-               want_route=person ;;
-    player=*)  files+=("dispatcharrtv-play=${screen#*=}"); want_route=player ;;
-    *) echo "unknown --screen: $screen" >&2; exit 2 ;;
-  esac
-  [ "$server_set" = 1 ] && files+=("dispatcharrtv-server=$server_slot")
-  # `--arm`: a scene's own extra triggers, e.g. menu=1 + the oscillator + framedrop. A bare NAME is
-  # armed empty (`touch`), matching how the screen triggers above are written.
-  local a
+  # Triggers are read ONCE at boot, so they must all be in place before the launch below;
+  # anything live goes through the FIFO afterwards. `--arm`: a bare NAME is armed empty (`touch`).
+  local files=() a
   for a in ${extra_arm[@]+"${extra_arm[@]}"}; do
     case "$a" in *=*) files+=("dispatcharrtv-$a") ;; *) files+=("dispatcharrtv-$a=") ;; esac
   done
-  # capture trigger is DIAG-exempt: arming the live view must not suppress the picker.
-  # The content is the port to listen on, and it is written EXPLICITLY rather than left empty
-  # (which would fall through to the app's own default) so that the number the app binds and the
-  # number the streamer dials are the one variable resolved at the top of this file.
+  # The content is the port to listen on, written EXPLICITLY rather than left empty (which would
+  # fall through to the app's own default) so that the number the app binds and the number the
+  # streamer dials are the one variable resolved at the top of this file.
   [ -n "$stream" ] && files+=("dispatcharrtv-capture=$APPPORT")
 
-  # Identity is decided HERE — before a single trigger is armed, before the TV lock, before the
-  # television is even woken — so it can be said out loud before booting into it, and so
+  # The account is decided HERE — before a single trigger is armed, before the TV lock, before
+  # the television is even woken — so it can be said out loud before booting into it, and so
   # --dry-run never has to touch the set to answer "what would this do".
-  resolve_identity || exit 1
-  info "identity: $identity_desc"
+  resolve_account || exit 2
+  info "account: $account_desc"
 
   if [ "$dry_run" = 1 ]; then
     echo "== DRY RUN ($screen) on $APPID [$FLAVOR] — nothing below touches the television"
     if [ ${#files[@]} -gt 0 ]; then
-      for f in "${files[@]}"; do
-        local dn="${f%%=*}" dv="${f#*=}"
-        if [ "$f" = "$dn=" ] || [ -z "$dv" ]; then echo "  would run: touch $RUNDIR/$dn"
-        else echo "  would run: printf '%s' '<redacted>' > $RUNDIR/$dn"; fi
-      done
+      for f in "${files[@]}"; do echo "  would arm: $RUNDIR/${f%%=*}"; done
     else
-      echo "  (no boot triggers for this screen)"
+      echo "  (no boot triggers)"
     fi
-    if [ "$push_owner" = 1 ]; then
-      echo "  would run: printf '%s' '<owner token from src/config.local.h, not printed>' | tools/tv-ssh ssh tv 'cat > $RUNDIR/dispatcharrtv-token'"
-    else
-      echo "  would inject: nothing ($identity_desc)"
-    fi
+    case "$account" in
+      real) echo "  would run: put back any account an earlier session left aside" ;;
+      none) echo "  would run: move every account/prefs file to *$ASIDE" ;;
+      mock=*) echo "  would run: move every account/prefs file to *$ASIDE"
+              echo "  would write: $APPDIR/dispatcharr.json naming $mock_url (key not printed), owned by the app's uid, 0600" ;;
+    esac
     echo "  would run: make -C $REPO FLAVOR=$FLAVOR kill"
     echo "  would run: tools/tv-ssh ssh tv luna-send -i luna://com.webos.applicationManager/launch '{\"id\":\"$APPID\"}'"
-    echo "  would then require: route=${want_route:-<any>}${want_overlay:+ overlay=$want_overlay}"
-    echo "== dry run complete — identity: $identity_desc"
+    echo "  would then require: route=$want_route"
+    echo "== dry run complete — account: $account_desc"
     return 0
   fi
 
@@ -722,16 +619,33 @@ cmd_up() {
   # FIRST, before anything is closed, cleared or deployed. `up` kills the running app and wipes
   # every trigger under the runtime root — if another lane is mid-run, that is its session, and
   # everything after this point would be measuring a television two jobs are steering.
-  require_lock "tv-session up --screen $screen [$FLAVOR]"
+  require_lock "tv-session up --screen $screen --account ${account%%=*} [$FLAVOR]"
   ensure_awake  || exit 1
   ensure_installed || exit 1
   ensure_rundir || exit 1
   ensure_binary || exit 1
   [ "$keep" = 1 ] || clear_triggers
+  # The app is closed before an account file moves, so it cannot write one while it does.
+  make -C "$REPO" FLAVOR="$FLAVOR" kill >/dev/null 2>&1
+  case "$account" in
+    real)
+      tv "$(account_restore_cmd)" || { bad "could not put an earlier session's account back"; exit 1; }
+      ok "account: the set's own" ;;
+    none)
+      tv "$(account_aside_cmd)" || { bad "could not move the account aside"; exit 1; }
+      ok "account moved aside (\`down\` restores it)" ;;
+    mock=*)
+      tv "$(account_aside_cmd)" || { bad "could not move the account aside"; exit 1; }
+      ok "account moved aside (\`down\` restores it)"
+      # Owned by the uid the app runs as (that of its binary), or the app refuses to read it.
+      mock_account_json "$mock_url" "$mock_key" | tv "umask 077; cat > $APPDIR/dispatcharr.json && \
+          chown \$(stat -c %u $APPDIR/dispatcharrtv) $APPDIR/dispatcharr.json && chmod 600 $APPDIR/dispatcharr.json" \
+        || { bad "could not write the mock account"; exit 1; }
+      ok "account: mock server $mock_url (key not printed)" ;;
+  esac
 
   # NB bash 3.2 (macOS system bash) + `set -u`: "${arr[@]}" on an EMPTY array is an
-  # unbound-variable error, so every expansion here is length-guarded. Screens that need
-  # no triggers at all (home, profiles) hit exactly that case.
+  # unbound-variable error, so every expansion here is length-guarded.
   if [ ${#files[@]} -gt 0 ]; then
     local parts=()
     for f in "${files[@]}"; do
@@ -742,24 +656,16 @@ cmd_up() {
     tv "$(IFS=';'; echo "${parts[*]}")" 2>/dev/null
     ok "armed: ${files[*]}"
   else
-    info "no boot triggers needed for this screen"
-  fi
-
-  if [ "$push_owner" = 1 ]; then
-    push_token || info "continuing without a token — expect the QR sign-in screen"
+    info "no boot triggers"
   fi
 
   PREV_PIDS=$(app_pids)
   relaunch
   assert_running || { info "check: tools/crash-report.sh --flavor $FLAVOR"; exit 1; }
-  if ! assert_install; then
-    [ "$server_set" = 1 ] && exit 1
-  fi
-  if [ "$server_set" = 1 ]; then
-    await_direct_screen "$direct_marker" "$want_route" || exit 1
-  else
-    assert_route "$want_route" "$want_overlay" || true
-  fi
+  assert_install || true
+  # With the real account the boot may resume the last channel (Settings > Resume on launch), which
+  # lands on route=player rather than the guide; that is a boot that arrived, said so below.
+  assert_route "$want_route" || [ "$account" != real ] || info "(a resumed channel boots to the player)"
 
   if [ -n "$stream" ]; then
     # fully detach: without </dev/null the child keeps the caller's stdout pipe open and
@@ -839,68 +745,57 @@ cmd_up() {
 # run by `make check`; keeping it in this script proves the same Bash-3 code cmd_up calls rather
 # than a Python reimplementation of the option semantics.
 cmd_selftest() {
-  local screen=player=5469 server_set=1 server_slot=1 no_token=0
-  local direct_kind="" direct_rk="" direct_marker=""
-  configure_direct_screen >/dev/null || { bad "direct-screen selftest setup failed"; return 1; }
-  [ "$no_token" = 1 ] || { bad "--server did not select the stored-roster boot"; return 1; }
-  [ "$direct_marker" = "dispatcharrtv-play: rk=5469 server=1 start" ] || {
-    bad "wrong player identity marker: $direct_marker"; return 1;
-  }
+  local _rc=0 screen account account_desc mock_url mock_key
+  # ---- the account a boot resolves to, decided before anything touches the television
+  screen=guide; account=real; resolve_account || _rc=1
+  case "$account_desc" in *untouched*) ;; *) bad "the default must leave the stored account alone"; _rc=1 ;; esac
+  screen=setup; account=real; resolve_account || _rc=1
+  [ "$account" = none ] || { bad "--screen setup must boot with no account"; _rc=1; }
+  screen=setup; account=mock=10.0.0.5:9192
+  if resolve_account >/dev/null 2>&1; then bad "--screen setup with a mock account must refuse"; _rc=1; fi
+  screen=guide; account=mock=10.0.0.5:9192; resolve_account || _rc=1
+  { [ "$mock_url" = http://10.0.0.5:9192 ] && [ "$mock_key" = SESSIONKEY ]; } || { bad "mock default: $mock_url $mock_key"; _rc=1; }
+  screen=guide; account=mock=10.0.0.5:9192:K1; resolve_account || _rc=1
+  [ "$mock_key" = K1 ] || { bad "mock key: $mock_key"; _rc=1; }
+  for bad_spec in mock=10.0.0.5 mock=:9192 "mock=a b:1" guest; do
+    screen=guide; account=$bad_spec
+    if resolve_account >/dev/null 2>&1; then bad "--account $bad_spec must refuse"; _rc=1; fi
+  done
+  for flag in --guest --mock --owner --no-token "--server 1"; do
+    # shellcheck disable=SC2086
+    if (cmd_up $flag --dry-run) >/dev/null 2>&1; then bad "$flag went with Plex and must be refused"; _rc=1; fi
+  done
 
-  screen=detail=42; server_slot=0; no_token=0; direct_kind=""; direct_rk=""; direct_marker=""
-  configure_direct_screen >/dev/null || { bad "detail selftest setup failed"; return 1; }
-  [ "$direct_marker" = "dispatcharrtv-detail: rk=42 server=0 start" ] || {
-    bad "wrong detail identity marker: $direct_marker"; return 1;
-  }
-
-  screen=home
-  if configure_direct_screen >/dev/null 2>&1; then
-    bad "--server incorrectly accepted a non-item screen"; return 1
-  fi
-  screen=player=not-a-rating-key
-  if configure_direct_screen >/dev/null 2>&1; then
-    bad "--server incorrectly accepted a nonnumeric ratingKey"; return 1
-  fi
-  screen=player=42; server_slot=01
-  if configure_direct_screen >/dev/null 2>&1; then
-    bad "--server incorrectly accepted a noncanonical slot"; return 1
-  fi
-
-  [ "$(direct_poll_state 1 1 0 1)" = ready ] || {
-    bad "direct waiter did not accept marker + route"; return 1;
-  }
-  [ "$(direct_poll_state 0 1 0 1)" = wait ] || {
-    bad "direct waiter accepted a route without item identity"; return 1;
-  }
-  [ "$(direct_poll_state 1 0 0 1)" = wait ] || {
-    bad "direct waiter accepted item identity before its route"; return 1;
-  }
-  [ "$(direct_poll_state 1 1 1 1)" = refused ] || {
-    bad "direct waiter ignored an explicit refusal"; return 1;
-  }
-  [ "$(direct_poll_state 1 1 0 0)" = dead ] || {
-    bad "direct waiter ignored process death"; return 1;
-  }
-  ok "tv-session direct-screen contract"
-
-  # ---- identity: the owner token by default and with --owner; nothing at all with --no-token.
-  local identity_desc="" push_owner=0
-  local owner=0 no_token=0 server_set=0 server_slot=""
-  local _identity_rc=0
-  owner=1
-  resolve_identity
-  [ "$push_owner" = 1 ] || { bad "--owner did not resolve to the owner identity"; _identity_rc=1; }
-  owner=0; no_token=0
-  resolve_identity
-  [ "$push_owner" = 1 ] || { bad "the DEFAULT must resolve to the owner identity"; _identity_rc=1; }
-  owner=0; no_token=1
-  resolve_identity
-  [ "$push_owner" = 0 ] || { bad "--no-token must inject no identity at all"; _identity_rc=1; }
-  if (cmd_up --guest --dry-run) >/dev/null 2>&1; then
-    bad "--guest went with the Plex harness and must be refused"; _identity_rc=1
-  fi
-  [ "$_identity_rc" = 0 ] || return 1
-  ok "tv-session identity contract (owner by default, nothing with --no-token)"
+  # ---- the move-aside and restore commands, run for real against a temporary tree
+  local tmp; tmp=$(mktemp -d) || return 1
+  (
+    ACCOUNT_ROOT="$tmp"; APPID=com.example.app; APPDIR="$tmp/app"; RUNDIR="$tmp/rt"
+    mkdir -p "$tmp/media/developer" "$tmp/media/internal" "$APPDIR" "$RUNDIR"
+    real="$APPDIR/dispatcharr.json"; prefs="$tmp/media/developer/$APPID-dispatcharr-prefs.json"
+    printf REAL > "$real"; chmod 600 "$real"; printf PREFS > "$prefs"
+    sh -c "$(account_aside_cmd)" || exit 1
+    [ ! -e "$real" ] && [ ! -e "$prefs" ] || { echo "aside left a file the app would read"; exit 1; }
+    # a mock session writes its own account, at a HIGHER-priority path than the real one
+    printf MOCK > "$tmp/media/developer/$APPID-dispatcharr.json"
+    sh -c "$(account_restore_cmd)" || exit 1
+    [ "$(cat "$real")" = REAL ] && [ "$(cat "$prefs")" = PREFS ] || { echo "restore did not put the real files back"; exit 1; }
+    [ ! -e "$tmp/media/developer/$APPID-dispatcharr.json" ] || { echo "the mock account would shadow the real one"; exit 1; }
+    [ "$(stat -c %a "$real" 2>/dev/null || stat -f %Lp "$real")" = 600 ] || { echo "restore changed the mode"; exit 1; }
+    # restore with nothing aside touches nothing
+    printf NEW > "$tmp/rt/dispatcharr.json"
+    sh -c "$(account_restore_cmd)" || exit 1
+    [ -e "$tmp/rt/dispatcharr.json" ] || { echo "a restore with nothing aside deleted an account"; exit 1; }
+    rm -f "$tmp/rt/dispatcharr.json"
+    # an interrupted session's leftover survives a second move
+    sh -c "$(account_aside_cmd)" || exit 1
+    printf SETUP > "$real"
+    sh -c "$(account_aside_cmd)" || exit 1
+    sh -c "$(account_restore_cmd)" || exit 1
+    [ "$(cat "$real")" = REAL ] || { echo "the real account did not survive two moves"; exit 1; }
+  ) || { bad "account move-aside/restore contract"; _rc=1; }
+  rm -rf "$tmp"
+  [ "$_rc" = 0 ] || return 1
+  ok "tv-session account contract (real untouched; none/mock moved aside and restored exactly)"
 }
 
 cmd_status() {
@@ -911,6 +806,12 @@ cmd_status() {
   [ -n "$pid" ] && ok "app running (pid $pid)" || bad "app not running"
   assert_install || true
   assert_route "" || true
+  local aside; aside=$(tvq "for p in $(account_paths | tr '\n' ' '); do [ -e \"\$p$ASIDE\" ] && echo \"\$p\"; done")
+  if [ -n "$aside" ]; then
+    bad "the real account is SET ASIDE (a none/mock session): \`down\` or \`up\` restores it"
+  else
+    ok "account: the set's own"
+  fi
   tvq "ls $RUNDIR/dispatcharrtv-* 2>/dev/null | grep -v '\.log\$' | sed 's|.*/||'" \
     | while read -r t; do [ -n "$t" ] && info "armed: $t"; done
   local ver
@@ -970,12 +871,15 @@ cmd_down() {
   [ "$had_url" = 1 ] && ok "remote URL revoked (tunnel closed, password discarded)"
   ensure_awake || exit 1
   ensure_rundir || exit 1
-  clear_triggers                      # strips token/autoplay/capture/everything
+  clear_triggers                      # strips capture/stats/everything
   # Close the tested app and leave the television as it is: the owner does not want the debug
   # app reopened behind them after a test. Triggers are already cleared, so the next launch
   # (by anyone) is an ordinary interactive boot. `make kill` closes THIS flavour by app id.
   make -C "$REPO" FLAVOR="$FLAVOR" kill >/dev/null 2>&1
   ok "app closed ($APPID); TV left as is"
+  # AFTER the close, so the app cannot write an account while the real one is put back.
+  if tv "$(account_restore_cmd)"; then ok "account: the set's own (restored if a session set it aside)"
+  else bad "could not restore the account — \`tv-session.sh status\` shows what is aside"; fi
   echo "== TV is yours"
 }
 
@@ -1080,7 +984,7 @@ cmd_sound() {
 # itself, in two halves because the firmware only has one of the two tools (probed 2026-09-05):
 #   * v4: a netfilter chain on OUTPUT (iptables 1.6, filter table loaded) REJECTS every packet
 #     not bound for the LAN, plus every DNS query anywhere — the router would otherwise still
-#     resolve `plex.direct` through its own uplink, which is the half of "offline" that matters;
+#     resolve public names through its own uplink, which is the half of "offline" that matters;
 #   * v6: there is NO ip6tables filter table (`ip6_tables` is not in the kernel's modules), so
 #     the cut is an `unreachable 2000::/3` route — more specific than either default route, so
 #     no metric contest with connman's or the RA's, and less specific than the on-link /64s, so
@@ -1164,12 +1068,9 @@ CUT
       else
         info "WAN: open (v4 chain / v6 unreachable route armed: ${chain%/})"
       fi
-      # Measured from the SET, which is the only place the answer is about: the PMS on the Mac
-      # over the LAN, and a public name through the router's resolver. The PMS host comes from
-      # the gitignored config, when this checkout has one; a lane without it skips that line.
-      pms=${PMS_HOST:-$(sed -n 's/.*PMS_HOST *"\([^"]*\)".*/\1/p' "$REPO/src/config.local.h" 2>/dev/null)}
-      [ -n "$pms" ] && info "from the TV: LAN PMS /identity -> $(tvq "wget -q -T 5 -O - http://$pms:32400/identity >/dev/null 2>&1 && echo ok || echo FAIL")"
-      info "from the TV: resolve plex.tv -> $(tvq "nslookup plex.tv >/dev/null 2>&1 && echo ok || echo FAIL")"
+      # Measured from the SET, which is the only place the answer is about: a public name through
+      # the router's resolver. (The Dispatcharr server is on the LAN, which the cut leaves open.)
+      info "from the TV: resolve example.com -> $(tvq "nslookup example.com >/dev/null 2>&1 && echo ok || echo FAIL")"
       ;;
   esac
 }

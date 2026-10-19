@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-19T03:59:23Z",
+ "generated": "2026-10-19T04:01:20Z",
  "metrics": [
   {
    "change30_pct": null,
@@ -158,9 +158,9 @@
    "id": "minutes",
    "kind": "cost",
    "label": "Runner time per push",
-   "n_now": 27,
+   "n_now": 28,
    "n_prev": 0,
-   "now": 1541,
+   "now": 1531.0,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -179,9 +179,9 @@
    "id": "ci|host unit tests (default features)",
    "kind": "job",
    "label": "CI: host unit tests (default features)",
-   "n_now": 30,
+   "n_now": 31,
    "n_prev": 0,
-   "now": 307.0,
+   "now": 306,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -200,9 +200,9 @@
    "id": "ci|host unit tests (hostsim)",
    "kind": "job",
    "label": "CI: host unit tests (hostsim)",
-   "n_now": 30,
+   "n_now": 31,
    "n_prev": 0,
-   "now": 246.0,
+   "now": 244,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -221,9 +221,9 @@
    "id": "ci|cross-build (armv7) + artifact assertions",
    "kind": "job",
    "label": "CI: cross-build (armv7) + artifact assertions",
-   "n_now": 30,
+   "n_now": 31,
    "n_prev": 0,
-   "now": 238.5,
+   "now": 232,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -263,9 +263,9 @@
    "id": "ci|host lint + type-checks",
    "kind": "job",
    "label": "CI: host lint + type-checks",
-   "n_now": 30,
+   "n_now": 31,
    "n_prev": 0,
-   "now": 135.0,
+   "now": 136,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -305,9 +305,9 @@
    "id": "ci|host python/shell/C gates",
    "kind": "job",
    "label": "CI: host python/shell/C gates",
-   "n_now": 30,
+   "n_now": 31,
    "n_prev": 0,
-   "now": 113.0,
+   "now": 113,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -326,9 +326,9 @@
    "id": "ci|host harness tests",
    "kind": "job",
    "label": "CI: host harness tests",
-   "n_now": 30,
+   "n_now": 31,
    "n_prev": 0,
-   "now": 106.0,
+   "now": 100,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -389,9 +389,9 @@
    "id": "ci|host checks (NOT a device gate)",
    "kind": "job",
    "label": "CI: host checks (NOT a device gate)",
-   "n_now": 30,
+   "n_now": 31,
    "n_prev": 0,
-   "now": 3.0,
+   "now": 3,
    "prev7": null,
    "shown": false,
    "state": "new",
@@ -429,19 +429,19 @@
    "group": "ci",
    "id": "ci|host unit tests (default features)",
    "label": "CI: host unit tests (default features)",
-   "now": 307.0
+   "now": 306
   },
   {
    "group": "ci",
    "id": "ci|host unit tests (hostsim)",
    "label": "CI: host unit tests (hostsim)",
-   "now": 246.0
+   "now": 244
   },
   {
    "group": "ci",
    "id": "ci|cross-build (armv7) + artifact assertions",
    "label": "CI: cross-build (armv7) + artifact assertions",
-   "now": 238.5
+   "now": 232
   },
   {
    "group": "ci",
@@ -453,7 +453,7 @@
    "group": "ci",
    "id": "ci|host lint + type-checks",
    "label": "CI: host lint + type-checks",
-   "now": 135.0
+   "now": 136
   }
  ],
  "slowest_local": [

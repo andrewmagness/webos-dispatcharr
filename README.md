@@ -63,9 +63,8 @@ desktop simulator against a mock Dispatcharr server (`tests/mock_dispatcharr.py`
 
 ### Privacy
 
-Optional crash reports and product analytics are off, and this version has no screen that asks
-about them, so it sends nothing. [`PRIVACY.md`](PRIVACY.md) lists what is stored on the television
-and exactly what each report would contain.
+The app has no crash reporting or analytics and sends nothing to its developer: it talks only to
+your Dispatcharr server. [`PRIVACY.md`](PRIVACY.md) lists what is stored on the television.
 
 ## Building
 

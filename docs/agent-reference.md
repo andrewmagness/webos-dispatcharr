@@ -46,8 +46,8 @@ install, `com.magness.dispatcharrtv.debug`, can sit beside it on the same set (`
 ## Build / deploy / run
 
 The `Makefile` is the entire dev loop. Requires the **webOS NDK** (install with `make
-setup-env`), a **Rust nightly toolchain + `rust-src`** (for `-Z build-std`), CMake (Homebrew, for
-the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use your ssh key first and need it only when the TV refuses the key). See the
+setup-env`), a **Rust nightly toolchain + `rust-src`** (for `-Z build-std`), CMake (Homebrew, only for
+the opt-in stack sampler's pinned libunwind build), and `sshpass` (Homebrew; deploy/run use your ssh key first and need it only when the TV refuses the key). See the
 **`setup-environment` skill** (`.agents/skills/`) for the full one-time setup + troubleshooting.
 
 - `make setup-env` — download + extract + `relocate-sdk.sh` the webOS NDK into `$(WEBOS_SDK)`
@@ -66,9 +66,9 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   in every checkout after** — the source and object tree is machine-wide under `$PLX_BUILD_CACHE`,
   default `~/.cache/dispatcharrtv`, keyed by the configure flags so a dev tree and a RELEASE tree
   cannot be confused for one another; only the 3.8 MB prefix is per-checkout) plus the
-  checksum-pinned Sentry Native
-  static libraries and out-of-process handler (`ci/build-sentry-native.sh`; CMake, patched for the
-  webOS glibc-2.12/ARM32 ABI). Also compiles `ci/ffabi-assert.c` against
+  nothing else native: the checksum-pinned Sentry Native build (`ci/build-sentry-native.sh`) is
+  now only the remote `libunwind` the opt-in `make dispatcharrtv-stackwalk` sampler links, and the app
+  links none of it (`docs/telemetry-removed.md`). Also compiles `ci/ffabi-assert.c` against
   `vendor/ffmpeg-prefix/include` — **the headers the shipped libraries were built from**, installed
   by the same invocation that produced them — which is what proves `ff.rs`'s ABI table. **One**
   header tree per target, **one** FFmpeg. This line long said BOTH vendored trees (n3.3 and n4.0)
@@ -438,19 +438,11 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   deliberate SIGSEGV on the set resolved through `pkg/dispatcharrtv.debug` to
   `dev::crash_on_purpose at rust-modules/src/dev.rs:218` — file and line, from a binary the
   television runs, matched by build id alone.
-  `make SYMBOLS=1 sentry-symbols` additionally runs Sentry CLI's local DIF check and uploads that
-  exact binary/debug pair with source context; it requires `SENTRY_AUTH_TOKEN`. The release
-  workflow treats a missing token, unusable DIF or failed upload as a release failure, because an
-  accepted native event with no matching DIF is not a working crash report.
   **`make symbols-libs`** does the same for the bundled shared objects (the FFmpeg libraries and
   libass, which ship stripped): `pkg/symbols/<soname>.debug`, extracted from the unstripped link
   output (`vendor/ffmpeg-prefix/lib/unstripped/`, `vendor/libass-prefix/lib/`). Their links carry
   `-Wl,--build-id=sha1` too, and `ci/extract-so-symbols.sh` refuses a library without one, a
-  `.debug` whose id differs, or one with no `.symtab` function symbols; `ci/check-debug-files.py`
-  (used by `sentry-symbols` and the release workflow) then requires `sentry-cli debug-files check`
-  to report `debug` or `symtab` features on each file, because that command exits 0 for a
-  symbol-less object. `sentry-crash` is not uploaded: it never sends a report, so no event frame
-  lands in it. Independent of `SYMBOLS=1`.
+  `.debug` whose id differs, or one with no `.symtab` function symbols. Independent of `SYMBOLS=1`.
 - `make ipk` — repackage the installable `pkg/<app id>_<version>_arm.ipk`. The version
   comes from `pkg/appinfo.json` (the single source; `ci/check-package.py` asserts the control
   file agrees), and the archive is **reproducible** — `ci/mkipk.py` normalises tar identity and
@@ -542,7 +534,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   `Cargo.toml` plus a present `RELEASE_LINE` reports `0.6.1-dev` rather than `0.7.0-dev`. The file's
   absence is unconditionally the trunk behaviour above — nothing about a `main` checkout changes.
   It also makes the semver ordering mean something — `0.7.0-dev` precedes `0.7.0`. That is the string every
-  surface reports (X-Plex-Version, the Sentry release, PostHog's `app_version`, the lab snapshot, the
+  surface reports (the User-Agent, the boot log's `release:` line, the lab snapshot, the
   photographed diagnostics panel); before it, a release commit left the whole tree claiming to BE the
   release it had just cut, and nothing downstream could separate a working tree from the shipped
   artifact. The suffix never reaches `pkg/appinfo.json` or the control file — `ares-package`
@@ -696,9 +688,8 @@ tools/fwcompat.py --lib libSDL2-2.0.so.0 --grep webOS
 **It grades whether the app STARTS, and nothing else.** A firmware can export every ACB entry point
 and still refuse to put a picture on the video plane. Today: OK on releases 4.4.2 through 11.2.0;
 playback is device-verified on 4.10.0 (the dev set) and 6.5.2 (the webosbrew reviewer's set,
-issue #22 — the `VP_EXPORTED` path works); opt-in PostHog `playback.started` events (2026-09)
-additionally show direct and transcoded starts on field sets from 4.4.2 to 11.2.0, including
-10.3.1 transcodes, while 3.9.3 sets have requests and no outcome (#249); and `docs/webos5-port.md` §4 is the list of what
+issue #22 — the `VP_EXPORTED` path works), and Dispatcharr TV's live playback on 6.5.3 and 4.4.3;
+and `docs/webos5-port.md` §4 is the list of what
 webOS 5+ still needs a human with a television to settle.
 
 **The inventories are SYMBOL LISTS — `name`, `package`, `needed`, `symbols`, and nothing else.**
@@ -806,8 +797,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   (+ `crashtrace.h`) — the **fatal-signal tracer**, its own TU so the signal path can be tested; `src/crashfmt.h` is its pure half. **Both halves are host-tested in
   `make check`** — `ci/crashfmt-test.c` grades the parsing, `ci/crashtrace-test.c` crashes seven
   processes on purpose and checks the record AND the exit status. `src/starfish.c` — the
-  StarfishMediaAPIs C++/ACB seam. `src/svg.c` — nanosvg rasterizer. `src/sentry_context.c` — the
-  narrow C wrapper that keeps Sentry's opaque by-value object ABI out of Rust. These five are the
+  StarfishMediaAPIs C++/ACB seam. `src/svg.c` — nanosvg rasterizer. These four are the
   entire normal C side (`gpdebug.c` is an opt-in allocator instrument). Reach for
   `/tmp/dispatcharrtv-crashtest=<segv|abrt|bus|ill|trap|panic|unwind>` to fault the app deliberately
   ON the television — `segv` is a real null write, `abrt`/`bus`/`ill`/`trap` are `raise`, `panic`
@@ -842,8 +832,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   `getaddrinfo`, walks either address family, and speaks cleartext. `aq.rs` — one-producer/
   one-consumer AU FIFO with byte-cap backpressure. Both are Rust ports of the deleted C headers;
   the hand-rolled `mkv.rs` demuxer they fed is retired — `ff.rs` is the only demux path.)
-- `rust-modules/base/src/eventlog/` (`scrub.rs`, `ring.rs`) with `rust-modules/telemetry/src/diag/` (crate `plx_telemetry`) — **the redaction pass and the diagnostic plumbing every off-device
-  report shares**. `scrub.rs` is the one that matters and it is **UNGATED**: `plx_base::eventlog::log` runs
+- `rust-modules/base/src/eventlog/` (`scrub.rs`, `ring.rs`) — **the redaction pass and the log ring**. `scrub.rs` is the one that matters and it is **UNGATED**: `plx_base::eventlog::log` runs
   `scrub_local` on every line in every build, so credentials, hosts, bare addresses, Plex GUIDs,
   search queries and this household's names are rewritten **before the write**, not on the way out.
   **Two exits, differing in exactly one respect** — `scrub` (network) may DROP a line it cannot
@@ -1161,56 +1150,15 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   again at the live edge (`resume_parked`, the reconnect path). In-app
   Home/Settings are *overlays* and do **not** fire these — only a real OS app-switch does. Preserve
   the suspend/reload pairing if you touch playback or routing.
-- **Crash forensics has two layers.** With error-report consent and a compiled Sentry endpoint,
-  Sentry Native's patched ARM32 backend replaces the signal disposition and wakes the shipped
-  `sentry-crash` daemon. The dying process stays stopped while the daemon copies its `ucontext`
-  and walks the crashed thread's APCS frame chain out of a copy of its stack; for every other
-  Linux LWP in `/proc/<pid>/task` it `PTRACE_ATTACH`es, unwinds **remotely through libunwind's
-  ptrace accessors** (DWARF, with `function` names from the ELF symbol tables), and detaches — that
-  is upstream sentry-native's own machinery since 0.16 (#1747), and it replaced a hand-written
-  suspend/`PTRACE_GETREGS`/frame-walk block this repo carried against 0.13.9 until 2026-09-02. The
-  crashed thread keeps up to 128 frames and each other thread up to 32 to reduce pressure on the
-  256 KiB durable-record ceiling; the importer still rejects an oversized envelope rather than
-  claiming a bound for an arbitrary 256-LWP process. The JSON therefore carries ARM registers and
-  real multi-frame stacks for all successfully captured threads, plus modules and both Linux-kernel
-  and webOS firmware context. The pin is **0.16.6** (`ci/build-sentry-native.sh`). The ARM32
-  registers-in-the-event and dual-frame-record walk (GCC leaves `fp` on the LR slot
-  (`[fp-4]`/`[fp]`), rustc/LLVM on the saved-fp slot (`[fp]`/`[fp+4]`), and one process here holds
-  both) and the pointer-width stack reads that make the walk safe on a 32-bit target are now
-  **upstream** (getsentry/sentry-native#2052 and #2053, contributed from this repo, merged
-  2026-09-03/04, released in 0.16.6) — the patch beside the pin
-  (`vendor/sentry-native/webos-arm32.patch`) carries neither any more and is down to what upstream
-  still does not do: a `process_vm_readv` wrapper for glibc 2.12, the 32-frame cap for non-crashed
-  threads, the 30 s handler budget, and two webOS-only escapes in the signal handler (no in-process
-  libunwind, no SDK hooks — both reproduced a recursive SIGSEGV through `getenv`).
-  The SDK has **no HTTP transport and writes no minidump**: it launches the
-  same `dispatcharrtv` binary in spool-only mode, which moves the bounded envelope into the install's
-  runtime root. A healthy launch strips path prefixes, rejects request scope and every `user`
-  field but `id` — which it keeps ONLY when it has the 32-hex shape of the app's own crash-report
-  identifier, the `errors_id` that `sdk::start` puts on the SDK scope as `user.id` right after
-  init so the daemon's base event carries it — and queues the event through the existing
-  consent-aware sender. That id is what makes Sentry's "users affected" a count of Crash report
-  IDs — one per uninterrupted opt-in — rather than of events; it is minted on crash-report opt-in, destroyed on withdrawal
-  and on sign-out (the decision belongs to the account that gave it, so the next account is asked
-  afresh),
-  and never the PostHog analytics id (`docs/../PRIVACY.md`, and the two-identifier note in
-  `telemetry/consent.rs`). `-fno-omit-frame-pointer` / Rust
-  `force-frame-pointers=yes` are therefore crash-reporting ABI, not optional debug flags.
+- **Crash forensics is the C tracer (`src/crashtrace.c`), and nothing is sent.** Crash reporting
+  (Sentry Native and its `sentry-crash` daemon) was removed with the rest of telemetry
+  (`docs/telemetry-removed.md`). `-fno-omit-frame-pointer` / Rust `force-frame-pointers=yes` stay:
+  they are what make a local backtrace possible.
 
-  The patched ARM handler waits up to 30 seconds for that walk. The upstream 10-second budget was
-  too short for the first cold crash on this Cortex-A9: the parent died while the daemon was still
-  opening `/proc/<pid>/maps`, producing an accepted envelope with no modules and therefore no
-  symbolication. Warm crashes usually finish within the original budget; the longer ceiling is a
-  failure bound, not an added delay after a completed report.
-
-  The always-armed fallback is still the C tracer (`main.c`). It writes a startup `img:` marker
-  (build id, load address, mapped size), then on a fault logs PC/LR, **the ARM registers around
-  them** and the `/proc/self/maps` line(s) containing either. Native always chains this saved
-  handler after the daemon's attempt (and immediately when the daemon is unavailable), so the
-  bounded local record survives even a daemon that reaches `DONE` after failing to write its
-  envelope. On the next healthy boot the native envelope is imported first; a matching local
-  record is consumed by build id + signal, so one process death still becomes one Sentry event.
-  Closing or withdrawing consent restores the tracer as the primary handler. It **re-raises to
+  At startup `src/main.c` has `crash_image.rs` write an `img:` marker (build id, load address,
+  mapped size), then on a fault the tracer logs PC/LR, **the ARM registers around them** and the
+  `/proc/self/maps` line(s) containing either, to the append-only crash log; a Rust panic adds its
+  own record from the panic hook (`app/boot.rs`). It **re-raises to
   `SIG_DFL`** so
   SAM sees a real signal death (`exit_status: 11` for a SIGSEGV — device-verified 2026-08-29).
   **This fallback does NOT also get a system crashd backtrace, and this line used to say it did**:
@@ -1263,7 +1211,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   authoritative.
   Probe files are hidden, exclusive creates, one byte, immediately removed; session files are
   never opened by diagnostics. No paths, helper payloads, account data or raw error text enter
-  this file or telemetry. A dedicated worker retains boot evidence and suppresses semantically
+  this file. A dedicated worker retains boot evidence and suppresses semantically
   duplicate outcomes. `truncated value=true` marks a size cap; `history_truncated=true` marks a
   bounded helper-outcome history. A failed publication leaves the previous snapshot in place, so
   check the build identity and sequence when interpreting a file after a relaunch. The group-read
@@ -1981,20 +1929,9 @@ green.
   `/tmp/dispatcharrtv-token` beats the stored session entirely — so headless runs always land on a
   deterministic Home.
   `/tmp/dispatcharrtv-pickuser=<index>` forces the picker anyway and auto-picks that roster tile.
-- **`/tmp/dispatcharrtv-consent` is the same escape hatch for the CONSENT question**, and it exists
-  because that screen is suppressed BY the presence of any trigger — so without an override it is
-  the one screen in the app that cannot be reached headlessly at all: arming anything to reach it
-  is what hides it. It forces the question regardless of a stored decision, so it is also how the
-  screen is re-examined after answering once.
-- **The binary carries no credential that grants access to anything of YOURS** — no compiled PMS
-  token, no demo URL, and never the Sentry auth token, which can read and delete the project and
-  lives only as a GitHub secret. A RELEASE build does carry two **write-only ingest credentials**
-  (`PLX_SENTRY_DSN`, `PLX_POSTHOG_KEY`, compiled in via `option_env!`): they permit sending to a
-  project and reading nothing from it, `strings` finds them, `ci/gen-release-audit.py` prints them
-  into the audit on purpose, and `release.yml` REFUSES to publish without them. The distinction is
-  the point, and this line read "NO credentials" flatly — which stops a reader before they reach
-  it. A build with no credential compiled in cannot report at all, which is the guarantee that
-  replaced the cargo feature that used to claim it. Server access comes from the Dispatcharr
+- **The binary carries no credential and no reporting endpoint** — no compiled server token, no
+  demo URL, and (since telemetry was removed, `docs/telemetry-removed.md`) no ingest key; the
+  release audit's `telemetry endpoints` row checks the packaged bytes for one. Server access comes from the Dispatcharr
   account a sign-in on Setup stores (server + API key, 0600); a boot with one lands on the Guide,
   a boot without one on Setup (`screens::setup`). Automated sessions arrange the account with
   `tools/tv-session.sh up --account real|none|mock=…`, which moves the set's own aside and puts it

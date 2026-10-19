@@ -19,18 +19,11 @@ description: >
 > log`) — but the moment you RE-RUN to reproduce, take the television's lock first:
 > `tools/tv-lock.sh acquire --why "reproduce <crash>"`. See the **`tv-lock`** skill.
 
-There are now two evidence paths. When crash-report consent and a compiled endpoint are both
-present, the patched Sentry Native ARM32 handler wakes the shipped `sentry-crash` process. That
-process reads the stopped target, walks the crashing thread's frame chain from a copy of its
-stack, and unwinds every other Linux LWP remotely through libunwind's ptrace accessors (DWARF,
-with function names), attaching and detaching per thread. It records up to 128 frames for the
-crashing thread plus up to 32 for each other thread, registers, modules, Linux/webOS versions and
-build ids. Its transport is disabled; the next
-healthy Dispatcharr TV launch sanitises the envelope and sends it from the ordinary telemetry spool.
-That Sentry event **is a
-backtrace** when it contains multiple frames.
+There is one evidence path: crash reporting (Sentry Native and its `sentry-crash` daemon) was
+removed with the rest of telemetry (`docs/telemetry-removed.md`), so nothing leaves the set and the
+crash log is the whole record.
 
-The local, always-available fallback is the C tracer (`src/crashtrace.c`). It catches the fatal
+The tracer is the C one (`src/crashtrace.c`). It catches the fatal
 signals, writes what it knows, then **re-raises to `SIG_DFL`** so SAM sees a real `WIFSIGNALED`
 death — and **not** so a crash daemon
 produces a backtrace, which on this firmware it never does (see §"do not go looking for a crashd
@@ -179,8 +172,7 @@ and it is worse than none, for the reason in the gotchas below.
 - **SIGABRT / SIGTRAP (6 / 5)** — usually a **Rust panic** crossing the FFI boundary. The
   PC is inside `abort()` and is worthless; the evidence is `<rundir>/dispatcharrtv-stderr.log`.
 - **SIGFPE / SIGSYS (8 / 31)** — arithmetic trap or a rejected system call. They are uncommon,
-  but both Sentry and the local tracer cover them so an internal daemon write failure still leaves
-  a bounded record.
+  and the tracer covers them with the same bounded record.
 - **No signal at all, app just gone** — not a caught crash. Check the SAM exit status, an
   OOM/memchute kill, or a deliberate close.
 
@@ -253,10 +245,8 @@ tools/tv-ssh ssh tv "rm -f $RUN/dispatcharrtv-crashtest"
 - **`lr=0x0` is normal** for a signal delivered asynchronously; only `pc` is meaningful then.
 - **There are no system crashd reports to pull.** `/var/log/reports/librdx/` is empty by
   construction and this bullet used to say the opposite — that the re-raise produces real
-  backtraces there. Do not confuse LG's absent `crashd` output with the app's shipped
-  `sentry-crash` daemon: the latter hands its envelope to the telemetry queue and normally leaves
-  no report file behind after a healthy restart. For consent-off/unconfigured builds, use
-  `pkg/dispatcharrtv.debug` and `addr2line` on the local fault event.
+  backtraces there. Use `pkg/dispatcharrtv.debug` and `addr2line` on the local fault
+  event; the crash log's `img:` marker names the build id it must match.
 - **Older notes say `/tmp/poc-*`.** The app was renamed; the names are all `dispatcharrtv-*` now,
   and they sit in the install's runtime root rather than always in `/tmp`.
 - **`com.magness.dispatcharrtv` is a PREFIX of `com.magness.dispatcharrtv.debug`.** Anything that picks a crash

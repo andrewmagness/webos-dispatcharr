@@ -1,5 +1,6 @@
-//! Shared durable tier for all Plex image transcodes and for the images the app bakes from them
-//! (a collection's fan, [`classify_baked`]). The poster workers own fetch/decode/bake;
+//! Shared durable tier for the images the app fetches by URL ([`classify_direct`]: channel logos),
+//! and for the Plex image transcodes and baked images ([`classify`], [`classify_baked`]) the code
+//! still carries from PlxNative. The poster workers own fetch/decode/bake;
 //! this module owns canonical identities, bounded disk storage, and sign-out generations.
 //!
 //! The index is scanned once, lazily on a worker's first access. Steady-state reads/writes use
@@ -141,6 +142,25 @@ pub fn classify_baked(
     let dims = format!("{w}x{h}");
     let mut identity = Vec::new();
     for field in ["plx-baked-v1", namespace, kind, rating_key, stamp, &dims] {
+        identity.extend_from_slice(&(field.len() as u64).to_le_bytes());
+        identity.extend_from_slice(field.as_bytes());
+    }
+    Some(DiskKey {
+        name: format!("image-{}.img", hex_digest(&identity)),
+        legacy: None,
+    })
+}
+
+/// The durable key of an image fetched by its own URL — the app's `tex::DIRECT` origin, which is
+/// what a channel logo is. Its identity is its own versioned domain: the namespace (the URL's
+/// origin) and the whole key the caller built, which names the URL and the box the image is fitted
+/// to, so each box is its own entry. No field is a credential: a direct image is fetched without one.
+pub fn classify_direct(namespace: &str, key: &str) -> Option<DiskKey> {
+    if namespace.is_empty() || key.is_empty() {
+        return None;
+    }
+    let mut identity = Vec::new();
+    for field in ["plx-direct-v1", namespace, key] {
         identity.extend_from_slice(&(field.len() as u64).to_le_bytes());
         identity.extend_from_slice(field.as_bytes());
     }

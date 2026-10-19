@@ -80,6 +80,18 @@ fn keys_include_namespace_source_version_and_every_transform() {
 }
 
 #[test]
+fn direct_keys_are_their_own_domain_and_name_the_url_and_box() {
+    let k = classify_direct("direct:http://192.0.2.10:9191", "http://192.0.2.10:9191/logo/1#fit=240x120").unwrap();
+    assert_eq!(k, classify_direct("direct:http://192.0.2.10:9191", "http://192.0.2.10:9191/logo/1#fit=240x120").unwrap());
+    assert!(k.name.starts_with("image-") && k.name.ends_with(".img"), "the index recognises it");
+    assert!(k.legacy.is_none());
+    assert_ne!(k, classify_direct("direct:http://192.0.2.10:9191", "http://192.0.2.10:9191/logo/1#fit=480x240").unwrap());
+    assert_ne!(k, classify_direct("direct:http://192.0.2.11:9191", "http://192.0.2.10:9191/logo/1#fit=240x120").unwrap());
+    assert_eq!(classify_direct("", "x"), None);
+    assert_eq!(classify_direct("direct:x", ""), None);
+}
+
+#[test]
 fn baked_keys_are_stable_versioned_by_stamp_and_carry_no_request() {
     let key = |ns: &str, kind: &str, rk: &str, stamp: &str, w: u32, h: u32| {
         classify_baked(ns, kind, rk, stamp, w, h).map(|k| k.name)

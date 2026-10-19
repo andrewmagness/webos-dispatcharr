@@ -259,9 +259,15 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      # Neither a Rust toolchain nor SDL: `check-python` never invokes cargo (its self-tests that
-      # mention one use fakes) and links nothing. The ~70 gates are ci/check-python-steps.txt, run
+      # No SDL: `check-python` links nothing. The ~70 gates are ci/check-python-steps.txt, run
       # concurrently by tools/check-parallel.py: as many at once as the runner has cores (4 here, cap 4).
+      # Two of them do run the real toolchain (ci/test_host_threads.py's `rustc +nightly` probe and
+      # ci/test_build_budgets.py's `cargo +nightly tree`), so nightly is installed once, here: left to
+      # rustup's install-on-first-use, two steps that happen to start together race the same install
+      # and the loser reads "missing manifest in toolchain" (#46, twice in a row).
+      - name: Install nightly Rust
+        run: rustup toolchain install nightly --profile minimal
+
       - name: make check-python-rest
         run: make check-python-rest
 

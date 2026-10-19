@@ -121,12 +121,12 @@ The invariant half lives in [`docs/install-and-verify.md`](../install-and-verify
 ````markdown
 ## Installing
 
-Download **com.beb.dispatcharrtv_X.Y.Z_arm.ipk** and install it with the [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) or [dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop). You do **not** need a rooted TV.
+Download **com.magness.dispatcharrtv_X.Y.Z_arm.ipk** and install it with the [Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel) or [dev-manager-desktop](https://github.com/webosbrew/dev-manager-desktop). You do **not** need a rooted TV.
 
 Nothing in this distribution chain is signed, so this sha256 is what tells you the file you have is the file published here:
 
 ```
-__IPK_SHA256__  com.beb.dispatcharrtv_X.Y.Z_arm.ipk
+__IPK_SHA256__  com.magness.dispatcharrtv_X.Y.Z_arm.ipk
 ```
 
 [Installing and checking a download](https://github.com/andrewmagness/webos-dispatcharr/blob/main/docs/install-and-verify.md) covers the other assets, how to check the hash on each platform, and the Developer Mode expiry that uninstalls your apps. This package bundles FFmpeg under LGPL-2.1-or-later and its complete corresponding source is attached to this release. Exactly what was built, verified and shipped is in the [technical audit for vX.Y.Z](https://github.com/andrewmagness/webos-dispatcharr/blob/main/docs/release-audits/vX.Y.Z.md).

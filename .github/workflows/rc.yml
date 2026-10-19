@@ -22,8 +22,9 @@ name: Release candidate
 # the next one. Delete the tag (and any release) first to reuse it.
 #
 # DRY RUNS — `dry_run: true`, and any same-repo pull request that touches this file or ci/rc.py —
-# build the line as it stands under the next candidate number, check the release note and audit of
-# the version the bump would cut, and commit, push and publish nothing. Fork pull requests are skipped.
+# build the line under the next candidate number with the bump committed locally (build-package.yml's
+# `bump-to`), so the note, the audit and the package are those of the version a real run would cut,
+# and push and publish nothing. Fork pull requests are skipped.
 
 on:
   workflow_dispatch:
@@ -156,6 +157,9 @@ jobs:
       # The released id: a candidate is the release build of the app users install.
       flavor: stable
       rc: ${{ needs.prepare.outputs.rc }}
+      # A dry run pushed no bump commit, so the build makes it locally: what is built is what a
+      # real candidate of this version would tag.
+      bump-to: ${{ needs.prepare.outputs.dry == 'true' && needs.prepare.outputs.version || '' }}
       artifact: rc-assets
       homebrew-manifest: false
       source-asset: true

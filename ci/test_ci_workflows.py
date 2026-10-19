@@ -159,6 +159,28 @@ class NightlyHomebrewRepository(unittest.TestCase):
         self.assertNotIn('label="$version${nightly_date:+-nightly-$nightly_date}', build)
 
 
+class CandidateDryRun(unittest.TestCase):
+    """A dry run rehearses the candidate a real run would cut. It planned and built the version
+    already written, so before the first release it asked for v0.0.0's note and packaged a stable
+    0.0.0 the release-documents gate refuses (#46, #47): every dry run failed for a reason no real
+    candidate could hit."""
+
+    def test_prepare_applies_the_bump_in_a_dry_run_too(self):
+        step = code("rc.yml").split("name: Bump the version and plan the candidate", 1)[1].split("- name:", 1)[0]
+        bump = step.index('python3 ci/bump-version.py "$SPEC"')
+        self.assertLess(bump, step.index('if [ "$DRY" = true ]'), "the bump must not sit in the real-run arm only")
+
+    def test_the_dry_build_commits_the_planned_version_and_a_real_one_builds_its_tag(self):
+        self.assertIn("bump-to: ${{ needs.prepare.outputs.dry == 'true' && needs.prepare.outputs.version || '' }}",
+                      code("rc.yml"))
+        build = code("build-package.yml")
+        step = build.split("name: Commit the dry run's version bump (local only)", 1)[1].split("- name:", 1)[0]
+        self.assertIn("if: inputs.bump-to != ''", step)
+        self.assertIn('git commit', step)
+        self.assertNotIn("git push", step)
+        self.assertLess(build.index("Commit the dry run's version bump"), build.index("name: Build + package"))
+
+
 class HostToolTests(unittest.TestCase):
     def test_ffmpeg_and_ass_tests_run_in_their_own_job(self):
         sim = code("simulators.yml")

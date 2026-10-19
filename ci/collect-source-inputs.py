@@ -58,7 +58,7 @@ def main():
     root, output = args.root.resolve(), args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     source_rows, deps = [], []
-    for name, recipe in [('ffmpeg', 'ci/build-ffmpeg.sh'), ('sentry-native', 'ci/build-sentry-native.sh')]:
+    for name, recipe in [('ffmpeg', 'ci/build-ffmpeg.sh')]:
         text = (root / recipe).read_text()
         version = re.search(r'^VERSION=([^\s]+)', text, re.M).group(1)
         checksum = re.search(r'^SHA256=([a-f0-9]{64})', text, re.M).group(1)

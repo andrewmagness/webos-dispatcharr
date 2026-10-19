@@ -350,7 +350,7 @@ jobs:
     if: always() && needs.guard.result == 'success' && needs['legal-gate'].result == 'success'
     # The ARM build+verify pipeline itself lives in build-package.yml — shared with nightly.yml so
     # the two stop being hand-kept copies of one job. This job only carries the release-specific
-    # decisions: which ref, which flavour, which telemetry pair, which optional steps.
+    # decisions: which ref, which flavour, which optional steps.
     uses: ./.github/workflows/build-package.yml
     with:
       ref: ${{ needs.guard.outputs.tag }}
@@ -363,10 +363,6 @@ jobs:
       # package deliberately does not write that released asset name) — a loud failure naming a
       # checksum rather than a flavour.
       flavor: stable
-      # The PRODUCTION telemetry endpoints, compiled in from `vars` rather than `secrets`
-      # DELIBERATELY — see build-package.yml's own comment on the point. Only SENTRY_AUTH_TOKEN,
-      # passed as a secret below, can read or delete the project.
-      telemetry: production
       artifact: release-assets
       homebrew-manifest: true
       source-asset: true
@@ -374,8 +370,6 @@ jobs:
       # dispatcharrtv-storage too (its DT_NEEDED list is ci/expected-dt-needed-storage.txt), so it owes the same
       # gate webosbrew-ipk-verify's per-package verdict does not replace.
       fwcompat: true
-    secrets:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   publish:
     name: publish release

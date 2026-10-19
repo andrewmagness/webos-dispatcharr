@@ -65,6 +65,5 @@ The app, its packaging, and the host-side tools in `tools/` and `ci/`. The thing
 No account of its own, no server, no payment path, and no user-generated content. It signs in to
 **your** Dispatcharr server and plays **your** channels.
 
-The code can send crash reports and usage analytics, but only with ingest keys baked in at build
-time, and this repository sets none: a build made from it has nowhere to send them. If that changes,
-[PRIVACY.md](PRIVACY.md) will say what is sent and the app will ask first.
+The app has no crash reporting, error reporting or usage analytics, and sends nothing to its
+developer ([PRIVACY.md](PRIVACY.md)).

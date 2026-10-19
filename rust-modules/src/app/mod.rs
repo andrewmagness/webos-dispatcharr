@@ -291,7 +291,6 @@ pub(crate) struct App {
     pub(crate) input: plx_ui::input::Input,
     /// `text::take_measure_fault` has been reported once (the report is once per process).
     measure_fault_logged: bool,
-    pub(crate) telemetry_guard: Option<plx_telemetry::telemetry::native::Guard>,
     /// The present gate as a machine (spec §4.4). `plx_machine::idle` is still the product's verdict on
     /// this loop; this one receives the render cache's notes and is what `dispatch` takes over.
     present: plx_machine::present::Present,
@@ -339,12 +338,7 @@ impl App {
 /// phase-function split of ONGOING per-frame work like `app/run.rs`'s, but the one-shot bring-up sequence, and
 /// splitting it out changes nothing about when any of it runs.
 ///
-/// Returns the telemetry guard, which MUST outlive the whole process — `plx_telemetry::telemetry::boot`'s
-/// own doc: the crash channel's scope is snapshotted here, and `diag::event` reads its live
-/// published decision for the rest of the run, not only for as long as this function's own stack
-/// frame exists. `run_application` binds it as `_telemetry_guard` for exactly that reason: a bare
-/// `pre_boot_diagnostics();` would drop it at the end of THIS call, before a single frame ran.
-fn pre_boot_diagnostics() -> plx_telemetry::telemetry::native::Guard {
+fn pre_boot_diagnostics() {
     install_panic_logger();
     // WHICH INSTALL wrote this log. First line, before anything can fail.
     //
@@ -384,35 +378,18 @@ fn pre_boot_diagnostics() -> plx_telemetry::telemetry::native::Guard {
     // every document that tells a human to read the first line to learn which install wrote a log
     // means the `install:` one.
     log(&plx_base::paths::app_dir_line());
-    // Before the crash backend is armed, identify the firmware it would need to report. Sentry's
-    // scope is snapshotted into the crash event file during `telemetry::boot`; probing afterwards
-    // leaves only `Linux 4.4.84`, which does not distinguish webOS releases at all. This reads one
-    // flat platform file and cannot fail the boot. The crash channel receives only the reviewed
-    // compatibility fields (webOS/API/model/SoC/hardware revision), never device identifiers.
+    // Identify the firmware early: the event log's next lines are read beside it. This reads one
+    // flat platform file and cannot fail the boot.
     plx_platform::tv::probe_device();
     // libwayland reads `WAYLAND_DEBUG` when SDL connects the display: same "before anything can
-    // read it" rule. It writes the environment, so it runs BEFORE `telemetry::boot`: sentry-native's
-    // `sentry_init` starts its own "sentry-tele" worker threads (logs/metrics are on by default in
-    // 0.16.6), after which `set_var` would race any `getenv` they make.
+    // read it" rule, and it writes the environment, so it runs before any worker thread exists.
     crate::dev::arm_wayland_debug();
-    // The stored telemetry decision, BEFORE the first event can be reported — `diag::event` reads
-    // a snapshot this publishes, and with none installed it refuses everything. So the ordering is
-    // the fail-closed guarantee, not a convenience.
-    let telemetry_guard = plx_telemetry::telemetry::boot();
-    // …and then, if asked, DIE. `dispatcharrtv-crashtest` is the instrument for the instrument: both
-    // the C fallback and (when consented/configured) the out-of-process native recorder are now
-    // armed, so this trigger grades the reporter users actually run. It remains before SDL so a
+    // …and then, if asked, DIE. `dispatcharrtv-crashtest` is the instrument for the crash tracer:
+    // it grades the crash log a television actually writes. It remains before SDL so a
     // playback/UI regression cannot make the instrument unreachable. Compiled out with
     // `devtriggers`; a no-op in every other build.
     crate::dev::crash_on_purpose();
     crate::dev::softfloat_probe();
-    // The first reportable event, and it is a marker with no fields on purpose — everything that
-    // would qualify a launch (model, firmware, version, locale) is a session constant and belongs
-    // in a sender's envelope, not repeated on every record. It reaches PostHog when the usage
-    // switch is on and this build carries a key; `plx_telemetry::diag::event` is the gate and fails closed
-    // on either. (This comment said "nothing listens today" for as long as that was true and for a
-    // while after.)
-    plx_telemetry::diag::event(plx_telemetry::diag::schema::DiagEvent::AppLaunch);
     // And what it DECODES, from the device's own codec table — the capability profile and the
     // direct-play gate derive from this instead of asserting the dev TV's abilities as universal
     // (issue #22's bug class). Same contract as
@@ -438,7 +415,6 @@ fn pre_boot_diagnostics() -> plx_telemetry::telemetry::native::Guard {
     // Last: the worker must observe every boot-time environment/trigger mutation above, while a
     // controlled replay which deliberately skips this preflight keeps the conservative Unknown.
     plx_platform::tv::start_capability_probe();
-    telemetry_guard
 }
 
 /// The run+teardown sequence `run_application` hands the mounted `App` to, split out for the same
@@ -455,15 +431,10 @@ fn enter_application() -> Result<App,c_int> {
     // What the app reports as its version is this build's `PLX_VERSION`, which a
     // `cargo:rustc-env` makes visible to this crate only; before anything can build a header.
     plx_base::identity::set_version(env!("PLX_VERSION"));
-    // The release every telemetry report carries, composed here because the packaged binary is
-    // graded for this exact contiguous string (`ci/check-package.py`); second, before anything can
-    // build an envelope or an SDK option.
-    plx_telemetry::telemetry::set_release(concat!("dispatcharrtv@", env!("PLX_VERSION")));
-    // Telemetry erases the player's in-memory error trace (withdrawal, sign-out, its own boot load
-    // below) through a hook that is a no-op while unset. On every boot, before anything can play:
-    // a failed preview seals a trace without ever passing `player::report::requested`.
-    plx_media::player::report::install_trace_eraser();
-    let telemetry_guard = pre_boot_diagnostics();
+    // The build's release name, composed as one contiguous literal because `ci/check-package.py`
+    // grades the packaged binary for exactly this string; the event log's first lines carry it.
+    log(concat!("release: dispatcharrtv@", env!("PLX_VERSION")));
+    pre_boot_diagnostics();
     // Resolve the diagnostic latches' filesystem state outside `FrameScope`, so their first `stat`
     // cannot happen from a render frame.
     plx_data::metadata::prewarm_dv_latches();
@@ -471,8 +442,7 @@ fn enter_application() -> Result<App,c_int> {
     // Diagnostics probes `app_dir()` on its worker, so starting it earlier races that preamble.
     plx_platform::storage::diagnostics::start(env!("PLX_VERSION"));
     let main_thread = unsafe { plx_base::task::MainThread::assume() };
-    let mut app = unsafe { boot(main_thread) }?;
-    app.telemetry_guard = Some(telemetry_guard);
+    let app = unsafe { boot(main_thread) }?;
     Ok(app)
 }
 

@@ -29,7 +29,6 @@ FILE *elogf = NULL;   /* shared event/diagnostic log (extern in app.h); used by 
  * also append to the same file. */
 
 extern int plx_run(void);  /* the Rust app core; the server and API key come from the stored account */
-extern int plx_sentry_spool_external(const char *path); /* Sentry daemon's spool-only re-entry */
 extern void plx_crash_write_image_marker(int fd); /* identify this binary in the append-only log */
 
 /* Where this INSTALL's runtime files live — `/tmp/dispatcharrtv-events.log` for the app users get,
@@ -153,12 +152,7 @@ static int open_fd_log(const char *path, int flags) {
     return fd;
 }
 
-int main(int argc, char **argv) {
-    /* Sentry Native launches this executable with exactly one envelope path after the crashed
-     * process is already beyond saving. Recognise and move it BEFORE opening (and truncating) any
-     * ordinary app log, starting SDL, or arming another handler. A lookalike argument returns 0 and
-     * proceeds as a normal launch; Rust validates the exact SDK directory, UUID and file type. */
-    if (argc == 2 && plx_sentry_spool_external(argv[1])) return 0;
+int main(void) {
     elogf = open_event_log();
     /* The crash handler's own descriptors, both opened BEFORE `install_crash_tracer` arms the
      * handler — so a signal can never reach code that has to open something first, which is the

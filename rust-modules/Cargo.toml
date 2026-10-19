@@ -1,5 +1,5 @@
 # A cargo workspace with this package as its ROOT; the other members are the storage helper and the
-# layer crates split out of the application so far (base/, machine/, net/, platform/, gfx/, ui/, dispatcharr/, telemetry/, data/, media/, appkit/, screens/;
+# layer crates split out of the application so far (base/, machine/, net/, platform/, gfx/, ui/, dispatcharr/, data/, media/, appkit/, screens/;
 # docs/module-layers.md).
 # The root keeps the literal `version` below (release tooling reads it), `make`/CI run their usual
 # commands from this directory against this package (a bare `cargo test`/`check`/`build` here still
@@ -14,7 +14,6 @@ members = [
     "gfx",
     "ui",
     "dispatcharr",
-    "telemetry",
     "data",
     "media",
     "appkit",
@@ -91,7 +90,6 @@ devtriggers = [
     "plx_platform/devtriggers",
     "plx_gfx/devtriggers",
     "plx_ui/devtriggers",
-    "plx_telemetry/devtriggers",
     "plx_data/devtriggers",
     "plx_media/devtriggers",
     "plx_appkit/devtriggers",
@@ -121,31 +119,7 @@ lab-diagnostics = ["plx_base/lab-diagnostics", "plx_net/lab-diagnostics", "plx_p
 # `plx_ui` is the one crate with a `cfg` on it.
 placeholder-sentinel = ["plx_ui/placeholder-sentinel"]
 
-# **There is no `telemetry` cargo feature, and this comment is here so nobody adds one back.**
-#
-# There WAS one, declared here, gating nothing: `mod telemetry;` in `lib.rs` was unconditional (it
-# is `plx_telemetry`'s `pub mod telemetry;` now, still unconditional), no `cfg` in the crate named it, and the `make RELEASE=1 TELEMETRY=1` this comment
-# prescribed set a variable the Makefile does not know — `RUST_FEATFLAGS` knows only `RELEASE` and
-# `LAB`. So it read as the safety argument for the whole subsystem while being a no-op, which is
-# worse than not having one. A doc audit found it.
-#
-# Ungated is also the RIGHT answer, for the reason `diag::scrub` and `diag::schema` are: the
-# guarantees here are their tests — that no identifier exists before an opt-in, that no runtime
-# string can reach the wire, that the privacy document lists every field — and a test behind a
-# feature the default gate does not build is a test that never runs. `scrub`'s 31 assertions sat
-# unexecuted for as long as they existed.
-#
-# **What actually stops a build from reporting is the ENDPOINT, not a flag**, and it is the stronger
-# guarantee of the two because it is a property of the artifact rather than of an invocation:
-# `telemetry::sender` reads its credentials through `option_env!`, so a fork, a CI runner and anyone
-# building from source compile `None` and the binary carries no address to send to. `strings` on the
-# binary settles it either way, and `.github/workflows/release.yml` asserts the production endpoints
-# ARE in the packaged bytes before it will publish — the same check, pointed the other way.
-#
-# The linked Sentry Native capture library changes that old comment's premise but not the gate: it
-# is built without a network transport and is not initialized unless BOTH a compiled endpoint and
-# stored error-report consent exist. What a reader can `strings` for is therefore still the thing
-# that makes collection possible — the endpoint — and it is absent from an unconfigured artifact.
+
 # The desktop UI simulator. OFF by default, so no ordinary `make`, `make check` or harness run is
 # affected in any way; `cargo build --features hostsim` selects it.
 #
@@ -159,7 +133,7 @@ placeholder-sentinel = ["plx_ui/placeholder-sentinel"]
 # (LG's SDL fork shifts SDL_KeyboardEvent; stock SDL2 does not), and the wayland/glib calls that
 # have no host equivalent. Everything else — all of `ui/`, the Dispatcharr client, the demux
 # orchestration — is compiled identically for both.
-hostsim = ["plx_base/hostsim", "plx_machine/hostsim", "plx_platform/hostsim", "plx_gfx/hostsim", "plx_telemetry/hostsim", "plx_data/hostsim", "plx_media/hostsim"]
+hostsim = ["plx_base/hostsim", "plx_machine/hostsim", "plx_platform/hostsim", "plx_gfx/hostsim", "plx_data/hostsim", "plx_media/hostsim"]
 
 # Warnings are ERRORS, for both workspace packages, in every cargo invocation — build, check, test, clippy, the
 # ARM cross-build and the simulator alike. The tree reached zero warnings in all four
@@ -226,11 +200,6 @@ plx_ui = { path = "ui" }
 # The dispatcharr layer (ci/module-layers.ini `[dispatcharr]`): the typed Dispatcharr REST client —
 # sign-in, the per-user API key, channels and groups.
 plx_dispatcharr = { path = "dispatcharr" }
-# The telemetry layer (ci/module-layers.ini `[telemetry]`): consent, the opt-in crash and usage
-# channels (Sentry, PostHog), the spool and worker, and the typed usage-event schema. It reports the
-# release string the application hands it (`telemetry::set_release`), and reads its credentials with `option_env!` from the build
-# environment (the Makefile's `TELEMETRY_ENV`, the release workflow), which reaches every crate.
-plx_telemetry = { path = "telemetry" }
 # The data layer (ci/module-layers.ini `[data]`): the content stores and the catalog, browse, detail,
 # person, collection, search and view-state modules they own. No screen, widget or application type.
 plx_data = { path = "data" }
@@ -305,11 +274,8 @@ plx_net = { path = "net", features = ["test-support"] }
 # Likewise the ui layer's seams (`table::assert_no_fit_failures`, `draw_census`, `tex::reset_for_test`, ...).
 plx_ui = { path = "ui", features = ["test-support"] }
 plx_dispatcharr = { path = "dispatcharr", features = ["test-support"] }
-# Likewise the telemetry layer's consent, spool and queue seams and the usage-event schema tables.
-plx_telemetry = { path = "telemetry", features = ["test-support"] }
 # Likewise the data layer's seeding and fixture seams (`pms::seed_for_test`, `metadata::set_current_for_test`, ...).
 plx_data = { path = "data", features = ["test-support"] }
-# Likewise the session layer's test fixtures (`auth::test_support`, `auth::owner::scenarios`, ...).
 # Likewise the media layer's seams (`player::restore_state_for_test`, ...).
 plx_media = { path = "media", features = ["test-support"] }
 # Likewise the appkit layer's seams (`player_hud::SkipIntervalGuard`, the `overscan_rects` audits, ...).

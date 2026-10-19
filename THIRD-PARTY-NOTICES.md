@@ -371,21 +371,7 @@ enable it) — verified absent from the binary. `rustc-literal-escaper`, `proc_m
   under GPL section 1.
 - **The auxv compatibility seam** (`src/compat/getauxval.c`), GPL-3.0-or-later. It supplies a bounded immutable process snapshot for the Rust runtime. Project-local linker guards exclude the old NDK `libglibc_polyfills.a` from every newly built ELF.
 
-### 2.6 Native crash capture
-
-**Sentry Native 0.16.6** — Copyright (c) 2019 Sentry and individual contributors. Licence:
-**MIT** (`licenses/MIT.txt`). Its client library is statically linked into `dispatcharrtv`; the
-out-of-process `sentry-crash` handler is shipped beside it. The handler is built with its HTTP
-transport disabled: it writes a crash envelope for the application's consent-aware sender to deliver on
-the next launch. The source is patched for webOS's glibc 2.12 syscall surface and the 32-bit ARM
-APCS frame layout; the pinned source hash and complete patch are in `ci/build-sentry-native.sh` and
-`vendor/sentry-native/webos-arm32.patch`.
-
-**libunwind** (the copy vendored by Sentry Native) — Copyright (c) 2002 Hewlett-Packard Co.
-Licence: **MIT** (`licenses/MIT.txt`). It is statically linked into both the client and crash
-handler and is used to initialise the ARM unwind machinery outside signal context.
-
-### 2.7 Public CA root certificates
+### 2.6 Public CA root certificates
 
 **ISRG Root X1, ISRG Root X2, ISRG Root YR and ISRG Root YE** — `le-roots.pem`. Four self-signed
 root *certificates* (public keys and names, no private material) of the Internet Security Research
@@ -456,7 +442,7 @@ runtime notices listed below:
 | File | Required by |
 |---|---|
 | `licenses/LGPL-2.1.txt` | FFmpeg, FriBidi, GLib, GNU C Library (§1) — GNU Lesser General Public License, version 2.1 |
-| `licenses/MIT.txt` | Feather Icons, Heroicons, the MIT-elected Rust packages, Sentry Native and libunwind (§2.2, §2.4, §2.6). One copy of the MIT text; the copyright holders it refers to are the ones named in this file |
+| `licenses/MIT.txt` | Feather Icons, Heroicons and the MIT-elected Rust packages (§2.2, §2.4). One copy of the MIT text; the copyright holders it refers to are the ones named in this file |
 | `licenses/Apache-2.0.txt` | Google Material Design Icons; calendrical_calculations; moxcms; pxfm; compiler_builtins (§2.2, §2.4) |
 | `licenses/LLVM-exception.txt` | compiler_builtins (§2.4) |
 | `licenses/Unicode-3.0.txt` | Unicode Character Database tables in Rust `core` (§2.4) — UNICODE LICENSE V3, "Copyright © 1991-2024 Unicode, Inc." |

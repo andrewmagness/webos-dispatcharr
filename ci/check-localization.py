@@ -324,7 +324,7 @@ LAYER_SRCS = ('rust-modules/platform/src', 'rust-modules/gfx/src', 'rust-modules
 # also took `PlaybackQuality::label`, the quality row's text, out of the listed `route/decision.rs`)
 # a boundary naming one of its constants would pass unread.
 CONST_SRCS = (*LAYER_SRCS, 'rust-modules/base/src', 'rust-modules/machine/src', 'rust-modules/net/src',
-              'rust-modules/telemetry/src', 'rust-modules/data/src',
+              'rust-modules/data/src',
               'rust-modules/media/src',
               'rust-modules/appkit/src',
               'rust-modules/screens/src')

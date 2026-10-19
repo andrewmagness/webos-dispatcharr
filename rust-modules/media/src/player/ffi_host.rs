@@ -306,13 +306,6 @@ pub(super) fn force_callback_intercepts_for_test(value: u32) {
 pub(super) fn lifecycle_blocked_for_test() -> bool {
     LIFECYCLE_BLOCKED.load(Relaxed)
 }
-/// Make the seam's own D1 evidence disagree with Rust's: `sf_destroy` answers 0 and latches the
-/// quarantine even though every proof Rust holds says Destroy. Cleared by
-/// [`reset_native_lifecycle_for_test`].
-#[cfg(test)]
-pub(super) fn force_destroy_refusal_for_test(on: bool) {
-    FORCE_DESTROY_REFUSAL.store(on, Relaxed);
-}
 #[cfg(test)]
 pub(super) fn force_object_ready_for_test(on: bool) {
     OBJECT_READY.store(on, Relaxed);

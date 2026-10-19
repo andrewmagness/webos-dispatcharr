@@ -33,7 +33,6 @@ pub mod ffi;
 #[cfg(feature = "hostsim")]
 pub mod ffi_host;
 mod pump;
-pub mod report;
 mod shared;
 #[cfg(feature = "hostsim")]
 pub mod sim_video; // the simulator's decoded picture, for screenshots (see its doc)
@@ -471,7 +470,6 @@ pub fn ended() -> bool {
     SHARED.ended.load(Relaxed)
 }
 pub fn request_seek(ns: i64) {
-    report::note_seek_for(crate::route::playback_trace_generation());
     crate::route::note_user_seek_intent(ns);
     SHARED.ended.store(false, Relaxed); // seeking back from the end un-ends the stream
     SHARED.seeking.store(true, Relaxed); // HUD: spinner + freeze the playhead until it lands
@@ -578,26 +576,18 @@ pub enum FailureKind {
 }
 
 impl FailureKind {
-    /// The telemetry wire class of this cause. The wire schema is telemetry's
-    /// (`telemetry::classes::FailureClass`), so this match is the ONE place the player's own enum
-    /// is turned into it, and a new variant cannot compile without choosing its class.
-    pub fn class(self) -> plx_telemetry::telemetry::classes::FailureClass {
-        use plx_telemetry::telemetry::classes::FailureClass as C;
-        match self {
-            FailureKind::NoVideoTrack => C::NoVideoTrack,
-            FailureKind::MediaSource => C::MediaSource,
-            FailureKind::PlaybackInterrupted => C::PlaybackInterrupted,
-            FailureKind::TvPipeline => C::TvPipeline,
-            FailureKind::JailMissingRtkmem => C::JailMissingRtkmem,
-            FailureKind::LoadTimeout => C::LoadTimeout,
-            FailureKind::Unspecified => C::Unspecified,
-        }
-    }
-
-    /// The stable wire code, which is its class's: the read-out's support line and the telemetry
-    /// channel quote one string because they read one table.
+    /// The stable code the read-out's support line quotes. Written out rather than derived from
+    /// the variant name, so a rename cannot change what a viewer reads out to a helper.
     pub fn code(self) -> &'static str {
-        self.class().code()
+        match self {
+            Self::NoVideoTrack => "no_video_track",
+            Self::MediaSource => "media_source",
+            Self::PlaybackInterrupted => "playback_interrupted",
+            Self::TvPipeline => "tv_pipeline",
+            Self::JailMissingRtkmem => "jail_missing_rtkmem",
+            Self::LoadTimeout => "load_timeout",
+            Self::Unspecified => "unspecified",
+        }
     }
 }
 
@@ -1872,12 +1862,11 @@ mod tests {
         ];
         for (kind, code) in table {
             assert_eq!(kind.code(), code, "{kind:?}");
-            assert_eq!(kind.class().code(), code, "{kind:?}");
         }
-        let mut classes: Vec<_> = table.iter().map(|(kind, _)| kind.class().code()).collect();
-        classes.sort_unstable();
-        classes.dedup();
-        assert_eq!(classes.len(), table.len(), "two causes share one wire class");
+        let mut codes: Vec<_> = table.iter().map(|(kind, _)| kind.code()).collect();
+        codes.sort_unstable();
+        codes.dedup();
+        assert_eq!(codes.len(), table.len(), "two causes share one code");
     }
 
     #[test]

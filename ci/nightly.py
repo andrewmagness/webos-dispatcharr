@@ -88,8 +88,8 @@ def next_nightly_version() -> str:
 
 
 def nightly_label(version: str, date: str) -> str:
-    """`X.Y.Z-nightly-YYYYMMDD` — the one string this build reports everywhere (Sentry release,
-    `X-Plex-Version`, the diagnostics panel) and the one a bug report names."""
+    """`X.Y.Z-nightly-YYYYMMDD` — the one string this build reports everywhere (the User-Agent,
+    the boot log's release line, the diagnostics panel) and the one a bug report names."""
     return f"{version}-nightly-{date}"
 
 

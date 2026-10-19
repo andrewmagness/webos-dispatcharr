@@ -285,7 +285,7 @@ def validate(path, expected_snapshot=None, private_values=()):
     ids = [dep['id'] for dep in dependencies]
     if len(ids) != len(set(ids)):
         fail('duplicate dependency identity')
-    for required in ['ffmpeg', 'sentry-native', 'cargo-vendor', 'rust-runtime']:
+    for required in ['ffmpeg', 'cargo-vendor', 'rust-runtime']:
         if required not in ids:
             fail('missing dependency source mapping: ' + required)
     # Older source bundles predate the renderer. For a tree carrying its build

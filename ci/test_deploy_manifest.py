@@ -39,9 +39,8 @@ class DeployManifest(unittest.TestCase):
             with self.subTest(flavor=flavor):
                 app_files = make_print("print-app-files", flavor)
                 deploy_files = make_print("print-deploy-files", flavor)
-                handler_bin = make_print("print-sentry-handler", flavor)
                 ffmpeg_libs = make_print("print-ffmpeg-staged", flavor)
-                carve_outs = {"pkg/dispatcharrtv", *handler_bin, *ffmpeg_libs}
+                carve_outs = {"pkg/dispatcharrtv", *ffmpeg_libs}
                 # LAB_FILES is empty unless LAB=1 is passed, and this test never sets it — so the
                 # session file never appears in either list here, and is asserted separately below.
                 expected = [f for f in app_files if f not in carve_outs]

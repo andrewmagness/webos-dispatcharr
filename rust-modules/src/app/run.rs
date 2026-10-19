@@ -331,7 +331,6 @@ unsafe fn prepare_window(app: &mut App, fr: &mut Frame) {
     // asked: it takes-and-clears the damage the deferred frame still needs.)
     fr.deferred = !fr.present && plx_gfx::gfx::snapshot_pending() && app.window_activity.allow_present(true);
     if fr.present {
-        app.window_activity.begin_present(fr.player);
     }
     // ---- step 9's UPLOAD, on the presenting side of the decision ---------------------
     //
@@ -455,7 +454,6 @@ unsafe fn present_and_swap(
             plx_platform::tv::window::frame_probe_request();
             SDL_GL_SwapWindow(app.win);
         }
-        app.window_activity.presented(fr.player);
         // One increment, then nothing: re-ask EGL for the back buffer's AGE after real
         // presents have happened. The boot reading is 0 by construction. See `egl.rs`.
         plx_gfx::egl::late_probe();
@@ -560,7 +558,6 @@ unsafe fn ingress_token(app: &mut App, fr: &mut Frame, token: &str) -> bool {
     dispatch_remote_token(token, &app.player.session)
 }
 
-
 fn ingest_text(app: &mut App, text: &str, panel: bool, source: plx_machine::machine::Source) {
     if text.is_empty() { return; }
     let at = plx_machine::machine::Tick { ms: clock::now(), dt_us: 0 };
@@ -569,20 +566,9 @@ fn ingest_text(app: &mut App, text: &str, panel: bool, source: plx_machine::mach
     plx_machine::idle::invalidate();
 }
 
-/// Revoke the borrowed SDL window handles on background. `release` answers whether a surface was
-/// held; only a real release is a crash-report step, since WILL and DID background both arrive.
+/// Revoke the borrowed SDL window handles on background.
 fn release_borrowed_window(release: impl FnOnce() -> bool) {
-    if release() {
-        window_step(plx_telemetry::telemetry::window::Stage::WaylandReleased, None);
-    }
-}
-
-/// One closed lifecycle step on a native crash event (`window::Stage`): consent-gated and a no-op
-/// while the crash backend is off. `playing` is the same flag the WILL/DID edges carry.
-fn window_step(stage: plx_telemetry::telemetry::window::Stage, playing: Option<bool>) {
-    plx_telemetry::telemetry::window::record(
-        plx_telemetry::telemetry::window::Observation::step(stage, playing),
-    );
+    release();
 }
 
 /// One polled event. Shared by ordinary polling and ordered FIFO/replay ingestion.
@@ -596,8 +582,6 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
     restore_window: impl FnOnce(*mut c_void)) {
     let et = rd_u32(&app.ev, 0);
     app.window_activity.event(et);
-    let playing = matches!(app.route(), AppArg::Player);
-    plx_telemetry::telemetry::window::lifecycle(et, playing);
     // INPUT while a popover holds the page frozen is the POPOVER's: every invalidate
     // such an event raises — the one below, and whatever its handler adds — is
     // attributed to it, so the frozen host is not re-rendered on every key-up
@@ -717,7 +701,6 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
         // The DID edge finished its work (the WILL edge is only the notice): a crash after this
         // crumb is not inside the background arm.
         if et == 0x104 {
-            window_step(plx_telemetry::telemetry::window::Stage::BackgroundDone, Some(playing));
         }
     } else if et == 0x105 || et == 0x106 {
         // WILL/DID ENTER FOREGROUND
@@ -735,7 +718,6 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
             restore_window(app.win);
             plx_machine::idle::invalidate();
             resume_parked(app);
-            window_step(plx_telemetry::telemetry::window::Stage::ForegroundDone, Some(playing));
         }
     } else if et == SDL_KEYDOWN || et == SDL_KEYUP {
         let (state, wcode, sym) = decode_key(&app.ev);
@@ -1182,8 +1164,7 @@ fn resume_parked(app: &mut App) {
     }
     if let Some(tune) = plx_media::route::live_tune(&app.player.session).cloned() {
         log("live: foreground re-tune");
-        super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
-            plx_media::player::report::AttemptOrigin::Resume, &mut app.pages, &mut app.bridge);
+        super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune, &mut app.pages, &mut app.bridge);
     } else {
         plx_media::player::start_bufferfeed(&mut app.player.session, &mut app.adapters.player);
     }
@@ -1222,13 +1203,6 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             app.pages.present.note(plx_machine::present::PresentEvent::VideoPlane(bound));
             app.bridge.publish_video_plane(bound);
         }
-        // **Unconditional, and NOT inside the `is_started` block above.** `player::state()`
-        // derives two of its answers outside the pump entirely — `Resolving` while a plan is in
-        // flight, and `Error` for a `/decision` refusal, which happens before an engine exists —
-        // so gating this on a started engine would silently miss the earliest and most certain
-        // failure there is. It observes the value the HUD renders and reports only transitions,
-        // so the steady-state cost is one atomic load.
-        plx_media::player::report::tick(&mut app.player.session);
         // end-of-stream: the pipeline drained at the credits → hand off to Up Next when the
         // show has another episode queued and the Next episode preference is not Off, else leave
         // the player (back to the detail page or home, whichever is behind), instead of freezing
@@ -1245,8 +1219,7 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
                             super::dispatcharr::remember_codecs(&uuid, found.clone());
                         }
                         tune.codecs = Some(found);
-                        super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
-                            plx_media::player::report::AttemptOrigin::Recovery, &mut app.pages, &mut app.bridge);
+                        super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune, &mut app.pages, &mut app.bridge);
                     }
                 }
             }
@@ -1260,8 +1233,7 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             // dropped. Tune the same channel again, on the page that is already up.
             log("live: the stream ended; reconnecting");
             if let Some(tune) = plx_media::route::live_tune(&app.player.session).cloned() {
-                super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
-                    plx_media::player::report::AttemptOrigin::Recovery, &mut app.pages, &mut app.bridge);
+                super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune, &mut app.pages, &mut app.bridge);
             }
         } else if playback_may_run(app) && super::bridge::player(&app.pages).is_some() && plx_media::player::ended() {
             if live_ended {
@@ -1615,7 +1587,6 @@ pub(crate) unsafe fn report(app: &mut App, fr: &mut Frame) {
         // reach the wire — see `diag::schema`.
         if fr.rn != app.last_route_reported {
             app.last_route_reported = fr.rn;
-            plx_telemetry::diag::event(plx_telemetry::diag::schema::DiagEvent::RouteEntered { screen: fr.rn });
         }
         // The lab envelope's `route` field, from the SAME name the heartbeat and the focus
         // fingerprint print — a snapshot that disagreed with the log about which screen the
@@ -1846,7 +1817,6 @@ pub(crate) unsafe fn shutdown(
     ps: &mut plx_media::route::PlaybackSession,
     pa: &mut plx_media::player::adapter::PlayerAdapter,
 ) {
-    plx_media::player::report::abandon_pending();
     if is_started() {
         plx_media::player::stop_bufferfeed(ps, pa);
     }
@@ -1898,7 +1868,6 @@ mod lifecycle_regression_tests {
             scenarios: Default::default(),
             input: plx_ui::input::Input::new(),
             measure_fault_logged: Default::default(),
-            telemetry_guard: Default::default(),
             present: plx_machine::present::Present::new(),
             glass: Default::default(),
             pages: plx_ui::dispatch::Dispatcher::new(),
@@ -1928,55 +1897,6 @@ mod lifecycle_regression_tests {
         }
     }
 
-    /// Crash-report consent for the test's duration, so `window::record` reaches its test capture;
-    /// the previous answer comes back on drop.
-    struct CrashReports(Option<plx_telemetry::telemetry::consent::Consent>);
-
-    impl CrashReports {
-        fn granted() -> Self {
-            use plx_telemetry::telemetry::consent::{self, Consent};
-            let previous = consent::current();
-            let mut granted = Consent::default();
-            granted.errors = true;
-            granted.asked_version = consent::POLICY_VERSION;
-            consent::install(granted);
-            plx_telemetry::telemetry::window::take_recorded_for_test();
-            Self(previous)
-        }
-    }
-
-    impl Drop for CrashReports {
-        fn drop(&mut self) {
-            plx_telemetry::telemetry::consent::install(self.0.take().unwrap_or_default());
-            plx_telemetry::telemetry::window::take_recorded_for_test();
-        }
-    }
-
-    /// S12a: one WILL/DID background and foreground cycle leaves exactly these closed steps, in
-    /// this order. `*_done` close the DID edges only (the WILL edge has not finished the step), and
-    /// the rig holds no Wayland surface, so no `wayland_released` appears.
-    #[test]
-    fn background_cycle_records_closed_steps_in_order() {
-        let _serial = plx_base::testlock::serial();
-        let _consent = CrashReports::granted();
-        let mut app = app();
-        let mut fr = Frame::begin();
-        for et in [0x103, 0x104, 0x105, 0x106] {
-            event(&mut app, &mut fr, et);
-        }
-        assert_eq!(
-            plx_telemetry::telemetry::window::take_recorded_for_test(),
-            [
-                "will_background",
-                "did_background",
-                "background_done",
-                "will_foreground",
-                "did_foreground",
-                "foreground_done",
-            ],
-        );
-    }
-
     /// **An app switch parks a stream and the foreground starts it again.** A channel is not
     /// resumed at a position: background stops the stream (freeing the server's slot) and marks the
     /// player parked; the DID foreground clears the park and starts playback afresh, at the live
@@ -1999,8 +1919,7 @@ mod lifecycle_regression_tests {
             url: "http://127.0.0.1:9/stream.ts".into(), logo: None, programmes: Vec::new() }];
         let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
         let tune = LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None };
-        assert!(plx_media::route::request_live(&mut app.player.session, tune,
-            plx_media::player::report::AttemptOrigin::Fresh, 0));
+        assert!(plx_media::route::request_live(&mut app.player.session, tune, 0));
         for et in [0x103, 0x104] {
             event(&mut app, &mut fr, et);
         }
@@ -2038,8 +1957,7 @@ mod lifecycle_regression_tests {
             url, logo: None, programmes: Vec::new() }];
         let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
         let tune = LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None };
-        super::super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune,
-            plx_media::player::report::AttemptOrigin::Fresh, &mut app.pages, &mut app.bridge);
+        super::super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune, &mut app.pages, &mut app.bridge);
         let tick = |app: &mut App, fr: &mut Frame| {
             for _ in 0..30 {
                 fr.now += 16;
@@ -2059,17 +1977,6 @@ mod lifecycle_regression_tests {
         assert_eq!(plx_media::route::live_tune(&app.player.session).map(|t| t.index), Some(0));
         plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
         plx_media::player::force_clocksink_for_test(false);
-    }
-
-    /// `wayland_released` is a step only when a borrowed surface was actually released (the second
-    /// of WILL + DID background finds none), so a reader can tell "released" from "nothing held".
-    #[test]
-    fn wayland_release_is_a_step_only_when_a_surface_was_held() {
-        let _serial = plx_base::testlock::serial();
-        let _consent = CrashReports::granted();
-        release_borrowed_window(|| true);
-        release_borrowed_window(|| false);
-        assert_eq!(plx_telemetry::telemetry::window::take_recorded_for_test(), ["wayland_released"]);
     }
 
     #[cfg(feature = "devtriggers")]

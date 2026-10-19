@@ -10,7 +10,7 @@ submission rather than a warning:
                                 disagrees with it.
     ipkroot/ctl/control         Version: — read by opkg and by webosbrew's repogen.
     rust-modules/Cargo.toml     what every version the app REPORTS is derived from —
-                                X-Plex-Version, the telemetry release, the diagnostics panel.
+                                the User-Agent, the boot log's release line, the diagnostics panel.
                                 `rust-modules/build.rs` publishes it as `PLX_VERSION`, exactly
                                 for a RELEASE build and as the next MINOR plus `-dev` for
                                 everything else, so a working tree stops claiming to be the

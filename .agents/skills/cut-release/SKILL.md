@@ -141,8 +141,8 @@ The version lives in **four** places and `ci/check-package.py` asserts all four 
 **What the app REPORTS is derived from `Cargo.toml`, not equal to it, and the difference shows up
 on the surface you are most likely to read it from.** `rust-modules/build.rs` publishes that number
 exactly for a `RELEASE=1` build and as the **next minor plus `-dev`** for every other one, so the
-diagnostics panel, `X-Plex-Version` and the Sentry release all say `0.6.0-dev` on a developer build
-of a tree that last published `0.5.0`. A `-dev` on a photographed panel therefore means *this is
+diagnostics panel, the User-Agent and the boot log's `release:` line all say `0.6.0-dev` on a
+developer build of a tree that last published `0.5.0`. A `-dev` on a photographed panel therefore means *this is
 not a release build* — it does not mean the binary is stale, and a release build showing anything
 but the bare `X.Y.Z` means `RELEASE=1` did not take. Both the
 `ALLOW_DEV_ON_STABLE=1` reproduction build below and any `make deploy` of the debug flavour print

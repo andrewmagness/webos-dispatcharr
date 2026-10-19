@@ -22,7 +22,7 @@ if not real.is_file():sys.exit('FAIL: no NDK compiler at WEBOS_SDK: '+str(real))
 subprocess.run([sys.executable,str(root/'ci/collect-source-inputs.py'),'--archive-root',str(root),'--output',str(a.inputs),'--rust-toolchain',a.rust_toolchain],check=True)
 mapfile=a.inputs/'source-inputs.json';m=json.loads(mapfile.read_text())
 m['build_environment']['ndk']={'gcc_sha256':hashlib.sha256(real.read_bytes()).hexdigest(),'archive_policy':'ci/arm-cc.py excludes glibc-polyfills'}
-m['build_environment']['configuration']={'RELEASE':'1','FLAVOR':'stable','features':'no-default-features','private_telemetry':'excluded; reconstruction defaults without endpoints'}
+m['build_environment']['configuration']={'RELEASE':'1','FLAVOR':'stable','features':'no-default-features','telemetry':'none'}
 mapfile.write_text(json.dumps(m,indent=2)+'\n')
 subprocess.run([sys.executable,str(root/'ci/make-source-bundle.py'),'--output',str(a.output),'--dependencies',str(mapfile),'--dependency-root',str(a.inputs),'--binary',a.binary.name+'='+str(a.binary),'--private-values',str(a.private_values)],check=True)
 release=a.output.with_name(a.output.name+'.release.json');record=json.loads(release.read_text())

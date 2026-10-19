@@ -108,12 +108,11 @@ mod reconnect_budget_tests {
 /// **Change channel while watching** (`PlayerReq::Tune`): stop the stream being watched, which also
 /// frees the server's stream slot before the next one is asked for, then tune and start the new
 /// channel on the player page that is already up. The page's return target is untouched, so BACK
-/// still goes to the Guide. `origin` is why the tune is made, which a failure report carries.
+/// still goes to the Guide.
 pub(super) fn tune_channel(
     ps: &mut plx_media::route::PlaybackSession,
     pa: &mut plx_media::player::adapter::PlayerAdapter,
     tune: plx_media::route::LiveTune,
-    origin: plx_media::player::report::AttemptOrigin,
     pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
     bridge: &mut super::bridge::Bridge,
 ) {
@@ -121,7 +120,7 @@ pub(super) fn tune_channel(
     plx_media::player::mark_tune();
     let uuid = tune.channel().map(|c| c.uuid.clone()).unwrap_or_default();
     let tune = super::dispatcharr::with_known_codecs(tune);
-    if plx_media::route::request_live(ps, tune, origin, plx_dispatcharr::dispatcharr::api::unix_now()) {
+    if plx_media::route::request_live(ps, tune, plx_dispatcharr::dispatcharr::api::unix_now()) {
         super::dispatcharr::remember_last(&uuid);
         start_playback(ps, pa, Origin::Here, None, pages, bridge);
     } else {
@@ -264,16 +263,15 @@ pub(crate) fn player_requests(
     pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
     bridge: &mut super::bridge::Bridge,
 ) {
-    use plx_media::player::report::AttemptOrigin;
     use plx_screens::registry::PlayerReq;
     for req in reqs {
         match req {
-            PlayerReq::Tune(tune) => tune_channel(ps, pa, tune, AttemptOrigin::Fresh, pages, bridge),
+            PlayerReq::Tune(tune) => tune_channel(ps, pa, tune, pages, bridge),
             // *Try again* tunes the channel again.
             PlayerReq::RetryPlayback => {
                 if let Some(tune) = plx_media::route::live_tune(ps).cloned() {
                     log("live: try again");
-                    tune_channel(ps, pa, tune, AttemptOrigin::UserRetry, pages, bridge);
+                    tune_channel(ps, pa, tune, pages, bridge);
                 }
             }
             PlayerReq::RepairSandbox => {
@@ -333,10 +331,6 @@ pub(crate) fn exit_player(
     plx_media::route::cancel_play(ps); // BACK during a load: supersede, drop the landing
     close_player_overlays(pages);
     plx_media::player::stop_bufferfeed(ps, pa);
-    // `stop_bufferfeed` reports/clears a real engine through `report::ended`, but a refusal or a
-    // BACK during resolve has no engine for teardown to take. The exit ritual still ends that
-    // attempt, so retire its in-memory trace here as the common backstop.
-    plx_media::player::report::clear_error_trace();
     // The jail pre-flight refusal (also no Engine to teardown) is already retired above: it
     // lives on `ps.jail_load_blocked`, and `cancel_play` at the top of this function clears it
     // via `clear_play_verdict` the same way it clears a `/decision` refusal — see that function's
@@ -404,9 +398,6 @@ pub(crate) fn key_pause(
 ) {
     if super::bridge::player(pages).is_some() && !paused() {
         if set_transport_paused(pa, true) {
-            plx_telemetry::diag::event(plx_telemetry::diag::schema::DiagEvent::FeatureUsed {
-                feature: plx_telemetry::diag::schema::Feature::Pause,
-            });
         }
     }
     let _ = now;

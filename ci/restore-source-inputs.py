@@ -78,7 +78,7 @@ def main():
         fail('isolated Rust compiler differs from bundled runtime revision')
     destination.mkdir(parents=True)
     extract_regular(args.archive, destination)
-    source_folders = [('ffmpeg', 'vendor/ffmpeg-build'), ('sentry-native', 'vendor')]
+    source_folders = [('ffmpeg', 'vendor/ffmpeg-build')]
     ass_pins = destination / 'ci/libass-dependencies.json'
     if ass_pins.is_file():
         source_folders += [(dep['id'], 'vendor/libass-sources')

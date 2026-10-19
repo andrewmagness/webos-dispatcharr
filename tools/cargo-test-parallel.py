@@ -17,8 +17,8 @@ What it does, in order:
    inserted right after the `test` subcommand. Compiler diagnostics and progress go to this
    process's stderr exactly as cargo prints them; the JSON stream is read here. A failed build
    exits with cargo's own status. EVERYTHING after `--` is the cargo command, so the packages,
-   feature flags, toolchain (`+nightly`) and environment (CARGO_INCREMENTAL, CARGO_TARGET_DIR,
-   telemetry words) are the caller's, unchanged.
+   feature flags, toolchain (`+nightly`) and environment (CARGO_INCREMENTAL, CARGO_TARGET_DIR)
+   are the caller's, unchanged.
 2. Collects every test executable cargo reports. If the command named `-p` packages, it must
    have produced exactly one executable per package -- a package that silently stopped
    producing a test binary would otherwise shrink the gate without a failure -- and at least one

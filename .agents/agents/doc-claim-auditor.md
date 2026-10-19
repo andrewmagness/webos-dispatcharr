@@ -241,7 +241,7 @@ Confirmed present in the tree, 2026-08-23:
 4. **Lists that declare themselves partial.** See the rule above — "this lists the ones worth
    knowing by name" is an explicit disclaimer of completeness.
 5. **A doc dated in its own title.** `docs/async-model-review.md` opens "# Async model review
-   (2026-07-27)"; `docs/architecture-review-2026-07-26.md` carries its date in both filename and
+   (2026-07-27)"; a review named `<topic>-YYYY-MM-DD.md` carries its date in both filename and
    H1. Shapes 1 and 2 cover docs that print a banner — these declare the same thing in the title
    instead, and the procedure filed one anyway the first time it was run (2026-08-23): §6 of the
    async review says "`tests/run.py` (all 18…)" where the server tier is 21 today, which is not a

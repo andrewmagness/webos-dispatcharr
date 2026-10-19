@@ -1,5 +1,5 @@
-//! Bounded addressed one-shot results and explicit progress streams (§5.2; see
-//! docs/stores-as-machines.md §2 for the one-terminal-per-stream clarification).
+//! Bounded addressed one-shot results and explicit progress streams (§5.2: one terminal result per
+//! stream).
 //! Admission reserves one completion slot, bounded globally and per addressee. Capacity rejection
 //! is synchronous; the requester settles it without spawning or queueing an unbounded refusal.
 //! OS spawn refusal after admission is a reserved terminal, just like Data or Dropped.

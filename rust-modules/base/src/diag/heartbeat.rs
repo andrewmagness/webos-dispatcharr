@@ -72,7 +72,7 @@ pub fn now_us() -> u64 {
 /// so on a healthy frame nothing drained them, and the numbers printed beside the next slow frame
 /// covered every frame since the last slow one. A `FRAMEDROP` line with `up=9` on it therefore
 /// said "nine uploads since the previous drop line", which reads as this frame's cost and is not
-/// (`docs/measurements/tv-session-5-2026-09-10.md`, the 2026-09-10 reading, was taken that way).
+/// (a 2026-09-10 device reading was taken that way).
 /// The loop drains them on EVERY presented frame now and hands the result to
 /// [`Instruments::note_frame_counters`]; `frame_drop_line` only formats what it was given.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -529,8 +529,8 @@ impl Instruments {
 /// scene it re-bases (`cold-open`) could not be graded from `FRAMEDROP` without censoring itself:
 /// the detector only prints above the threshold `tests/run.py` armed it with, so every cold open
 /// FASTER than the ceiling left no line, and a run of them was graded as passes with no samples
-/// at all (`tests/run.py::grade_frame_ceilings`, and the "no-line PASS, 208.5, no-line PASS"
-/// reading in `docs/measurements/tv-session-5-2026-09-10.md`).
+/// at all (`tests/run.py::grade_frame_ceilings`, and a 2026-09-10 device reading of "no-line PASS,
+/// 208.5, no-line PASS").
 ///
 /// **One route is structurally invisible to it: the player.** Its page still answers
 /// `FocusSource::Legacy`, so `bridge::page_owned` is false there and the loop draws that page

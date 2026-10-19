@@ -557,7 +557,6 @@ class CiPathFilter(unittest.TestCase):
         ".claude/hooks/outbound-guard.py", ".claude/hooks/outbound-guard-test.py",
         ".agents/skills/wake-tv/wake-tv.sh",
         "PRIVACY.md", "LICENSE", "LICENSING.md", "TRADEMARKS.md", "THIRD-PARTY-NOTICES.md",
-        "docs/measurements/p1b-logs/pipe_abr_pin_320.log",
     )
     # Prose, images and repository metadata: no gate reads them (the evidence is in ci.yml).
     MUST_NOT_TRIGGER = (
@@ -566,8 +565,7 @@ class CiPathFilter(unittest.TestCase):
         ".github/CODEOWNERS", ".github/dependabot.yml",
         "README.md", "CONTRIBUTING.md", "SECURITY.md", "AGENTS.md", "CLAUDE.md",
         "docs/agent-reference.md", "docs/troubleshooting.md", "docs/release-notes/v0.8.0.md",
-        "docs/assets/sentry-wordmark-dark.svg",
-        "docs/webosbrew-package.yml", "docs/measurements/m2-verbose-rerun.txt",
+        "docs/webosbrew-package.yml", "docs/release-notes/v0.1.0.md",
         "rust-modules/media/src/player/CLAUDE.md", ".agents/skills/ui-sim/SKILL.md",
         ".claude/settings.json", ".claude/workflows/swarm-gate.js", ".claude/agents/doc-claim-auditor.md",
         ".codex/agents/doc-claim-auditor.toml",

@@ -7,14 +7,14 @@ this one produces the version that passes. Both read the private set through
 
 WHY IT EXISTS. On 2026-08-26 captured logs were committed and pushed carrying a third party's
 server address, port, machine hash and handle. The app enumerates the signed-in account's servers
-at boot, so **even a no-Plex pipeline case logs them** -- which is the trap: a tier that needs no
-token still produces a log that cannot be published. Scrubbing by hand is how the leak happened.
+at boot (the app this project grew from logged every server a Plex account could reach), and a
+log that looks harmless still could not be published. Scrubbing by hand is how the leak happened.
 
 Placeholders are STABLE and DISTINCT: one private value always becomes the same label and two
 different values never share one, so a reader can still tell two hosts apart and follow a session
 across lines. Structure survives; identity does not.
 
-    tools/scrub-logs.py --out docs/measurements/p1-logs /tmp/abr-p1-logs/*.log
+    tools/scrub-logs.py --out /tmp/scrubbed /tmp/captured/*.log
 
 It VERIFIES ITS OWN OUTPUT through the same `findings()` the gate calls, and exits non-zero if
 anything survived -- because a scrubber that quietly misses one is worse than none: it produces a

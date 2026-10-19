@@ -1,25 +1,26 @@
-# Install Plex on LG webOS TV with Dispatcharr TV
+# Install Dispatcharr TV on an LG webOS TV
 
-Dispatcharr TV is an unofficial, open-source Plex app for LG webOS TVs. It is not yet available in the LG Content Store, but you can install it on a regular LG webOS TV using LG's Developer Mode and a computer. **No root is required.** If something goes wrong, see [troubleshooting](troubleshooting.md).
-
-## Already have Homebrew Channel?
-
-Open **Homebrew Channel** on your TV, find [**Dispatcharr TV**](https://repo.webosbrew.org/apps/com.magness.dispatcharrtv/), and select **Install**. Then [open Dispatcharr TV and sign in](#4-open-dispatcharrtv-and-sign-in).
-
-You can skip the Developer Mode and computer setup below. If your existing Homebrew Channel installation uses Developer Mode, keep renewing that session as usual.
+Dispatcharr TV is an unofficial, open-source live-TV app for LG webOS TVs that plays the channels of
+your own [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) server. It is not in the LG
+Content Store or in the Homebrew Channel catalogue; you install it on a regular LG webOS TV using
+LG's Developer Mode and a computer. **No root is required.** If something goes wrong, see
+[troubleshooting](troubleshooting.md).
 
 ## Before you start
 
 You will need:
 
-- an LG TV running **webOS 4.0 or newer** (or webOS 3.4.3, tested on one set); check the [compatibility notes](../README.md#will-it-work-on-my-television), since playback support varies by model;
-- a Plex account with access to a **Plex Media Server**, either your own or one shared with you;
+- an LG TV running **webOS 4.0 or newer**; check the [compatibility notes](../README.md#status) —
+  playback has been watched on webOS 4.4.3 and 6.5.3, and other versions are expected to work but
+  have not been seen to;
+- a **Dispatcharr server** your TV can reach on your network, and a Dispatcharr username and
+  password;
 - a Mac, Windows PC, or Linux computer for the setup described here;
 - the TV and computer on the **same local network**.
 
 The route is **set up the TV → connect from your computer → install Dispatcharr TV**. No LG SDK or IDE is required.
 
-> **Important:** Developer Mode needs periodic renewal. If it expires and LG disables Developer Mode, apps installed through it are removed. This applies to both installation options below, including Homebrew Channel installed through Developer Mode. [How to keep the apps installed](#important-developer-mode-expires).
+> **Important:** Developer Mode needs periodic renewal. If it expires and LG disables Developer Mode, apps installed through it are removed. [How to keep the apps installed](#important-developer-mode-expires).
 
 ## 1. Enable Developer Mode on the TV
 
@@ -46,7 +47,7 @@ The route is **set up the TV → connect from your computer → install Dispatch
    | Field | What to enter |
    |---|---|
    | **Device Name** | A name you choose, such as `living-room-tv`. |
-   | **Address** | Your **TV's local IP address**, not your Plex server's address. |
+   | **Address** | Your **TV's local IP address**, not your Dispatcharr server's address. |
    | **Passphrase / authentication info** | The **Passphrase shown in the TV's Developer Mode app**, with the same capitalisation. This is **not your LG account password**. |
 
    Keep the Developer Mode defaults: **Username** `prisoner`, **Port** `9922`, and **Authentication** `Dev Mode`. The wizard sets these for you.
@@ -54,57 +55,30 @@ The route is **set up the TV → connect from your computer → install Dispatch
 
 **Ready to continue:** Dev Manager can display the TV's installed apps. If it cannot connect, see [Connection problems](#connection-problems) before downloading Dispatcharr TV.
 
-## 3. Choose how to install Dispatcharr TV
-
-Both options install Dispatcharr TV; neither unlocks extra Dispatcharr TV features. The difference is how you install and manage updates.
-
-| | Direct installation | Through Homebrew Channel |
-|---|---|---|
-| **What you add to the TV** | Dispatcharr TV only. | Homebrew Channel, then Dispatcharr TV. |
-| **How you update** | Install a newer `.ipk` from your computer using Dev Manager. | Open Homebrew Channel on the TV and select **Update** when available. |
-| **Why choose it** | Fewer steps and no extra catalogue app. | Browse other homebrew apps and install updates with the TV remote. |
-
-**Both options use the Developer Mode setup above and need the same session renewal.** Installing Homebrew Channel does not remove that requirement. Its catalogue can also contain apps with their own requirements; not every homebrew app works on every TV.
-
-### Option A — install Dispatcharr TV directly
-
-**The shorter route if you only want Dispatcharr TV.**
+## 3. Install Dispatcharr TV
 
 1. On your computer, open the [latest Dispatcharr TV release](https://github.com/andrewmagness/webos-dispatcharr/releases/latest).
-2. Under **Assets**, download **`com.magness.dispatcharrtv_X.Y.Z_arm.ipk`**. `X.Y.Z` is the release's version number. The `.ipk` is the TV app, not something to open on your computer; the manifest and source archives are not installers.
-3. For a manual download, [check the package against the release checksum](#verifying-the-package) before installing it.
+2. Under **Assets**, download **`com.magness.dispatcharrtv_X.Y.Z_arm.ipk`**. `X.Y.Z` is the release's version number. The `.ipk` is the TV app, not something to open on your computer; the source archives are not installers.
+3. [Check the package against the release checksum](#verifying-the-package) before installing it.
 4. In Dev Manager, select your TV, open **Apps**, and click **Install**. Choose the downloaded `.ipk`.
 5. Wait for installation to finish and check that **Dispatcharr TV** appears under **Installed**.
 
-Continue to [step 4](#4-open-dispatcharrtv-and-sign-in). You do not need to install Homebrew Channel as well.
+For future updates, repeat this with the newer `.ipk`. Install over the existing app rather than uninstalling it first, so it keeps your sign-in and favourites.
 
-For future updates, repeat this with the newer `.ipk`. Install over the existing app rather than uninstalling it first.
-
-### Option B — install Homebrew Channel, then Dispatcharr TV
-
-**Choose this for a catalogue and app updates on the TV.** Homebrew Channel is a separate TV app; you still use your computer for this initial setup.
-
-1. In **Dev Manager on your computer**, select your TV and open **Apps → Available**. This is the webOS Homebrew catalogue.
-2. Find **Homebrew Channel**, open its entry, and select **Install**.
-3. Wait for installation to finish. **On your TV**, open **Homebrew Channel** from the app launcher.
-4. Find **Dispatcharr TV**, open its entry, and select **Install**.
-5. Wait for installation to finish, then continue to [step 4](#4-open-dispatcharrtv-and-sign-in).
-
-For future updates, open Dispatcharr TV's entry in Homebrew Channel and select **Update** when offered. Updates are installed when you select them, not automatically.
-
-Want to try the newest build before it is released? Add the project's nightly repository to Homebrew Channel. See the [nightly builds guide](nightly-builds.md).
+Want to try the newest build before it is released? See the [nightly builds guide](nightly-builds.md).
 
 ## 4. Open Dispatcharr TV and sign in
 
-Open **Dispatcharr TV** from the TV's app launcher. Scan the on-screen QR code and sign in to the Plex account that has access to your server or shared libraries. Choose your Plex Home profile if prompted.
+Open **Dispatcharr TV** from the TV's app launcher. Setup looks for a Dispatcharr server on your
+network and offers what it finds; you can also type the server's address. Then enter your
+Dispatcharr username and password with the TV's on-screen keyboard. The TV keeps the API key your
+server issues, never your password.
 
-**Installation is complete.** You can now use Dispatcharr TV from the TV launcher. The remaining setup responsibility is keeping Developer Mode active, as described below.
-
-Dispatcharr TV is free and open source. If it's useful to you, you can [support it on Ko-fi](https://ko-fi.com/0xbeb).
+**Installation is complete.** The Guide opens with your channels. The remaining setup responsibility is keeping Developer Mode active, as described below.
 
 ## Important: Developer Mode expires
 
-For installations made through LG Developer Mode, including Homebrew Channel installed that way:
+For installations made through LG Developer Mode:
 
 1. While the TV is online, open the **Developer Mode** app and check **Remain Session**.
 2. **Before the remaining time runs out**, select **EXTEND**.
@@ -124,11 +98,11 @@ See [LG's session guidance](https://webostv.developer.lge.com/develop/getting-st
 
 **The apps disappeared:** check **Dev Mode Status** and **Remain Session**. If Developer Mode has been disabled, enable it again and reinstall the apps using the same route.
 
-**Dispatcharr TV opens but your libraries are missing:** make sure you signed in to a Plex account with access to a server and that the server is reachable. Dispatcharr TV does not include a media library or set up Plex Media Server for you.
+**Setup does not find your server:** type its address instead (for example `http://192.168.1.10:9191`). The TV must be able to reach the server directly; a server that only your computer can reach, through a VPN for instance, is not reachable from the TV.
 
-For more connection help, see [webOSbrew's troubleshooting guide](https://www.webosbrew.org/devmode/#troubleshooting). To [report a Dispatcharr TV problem](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose), include your TV model, webOS version, Dispatcharr TV version, installation method, and the exact error. Do not post passwords, Passphrase, Plex tokens, or screenshots containing them. For a how-do-I question about setup, ask in [Discussions > Q&A](https://github.com/andrewmagness/webos-dispatcharr/discussions/categories/q-a); bugs go to the issue form.
+For more connection help, see [webOSbrew's troubleshooting guide](https://www.webosbrew.org/devmode/#troubleshooting). To [report a Dispatcharr TV problem](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose), include your TV model, webOS version, Dispatcharr TV version and the exact error. Do not post passwords, the Passphrase, your server's API key, or screenshots containing them.
 
-If Dispatcharr TV itself is installed and opens but something inside it doesn't work — sign-in, playback, or anything else — see [Troubleshooting](troubleshooting.md).
+If Dispatcharr TV itself is installed and opens but something inside it doesn't work — sign-in, the guide, or playback — see [Troubleshooting](troubleshooting.md).
 
 ---
 
@@ -136,21 +110,21 @@ If Dispatcharr TV itself is installed and opens but something inside it doesn't 
 
 The installation walkthrough ends above. The sections below are a technical reference for package verification, release provenance, and what the app reads, writes, and connects to.
 
-The app runs in LG's normal sandbox: an unprivileged uid, chrooted, under the stock jail profile. `appinfo.json` declares two ACGs, `database.operation` and `securitykey.operation` — both are the storage helper's, for the local DB8 keystore and the platform key manager it uses to keep your sign-in off plain disk; neither reaches the network or anything outside this app's own data.
+The app runs in LG's normal sandbox: an unprivileged uid, chrooted, under the stock jail profile. `appinfo.json` declares two ACGs, `database.operation` and `securitykey.operation`; both belong to the bundled storage helper, and neither reaches the network or anything outside this app's own data.
 
 Per-release facts — the hash, sizes, payload, and what was tested on which set — are in that version's [technical audit](https://github.com/andrewmagness/webos-dispatcharr/tree/main/docs/release-audits).
 
 ### Which file to download
 
-A release attaches five files. **For a direct installation, you need the first one.**
+**For installation, you need the first one.**
 
 | File | What it is |
 |---|---|
 | `com.magness.dispatcharrtv_X.Y.Z_arm.ipk` | The app. |
-| `com.magness.dispatcharrtv.manifest.json` | The Homebrew Channel manifest — how the Channel finds and verifies the update. |
 | `ipk.sha256` | The checksum, for `sha256sum -c`. |
 | `ffmpeg-9.0.tar.xz` | The pristine upstream FFmpeg source, published because we are obliged to. |
 | `build-ffmpeg.sh` | The complete configure invocation that produced the bundled FFmpeg libraries. |
+| `dispatcharrtv-source-X.Y.Z.tar.gz` | The app's own complete source, as built, with its `.release.json` record beside it and `source-rebuild.json`, the result of rebuilding the app from that archive. |
 
 ### Verifying the package
 
@@ -164,11 +138,7 @@ sha256sum -c ipk.sha256                                    # Linux, with the che
 certutil -hashfile com.magness.dispatcharrtv_X.Y.Z_arm.ipk SHA256 # Windows
 ```
 
-[Return to direct installation](#option-a--install-dispatcharrtv-directly) after checking the file.
-
-**If Homebrew Channel installs Dispatcharr TV from its catalogue, you have nothing to verify manually.** It fetches that release's `com.magness.dispatcharrtv.manifest.json`, hashes the download on the television, and refuses to install a package that does not match.
-
-If you point Homebrew Channel at a bare `.ipk` yourself instead of installing the catalogue entry, that catalogue verification path is bypassed, so verify the package yourself.
+[Return to the installation](#3-install-dispatcharr-tv) after checking the file.
 
 #### Rebuilding it to compare
 
@@ -178,16 +148,16 @@ Every release is built and uploaded by GitHub Actions from the tag. If a release
 
 ## What the app does on your television
 
-This section is invariant across releases. Where a release changes one of these behaviours, its release note says so and its audit measures it.
+This section is invariant across releases. Where a release changes one of these behaviours, its release note says so and its audit measures it. [`PRIVACY.md`](https://github.com/andrewmagness/webos-dispatcharr/blob/main/PRIVACY.md) is the full contract.
 
 ### What it writes
 
-Both entries below are restricted to the app, but not at the same mode. The three logs are mode `0640` — owner read/write, the app's own group read, nothing for anyone else — so that on a television that is not rooted, Dev Manager should be able to fetch them and you can attach them to a bug report. The signed-in session is mode `0600`, owner only.
+- **Your account** — the server's address, your username and the API key the server issued — in one file under `/media/developer` (or `/media/internal`), mode `0600`, readable only by the app. LG's Developer Mode widens that directory's permissions at every boot; the app narrows the file back the next time it reads it.
+- **Your choices for that server** — favourite channels, the last channel watched and whether the app starts on it — in a second file beside it. Channels are named by your server's identifiers for them.
+- **Channel logos**, cached as bounded files for reuse across restarts.
+- **Local logs** in `/tmp`, mode `0640` — owner read/write and the app's group read, so that Dev Manager can fetch them for a bug report: `dispatcharrtv-events.log` and `dispatcharrtv-stderr.log` (emptied every launch) and `dispatcharrtv-crash.log` (kept until the TV restarts). The event log replaces your username before it is written. The app never sends them anywhere.
 
-- `/tmp/dispatcharrtv-events.log`, `/tmp/dispatcharrtv-stderr.log` and `/tmp/dispatcharrtv-crash.log` (mode `0640`) — the first two are truncated each launch, while the crash log is append-only so it survives a restart. Because the mode includes group read, another app installed on the same television that runs in Dispatcharr TV's group can read these three files too; the event log is scrubbed as described next, and so is the panic text the app appends to the crash log, but the crash tracer's own records (a faulting address, registers, one memory-map line) and the stderr log (whatever aborts and the television's own libraries print) are not. Every event-log line is scrubbed **before it is written**: tokens, header and query credentials, hostnames (including `plex.direct` names that encode your LAN address), bare addresses, Plex GUIDs, search queries, and your server and profile names are rewritten. Media titles, search terms, and subtitle text are never written at all. What remains includes ratingKeys — server-local item numbers used to diagnose playback bugs. Someone with access to the same server could map one back to an item, so still think before posting a log publicly. [`PRIVACY.md`](https://github.com/andrewmagness/webos-dispatcharr/blob/main/PRIVACY.md) is the full contract.
-- Your signed-in session (mode `0600`), as `<id>-auth.json` under `/media/developer` or `/media/internal` — one access token per server your account can reach. Dispatcharr TV capability-probes the documented `com.webos.service.keymanager3` service (TV 24+) and uses its AES-GCM operation when LS2 policy permits it. The older `com.palm.keymanager` AES-CFB service is deliberately not used because it cannot authenticate ciphertext. webOS TV 4.10.2 has neither usable service, so the compatible result there is an atomically replaced, app-owned mode-0600 file. A protected file is never silently downgraded during a temporary service failure. The probe is an ordinary application-service call and the fallback needs no root service or root-only HAL API; store entitlement for Key Manager is still capability-tested at runtime rather than assumed from the OS version.
-
-The app does not persist the last screen: an authenticated cold launch starts on Home. Upgrades remove the retired `<id>-lastplace.json` bookmark written by older builds.
+Signing out (in Setup) removes the account file. webOS gives an app no way to run code as it is removed, so these files can survive an uninstall.
 
 A crash writes no core file.
 
@@ -197,13 +167,9 @@ The television's codec table at `/etc/umediaserver/device_codec_capability_confi
 
 ### What it reaches
 
-`plex.tv` and `discover.provider.plex.tv` over TLS, and the Plex Media Servers your account can reach — your own and any shared with you — over HTTPS whenever a token is present, except the home-network exception below.
+Your Dispatcharr server, at the address Setup found or you typed — over HTTPS when the address says `https://`, otherwise over plain HTTP on your network — and the channel logo images your server's channels point at. During Setup it also looks for a Dispatcharr server on the local network.
 
-Stable builds refuse token-bearing plaintext HTTP, with one exception that is yours to make: when a server answers only unencrypted on your home network — every secure route to it, Plex's relay included, failed — the app asks **Connect without encryption?**: on the sign-in screen, on the Home or library read-out that reports the failure, or when you switch the server on in Settings → **Unencrypted connections**. It is offered only for a numeric private address plex.tv lists as local and on the same network as the television, never for a remote address or the relay, and never for a server set to require secure connections. The answer is remembered per server for the Plex account that gave it, so another account signing in is asked again. The permission it grants is never stored: it holds only while each fresh check of that server still reaches the same address, and it ends when you sign in or out, switch to a profile that does not use that server at that address, or bring the app back from the background — the app cannot see the television change network, so those are the points where it proves eligibility again. While it is in use the app keeps retrying HTTPS and switches back as soon as a secure route verifies, and Settings → **Unencrypted connections** turns it off at once. Developer-trigger builds may enable plaintext for a local lab and log that exception.
-
-**Only if you switch them on**, the app also reaches Sentry and PostHog in the European Union. They have separate switches, both are off by default, and both are reversible. [`PRIVACY.md`](https://github.com/andrewmagness/webos-dispatcharr/blob/main/PRIVACY.md) describes them in full.
-
-Nothing is sent anywhere else. A build carries an endpoint only if one was compiled into it, so `strings` on the binary answers the question directly, and each release audit reports what it found there.
+Nothing is sent anywhere else: the app has no crash reporting and no analytics. A build carries an endpoint only if one was compiled into it, so `strings` on the binary answers the question directly, and each release audit reports what it found there.
 
 ### What listens
 
@@ -211,9 +177,7 @@ Nothing. A release build compiles out the whole `/tmp` trigger surface, the remo
 
 ## Scope
 
-Movies and TV shows from a Plex Media Server your account can reach. No music, no photos, no live TV, no DVR.
-
-There is deliberately nowhere on the television to type a server address — configure servers on a phone or PC, and the app offers what your Plex account already knows about.
+Live TV from a Dispatcharr server: the channels, groups and programme guide your server provides. No recordings, no catch-up, no video on demand.
 
 ## The bundled FFmpeg
 

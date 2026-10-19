@@ -27,8 +27,8 @@ it says nothing about whether the crash in front of you is already understood an
 code*, on a branch nobody merged. On 2026-09-14 a crash matching `SMP loadCompleted (priming before
 Play)` on a Realtek k5lp chassis was fully decompiled — three libraries, a real Ghidra finding, a
 plausible root cause in `libpf`'s `GenericPipeline::deepElementRemovedCallback` — and the eventual,
-correct answer was a five-minute `git log -S`: the crash was issue #74, fixed in `ac305265`, shipped
-on `release/v0.6` since v0.6.1, simply never merged into `main`. The Ghidra finding was real but was
+correct answer was a five-minute `git log -S`: the crash was already fixed in `ac305265` on a
+maintenance line of the PlxNative code this project grew from, simply never merged into its `main`. The Ghidra finding was real but was
 a symptom reachable only *because of* the unfixed race, not an independent firmware defect. A quick
 `git log --all -S '<a distinctive log line from the crash>'` or a search of `docs/known-issues.md`
 costs nothing next to a decompilation session, and answers "is this new" before you spend one.

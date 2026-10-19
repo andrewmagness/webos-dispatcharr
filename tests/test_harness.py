@@ -1033,7 +1033,7 @@ class NetcondRate(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# The ABR observation metrics added by increment I0 of docs/adaptive-playback-plan.md.
+# The ABR observation metrics (increment I0 of the retired adaptive-playback plan).
 #
 # Classification (plan §8): every test in this block is a MATHEMATICAL INVARIANT or an
 # INTEGRATION test. None of them is a policy-choice test — nothing here asserts that any rung,

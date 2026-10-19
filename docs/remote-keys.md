@@ -3,9 +3,16 @@
 **Every key this app binds, what field it is matched in, and what it does** — plus the questions
 about keys that only a television can answer, written down as recipes rather than guesses.
 
-This file is what LG's App Self Checklist rows **26** (general / IR remote), **36** (HOME),
-**39** (LIVE), **40** (unsupported keys) and **45** (playback control keys) cite;
-`docs/lg-self-checklist.md` is the status of those rows, this is the evidence under them.
+LG's App Self Checklist asks about keys in rows **26** (general / IR remote), **36** (HOME), **39**
+(LIVE), **40** (unsupported keys) and **45** (playback control keys); this file is the evidence an
+answer to those rows would stand on.
+
+> **Inherited from PlxNative.** Most of this file was written for the Plex client this project grew
+> from, on its development television (an LG 49SM9000, webOS 4.x). The key-reading findings (what
+> SDL delivers, in which field, for which button) are the platform's and still hold. The bindings it
+> describes for Plex screens (Home, Detail, the Library, the VOD transport) are gone; Dispatcharr
+> TV's bindings — CH▲/CH▼, number entry, OK and hold-OK, BACK to the Guide — are listed in the
+> README's "Using it" table.
 
 Status taken 2026-08-26. **Everything below is offline work — read out of the harvested `libSDL2`
 or quoted from a dated earlier session — WITH ONE EXCEPTION: §9's colour-button row was measured on
@@ -343,7 +350,7 @@ whether **461** and **412 / 417 / 413 / 415 / 402** ever fire (§2, §4.2), and 
 **This section recorded a known QA blocker; three of its four roots were closed 2026-09-03 and the
 fourth — the first-run consent question's first stage — closed 2026-09-07, when phase 5b turned it
 into an owned `ConsentPage` that can tell its own first stage apart from an ordinary step-back (see
-below and `docs/ux-scenario.md` §5.9).** LG's submission UX rules include, as quoted in
+below).** LG's submission UX rules include, as quoted in
 `docs/distribution.md` §2, that
 
 > every selectable element must respond to 4-way + OK + Back, and on webOS 23–25 Back on the entry

@@ -1,5 +1,10 @@
 # retui — the retained UI framework
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: retui and the restructure's architecture are what the Guide, Setup and the player are built on; the Plex screens it names (Home, Detail, the Library, Search, the sign-in flow) are gone.
+
 > **HISTORICAL — this is the original design note, not a description of the code.** It was written
 > at the start of the retui migration, when `ui/` was a Rust view tree bolted onto a still-C home
 > screen, and it is preserved for the *rationale* (why a retained tree, why static dispatch over

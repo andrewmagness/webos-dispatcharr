@@ -1,5 +1,10 @@
 # Declarative forms and one Settings navigation path
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the Settings pages it migrated were removed with the Plex screens; `ui::form` and the one-stack navigation it introduced remain.
+
 Design record for the five-PR migration that makes every Settings page (and the other action
 menus) a declared, ordered list of rows, and every Settings drill-down one stack push. Reviewed
 in three rounds by an independent model reviewer before implementation; this file is the

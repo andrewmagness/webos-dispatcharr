@@ -1,5 +1,10 @@
 # Async model review (2026-07-27)
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: its findings concerned the Plex screens and the VOD player; the fixes it led to live in `plx_base::task` and the player's adapter.
+
 Audit of the app's concurrency model, prompted by the observed bug: **while the player loads the
 stream, the HUD is frozen until it completes.**
 

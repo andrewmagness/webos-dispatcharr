@@ -1,5 +1,10 @@
 # webOS 10 refuses every H.264 Load — and so refuses every server transcode
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the platform findings apply unchanged; the Plex playback sessions they were measured in, and the server transcodes they discuss, do not.
+
 **Status: MEASURED, device-verified both ways; the measured half is FIXED on `main` since
 2026-09-03, the rest is still open.** The one-line change below was proven in the lab slot that
 found the bug and then deliberately reverted, because it was not the ABR defect that session was

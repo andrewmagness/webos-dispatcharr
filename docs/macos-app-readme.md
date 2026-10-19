@@ -1,6 +1,7 @@
 # Dispatcharr TV for macOS
 
-A native Plex client, built for LG webOS televisions, running here as a real Mac app. Everything it
+A native live-TV client for Dispatcharr servers, built for LG webOS televisions, running here as a
+real Mac app. Everything it
 needs is inside the bundle — there is nothing to install.
 
 ## Open it (the first time only)
@@ -14,18 +15,15 @@ developer, and Apple charges for that. This is normal and you only do it once.
    the app. Open Terminal and run:*
    `xattr -dr com.apple.quarantine /Applications/DispatcharrTV.app`
 3. Say **Allow** when macOS asks about finding devices on your local network — the app talks to
-   your Plex Media Server directly, and cannot work without it.
+   your Dispatcharr server directly, and cannot work without it.
 
 After that it opens by double-click like anything else.
 
 ## Sign in
 
-The app shows a QR code and a four-character code. Scan the code with your phone, or go to
-**plex.tv/link** and type it in. It then finds your server by itself and drops you on the home
-screen. It stays signed in — you do this once.
-
-You need to be on the **same network as your Plex server**. This is a television app: it talks to
-the server directly over the LAN and has no remote-access path.
+Setup looks for a Dispatcharr server on your network and fills in its address; you can also type
+it. Sign in with your Dispatcharr username and password. The app keeps the API key the server
+issues, never your password, and stays signed in.
 
 ## Getting around
 
@@ -46,8 +44,7 @@ Clicking works too, on most screens.
 message. That is honest rather than broken: the decoding is done by the television's own hardware
 video pipeline (LG's StarfishMediaAPIs, bound to the TV's video plane), which does not exist on a
 Mac. Everything else is the real thing — the same interface, the same code, talking to your real
-server: browsing, libraries, search, seasons and episodes, cast, artwork, watched state, who's
-watching.
+server: Setup, the programme guide with its channel logos, groups and favourites.
 
 So: this is the app to *look at* and click around. It is not a way to watch anything.
 
@@ -55,6 +52,6 @@ So: this is the app to *look at* and click around. It is not a way to watch anyt
 
 Apple Silicon Macs only (M1 and later), macOS 11 or newer.
 
-Unofficial, and not affiliated with, endorsed by, or sponsored by Dispatcharr or LG Electronics. MIT
-licensed; the licence and the third-party notices are inside the app bundle, under
-`Contents/Resources`.
+Unofficial, and not affiliated with, endorsed by, or sponsored by the Dispatcharr project or LG
+Electronics. Licensed under the GPL, version 3 or later; the licence and the third-party notices are
+inside the app bundle, under `Contents/Resources`.

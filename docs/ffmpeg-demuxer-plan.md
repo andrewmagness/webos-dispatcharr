@@ -1,5 +1,10 @@
 # libavformat demuxer plan — replacing `mkv.rs`
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: `ff.rs` is still the demuxer; the Plex part URLs it opened are now live-channel stream URLs.
+
 **Status: EXECUTED (all phases A–E landed; 2026-07-18).** `ff.rs` is the only demuxer;
 `mkv.rs`, the `cues_thread`/Cue-index apparatus, the second HTTP connection (`hs2`), and the
 `/tmp/dispatcharrtv-demux=mkv` bisect trigger are all deleted. Two knowing deviations from the spec

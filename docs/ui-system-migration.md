@@ -1,5 +1,10 @@
 # Shared UI System — Migration Plan
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: retui and the restructure's architecture are what the Guide, Setup and the player are built on; the Plex screens it names (Home, Detail, the Library, Search, the sign-in flow) are gone.
+
 > **Status (2026-07-18): the token sweep and the initial view-tree milestone were executed and
 > merged to main.** The later structured UI migration continued beyond that milestone; this
 > paragraph is not a claim that the recorder/restore/resolve architecture is closed or that the

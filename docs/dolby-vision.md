@@ -1,5 +1,10 @@
 # Dolby Vision and Dolby Atmos on webOS 4.10.2
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the Dolby Vision and Atmos declaration code is still in the player, and the platform findings apply unchanged; live channels rarely carry either, and the Plex files it was measured with are history.
+
 The record of how this app came to declare Dolby Vision and Dolby Atmos to LG's pipeline, what the
 television's own binaries say about it, and what the Dolby specifications do and do not require.
 Written 2026-08-21, the day both landed; every number in it was measured on the dev set (LG

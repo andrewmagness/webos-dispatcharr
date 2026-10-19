@@ -1,5 +1,10 @@
 # The frame budget — what this television will actually give you
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the renderer, its instruments and the measured limits below still apply to this tree; the screens it names (Home, Detail, the Library, Search, the account picker) are gone.
+
 **Who this is for:** whoever is designing screens for this app. It is written so you can decide,
 without asking an engineer, whether an idea fits. Everything in it was measured on the real set
 (LG 49SM9000PLA, webOS 4.5, Mali-T820 MP2) on 2026-08-19, in one session, with the legs interleaved.

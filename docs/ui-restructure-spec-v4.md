@@ -13,6 +13,11 @@
 
 # Dispatcharr TV UI restructure — specification v4
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: retui and the restructure's architecture are what the Guide, Setup and the player are built on; the Plex screens it names (Home, Detail, the Library, Search, the sign-in flow) are gone.
+
 One owner for every state, event and resource; every rule defined in exactly one section and referenced from everywhere else. Sections are numbered so a rule can be cited as §N.M. This version replaces v3 wholesale; it folds in the owner's review (five mandatory fixes, two focus clarifications, four carried remarks) and the six-angle board review (ownership, determinism/privacy, frame cost, focus/hit engine, migration/gates, library boundary), each finding verified against the tree before adoption.
 
 ## 0. Goal and definition of done

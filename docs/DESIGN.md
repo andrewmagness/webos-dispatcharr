@@ -4,9 +4,14 @@ This is an index, not a specification. Every claim below points at the file that
 it, because those files are checked by the compiler, by the lint gate, or by a test, and prose is
 not. If this file and a pointer disagree, the pointer wins and this file is stale.
 
-The full design and migration status lives in [docs/ui-system-migration.md](docs/ui-system-migration.md).
+The full design and migration status lives in [ui-system-migration.md](ui-system-migration.md).
 The rules you must follow when writing UI code live in
-[rust-modules/ui/src/CLAUDE.md](rust-modules/ui/src/CLAUDE.md). Read that before touching a screen.
+[rust-modules/ui/src/CLAUDE.md](../rust-modules/ui/src/CLAUDE.md). Read that before touching a screen.
+
+The design system came with the code from PlxNative, whose Plex screens (Home, Detail, the Library,
+the account picker, Settings) built most of it. Dispatcharr TV's screens are the Guide, Setup and
+the live player; several components below — the hero, the card shelves — are still in `ui/` and
+still graded by their tests, but no current screen draws them.
 
 ## The surface
 
@@ -74,7 +79,7 @@ can grade it. `widgets.rs`'s `hero_scrim_a` doc says it plainly: the contract "i
 is the arithmetic the anchor table in this module's tests reads, so the promise and the paint cannot
 come from two different curves."
 
-- Vertical ramp, [rust-modules/ui/src/landing_hero.rs](rust-modules/ui/src/landing_hero.rs):
+- Vertical ramp, [rust-modules/ui/src/landing_hero.rs](../rust-modules/ui/src/landing_hero.rs):
   zero above `HERO_BASE_SCRIM_Y0` (0.34 of the screen, 367), `foot * MID_WEIGHT` at `KNEE_Y` (0.65
   of the screen, 702), and `foot = 0.30 + 0.64 * hero_a` at the bottom. The text stack builds upward
   from `TEXT_BOTTOM` 692 in a column of `COL_W` 660.
@@ -86,7 +91,7 @@ Both halves scale by the screen's own hero fade, so the field leaves with the he
 lingering over the shelves.
 
 **Anything that changes what sits behind hero text must re-grade the anchor table.** Still artwork
-has a knowable worst case, which is what the PMS `blur` hash is for. Video does not.
+has a knowable worst case. Video does not.
 
 For text sitting directly on a piece of artwork, the answer is `art_scrim`: `STILL_SCRIM_H` 112 px
 (or `STILL_SCRIM_H_1` 88 for one line) of near-black at `STILL_SCRIM_A` 0.78, fading upward and
@@ -105,48 +110,33 @@ Improve a component before forking one. If a shared widget almost fits, add a bu
 style variant. A genuinely new widget still lands in `ui/` as a reusable `View` so the next screen
 gets it free.
 
-Card rows come from `plx_ui::cards::Shelf` with a named `RowStyle`:
-
-- `HOME` for poster shelves, and the single source of shelf motion
-- `EPISODE` 420x236, gap 28, `focus_scale` 1.09, the 16:9 landscape still
-- `CAST` 190 circles, gap 40, `focus_scale` 1.13
-- `PROFILES` big circles, `focus_scale` 1.18
-
-The focus pop values differ on purpose and each carries the reasoning at its definition: a lone row
-of widely spaced circles needs a bigger pop than a tight poster shelf to read as selected at all.
-
-Tile text is `TileLabel::title(t)` or `TileLabel::titled(t, caption)`, with the focused-label band
-driven by `band_reveal` and `under_band`. Row headings are `theme::size::HEADLINE` at the SHARED
-shelf pitch, `consts::TITLE_DY + CARD_DY` (see `related.rs`, `cast.rs`, `extras.rs`) — the same
-heading-to-card distance Home and the Library use, quoted as the sum rather than as a number this
-file would then have to keep in step.
+Card rows (`ui/card_row.rs`, a named `RowStyle` per shape) keep their focus-pop values and the
+reasoning at each definition: a lone row of widely spaced tiles needs a bigger pop than a tight
+shelf to read as selected at all. Tile text is `TileLabel::title(t)` or `TileLabel::titled(t,
+caption)`.
 
 Surfaces over a page stand on the page's own latched light: `widgets::panel_ground` draws the
 underlay field the modal dim latched, windowed to the panel's rect and graded toward the panel
-material under its frost. Backdrop-blur glass (`Glass::DYNAMIC_BACKDROP`) is chrome-only — the top
-bar's track and the profile chip — plus the one non-interactive standing note, the "Hold OK for options"
-capsule (`ui::hold_hint`: standing on Home, and once per screen kind per run on the other card screens). See `docs/liquid-glass.md`.
+material under its frost. Backdrop-blur glass (`Glass::DYNAMIC_BACKDROP`) is for chrome only, never content. See
+[liquid-glass.md](liquid-glass.md) for what it costs.
 
 ## Navigation says where BACK goes, once
 
-Every Settings-family route draws a crumb above its title: a left chevron and the name of the place
-BACK returns to. `RouteLayout::draw_narrative` takes it as `Option<&str>` so a new route cannot
-forget to answer, and `None` means BACK leaves the app entirely.
+A route that draws a narrative page draws a crumb above its title: a left chevron and the name of
+the place BACK returns to. `RouteLayout::draw_narrative` takes it as `Option<&str>` so a new route
+cannot forget to answer, and `None` means BACK leaves the app entirely.
 
-This replaced "Press [BACK] to return" across the family. The old hint spent a 60 px band restating
-a key the remote already has, and could not say where the key went, which on a three-deep push is
-the only part anybody needs. Keep the BACK-return `KeyHint` on read-only ALERT panels, where
-it supplies their dismissal affordance; do not repeat it beside a route's return crumb.
+This replaced a "Press [BACK] to return" hint, which spent a 60 px band restating a key the remote
+already has and could not say where the key went. Keep the BACK-return `KeyHint` on read-only ALERT
+panels, where it supplies their dismissal affordance; do not repeat it beside a route's return crumb.
 
-First-run consent sizes its narrative from the complete disclosure and the related-link column.
-Its contextual answer verbs share one horizontal row, separated from BODY-sized reading copy by
-`space::MD`. Exceptional overflow scrolls with UP/DOWN while the selected answer stays focused.
+In the live player, BACK goes to the Guide.
 
 ## Where to look when you are changing something
 
 | Changing | Read first |
 |---|---|
-| any screen | `rust-modules/ui/src/CLAUDE.md`, then `docs/ui-system-migration.md` |
+| any screen | `rust-modules/ui/src/CLAUDE.md`, then `rust-modules/screens/src/CLAUDE.md` |
 | adding a screen | `docs/ui-system-migration.md` section (E) |
 | a colour | `rust-modules/ui/src/theme.rs` |
 | a size | `rust-modules/gfx/src/gfx/tokens.rs` (`mod size`, re-exported as `theme::size`) |

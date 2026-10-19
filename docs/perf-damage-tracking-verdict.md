@@ -1,5 +1,10 @@
 # Verdict: no per-region damage tracking
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the renderer, its instruments and the measured limits below still apply to this tree; the screens it names (Home, Detail, the Library, Search, the account picker) are gone.
+
 > **Field names in this document predate 2026-08-01 and the old name was REUSED.** Where it says
 > `FPS=`, today's heartbeat says **`loop=`** (loop iterations); where it says `pres=`, today's says
 > **`fps=`** (frames actually presented). The manifest gates moved too: `floor`→`loop_floor`,

@@ -1,5 +1,10 @@
 # Async model — decision (2026-07-27)
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the concurrency model it chose (`plx_base::task`, the main-thread token) is the one in this tree; the Plex screens and loads it discusses are gone.
+
 Companion to `docs/async-model-review.md` (the 84-finding audit). This records **which
 concurrency model the project adopts and why**, from a structured five-position debate:
 opening positions → cross-rebuttals → three independent judges → moderator synthesis.

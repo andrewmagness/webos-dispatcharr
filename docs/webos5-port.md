@@ -1,5 +1,10 @@
 # The webOS 5+ port
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the platform findings apply unchanged; the Plex playback sessions they were measured in, and the server transcodes they discuss, do not.
+
 **Status, 2026-08-09: TESTED ON WEBOS 6 AND 10. IT RUNS; PLAYBACK DOES NOT.**
 
 mariotaku ran it on both while reviewing the Homebrew Channel submission

@@ -6,7 +6,10 @@ feeds a codegen input — `PLX_CHANNEL` / `PLX_NIGHTLY_DATE` into `build.rs`'s r
 `docs/agent-reference.md` for the current account; the body below still only describes stable and
 debug.
 
-**Status, 2026-08-21: BUILT ENTIRELY OFF-DEVICE. NOTHING BELOW HAS BEEN ON A TELEVISION.**
+**Status, 2026-08-21: BUILT ENTIRELY OFF-DEVICE.** *Since then (Dispatcharr TV, 2026-10):* the debug
+install is the everyday development install on the C1 (webOS 6.5.3), and the stable package was
+installed beside it on 2026-10-19 and launched as `install: id=com.magness.dispatcharrtv flavour=-`.
+The open questions at the end are marked where that run answered them.
 
 Everything here is either a fact provable on a desk — a make variable, a `/proc/self/exe` read, a
 byte in a JSON payload — and then it is stated flatly with how to re-derive it; or it is an
@@ -40,10 +43,10 @@ So: two ids, two installs, two tiles.
 | app id | `com.magness.dispatcharrtv` | `com.magness.dispatcharrtv.debug` |
 | install dir | `…/applications/com.magness.dispatcharrtv` | `…/applications/com.magness.dispatcharrtv.debug` |
 | runtime root | `/tmp` | `/tmp/com.magness.dispatcharrtv.debug` |
-| session file | `/media/developer/com.magness.dispatcharrtv-auth.json` | `/media/developer/com.magness.dispatcharrtv.debug-auth.json` |
+| account file | `/media/developer/com.magness.dispatcharrtv-dispatcharr.json` | `/media/developer/com.magness.dispatcharrtv.debug-dispatcharr.json` |
+| jailed uid (C1, measured 2026-10-19) | 5380 | 6030 |
 | launcher title | `Dispatcharr TV` | `Dispatcharr TV debug` |
 | launcher artwork | `pkg/icon.png` | `pkg/dev/icon.png` (amber DEV bar; nightly: `pkg/nightly/`, grey NIGHTLY bar) |
-| plex.tv device name | `Dispatcharr TV (LG TV)` | `Dispatcharr TV debug (LG TV)` |
 
 **`FLAVOR ?= debug`, in the tracked Makefile.** The asymmetry is deliberate and it is the whole
 safety argument: every command in this repo's muscle memory is spelled `make deploy` / `make run` /
@@ -121,7 +124,7 @@ Two consequences, and they are the reason for the design rather than side effect
   account); a compiled-in id would have added a fresh axis of exactly that, on top of the
   `RELEASE=1` axis that already deletes the binary at parse time to stay honest.
 - **A mis-deployed binary tells the truth.** Copy the debug build into the stable directory by hand
-  and it identifies as `com.magness.dispatcharrtv`, uses `/tmp`, reads the stable session file and puts the
+  and it identifies as `com.magness.dispatcharrtv`, uses `/tmp`, reads the stable account file and puts the
   stable id in its Load payload. It is in the wrong place, but it is not *lying about where it is*,
   which is the difference between a bug you can see and a log you cannot trust.
 
@@ -194,27 +197,18 @@ inside a bullet already claiming to be separate. It is written out in full below
   about the wrong process: the launching install truncates the other's event log, one append-only
   crash log holds two binaries' faults with nothing saying which is which, one FIFO takes keys
   meant for the other, and one trigger namespace boots both to somebody else's screen.
-- **The session file.** `/media/developer/<id>-auth.json` (and the `/media/internal/.<id>-auth.json`
-  fallback for the Homebrew-Channel jail, which mounts the opposite pair rw/ro). Two installs, two
-  sign-ins, two rosters, two `X-Plex-Client-Identifier`s.
-
-  **Naming the file by id was not enough, and the gap is worth the paragraph.**
-  `paths::session_candidates` offers a fourth, legacy entry — the in-app-dir `auth.json` under
-  `LEGACY_APP_DIR`, a MIGRATION source spelled as a literal that names the **shipped** install's
-  directory. `session::load` takes the first candidate that EXISTS, and a freshly installed debug
-  build has none of its own; so that one ungated entry would have handed a developer build the
-  other install's account token, every per-(user, server) PMS token and the whole Plex Home roster
-  — which it would then write back under its own name. Exactly the sharing the id-keyed candidates
-  exist to prevent, arriving through the one line that was not made flavour-aware with them. It is
-  now gated on `flavour().is_none()`, so only the shipped install may offer it, and the host test
-  grades the **whole** candidate list rather than its first two entries (asserting only those is
-  what could not see this).
-- **The plex.tv identity.** The client identifier is minted per session file, so each install is its
-  own authorized device; and `plex::identity::device_name()` appends the flavour, so the account's
-  device list reads `Dispatcharr TV (LG TV)` and `Dispatcharr TV debug (LG TV)` rather than two entries
-  spelled identically — where revoking "the one on the TV" is a coin flip. The shipped name is
-  unchanged, deliberately: it is already in every existing user's device list, and a rename there
-  reads as a new, unknown device.
+- **The account file.** `/media/developer/<id>-dispatcharr.json` (and the
+  `/media/internal/.<id>-dispatcharr.json` fallback for the Homebrew-Channel jail, which mounts the
+  opposite pair rw/ro), with the viewing preferences beside it as `<id>-dispatcharr-prefs.json`. Two
+  installs, two sign-ins, two sets of favourites. There is no legacy, un-keyed candidate to leak
+  through: `paths::dispatcharr_candidates` names every entry by id. (The Plex client this grew from
+  had one — an in-app-dir `auth.json` that would have handed a fresh debug install the shipped
+  install's tokens — and gating it on the flavour is why the host test grades the **whole**
+  candidate list rather than its first entries.)
+- **The jailed uid.** Each install runs as its own uid (5380 and 6030 on the C1), so a file one
+  install owns at mode `0600` is unreadable to the other. Copying an account between installs by
+  hand therefore needs a `chown` to the target install's uid; the app treats an unreadable account
+  as gone and removes it.
 - **The launcher tile** — its own `title` (`Dispatcharr TV debug`) and its own badged artwork from
   `pkg/dev/` (`docs/distribution.md` §10.3).
 - **The capture listener's TCP port.** 8910 for the shipped install, 8911 for a flavoured one
@@ -256,7 +250,7 @@ inside a bullet already claiming to be separate. It is written out in full below
   once, and nothing about this change makes them able to — which is also why §6.6 (the
   background/foreground handoff with one install suspended mid-playback) is on the device list
   rather than assumed.
-- **`/media/developer`.** Both app directories and both session files live on it. A second install
+- **`/media/developer`.** Both app directories and both account files live on it. A second install
   costs roughly 13 MB unpacked — a 9.3 MB binary, ~2.1 MB of bundled FFmpeg, the 1.5 MB splash and
   the two fonts — which is small but is not nothing on a partition nobody here has measured (§6.5).
 - **`pkg/splash.png`, deliberately.** Both flavours ship the same 1.5 MB image. A second copy would
@@ -365,7 +359,7 @@ exists. SAM has to learn the id, and the LS2 role file that permits `com.webos.m
 by the installer, not declared by us.
 
 **And then it deploys, deliberately.** `appinstalld` replaces `applications/<id>/` **wholesale** —
-the same fact that keeps the session file outside the app directory — so an install that stopped
+the same fact that keeps the account file outside the app directory — so an install that stopped
 after installing would leave the *packaged* binary in place and you would be looking at a build you
 did not make. That is this project's least favourite failure mode wearing a different hat.
 
@@ -456,8 +450,8 @@ session with the set; several are answerable from one run's event log.
    `engine::acb_init_acb` no longer depends on it — the install directory is the authority — so this
    is now free information rather than a dependency.
    *Settled by:* the `APPID_env=` field of the boot `install:` line, in any run's log, on either
-   install. `unset` is as interesting an answer as a value, and a value that is *not* the id we
-   were installed as is the most interesting of the three.
+   install. **Answered 2026-10-19 on the C1 (webOS 6.5.3):** the stable install logged
+   `APPID_env=com.magness.dispatcharrtv` — SAM exports it, as the id we were installed as.
 3. **Does a second LS2 role file appear?** `/var/palm/ls2-dev/roles/pub/com.magness.dispatcharrtv.json`
    exists for the stable install and grants `com.webos.media.client.*`, `com.webos.rm.client.*` and
    `com.webos.pipeline.*` (`docs/distribution.md` §3.5). The Dev Mode installer writes it; whether

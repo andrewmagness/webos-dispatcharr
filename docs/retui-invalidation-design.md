@@ -1,5 +1,10 @@
 # retui invalidation: the motion capability
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: retui and the restructure's architecture are what the Guide, Setup and the player are built on; the Plex screens it names (Home, Detail, the Library, Search, the sign-in flow) are gone.
+
 > **MOSTLY IMPLEMENTED (restructure phase 12, updated 2026-09-11) — read this note before the
 > "Decision" below, which now overstates what shipped.** `ui/idle.rs`'s whole-frame present gate
 > and `note_spring`/`invalidate()` (the DEFECT this note diagnoses) are real and live, and

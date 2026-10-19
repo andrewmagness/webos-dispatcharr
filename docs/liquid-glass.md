@@ -1,5 +1,10 @@
 # Liquid glass — what the hardware will and will not give us
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the renderer, its instruments and the measured limits below still apply to this tree; the screens it names (Home, Detail, the Library, Search, the account picker) are gone.
+
 The backdrop-blur material (`gfx.rs`'s blur chain + `shaders/fs_glass.frag`, drawn through
 `Glass::DYNAMIC_BACKDROP` / `Painter::backdrop_blur`) is real and cheap enough to ship. This note is the
 **envelope it can be designed inside** — the limits that come from the television rather than from

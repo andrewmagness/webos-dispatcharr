@@ -1,5 +1,10 @@
 # Backdrop blur: what the refresh cadence costs
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the renderer, its instruments and the measured limits below still apply to this tree; the screens it names (Home, Detail, the Library, Search, the account picker) are gone.
+
 **Archived experiment.** The measurements below are from 2026-08-19. The live-backdrop
 mechanism now refreshes every changed visible source and reuses unchanged regions; see
 [the 2026-09-19 layer-stack addendum](backdrop-blur-profiling.md#2026-09-19-live-backdrop-sources-follow-the-layer-stack).

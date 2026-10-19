@@ -541,7 +541,9 @@ world-readable `/tmp` on the TV across many runs.
 
 **What a public build would leak (verified by `strings` on `pkg/dispatcharrtv` and inside the ipk):**
 
-1. `PMS_HOST` — `PMS_HOST` from `config.local.h` is compiled in. *(Only used on the
+1. `PMS_HOST` — `PMS_HOST` from `config.local.h` is compiled in. *(No longer true since 2026-10-18:
+   nothing from `config.local.h` is compiled, and `ci/check-elf.sh` scans every build for a
+   private address. The rest of this item is the 2026-08 record.)* *(Only used on the
    `/tmp/dispatcharrtv-token` automation branch — `app.rs:436-438` — so a public build with no
    `config.local.h` compiles the `"YOUR_PMS_HOST"` placeholder and never uses it. Still, don't ship a
    binary built on this machine.)*
@@ -1340,7 +1342,7 @@ not a prerequisite of `all`, so a red clippy can't mask a broken ARM link:
 | `webosbrew-ipk-verify --fw-releases '>=4.0, <5.0'` | The gate webosbrew's own PR CI runs. Resolves `DT_NEEDED` + symbols against 14 firmware databases — the exact error class the stub-`.so` trick makes invisible at link time. Fully offline. **Never been run on the real binary.** |
 | `ci/expected-dt-needed.txt` diff | Dependency drift. Calling into any library that happens to be in the NDK sysroot silently adds a `DT_NEEDED` entry and the link still succeeds. |
 | CP15 barrier scan | The SIGILL regression. `.cargo/config.toml` names the exact scenario — "a future CI" setting `RUSTFLAGS`, which *replaces* the config list and drops `target-cpu=cortex-a9`. Carries a positive control (`dmb` count > 100) so a zero can't pass vacuously. |
-| build-host identity | The dev's LAN IP and `/Users/…` paths. A clean checkout has no `config.local.h`, so `app.h`'s `__has_include` falls back to `YOUR_PMS_HOST` — the CI artifact is leak-free *by construction*. Skipped on a dev machine, where `config.local.h` exists by design. |
+| build-host identity | The dev's LAN IP and `/Users/…` paths. Nothing from a local config file is compiled (`src/app.h`), so no build carries a LAN address by construction; `ci/check-elf.sh` scans every build, dev and CI, for both. |
 | `legal-gate` | Refuses to publish without `LICENSE` + `THIRD-PARTY-NOTICES.md`, and **hard-fails if `pkg/appfont*.ttf` is still Arial**. (`check-package.py` treats Arial as an XFAIL so the gate could land before the swap; the release job does not.) |
 | manifest sha256 vs artifact | The hash is enforced **on the device** at install and by nothing in CI. A mismatch is invisible until it breaks every user's install. |
 

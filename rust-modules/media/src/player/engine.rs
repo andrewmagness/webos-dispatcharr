@@ -435,7 +435,7 @@ fn window_step(stage: WindowStage) {
 
 /// Bind the decoded video sink to the display plane, whichever way this television does it.
 ///
-/// **Boot-scoped.** Called once, from `plex_run`, and never again — which is why the webOS 5
+/// **Boot-scoped.** Called once, from `plx_run`, and never again — which is why the webOS 5
 /// exported window is NOT created here: that one is created per session in [`start_bufferfeed`],
 /// beside the payload it has to be spliced into, and destroyed by the matching `teardown`.
 ///

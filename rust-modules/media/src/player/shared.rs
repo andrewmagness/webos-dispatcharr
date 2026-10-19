@@ -2155,7 +2155,7 @@ impl Shared {
     }
 }
 
-/// UI-facing transport state. Main-thread-only in practice (plex_run + pump +
+/// UI-facing transport state. Main-thread-only in practice (plx_run + pump +
 /// player_hud all run on M), but exposed as atomics so app.rs / player_hud.rs read
 /// it with plain .load()/.store(). Replaces the #[no_mangle] transport globals.
 pub struct Transport {

@@ -15,7 +15,7 @@ Media Server (PMS) entirely in-app.
 **Almost everything is Rust** in `rust-modules/` (UI, event loop, input, player orchestration,
 the streaming/demux pipeline, and the Plex data layer), compiled to a static lib and linked in
 (see the Makefile). Only two things stay C: `src/main.c` — a small **boot shim** (the event-log
-handle, stderr capture, process bring-up) that then calls the Rust `plex_run()` — and
+handle, stderr capture, process bring-up) that then calls the Rust `plx_run()` — and
 `src/starfish.c`, the **StarfishMediaAPIs C++/ACB seam**. Two more `.c` files sit beside them:
 `src/svg.c` (the nanosvg rasterizer) and, since 2026-08-29, `src/crashtrace.c` — the async-signal-
 safe **crash tracer**, lifted out of `main.c` into its own translation unit for one reason, that
@@ -747,7 +747,7 @@ Two planes are composited by the TV: the app's **GLES/graphics plane** (UI, draw
 over the hardware **VIDEO overlay plane** (decoded frames). The UI plane is made non-opaque so
 video shows through.
 
-**UI (the Rust app core — the frame loop in `app/run.rs::run`, entered via `plex_run()` in `port.rs`, which installs the port and runs `app::run_application`, after `app/boot.rs::boot()`):** SDL2 window + GLES2
+**UI (the Rust app core — the frame loop in `app/run.rs::run`, entered via `plx_run()` in `port.rs`, which installs the port and runs `app::run_application`, after `app/boot.rs::boot()`):** SDL2 window + GLES2
 context. All UI is drawn with two tiny shaders — an SDF rounded-rect/triangle shader (cards, focus
 glow, HUD widgets, seven-segment FPS) and a text shader that samples SDL2_ttf-rendered glyph
 textures (cached by string+size). Critically-damped springs animate focus scale and shelf scroll.
@@ -802,7 +802,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
 - `Makefile` — build/deploy/run/ipk; toolchain, the bundled-FFmpeg build + staging + its ABI gate
   (one header tree, not the old dual one), TV ssh creds.
 - `src/main.c` — the **boot shim** (event-log/stderr setup, process bring-up); calls the Rust
-  `plex_run()` (`rust-modules/src/port.rs`, which runs `app::run_application`). `src/crashtrace.c`
+  `plx_run()` (`rust-modules/src/port.rs`, which runs `app::run_application`). `src/crashtrace.c`
   (+ `crashtrace.h`) — the **fatal-signal tracer**, its own TU so the signal path can be tested; `src/crashfmt.h` is its pure half. **Both halves are host-tested in
   `make check`** — `ci/crashfmt-test.c` grades the parsing, `ci/crashtrace-test.c` crashes seven
   processes on purpose and checks the record AND the exit status. `src/starfish.c` — the
@@ -812,7 +812,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   `/tmp/dispatcharrtv-crashtest=<segv|abrt|bus|ill|trap|panic|unwind>` to fault the app deliberately
   ON the television — `segv` is a real null write, `abrt`/`bus`/`ill`/`trap` are `raise`, `panic`
   panics inside an `extern "C"` callback, and `unwind` panics straight in `crash_on_purpose` so the
-  unwind crosses `plex_run`'s own frame (`rust-modules/src/dev.rs`'s `crash_on_purpose` doc comment
+  unwind crosses `plx_run`'s own frame (`rust-modules/src/dev.rs`'s `crash_on_purpose` doc comment
   has the detail).
 - `rust-modules/src/` — the app core (Rust): `app/` (`mod.rs` the `run_application` shim + `struct App`, `boot.rs` the bring-up, `run.rs` the frame loop and its phase functions, `events.rs`/`input.rs` the input decode and key ladders, `lifecycle.rs`, `playback.rs`, `content.rs`, `bridge.rs` the seam onto the container and the ONE navigation vocabulary, `words.rs` the heartbeat's `route=`/`overlay=` alphabet — `nav.rs` is gone with `enum Route` since restructure phase 12), `system.rs` (wayland),
   and, in the media layer (`rust-modules/media/`, crate `plx_media`, which the application links),
@@ -948,25 +948,16 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   open transfer, so the four legs of LG checklist item #43 CASE1 — 512 Kbps → 1 Mbps → 7 Mbps →
   17.5 Mbps — are one scripted run instead of four launches, and #14's degrading link is
   measurable rather than anecdotal. `tools/netcond.py --selftest`
-  proves the shaper against a loopback transfer with no television in the room. Point the app at it by editing `PMS_PORT` in the gitignored `src/config.local.h` and
-  `make deploy` (host/port are compiled into `main.c`). **Pick a port Plex is not already on** — it
-  binds `127.0.0.1:32401` itself, and the more specific bind wins, so the proxy is silently bypassed.
+  proves the shaper against a loopback transfer with no television in the room. Point the app at it by making it the app's server — sign in on Setup with the proxy's address,
+  or `tools/tv-session.sh up --account mock=<this-machine>:<proxy-port>` with the mock behind it;
+  nothing about the server is compiled in. **Pick a port nothing else binds more specifically** —
+  a server bound to `127.0.0.1:<port>` wins over the proxy's wildcard bind, and the proxy is
+  silently bypassed.
   **And the macOS application firewall silently drops the TV's connections to the ad-hoc python
   listener** (verified 2026-08-11: netcond up, mode armed, zero requests logged, the TV's probe gets
   an empty read) — the "allow incoming connections?" GUI prompt must be clicked once per python
   path, so start netcond BEFORE going headless, and treat "netcond logs nothing" as this, not as a
   quiet TV.
-  **`tests/run.py` owns one for the whole SERVER tier** since 2026-08-27, so a case can declare a
-  `link_profile` — legs of `{"at_s": …, "mode": …}` anchored at the app's first log line — and be
-  graded over a link the harness controls rather than over whatever the LAN was doing. It is
-  fail-closed and has to be: the app's primary server is `plex_run(PMS_HOST, PMS_PORT)` plus the
-  injected `dispatcharrtv-token` (`dispatcharrtv-servers` is strictly ADDITIVE and cannot move the
-  primary), so the link is conditioned only if the DEPLOYED BINARY was built with `PMS_PORT`
-  pointing at the proxy — which the harness can read out of `src/config.local.h` but never
-  arrange. When it cannot bind, or when the binary talks to the server directly, every case
-  naming a `link_profile` SKIPS with that reason in the summary, because a shaped assertion on an
-  unshaped link is a false pass. A `link_profile` also disables early exit: the interesting leg is
-  never the first.
   Measured with it 2026-07-29: teardown's join of the `/:/timeline` reporter parked the main loop
   **6974 ms**; after moving that join onto the scrobble worker, BACK→teardown is **0.5 s**.
   **That run was taken while the scope bug above was live, so the proxy was stalling EVERY

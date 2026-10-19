@@ -4,7 +4,7 @@
 //! place that names `webos`, `keymanager`, `system` and `player::ffi` together. Its functions keep
 //! their own `cfg(any(hostsim, test))` arms, so the simulator installs this same table and behaves
 //! as it always did.
-use std::os::raw::{c_char, c_int};
+use std::os::raw::c_int;
 
 #[cfg(all(not(feature = "hostsim"), not(test)))]
 const SINK: &dyn plx_platform::tv::sink::VideoSink = &plx_media::player::ffi::StarfishSink;
@@ -43,9 +43,9 @@ static PORT: plx_platform::tv::Port = plx_platform::tv::Port {
 /// The C shim's entry (`src/main.c`) and the simulator's (`src/bin/sim.rs`): install the port, then
 /// hand over to `app::run_application`.
 #[no_mangle]
-pub extern "C" fn plex_run(pms_host: *const c_char, pms_port: c_int) -> c_int {
+pub extern "C" fn plx_run() -> c_int {
     let _ = plx_platform::tv::install(&PORT);
     #[cfg(target_os = "linux")]
     let _ = plx_platform::storage::client::install_activator(plx_platform::webos::activate_storage_helper);
-    crate::app::run_application(pms_host, pms_port)
+    crate::app::run_application()
 }

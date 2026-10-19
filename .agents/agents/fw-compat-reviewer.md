@@ -266,12 +266,9 @@ Reading the output:
 * **`ci/check-elf.sh` is a different question and worth running too**: ELF32/ARM/soft-float/ARMv7,
   the CP15-barrier scan that catches the `-C target-cpu=cortex-a9` regression (with a `dmb > 100`
   positive control, so a broken disassembly cannot pass vacuously), the `DT_NEEDED` diff, and the
-  build-host path scan. On a dev machine it prints
-  `SKIP (private-IP + placeholder) — src/config.local.h present` and exits 0 — and that skip is
-  **only** the private-IP and `YOUR_PMS_HOST` assertions, which genuinely can only hold in a clean
-  CI checkout. The build-host path scan above it still runs, and it is the one that makes the
-  ipk's byte-for-byte reproducibility claim true; the script's own comment records that skipping
-  the WHOLE section is how that gate had never once executed against a real build. Quote the skip
+  build-host path scan and the private-IP scan, both on every build (nothing from a local config
+  file is compiled any more, so there is no dev-machine skip). The build-host path scan is the one
+  that makes the ipk's byte-for-byte reproducibility claim true. Quote the skip
   precisely, or you hand the reader the same conflation back.
 
 ### 5. What CI will do with the same change

@@ -5,7 +5,7 @@ gradual, module-by-module C→Rust migration; today it IS the app — UI, event 
 engine, demux pipeline, and the Plex data layer all live here (see `docs/agent-reference.md`
 for the architecture). The C side boots the process, records an async-signal-safe fallback crash
 line and image marker, wraps the Starfish C++ seam, and keeps Sentry's opaque value ABI on the C
-side. Its Rust entry points are `plex_run`, `plx_crash_write_image_marker`,
+side. Its Rust entry points are `plx_run`, `plx_crash_write_image_marker`,
 `plx_sentry_spool_external`, and the two Starfish callbacks.
 
 ## Ported to Rust (10) — the whole data / logic / UI / render / platform stack

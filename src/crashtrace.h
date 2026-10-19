@@ -1,4 +1,4 @@
-/* Dispatcharr TV — an unofficial native Plex client for LG webOS.
+/* Dispatcharr TV — an unofficial native live-TV client for Dispatcharr, on LG webOS.
  * Copyright © 2026 Gleb Linnik. Licensed under GPL-3.0-or-later; see LICENSE at the repository root.
  *
  * crashtrace.h — install the fatal-signal tracer. One entry point, called once from `main`.

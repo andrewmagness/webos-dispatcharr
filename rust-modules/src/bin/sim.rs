@@ -1,7 +1,8 @@
 //! `dispatcharrtv-sim` — the desktop UI simulator.
 //!
 //! The same application core the television runs, linked against a desktop SDL2 and desktop GL
-//! instead of LG's. It draws the real interface, against a real Plex Media Server, on a laptop.
+//! instead of LG's. It draws the real interface, against a real (or mock) Dispatcharr server, on a
+//! laptop.
 //!
 //! **What it is for.** The television serializes the entire dev loop: one set, one app instance,
 //! and two `tests/run.py` jobs kill each other's app. That makes every UI change a queue. Several
@@ -14,54 +15,32 @@
 //! usable ACB binding reports, so Play lands on the app's real failure read-out. Nor is it a substitute
 //! for the device on anything the GPU decides: the `--fps` gates are calibrated to the SM9000's
 //! Mali, and text rasterization here goes through a different FreeType. A green run on this binary
-//! is evidence about a Mac. Layout, focus, navigation, and every byte of the Plex data layer are
-//! the parts that do transfer — and they are most of the UI work.
+//! is evidence about a Mac. Layout, focus, navigation, and every byte of the Dispatcharr data layer
+//! are the parts that do transfer — and they are most of the UI work.
 //!
 //! Usage:
-//!   dispatcharrtv-sim [pms-host] [pms-port]
+//!   dispatcharrtv-sim
+//! It takes no server argument: like the television it signs in from the account file in its
+//! runtime root (`dispatcharr.json`, written by Setup, or by hand to point it at
+//! `tests/mock_dispatcharr.py`), and with none it boots to Setup.
 //! Environment:
-//!   DISPATCHARRTV_PMS_HOST / DISPATCHARRTV_PMS_PORT   server to talk to (argv wins)
 //!   DISPATCHARRTV_RUNTIME_DIR                     this instance's trigger/FIFO/log root
 //!   DISPATCHARRTV_APP_DIR                         where appfont*.ttf and the icons live (repo `pkg/`)
 
-use dispatcharrtv::port::plex_run;
-use std::ffi::CString;
+use dispatcharrtv::port::plx_run;
 use std::os::raw::c_int;
-
-/// Defaults chosen to fail loudly rather than silently talk to the wrong thing.
-const DEFAULT_PORT: u16 = 32400;
 
 fn main() {
     // SIGPIPE needs no handling here, unlike `src/main.c:105`: that file installs `SIG_IGN` by hand
     // precisely because a C `main` skips Rust's `std::rt::init`. This IS a Rust main, so std has
-    // already done it, and the first PMS socket closed mid-write cannot kill the process.
+    // already done it, and the first server socket closed mid-write cannot kill the process.
 
-    let mut args = std::env::args().skip(1);
-    let host = args
-        .next()
-        .or_else(|| std::env::var("DISPATCHARRTV_PMS_HOST").ok())
-        .unwrap_or_default();
-    let port: u16 = args
-        .next()
-        .or_else(|| std::env::var("DISPATCHARRTV_PMS_PORT").ok())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_PORT);
-
-    // No host is not an error — it is what a person who was SENT this app has. The boot host is
-    // only ever consulted by the two paths that already hold credentials (the stored session and
-    // the harness's injected token); with neither, `plex_run` goes to QR sign-in and plex.tv's
-    // `/api/v2/resources` supplies the address, exactly as on a television out of the box.
-    //
-    // The dev loop keeps its loud failure where it belongs: the Makefile's `SIM_PRE` refuses to
-    // launch when `SIM_PMS` is empty, so `make sim-run` still says "no PMS host" rather than
-    // silently booting a sign-in screen at somebody expecting Home.
-    if host.is_empty() {
+    if std::env::args().nth(1).is_some() {
         eprintln!(
-            "dispatcharrtv-sim: no PMS host given — starting the plex.tv sign-in flow.\n\
-             (pass one as `dispatcharrtv-sim <numeric-ip> [port]`, or set DISPATCHARRTV_PMS_HOST, to boot\n\
-             straight at a known server. It must be a NUMERIC IP: stream.rs speaks HTTP/1.1 over a\n\
-             raw socket with no DNS resolver, on the desktop exactly as on the television.)"
+            "dispatcharrtv-sim: takes no arguments — it signs in from the account in its runtime \
+             root (DISPATCHARRTV_RUNTIME_DIR), as the television does"
         );
+        std::process::exit(2);
     }
 
     // The instance root must exist before anything writes into it, and the event log is truncated
@@ -86,25 +65,15 @@ fn main() {
         std::process::exit(1);
     }
 
-    eprintln!(
-        "dispatcharrtv-sim: pms={host}:{port} runtime={} log={}",
-        root.display(),
-        events.display()
-    );
+    eprintln!("dispatcharrtv-sim: runtime={} log={}", root.display(), events.display());
 
-    let c_host = CString::new(host).unwrap_or_else(|_| {
-        eprintln!("dispatcharrtv-sim: host contains a NUL byte");
-        std::process::exit(2)
-    });
-
-    // `as c_int` directly — an intermediate i16 would wrap every port above 32767.
-    let rc = plex_run(c_host.as_ptr(), port as c_int);
+    let rc = plx_run();
     exit_without_atexit_teardown(rc)
 }
 
 /// Leave the process WITHOUT running libc's `atexit` handlers or shared-library destructors.
 ///
-/// `plex_run` returns with detached workers still alive — the sign-in PIN request, the poster
+/// `plx_run` returns with detached workers still alive — a sign-in request, the logo
 /// fetchers, anything else parked in libcurl — because nothing in the app joins them, and on the
 /// television nothing has to. `std::process::exit` would call libc `exit`, whose handlers include
 /// OpenSSL 3's `OPENSSL_cleanup`: it frees libcrypto's global tables underneath a worker that is
@@ -113,7 +82,7 @@ fn main() {
 /// `OPENSSL_cleanup` from `exit`, worker in `X509_STORE_load_file_ex` under `auth::mint_pin`).
 ///
 /// Nothing that must survive the process lives in those handlers: the event log is appended
-/// unbuffered, the app's own shutdown (telemetry flush included) already ran inside `plex_run`,
+/// unbuffered, the app's own shutdown (telemetry flush included) already ran inside `plx_run`,
 /// and the two std streams are flushed here by hand.
 fn exit_without_atexit_teardown(rc: c_int) -> ! {
     use std::io::Write;

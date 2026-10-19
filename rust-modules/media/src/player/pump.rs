@@ -1,5 +1,5 @@
 //! player::pump — the main-thread pump (was bufferfeed_pump). Runs each frame from
-//! plex_run: the pending-seek handler, the ACB-bind state machine (Stage), and the
+//! plx_run: the pending-seek handler, the ACB-bind state machine (Stage), and the
 //! feed dispatch. All ACB/Starfish control calls happen here on the main thread.
 use super::engine::{
     drain_aq, feed_both_lanes, feed_sample, Engine, Source,

@@ -15,7 +15,7 @@
 //! — see `docs/async-model-decision.md`).
 //!
 //! The reasoning is unchanged and the enforcement is stronger. **The token is now CONSUMED at
-//! construction** ([`PlayerAdapter::new`] takes it by value, and `plex_run` is the only place that
+//! construction** ([`PlayerAdapter::new`] takes it by value, and `plx_run` is the only place that
 //! can mint one), so holding a `&mut PlayerAdapter` IS the proof the old argument stood in for —
 //! and it is a proof the borrow checker keeps rather than one a caller could satisfy twice. Two
 //! live `&mut` to the engine no longer requires a convention: it does not compile.
@@ -42,7 +42,7 @@ pub struct PlayerAdapter {
 }
 
 impl PlayerAdapter {
-    /// Take the token. `app::boot` calls this once, with the token `plex_run` minted.
+    /// Take the token. `app::boot` calls this once, with the token `plx_run` minted.
     pub fn new(mt: MainThread) -> Self {
         Self {
             mt,

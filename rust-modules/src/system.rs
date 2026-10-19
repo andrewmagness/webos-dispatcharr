@@ -56,7 +56,7 @@ pub(crate) fn clear_opaque_region() {
         //
         // …and nothing to LINK against under `cargo test`. Since phase 9 this is reached through
         // `Rig::clear_opaque_region` (`app/bridge.rs`), which the host suite exercises, where
-        // before it was reachable only from `plex_run` and the dead-strip hid the missing
+        // before it was reachable only from `plx_run` and the dead-strip hid the missing
         // `libwayland-client`. The guard below is `G_WL_SURFACE`, which is null in a test, so
         // nothing is skipped that would have run.
         #[cfg(all(not(feature = "hostsim"), not(test)))]

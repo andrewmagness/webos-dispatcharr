@@ -55,6 +55,6 @@ So: this is the app to *look at* and click around. It is not a way to watch anyt
 
 Apple Silicon Macs only (M1 and later), macOS 11 or newer.
 
-Unofficial, and not affiliated with, endorsed by, or sponsored by Plex GmbH or LG Electronics. MIT
+Unofficial, and not affiliated with, endorsed by, or sponsored by Dispatcharr or LG Electronics. MIT
 licensed; the licence and the third-party notices are inside the app bundle, under
 `Contents/Resources`.

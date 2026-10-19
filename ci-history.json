@@ -1,4 +1,4 @@
-{"updated":"2026-10-19T06:16:36Z",
+{"updated":"2026-10-19T06:23:12Z",
 "ci":[
 {"id":38635451190,"at":"2026-10-14T20:50:33Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"host unit tests (hostsim)":678,"host python/shell/C gates":242,"host harness tests":273,"host lint + type-checks":303,"host unit tests (default features)":876,"host checks (NOT a device gate)":4},"failed":["cross-build (armv7) + artifact assertions"]},
 {"id":38637798632,"at":"2026-10-14T21:07:46Z","sha":"72966a388","title":"Setup: example addresses from the documentation range, not a LAN one","pr":1,"event":"pull_request","conclusion":"success","attempt":1,"jobs":{"host harness tests":161,"host unit tests (default features)":507,"host lint + type-checks":151,"host unit tests (hostsim)":332,"host python/shell/C gates":150,"cross-build (armv7) + artifact assertions":404,"host checks (NOT a device gate)":4}},
@@ -194,7 +194,8 @@
 {"id":39128666968,"at":"2026-10-18T12:46:06Z","sha":"1b7532bdf","title":"README and test-fast: the suite is thirteen crates without plx_plex","pr":41,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":12},"failed":["ARM build + gates / build + verify"]},
 {"id":39199032771,"at":"2026-10-19T04:21:08Z","sha":"149f67906","title":"Merge remote-tracking branch 'origin/main' into rename-plex-run","pr":45,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":11},"failed":["ARM build + gates / build + verify"]},
 {"id":39205216107,"at":"2026-10-19T05:33:58Z","sha":"4edb05ea2","title":"WIP telemetry: layer map, list-caps and test-fast follow the removal","pr":46,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":12},"failed":["ARM build + gates / build + verify"]},
-{"id":39206940399,"at":"2026-10-19T05:54:18Z","sha":"019218287","title":"ci: the python-gates job installs nightly before its parallel steps","pr":46,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":14},"failed":["ARM build + gates / build + verify"]}
+{"id":39206940399,"at":"2026-10-19T05:54:18Z","sha":"019218287","title":"ci: the python-gates job installs nightly before its parallel steps","pr":46,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":14},"failed":["ARM build + gates / build + verify"]},
+{"id":39208595978,"at":"2026-10-19T06:12:38Z","sha":"5998d7ead","title":"Merge remote-tracking branch 'origin/main' into release-0.1.0-docs","pr":47,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":17},"failed":["ARM build + gates / build + verify"]}
 ],
 "cancelled":{"2026-10-15":{"push":1,"pull_request":0},"2026-10-16":{"push":2,"pull_request":0}},
 "daily":[]}

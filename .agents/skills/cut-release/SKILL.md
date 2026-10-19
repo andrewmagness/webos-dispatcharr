@@ -264,16 +264,13 @@ gh workflow run release.yml --ref release/vX.Y -f version=X.Y.Z -f line=release/
 ```
 
 **This procedure has no step that merges a patch back into `main`, and that gap has already cost a
-device session.** `release/v0.6` accumulated 37 commits across v0.6.1 through v0.6.6 — real fixes
-among them, not just version bumps — that never reached `main` or any branch cut from it. One of
-those fixes (issue #74, `ac305265`) closed a crash that then got independently re-investigated and
-misdiagnosed as an LG firmware defect on 2026-09-14, entirely because nobody had checked whether
-`main` was behind its own maintenance line. See `docs/known-issues.md` for the full account.
-**After a patch lands on a `release/vX.Y` line, cherry-pick or merge its real fixes back onto
-`main`** (skip the version-bump and release-audit commits — they don't apply to trunk) before
-considering the patch done. There is no tooling for this yet; do it by hand and note in
-`docs/known-issues.md` if a fix's port needs anything nontrivial, so the next person doesn't
-re-derive it.
+device session** in the code this project grew from: a maintenance line accumulated real fixes that
+never reached `main`, and one of them closed a crash that was later re-investigated and misdiagnosed
+as an LG firmware defect (`docs/known-issues.md`). **After a patch lands on a `release/vX.Y` line,
+cherry-pick or merge its real fixes back onto `main`** (skip the version-bump and release-audit
+commits — they don't apply to trunk) before considering the patch done. There is no tooling for this
+yet; do it by hand and note in `docs/known-issues.md` if a fix's port needs anything nontrivial, so
+the next person doesn't re-derive it.
 
 **There is no flavour input here, and you do not want one.** `release.yml`'s `build` job pins
 `flavor: stable` in the `with:` block it hands to the shared `build-package.yml` workflow, which is
@@ -354,20 +351,19 @@ directory beside those logs: that is the *other* install's runtime root, not a l
 It is named for the app id — the reason the separator is a dot and not a hyphen — so it matches no
 `dispatcharrtv-*` glob and cannot be mistaken for a trigger by the check or by the app.
 
-### 7. Tell the people who are waiting
+### 7. The Homebrew Channel listing — deferred, so nothing to do
 
-The listing and the submission are separate artifacts from the release and both go stale:
+**The app is not listed on `webosbrew/apps-repo`, and a release does not change that.** The owner
+decided on 2026-10-19 to list it only after a couple of releases have shipped. Until then:
 
-- **`webosbrew/apps-repo` PR** — the body argues for the requirements line. When compatibility
-  changes, that argument changes. It has previously sat for weeks defending a ceiling that had
-  already been removed.
-- **`packages/com.magness.dispatcharrtv.yml`** — the description thousands of channel users read before
-  installing. Its "please read before installing" section is where the honest limits live.
-- **A comment on the PR** if the reviewer is waiting on something this release affects.
-
-Comments and PR text go out **under the maintainer's name**. Write as them: state what changed, do
-not apologise on their behalf for something an agent did, and match the terse register of the
-thread rather than the house style of a commit message.
+- `docs/webosbrew-package.yml` is the ready-to-submit listing. Keep its description and
+  `requirements` in step with the release (the release-notes README asks for that), but do **not**
+  open an apps-repo PR and do **not** set the `HOMEBREW_LISTING` repository variable without the
+  owner saying so. That variable is what makes `release.yml` generate and publish the manifest the
+  listing points at; unset, a release publishes none.
+- When the owner does say so, the file's header is the procedure. From then on this step becomes:
+  update the apps-repo PR or package file when compatibility or scope changes, and write PR text
+  and comments as the maintainer — state what changed, in the thread's own terse register.
 
 ## After publishing
 

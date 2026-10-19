@@ -9,14 +9,17 @@ the way it does and what the result is and is not.
 
 It is **not a new build of the app**. It is `--features hostsim` — the desktop simulator
 (`docs/…`/`rust-modules/src/bin/sim.rs`, and the `ui-sim` skill) — with the dev features off and a
-bundle around it. Every UI change, every Plex data-layer change, is the same code the ipk ships.
+bundle around it. Every UI change, every Dispatcharr data-layer change, is the same code the ipk ships.
 
 ## What it can do, and the one thing it cannot
 
-**Can:** sign in with the real plex.tv QR flow, discover the account's servers, browse Home, the
-libraries, Search, detail pages, seasons, episodes, cast, the who's-watching picker, watched state
-— against a real Plex Media Server that advertises a usable HTTPS origin. It persists the session
-and comes back signed in.
+**Can:** run Setup (network discovery and sign-in) against a real Dispatcharr server and show the
+Guide — channels, logos, groups, favourites, now and next. It persists the account and comes back
+signed in.
+
+*History:* the bundle was first built (2026-08-16) for the PlxNative code this project grew from,
+where it browsed Plex libraries; the build recipe and the fixes below are unchanged, and mentions
+of plex.tv and the QR sign-in in them describe that era.
 
 **Cannot: play video.** The decode path is LG's in-process `StarfishMediaAPIs` bound to the
 hardware video plane via ACB — 29 symbols that exist on a television and nowhere else.
@@ -25,12 +28,10 @@ hardware video plane via ACB — 29 symbols that exist on a television and nowhe
 the simulator's contract; the bundle inherits it. A Mac playback backend would be a new media
 engine, not a packaging change.
 
-Browsing is not LAN-only: the same `http.rs` control façade runs here through `net.rs`/libcurl for
-HTTPS PMS control. The plaintext transport remains in the shared core; the distributable host build has developer
-triggers disabled, so authenticated requests use it only under the same consented home-network
-grant as the television (`plex::grant`). The HTTPS
-media path is also present structurally (`curlio.rs`), but playback still ends at the host FFI seam
-described above because macOS has no Starfish/ACB decoder backend.
+The server is reached the way the television reaches it: plain HTTP to an `http://` address, and
+libcurl (`net.rs`) for an `https://` one. The HTTPS media path is also present structurally
+(`curlio.rs`), but playback still ends at the host FFI seam described above because macOS has no
+Starfish/ACB decoder backend.
 
 ## What had to change for it to work at all
 

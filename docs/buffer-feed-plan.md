@@ -1,5 +1,10 @@
 # Buffer-feed playback plan (Starfish BUFFERSTREAM)
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the buffer-feed engine it planned is the one that plays live TV here; Plex sessions, transcodes and seeking in it are history.
+
 Why we pivoted here: URI-mode (`com.webos.media/load type:"media"`) runs the pipeline
 **out-of-process** in uMS; ACB cannot bind that video plane (`tv.display/setMediaVideoData`
 → ERROR_06 unconditionally — payload content, playerType, display-window all ruled out on

@@ -121,8 +121,7 @@ pub const fn aq_caps() -> (i64, i64) {
 // guard demands. `tools/abr-plant-sweep.py` prices this at +555 ms of climbable ceiling WITH the
 // graded-reject feed and **+17 ms without it** — inside a measured 167 ms noise floor — so the two
 // levers are one decision and neither is worth landing alone.
-// `docs/measurements/p0-plant-sizing.md` is the record; `requiredMemory` is 160 MB, so +2 MiB RSS
-// on a 32-bit set is inside the budget already declared.
+// `requiredMemory` is 160 MB, so +2 MiB RSS on a 32-bit set is inside the budget already declared.
 const AQ_VIDEO_BYTES: c_long = 10 * 1024 * 1024;
 const AQ_AUDIO_BYTES: c_long = 1024 * 1024;
 

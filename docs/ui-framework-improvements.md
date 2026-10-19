@@ -1,5 +1,10 @@
 # retui — framework improvements
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: retui and the restructure's architecture are what the Guide, Setup and the player are built on; the Plex screens it names (Home, Detail, the Library, Search, the sign-in flow) are gone.
+
 > **Field names in this document predate 2026-08-01 and the old name was REUSED.** Where it says
 > `FPS=`, today's heartbeat says **`loop=`** (loop iterations); where it says `pres=`, today's says
 > **`fps=`** (frames actually presented). The manifest gates moved too: `floor`→`loop_floor`,
@@ -580,7 +585,7 @@ through the content painter gives `scrim_a * a²`); `draw_hud` → `Overlay`; `s
 Home. **This moves pixels**: at rest the focused row sits at `GRID_TOP = 214`, and the 1.09 pop puts
 the poster top at ~197 with a 31 px shadow pad reaching 166, under the 170→214 gradient — shorten the
 gradient to end at ~197. The interleave is described as deliberate at
-`docs/architecture-review-2026-07-26.md:651`; get the product call made first and keep it separable
+the 2026-07-26 architecture review (PlxNative; not carried over); get the product call made first and keep it separable
 from the mechanism.
 
 **Commits 11+ —** `detail::draw_strip` + `profiles`; player surfaces (annotation only — do **not**
@@ -607,7 +612,7 @@ Tier A items A5-A9 are independent and can land in any gap.
 - **Geometry batching, a texture atlas, a GL depth buffer.** §1.9; and the whole UI is alpha-blended
   (`gfx.rs:304-305`), so blended fragments need back-to-front, which a depth test does not provide.
 - **A uniform `Screen` trait to collapse `app.rs`'s dispatch chains.** Refuted at
-  `docs/architecture-review-2026-07-26.md:344-347`: the arms carry key-repeat arming, HUD timers,
+  the 2026-07-26 architecture review (PlxNative; not carried over): the arms carry key-repeat arming, HUD timers,
   `hud_focus` and the press animation, which no return value expresses.
 - **Converting the 13 `&'static mut` screen accessors to a `with()` scope.** `ScrollColumn::draw`
   takes `&self` and detail's `draw_child` re-enters `view()`. Do land the two-line fix at

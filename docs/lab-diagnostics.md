@@ -1,5 +1,10 @@
 # Cloud Lab Bridge — logs out and bounded app commands in, without SSH
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the lab bridge is still built under the `lab-diagnostics` feature; the Plex-specific redaction patterns it lists remain as generic backstops, and the Plex screens it drove are gone.
+
 **Diagnostics status: BUILT and DEVICE-VERIFIED on the dev set, 2026-08-26** (against `main`
 @5a8ef2ef). The whole chain —
 a **physical BLUE press** on the Magic Remote → snapshot → scrub → gzip → pinned TLS POST from the

@@ -23,7 +23,7 @@ pub const GAP: f32 = 30.0;
 /// margin that satisfies 5% satisfies 20px and not the other way round.)
 ///
 /// It was **90** until 2026-08-23 — 4.7%, i.e. six pixels INSIDE the exclusion zone, on every screen
-/// in the app at once. `docs/lg-self-checklist.md` recorded that as passing, reading "4.7% against a
+/// in the app at once. A checklist review recorded that as passing, reading "4.7% against a
 /// 5% frame" as clearance when it is the opposite: a smaller margin puts content NEARER the edge.
 /// Nothing had ever measured it, which is why
 /// `app::overscan_audit_tests::no_required_content_enters_the_safe_area_exclusion_zone` now does

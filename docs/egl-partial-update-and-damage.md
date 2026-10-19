@@ -1,5 +1,10 @@
 # EGL partial update, Transaction Elimination, and the opaque region
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the renderer, its instruments and the measured limits below still apply to this tree; the screens it names (Home, Detail, the Library, Search, the account picker) are gone.
+
 **Device**: LG 49SM9000PLA, webOS 4.10.0, Mali-T820 MP2 (Midgard), DDK **r12p0-04rel0**, GLES2
 context on a 1920x1080 drawable. Everything below was measured on that television on 2026-08-19,
 in eight locked batches. Branch `blur/e7-opaque`.

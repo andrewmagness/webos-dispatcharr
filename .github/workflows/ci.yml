@@ -33,8 +33,6 @@ on:
     #   * `PRIVACY.md`, `LICENSE` (`include_str!`ed by screens/src/legal.rs and
     #     packaged), and `LICENSING.md`, `TRADEMARKS.md`, `THIRD-PARTY-NOTICES.md` (ci/check-package.py
     #     grades the packaged payload against them; the Makefile ships them in the .ipk);
-    #   * `docs/measurements/*-logs/*.log` (the tools/test_abr_*.py and tools/test_scrub_logs.py
-    #     suites replay them).
     # What is NOT read, and is excluded below, with the evidence on each line.
     #
     # One thing every excluded file does touch: ci/test_source_bundle.py's `RepositoryTreeScan`
@@ -58,12 +56,10 @@ on:
       - '!SECURITY.md'
       - '!AGENTS.md'
       - '!CLAUDE.md'
-      # docs: nothing under docs/ is read by a gate except the re-include below
+      # docs: nothing under docs/ is read by a gate
       # (docs/macos-app-readme.md is only copied into the macOS bundle by `make macapp`, which
       # this workflow does not run; the images are referenced by prose)
       - '!docs/**'
-      # replayed by tools/test_scrub_logs.py (make check): must stay a trigger
-      - 'docs/measurements/*-logs/*.log'
       - '!.agents/**/*.md'
       - '!rust-modules/**/*.md'
       # Agent/editor configuration: the hooks are gates (.claude/hooks stays a trigger), the rest

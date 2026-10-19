@@ -428,8 +428,8 @@ fn decode_text_at(ev: &[u8], off: usize) -> String {
 /// surrogate — is left for `from_utf8_lossy` to answer with U+FFFD, because a replacement character
 /// is the only visible signal that something arrived broken and it must not be swallowed.
 ///
-/// **This is LG checklist row #16** (`docs/lg-self-checklist.md` §2), which asks that the character
-/// which arrives be the character that was pressed. `text[32]` is a fixed array, so a commit that
+/// **This is LG App Self Checklist row #16**, which asks that the character which arrives be the
+/// character that was pressed. `text[32]` is a fixed array, so a commit that
 /// fills it is cut at a BYTE, and that cut lands mid-codepoint for any query that is not pure
 /// ASCII. Decoded lossily, the surviving half becomes a `` the user never typed, in their search
 /// field — exactly the substitution the row is about. Nothing can recover the character (its other
@@ -643,8 +643,8 @@ mod tests {
     /// the television — it commits the CASED character — so the app's whole obligation is to carry
     /// the bytes through without touching them, and this is what proves it does. (A decoder that
     /// normalised case would be invisible until someone searched for a title that differs only by
-    /// it.) Deliberately cites no checklist row number: `docs/lg-self-checklist.md` records no such
-    /// row, and a number this repo cannot corroborate does not belong in a permanent comment.
+    /// it.) Deliberately cites no checklist row number: the checklist has no such row on record,
+    /// and a number this repo cannot corroborate does not belong in a permanent comment.
     #[test]
     fn letter_case_transfers_exactly_as_the_panel_committed_it() {
         for s in [

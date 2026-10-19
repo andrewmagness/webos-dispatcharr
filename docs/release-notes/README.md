@@ -69,7 +69,7 @@ starts at the paragraph underneath it.
 
 **A security disclosure, a migration step, or anything else the reader must do goes in its own `##` section immediately after the lede, above every feature.** Never inside `Fixed`: the test is mechanical — *if installing the release does not complete the item, it does not belong in a list of things installing completes.* Leave one cross-reference line in `Fixed` so a changelog reader is routed rather than told twice.
 
-Title it with **the reader's action**, not our defect: `## If you ran v0.1.0 or v0.2.0: rotate your Plex token`, not `## The event log printed credentials`.
+Title it with **the reader's action**, not our defect: `## If you ran v0.1.0 or v0.2.0: sign out and back in to replace your API key`, not `## The event log printed credentials`.
 
 **Breaking changes are equally prominent**, under a heading that says what stops working and for whom.
 
@@ -112,7 +112,7 @@ Updating it:
 - **A third-party report is added with the reporter's name as a profile link, the date and the version they ran.** Never generalise a report from one release to its neighbours, and never restate someone's hedge as a verdict.
 - **When a release changes something on a path that is known broken, do not restate the old failure as present fact.** Say what changed and that nobody has run it there. That is what `Help test this release` is for, and it is the only way this project ever gets the report it needs.
 - **The static tier is regenerated from the release run's `webosbrew-ipk-verify` output, never retyped.** The full matrix lives in the audit; the note carries the one-line summary of it.
-- **A compatibility or scope change is a two-artifact change**: this note *and* a PR to `webosbrew/apps-repo` updating the package description, which is the only text an owner reads before installing. Sync `docs/webosbrew-package.yml` in the same commit.
+- **A compatibility or scope change also updates `docs/webosbrew-package.yml`** in the same commit. The Homebrew Channel listing is deferred (not submitted), so that file is not published yet; keeping it in step means the description is right on the day it is.
 
 ## Installing — fixed shape
 
@@ -149,9 +149,9 @@ Optimise for GitHub's renderer and for someone reading on a television or a phon
 - **No marketing verbs** — "blazing", "massively improved", "now fully supports".
 - **No auto-generated PR-title dump as the body.** It cannot express a compatibility claim, a defect boundary or an ask, which are three of the six things a note is for. GitHub's generated list is appended after the note, where it is a free second record.
 - **No measurable number a human typed.** Sizes, hashes, firmware counts, test counts. This project has published a wrong size, a wrong hash instruction and a firmware that does not exist; all three were typed.
-- **No pasted log excerpt, sample URL or screenshot** containing a server name, LAN address, `machineIdentifier`, media title, profile name or token.
-- **No comparative claims about the official Plex app.** Fine as positioning in the README; in a release note it is an unverifiable assertion about a third party that a channel reviewer would have to defend or strip.
-- **No prerelease, no draft, no `-rc`, no four-component versions.** All four fail silently rather than loudly: a draft or prerelease drops out of `releases/latest`, which is the URL the Homebrew Channel resolves the manifest through, and LG will not install a version that is not three integers.
+- **No pasted log excerpt, sample URL or screenshot** containing a server address, LAN address, username, channel line-up or API key.
+- **No comparative claims about other apps** (Dispatcharr's own web player, other IPTV apps). Fine as positioning in the README; in a release note it is an unverifiable assertion about a third party that a channel reviewer would have to defend or strip.
+- **No prerelease, no draft, no `-rc`, no four-component versions.** All four fail silently rather than loudly: a draft or prerelease drops out of `releases/latest`, which is the link users follow (and, once the app is listed, the URL the Homebrew Channel resolves the manifest through), and LG will not install a version that is not three integers.
 - **No `CHANGELOG.md`.** This directory published as the release body is the same record with one copy.
 
 ## What is NOT in a note any more
@@ -203,8 +203,8 @@ Neither can be a gate, because both end in a judgement.
 **Was the action-required section owed?** The trigger list above is wide, so evaluate it explicitly rather than by feel, and record the decision — including "no hits" — in the notes file's commit message:
 
 ```sh
-git diff "vA.B.C".."vX.Y.Z" -- rust-modules/src src ci \
-  | grep -nE '^\+.*(token|X-Plex-Token|mkfifo|bind\(|listen\(|O_CREAT|fopen|0o?6[0-9]{2}|/tmp/|/media/)'
+git diff "vA.B.C".."vX.Y.Z" -- rust-modules src ci \
+  | grep -nE '^\+.*(token|X-API-Key|Authorization|mkfifo|bind\(|listen\(|O_CREAT|fopen|0o?6[0-9]{2}|/tmp/|/media/)'
 ```
 
 **Is anything claimed more widely than the evidence?** These phrases are not banned outright — "not reproducible across machines" is the honest sentence, and it contains two of them — but each one is a place where a note has overclaimed before, so read every hit:

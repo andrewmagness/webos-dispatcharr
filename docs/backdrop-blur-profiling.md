@@ -1,5 +1,10 @@
 # Backdrop blur: baseline graph and HWCNT measurement
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the renderer, its instruments and the measured limits below still apply to this tree; the screens it names (Home, Detail, the Library, Search, the account picker) are gone.
+
 This note describes the `backdrop-blur` branch before the direct-render experiment. It is the
 baseline against which that experiment must be compared; none of the profiling changes below
 alter the release render path. Development timing and counter runs use separate triggers.

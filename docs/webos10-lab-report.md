@@ -1,5 +1,10 @@
 # webOS 10.3.1 in the LG Cloud Test Lab — 2026-08-27
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the platform findings apply unchanged; the Plex playback sessions they were measured in, and the server transcodes they discuss, do not.
+
 **One hour on a rented 2024 LG set, from another country, over the public internet. The app signed
 in, browsed two servers, and direct-played a 25 GB 4K HEVC Dolby Vision Profile 8 + Atmos remux.
 Every server transcode was refused outright by the pipeline, and the reason was one line of ours.**

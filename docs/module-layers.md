@@ -1,32 +1,45 @@
 # Module layers: getting rust-modules out of one big cycle
 
-Status: target graph declared and gated 2026-10-02, and all fourteen migration steps (L1 to L14)
-are done: 0 of the 231 baseline entries remain, so no layer names a layer it may not use. That is
-not yet "extractable": 134 `cfg(test)` items were still named from another layer's tests after
-L14, which a split hides from them, and the gate does not check impl coherence. Both are below
-("Then the split"), and so is the split itself. Step L15, declared after them, fenced the webOS code
-off behind a port, so that another TV OS can be a second port. L15 is **gate-complete**: its 44
-entries are gone, and the gate fails on any reference from outside the port to a member of it. It
-is not done in the sense of its own goal. L15b, the OS-neutral port, is open (below). Neither holds
-up the split. (Dispatcharr TV has since deleted the `session` crate, plex.tv sign-in, and the
-`plex` crate, the Plex API and request door, with the Plex client, and added the `dispatcharr`
-crate; the record below is the split as it was done.) **Thirteen of the fourteen layers, `base`, `machine`, `platform`, `gfx`, `net`, `ui`,
-`plex`, `telemetry`, `data`, `session`, `media`, `appkit` and `screens`, are their own crates,
-`plx_base`, `plx_machine`, `plx_platform`, `plx_gfx`, `plx_net`, `plx_ui`, `plx_plex`, `plx_telemetry`,
-`plx_data`, `plx_session`, `plx_media`, `plx_appkit` and `plx_screens`** (`rust-modules/base/`,
-`machine/`, `platform/`, `gfx/`, `net/`, `ui/`, `plex/`, `telemetry/`, `data/`, `session/`, `media/`,
-`appkit/` and `screens/`; "Split 1: base" to "Split 13 (screens)" below, and "Splits 9 and 10
-together" for how those two were combined). **The split is finished.** What is left in
-`rust-modules/src/` is the last layer, `app`, and it stays the top crate `dispatcharrtv`: the
-loop, its adapters, every dev and diagnostic surface, and the application's side of the port
-(`port`, `system`, and the other `[port webos]` members that are not in a layer crate). They are
-the one `staticlib` the Makefile links and the one place that may name every other layer, so there
-is nothing below it to split off. **Decision: the `[port webos]` members stay where they are**
-(`webos`, `keymanager` and `system` are modules of `plx_platform`, `player::ffi` of `plx_media`, and
-`port` of the top crate) **until a second TV OS exists.** A port crate now would have one
-customer and a boundary drawn from guesses about the second; the fence in `ci/check-module-layers.py`
-(a reference from outside `[port webos]` to a member of it fails) already holds the line a crate
-would, and L15b is where the port's OS-neutral shape is worked out.
+## The layers today (Dispatcharr TV, 2026-10-19)
+
+`ci/module-layers.ini` is the authority; this table is its reading on the date above. Each layer may
+use only the layers listed before it in its `uses` line, and each is its own crate except `app`:
+
+| Layer | Crate | Holds | Uses |
+| --- | --- | --- | --- |
+| `base` | `plx_base` | event log and its scrubber, paths, tasks, triggers, diagnostics | — |
+| `machine` | `plx_machine` | the present/idle/landing/motion machines | base |
+| `platform` | `plx_platform` | webOS services, storage, key manager, device caps, image cache, i18n, TV | base machine |
+| `gfx` | `plx_gfx` | GL, EGL, text, images, SVG, GPU timing and counters | base machine platform |
+| `net` | `plx_net` | HTTP control (`net`) and the media socket (`stream`) | base platform |
+| `dispatcharr` | `plx_dispatcharr` | the Dispatcharr API, account, prefs, discovery, guide | base net |
+| `ui` | `plx_ui` | retui and the design system | base machine platform gfx |
+| `data` | `plx_data` | stream metadata types (Dolby Vision, track names) | base machine platform net |
+| `media` | `plx_media` | demux (`ff`), AU queues, curl media source, the player, live routing | base machine platform gfx net data |
+| `appkit` | `plx_appkit` | the player HUD and the live banner | … media |
+| `screens` | `plx_screens` | Guide, Setup, the player screen | … dispatcharr … appkit |
+| `app` | `dispatcharrtv` (`rust-modules/src`) | the loop, adapters, dev surfaces, the port | every layer |
+
+`[port webos]` (`webos`, `keymanager`, `system`, `player::ffi`, `port`) is a fence, not a layer:
+nothing outside it may name a member of it.
+
+## The record
+
+Status of the migration, 2026-10-02 (in PlxNative): target graph declared and gated, and all fourteen
+migration steps (L1 to L14) done: 0 of the 231 baseline entries remain, so no layer names a layer
+it may not use. Step L15 fenced the webOS code off behind a port, so that another TV OS can be a
+second port; its 44 entries are gone, and the gate fails on any reference from outside the port to
+a member of it. L15b, the OS-neutral port, is open (below).
+
+**The record below names layers that Dispatcharr TV has since deleted with the Plex client** — the
+`plex` crate (`plx_plex`, the Plex API and request door), `session` (`plx_session`, plex.tv sign-in)
+and `telemetry` (`plx_telemetry`, removed 2026-10-18) — and predates the `dispatcharr` crate. It is
+kept for how the split was done and why each boundary sits where it does; where it and the table
+above disagree, the table and `ci/module-layers.ini` win. **Decision: the `[port webos]` members
+stay where they are** (`webos`, `keymanager` and `system` are modules of `plx_platform`,
+`player::ffi` of `plx_media`, and `port` of the top crate) **until a second TV OS exists.** A port
+crate now would have one customer and a boundary drawn from guesses about the second; the fence in
+`ci/check-module-layers.py` already holds the line a crate would.
 
 The gate is `ci/check-module-layers.py` and its config is `ci/module-layers.ini`.
 `ci/allow/layers.txt` holds the migration list. L1 to L14 emptied it, L15 declared 44 entries of

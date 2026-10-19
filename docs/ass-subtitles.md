@@ -1,10 +1,13 @@
 # Native ASS and SSA subtitles
 
-Direct playback preserves the authored script: styles, positioned signs, overlapping dialogue,
-drawings, font attachments, movement and karaoke. A re-encode still burns the
-selected subtitle on the server; over a remux the app draws a sidecar, and an embedded track when
-the link is local and the Part is 1..=30000 kbps, and otherwise the server burns it. The simple caption size/wrapping rules apply to plain text;
-ASS/SSA retains its authored layout. The viewer's existing tone and timing controls still apply.
+An ASS/SSA track embedded in the stream the app demuxes is drawn by the app with libass, preserving
+the authored script: styles, positioned signs, overlapping dialogue, drawings, font attachments,
+movement and karaoke. Plain-text captions follow the simple caption size and wrapping rules; ASS/SSA
+retains its authored layout.
+
+*History:* this pipeline was built for the PlxNative code this project grew from, where films carried
+ASS tracks routinely. A live channel rarely does; the code stays because the demuxer hands it any
+ASS track a stream carries, and the clip harness (`tests/run.py`) can still exercise it.
 
 `ci/build-libass.py` builds a pinned libass with private FreeType, FriBidi and HarfBuzz. The
 application loads its own `libass-plx` by absolute path. Only the versioned `plx_ass_*` facade is
@@ -26,11 +29,6 @@ delivery identity and complete ASS header inventory. A different file or a new p
 inherit them. This matters when an in-place seek falls back to a fresh native Load.
 Reaching demux EOF does not discard subtitles while queued video still plays.
 
-For an external ASS/SSA track, `player::sidecar` requests UTF-8 without converting to SubRip and
-retains the entire script. It also incorporates the video's font attachments, including when
-those arrive after the external file. Source reuse includes server identity, stream identity,
-delivery key and codec. Backward seeks and Off→On do not re-download a loaded script.
-
 `player::ass` owns the native objects on one worker. A single latest-request slot coalesces clock
 updates; a completed frame is accepted only for the current source/selection epoch. The UI never
 waits for font parsing or rasterization. Native change detection avoids work for unchanged output. Overlapping libass images are composed
@@ -50,11 +48,7 @@ picture's display aspect, including `sourceInfo`'s pixel aspect ratio, and is of
 video window to account for pillarboxing or letterboxing. Authored subtitles are not moved when
 the transport HUD appears.
 
-The device fixture generator requires FFmpeg/ffprobe and MKVToolNix (`mkvmerge`). It verifies
-subtitle packet counts, timestamps and mux interleaving before publishing a video.
-
-Verification commands (set `MOCK_PMS_PORT` to an unused local port and configure the developer
-build to reach that mock server):
+Verification commands:
 
 ```sh
 make check
@@ -62,16 +56,12 @@ make check-ass
 CARGO_INCREMENTAL=0 cargo +nightly check --manifest-path rust-modules/Cargo.toml \
   --lib --no-default-features
 make
-python3 tests/fixtures/make_ass_fixture.py /tmp/ass-render-test
-python3 tests/mock_pms.py --host 0.0.0.0 --port "$MOCK_PMS_PORT" \
-  --extra-media /tmp/ass-render-test/styled-ass.mkv
 ```
 
 The native host test checks actual libass pixels; ordinary host tests check source preservation,
-selection/seek fencing, overlap, bounds and download policy. Neither proves TV performance.
-Boot the fixture with `tools/tv-session.sh up --guest --mock --screen player=990001`.
-`--mock` verifies the configured server’s synthetic identity and supplies a fabricated guest token;
-it never resolves a real Plex account. Configure and build the developer app against that mock first.
+selection/seek fencing, overlap and bounds. Neither proves TV performance. On the television, a
+styled-subtitle clip is played through the debug build's `dispatcharrtv-playurl` trigger, which is
+how the clip harness (`tests/run.py`, `tests/README.md`) plays every synthetic case.
 
 Device checks must hold the TV lease and keep both the panel and sound off. Release the lease
 while building or reviewing captures. Compare the unchanged

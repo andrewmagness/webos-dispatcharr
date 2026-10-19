@@ -156,54 +156,5 @@ class Counting(unittest.TestCase):
             self.assertIn(expected, out)
 
 
-class TheCommittedLogsAreClean(unittest.TestCase):
-    """A regression gate on the artefacts themselves, since nothing else reads them.
-
-    Scoped to the log directories rather than the whole tree: these are captured device output,
-    the one file class that carries whatever the television happened to see.
-    """
-
-    def test_no_routable_address_survives_in_any_captured_log(self):
-        offenders = []
-        for path in sorted(ROOT.glob("docs/measurements/*-logs/*.log")):
-            text = path.read_text(errors="replace")
-            found = sl.PUBLIC_IP.findall(text)
-            if found:
-                # Never print the value -- that is the same disclosure by a shorter route.
-                offenders.append(f"{path.relative_to(ROOT)} ({len(found)})")
-        self.assertFalse(
-            offenders,
-            "captured logs carry routable addresses; re-run tools/scrub-logs.py over: "
-            + ", ".join(offenders),
-        )
-
-    def test_no_other_shape_of_a_peer_address_survives(self):
-        offenders = []
-        for path in sorted(ROOT.glob("docs/measurements/*-logs/*.log")):
-            text = path.read_text(errors="replace")
-            # SHARED_BY matches its own replacement -- `<peer-owner-1>` is a valid `[^)]+` -- so
-            # count only owners that are not already a placeholder, exactly as the handle check
-            # below does. Without this the gate reports every scrubbed file as still leaking.
-            owners = [m for m in sl.SHARED_BY.finditer(text)
-                      if not m.group(2).startswith("<peer-owner-")]
-            hits = (len(sl.DASHED_HOST.findall(text)) + len(sl.PLEX_DIRECT_HASH.findall(text))
-                    + len(owners))
-            if hits:
-                offenders.append(f"{path.relative_to(ROOT)} ({hits})")
-        self.assertFalse(
-            offenders,
-            "captured logs carry a dashed address, a plex.direct hash or an owner name: "
-            + ", ".join(offenders))
-
-    def test_no_peer_handle_survives_in_any_captured_log(self):
-        offenders = []
-        for path in sorted(ROOT.glob("docs/measurements/*-logs/*.log")):
-            for match in sl.PEER_HANDLE.finditer(path.read_text(errors="replace")):
-                if not match.group(2).startswith("<peer-name-"):
-                    offenders.append(str(path.relative_to(ROOT)))
-                    break
-        self.assertFalse(offenders, "captured logs name reachable servers: " + ", ".join(offenders))
-
-
 if __name__ == "__main__":
     unittest.main(verbosity=2)

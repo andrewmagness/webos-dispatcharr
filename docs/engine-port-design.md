@@ -1,5 +1,10 @@
 # Engine port design (Rust-first step 5)
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the engine it designed is `rust-modules/media/src/player/`; `plex_run` is now `plx_run`, and the route/transcode plumbing it names is gone.
+
 > Synthesized design for porting the buffer-feed video engine (src/playback.c)
 > to Rust (`rust-modules/media/src/player/`). From the design-engine-port workflow.
 

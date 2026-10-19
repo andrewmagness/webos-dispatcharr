@@ -1,5 +1,10 @@
 # Drill-in sub-menus in the player track-menu popover
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: the Subtitles/Audio popover itself went with the VOD player; the primitives it designed — `ui::form`, the table, the page stack, the panel motion — remain in `ui/`.
+
 Design record for the multi-page Subtitles / Audio popover (Other languages, per-language pages,
 Style pickers) and the table, form and clip primitives it stands on. Planned with an independent
 model reviewer over several rounds; this file keeps the decisions and their reasons.

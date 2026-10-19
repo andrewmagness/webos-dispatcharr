@@ -1,47 +1,39 @@
-> Historical distribution research below is retained as dated analysis. The current license
-> is GPL-3.0-or-later; see `../LICENSING.md` and `../THIRD-PARTY-NOTICES.md`. Earlier MIT
-> recommendations below do not describe the current tree.
+> **Inherited from PlxNative, with Dispatcharr TV corrections.** This research was done
+> (2026-08-01 onward) for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and it is kept because the platform,
+> packaging, licensing and release-CI findings still govern this app — the workflows, the C shim and
+> the Rust code cite it by section number. Where a section is about Plex (its terms, its trademarks,
+> plex.tv identity headers, Plex Home data in logs) it is history: Dispatcharr TV talks only to the
+> user's Dispatcharr server. The current licence is GPL-3.0-or-later (`../LICENSING.md`,
+> `../THIRD-PARTY-NOTICES.md`); earlier MIT recommendations below do not describe the current tree.
 
 # Distribution: what it takes to ship this publicly
 
 Researched 2026-08-01 against live primary sources (webosbrew apps-repo + schemas, LG developer
-docs, Plex ToS/trademark pages, LGPL-2.1 text, FFmpeg legal.html, TMDB/Fandango terms) and against
-this repo's own files. Every non-obvious claim below carries either a URL or a `file:line`.
+docs, the then-relevant Plex ToS/trademark pages, LGPL-2.1 text, FFmpeg legal.html) and against
+the repo's own files. Every non-obvious claim below carries either a URL or a `file:line` of its day.
 
 Three claims were independently re-researched by an adversarial pass whose job was to refute them;
 where that pass changed the answer it is marked **[corrected]**.
 
 ---
 
-## Bottom line
-
-**Per-item status against LG's App Self Checklist — what passes, what fails and what nobody has
-run — is `docs/lg-self-checklist.md`.** This file answers whether we can submit at all; that one
-answers what a QA pass would find.
+## Bottom line (Dispatcharr TV, 2026-10-19)
 
 | Question | Answer |
 | --- | --- |
-| Ship via **webOS Homebrew Channel**? | **Yes** — it is a real, current, native-app-friendly path. ~1 day of packaging work plus the licence fixes below. |
-| Ship via **LG Content Store**? | **Submittable — this was a "no" here until 2026-08-23 and the "no" was wrong.** Seller Lounge parses this project's ipk as **File Type: Native** and asks for the native SDK version, chipset and resolution. The old verdict rested on a `develop/*` **web-runtime** page (*"Only `web` is allowed currently"*), which is not authority over a native app. What remains is a QA problem, not a permission problem — §2, and `docs/lg-self-checklist.md` for the four items that genuinely fail. |
-| Runs on **newer webOS**? | 32-bit armv7 is *not* the problem — it stays the native userland through webOS 26. **ACB is the problem**: `libAcbAPI` exists on webOS 4.x only. Today's binary does not reach `main()` on 5.0+. |
-| Is **private data** in the repo? | Git history is clean of credentials. Release CI has no `config.local.h`, remaps host paths, compiles out the trigger/FIFO/capture surfaces, and verifies the shipped bytes. The event log scrubs tokens, server addresses, household names and media text before writing, and the three runtime logs (events, crash, stderr) are mode 0640 — group read for a Dev Mode user's file tool, never world-readable; §4 records the remaining diagnostic surface and the residual risk. |
-| Needs a **rooted** TV? | **No** — the unprivileged Dev Mode jail is device-proven in §3.5. Homebrew and retail layouts now use probed writable paths; Key Manager permission is capability-tested and denial keeps the mode-0600 fallback. A real LG Content Store entitlement/install is still an acceptance test, not something the rooted development set can prove. |
-| **Licensing** clear? | Font blocker **CLEARED 2026-08-01** — Inter (OFL 1.1) replaced Monotype Arial. FFmpeg/LGPL is fine. The repo still has **no LICENSE file at all**. |
-| **Trademarks**? | Plex itself is fine (their guidelines have an explicit permitted formula). **Rotten Tomatoes marks have no licensing route that exists**, and the TMDB logo ships without its mandatory attribution. |
+| Ship via **GitHub releases**? | **Yes — the chosen channel for 0.1.0.** `release.yml` builds, verifies and publishes the `.ipk`, its checksum and the corresponding source (§7a–§8). |
+| Ship via **webOS Homebrew Channel**? | **Deferred by the owner (2026-10-19)** until a couple of releases have shipped. The listing is kept ready in `docs/webosbrew-package.yml` and switched off in `release.yml` (`HOMEBREW_LISTING`); §1 is what webosbrew requires. |
+| Ship via **LG Content Store**? | Not planned. §2 records that a native ipk is submittable at all; what remains there is a QA problem, not a permission problem. |
+| Runs on **newer webOS**? | Yes: the binary starts on every webosbrew firmware image from 3.4.0 up (`tools/fwcompat.py`), ACB is resolved at runtime rather than linked, and webOS 5+ takes the exported-window path (`docs/webos5-port.md`). Video has been watched on 4.4.3 and 6.5.3. |
+| Is **private data** in the repo? | Release CI has no local config, remaps host paths, compiles out the trigger/FIFO/capture surfaces, and verifies the shipped bytes. The event log scrubs credentials, addresses and the signed-in username before writing, and the runtime logs are mode 0640; §4 records the remaining diagnostic surface and the residual risk. |
+| Needs a **rooted** TV? | **No** — the unprivileged Dev Mode jail is device-proven in §3.5. |
+| **Licensing** clear? | Yes: GPL-3.0-or-later for the app, Inter (OFL 1.1) for the font (§5.3), FFmpeg under LGPL-2.1-or-later with its complete corresponding source attached to every release (§5.2). |
+| **Trademarks**? | The app names Dispatcharr referentially and says it is unaffiliated (`TRADEMARKS.md`, the README, `appinfo.json`'s description). §5.5 is the Plex-era analysis. |
 
-**Blockers, in the order they'd bite:** *(1 — the Arial font — was cleared 2026-08-01, see §5.3)*
-
-2. No `LICENSE` file → all-rights-reserved → ineligible for webosbrew `pool: main`, and no licence for anyone who clones the repo.
-3. ~~10 icons reproduce Rotten Tomatoes / TMDB / IMDb marks, tinted in those brands' exact hex.~~
-   **CLEARED 2026-08-02** — see §11.
-4. `X-Plex-Product: Plex for webOS` — Plex's own first-party naming pattern, on a platform that has an official Plex app.
-5. ~~Release builds bake in the developer's LAN IP and home-directory paths.~~ **CLEARED:** release
-   CI has no local config and the artifact gates inspect the compiled bytes.
-6. ~~The release opens the squattable `/tmp/dispatcharrtv-remote`.~~ **CLEARED:** the whole developer
-   trigger/FIFO/capture surface is compiled out and asserted absent from release artifacts.
-7. ~~Only the Dev Mode prefix can retain fonts and login.~~ **CLEARED:** font assets are packaged
-   and persistent state uses the probed Dev Mode/Homebrew/retail candidate order in §3.5. Store
-   installation and Key Manager entitlement remain runtime acceptance tests rather than root needs.
+The numbered blockers this section used to list (the Arial font, the missing `LICENSE`, the brand
+marks, the Plex-impersonating client headers, LAN addresses in release builds, the squattable
+remote FIFO, the install prefix) are all closed; their accounts are in the sections below.
 
 ---
 
@@ -49,7 +41,7 @@ answers what a QA pass would find.
 
 Live and healthy: `github.com/webosbrew/apps-repo` had commits on 2026-07-31; 45 packages in `main`.
 Native is first-class — Moonlight (SDL2/C), Kodi, RetroArch and IHSplay all ship as
-`type: "native"` ARM ipks. **There is no Plex client of any kind in the repository today.**
+`type: "native"` ARM ipks. (In 2026-08 it carried no Plex client; it carries no Dispatcharr client either.)
 
 ### 1.1 The submission is one file
 
@@ -57,16 +49,18 @@ Fork `webosbrew/apps-repo`, add `packages/com.magness.dispatcharrtv.yml`, open a
 equal the manifest `id` (`repogen/lintpkg.py` hard-errors otherwise). Schema is
 `content/schemas/packages/PackageInfo.json`, draft 2020-12, **`additionalProperties: false`**:
 
+The ready file for this app is `docs/webosbrew-package.yml` (not yet submitted). The shape:
+
 ```yaml
 title: Dispatcharr TV                       # required, <=30 chars
-shortDescription: Native client for Plex Media Server   # optional, <=80 chars
+shortDescription: Live TV from your Dispatcharr server   # optional, <=80 chars
 iconUri: https://…/icon160.png         # required; https: or data:, must return 200
 detailIconUri: https://…/icon320.png   # optional, 320px convention
 manifestUrl: https://github.com/<you>/<repo>/releases/latest/download/com.magness.dispatcharrtv.manifest.json
 category: multimedia                   # required
 pool: main                             # required; main = MUST be open source
 requirements:
-  webosRelease: '>=4.0, <5.0'          # see 1.4 — omit this and CI fails
+  webosRelease: '>=4.0'                # see 1.4 — omit this and CI fails
 description: |                         # required; Markdown, every <img> must be https
   …
 funding:
@@ -203,7 +197,7 @@ the native-app fields — **Native SDK version, chipset, resolution** and the pa
 out of the archive we uploaded. A portal that classifies a package as native, names the SDK it was
 built against and asks for the chipset is not a portal that has no native app model. Native
 submission is therefore an **established premise** of everything downstream in this repo —
-`docs/lg-self-checklist.md`, `docs/ux-scenario.md`, and the QA questions in §9 — rather than a
+PlxNative's App Self Checklist record (not carried over), PlxNative's UX scenario document (not carried over), and the QA questions in §9 — rather than a
 caveat those documents have to open by hedging.
 
 **What the old argument actually rested on, and why it never supported the conclusion.** The quoted
@@ -241,9 +235,9 @@ evidence that "native" is a shape LG's own tools emit.
 Lounge account (individual or corporate), an ipk ≤ 2 GB, a mandatory **UX-scenario document** and
 **self-checklist**, and three-stage QA. Hard UX rules include: every selectable element must respond
 to 4-way + OK + Back, and on webOS 23–25 Back on the entry page must show the Home screen. What this
-app would be graded on is recorded item by item in `docs/lg-self-checklist.md` — four genuine
+app would be graded on is recorded item by item in PlxNative's App Self Checklist record (not carried over) — four genuine
 failures and a column of untested items — and the transport-control question is answered by
-**`docs/ux-scenario.md`**, which is the document LG's checklist item 45 defers to by name.
+**PlxNative's UX scenario document** (not carried over), which is the document LG's checklist item 45 defers to by name.
 
 **Content policy is not an obstacle either** — Jellyfin and Emby both ship on the LG Content Store,
 so "client for a self-hosted media server" is an accepted category, and Plex ships an official webOS
@@ -691,25 +685,10 @@ world-readable `/tmp` on the TV across many runs.
   message formats the driver is documented to print carry a state number, never text), and what
   the closed TV libraries (libplayerAPIs, libAcbAPI, libpf) write to fd 2.
 
-**Verified clean, no action:** the only outbound hosts are the user's PMS, plex.tv and
-`discover.provider.plex.tv` — plus, since the telemetry work, Sentry and PostHog in the EU, and
-those two only after an explicit first-run Share choice or a later Done in Account → Settings →
-Privacy & data. First run asks about the two purposes separately and offers the exact payload
-preview before either answer: the first choice remains a draft, the second records both, and BACK
-records nothing either way — it steps back from the product question to the crash one, and on the
-crash question (which is asked once per sign-in, immediately after it and before the
-profile picker) there is nothing behind it *inside the app* — sign-in is the step behind it, and
-that cannot be undone — so BACK there is the platform's own root press (`docs/remote-keys.md` §8)
-rather than closing the ceremony: it neither answers nor dismisses the question, and returning to
-the app finds it still there.
-`PRIVACY.md` carries the schemas: usage is generated from
-`diag::schema::EVENT_SPECS`, native crashes are checked against their sanitizer allowlist, and
-handled playback errors use the same typed serializer/key-contract as the consent preview and
-durable Sentry queue).
-This line read "no analytics, no telemetry, no crash upload" and was a statement of fact about the
-audited build rather than a promise, so it is updated rather than qualified. TLS verification is on
-(`net.rs:96-97`); `auth.json` is created `0600` via `OpenOptionsExt::mode` — correctly, in `open(2)`'s
-own mode argument rather than create-then-chmod (`session.rs:154`).
+**Verified clean, no action (Dispatcharr TV, 2026-10-19):** the only outbound hosts are the user's
+Dispatcharr server and the logo URLs its channels name, plus the local-network scan Setup runs to
+find a server. There is no reporting endpoint of any kind (`docs/telemetry-removed.md`), and each
+release audit checks the packaged bytes for one.
 
 **Personal-library disclosure:** `tests/manifest.json` is a 21-title inventory of a private media
 collection with real `ratingKey`s, plus a real Plex Home managed-user id. Much of `docs/` quotes the
@@ -866,78 +845,19 @@ Inter if you're willing to re-tune the size ladder.
 | `include/SDL2/*` | Zlib (stock upstream 2.0.4, **not** an LG fork) + Mesa MIT + Khronos MIT/Apache | Notices. |
 | webosbrew NDK | n/a | A compiler doesn't licence its output. Just never add `-static` (that would pull LGPL §6(a) in for glibc). |
 
-### 5.5 Trademarks — the part with real teeth
+### 5.5 Trademarks
 
-**Plex: fine, and there's an explicit permitted formula.** Their ToS (rev. 2025-10-30) defines
-*"Interfacing Software"* to expressly include *"client applications that communicate directly or
-indirectly with the Plex Solution."* A third-party client is a **named, anticipated category**, not
-unauthorized access. Plex published official OpenAPI docs at developer.plex.tv in Sept 2025 naming
-*"third-party clients that want to play content from a PMS"* as an intended audience; the PIN/JWT
-device-auth flow we use is documented, with no API key or registration gate.
+**Dispatcharr TV names Dispatcharr referentially and says it is unaffiliated** — in the README, in
+`TRADEMARKS.md`, in `appinfo.json`'s `appDescription` ("Unofficial native Dispatcharr client - not
+affiliated with Dispatcharr") and in every localized `resources/<locale>/appinfo.json`
+(`ci/check-package.py` grades that the disclaimer survives translation with the name verbatim). It
+ships no Dispatcharr artwork; the launcher icon is the project's own.
 
-Four obligations attach that we don't currently meet:
-1. A copyright notice **in the source code**, form `Copyright © <year> <holders>`.
-2. A privacy notice (or link to one) summarizing practices consistent with Plex's policy.
-3. Publishing grants Plex a worldwide royalty-free right to use, copy, display, market and
-   **distribute** the app *and its name*, plus authority to sublicense it MIT-style to recipients.
-   There is a 30-day opt-out. **This is a decision to make deliberately, not a footnote.**
-4. "Your Interfacing Software" is an explicit indemnification trigger.
-
-Naming: their guidelines list *"Use `for Plex` following the name of your application, provided that
-the name of your application is unique"* under **You may**, and *"Use Plex or derivatives thereof in
-the name of your application"* under **You may not**. `Dispatcharr TV` is a vowel-dropped "Plex" and sits
-near the "derivatives / misspellings" line — grey, low risk, cheap to eliminate. Precedent is
-reassuring: PlexKodiConnect (1.3k stars, "Plex" literally in the name) and Plezy (3k stars, four app
-stores, listed as *"Plezy for Plex"*) both run unmolested. The one Plex DMCA found (2024-03-11,
-`plex-reshare`) targeted a library-**resharing** tool, not a client.
-
-**BLOCKING — `X-Plex-Product: Plex for webOS`** (`account.rs:42/46`, with
-`X-Plex-Device-Name: Plex (LG webOS)`). That is exactly Plex's own first-party pattern (their
-documented sample value is `"Plex for Roku"`), it surfaces in the account's authorized-devices list,
-and LG **has** an official Plex app — so a server owner has no way to tell it isn't Plex's. Also
-note `client.rs` uses a *different* product string (`Dispatcharr TV`): the plex.tv-facing and PMS-facing
-identities disagree. *(Small caution: PMS transcode/direct-play decisions can key off client
-identity, so re-run the player suite after renaming.)*
-
-> **RESOLVED 2026-08-02 — this subsection is the ANALYSIS THAT LED TO THE FIX, not a description
-> of what ships.** Everything below was true when written and is not true now: all ten Rotten
-> Tomatoes icons and `tmdb.svg` were deleted, and the rating row names each provider in text with
-> a verdict-only glyph beside the score. See **§11**. Kept because the reasoning — why redrawing a
-> mark does not avoid the trademark, and why referential use in words does — is the useful part and
-> is what any future brand asset should be measured against. Verify against `assets/icons/` before
-> quoting anything here as current.
-
-**BLOCKING — Rotten Tomatoes.** There is **no licensing route that exists**. The RT Developer Network
-page states *"we no longer support unauthorized use of our data (e.g. unofficial projects)"*, the
-Fandango Data Feed Terms licence the "RT Marks" only with a written authorization, and
-`developer.fandango.com` **no longer resolves** (NXDOMAIN, verified) — so there isn't even an
-application path. We ship 10 such icons (`tomato*.svg`, `popcorn*.svg`), and one carries the comment
-*"Ported from Details Screen.dc.html, which draws RT's real Certified Fresh badge."*
-
-**Redrawing them does not fix it.** Copyright covers Fandango's artwork files; **trademark** covers
-the mark as a source identifier — and the entire function of the tomato, the green splat and the
-Certified Fresh wreath is to signal "this is a Rotten Tomatoes rating." Fandango's terms bar
-"derivative works based upon Fandango Property"; Plex's own guidelines make the same point
-explicitly by prohibiting "any altered, distorted or interpreted representation." Rights holders in
-this space target redraws.
-**Fix (cheap):** render the score as text naming the source in words — "Rotten Tomatoes 91%" — which
-is referential use, or use a neutral house glyph. The scores come from PMS either way, so dropping
-the icons costs no data.
-
-**BLOCKING but trivial — TMDB.** Terms (rev. 2023-10-20) §3 require the **unmodified** official logo
-plus this notice placed prominently: *"This [application] uses TMDB and the TMDB APIs but is not
-endorsed, certified, or otherwise approved by TMDB."* (Note this current wording differs from the
-older short form that circulates.) Our `tmdb.svg` is a redraw — violating the no-modification rule —
-and there is no attribution anywhere. Nuance: we don't call the TMDB API (we take
-`themoviedb://image.rating` hints from PMS, `metadata.rs:322`), so we're likely not a licensee at all
-and have no licence to the logo. Ship the official unmodified logo **with** the notice, or drop it.
-
-Two more, minor: `assets/icons/user.svg` is character-for-character Google Material Icons `person`
-(Apache-2.0, needs attribution) and `backspace.svg` is Feather Icons `delete` (MIT, needs the
-notice). The other 29 are genuinely hand-authored. And `theme.rs` tints these marks in the brands'
-**exact** hex — `#01B4E4` (TMDB), `#F5C518` (IMDb), RT red — which is what turns generic geometry
-into a brand reproduction. `pkg/icon.png` is a solid `#E5A00D` tile — Plex's exact brand gold; not
-protectable alone, but trade-dress-adjacent and a reviewer would notice.
+*History (PlxNative, 2026-08-01/02):* this section held the Plex-era analysis — Plex's terms for
+third-party clients, the `X-Plex-Product: Plex for webOS` header that impersonated Plex's own app
+(renamed), Rotten Tomatoes and TMDB marks in the rating row (replaced by text naming the provider),
+and a launcher tile in Plex's exact brand gold (replaced). None of that code ships here; the full
+analysis is in this file's history before 2026-10-19.
 
 ---
 
@@ -995,6 +915,10 @@ Listed because each could change a decision above.
 ---
 
 ## 7. Ordered path to a public release
+
+*This was PlxNative's checklist (2026-08). For Dispatcharr TV every item below is done or moot —
+the Plex items (terms, tokens, client headers) with the Plex client — and the Bottom line above is
+the current state.*
 
 **Legal blockers (must precede any public artifact):**
 
@@ -1681,36 +1605,11 @@ fontTools dumps of `pkg/appfont*.ttf`; `tar tzf ipkroot/data.tar.gz`.
 
 ---
 
-## 11. The rating marks are ours now (2026-08-02)
+## 11. The rating marks (PlxNative, 2026-08-02)
 
-The last hard trademark blocker. Rotten Tomatoes' marks had **no licensing route in existence** —
-their developer programme is closed to unofficial projects and `developer.fandango.com` does not
-resolve, so there was not even an application path — and redrawing a mark is the standard
-infringement pattern rather than a defence.
-
-Removed: the 5 RT states as 11 layered SVGs (fruit, Certified Fresh seal, upright and spilled
-popcorn tubs), plus a dead `tmdb.svg` and a retired `star.svg` that nothing drew. Also removed —
-and this was not on the original blocker list — the IMDb and TMDB **logotype chips**, which
-reproduced two more brands' wordmarks in their exact brand colours to answer "whose score is this?".
-
-Replaced by naming each provider in words (referential use needs no licence) and drawing only the
-VERDICT: our own tomato — red ripe, gold for the rarer Certified bar, hollow when drained — and a
-two-figure crowd for the audience score, green or drained. Four assets instead of eleven.
-
-The design brief is `Details Screen.dc.html` in the owner's Claude Design project. Verified on
-device against the live PMS: `rk=1` (ripe + upright, all four providers) and `rk=2020` (**rotten** +
-upright). Rendered ink matches the design's geometry within ~1.5 px.
-
-**Two states could not be verified on device**: `certified` and `spilled` appear on no item in this
-library. Both reuse masks the verified states already exercise and differ only by a tint constant
-(`RATING_CERTIFIED`, `RATING_MUTED`), so the risk is a wrong colour, not a wrong drawing.
-
-What remains is not a licensing question but a taste one: the tomato is a fruit, and a fruit next to
-a percentage in a movie app still gestures at Rotten Tomatoes. That is the owner's call, made with
-the facts on the table, and the two shapes a rights holder would actually write about — the seal and
-the popcorn pair — are the ones that are gone.
-
----
+PlxNative replaced the Rotten Tomatoes, TMDB and IMDb marks in its rating row with text naming each
+provider beside a neutral house glyph (§5.5). The rating row belonged to the Plex detail page, which
+Dispatcharr TV does not have.
 
 ## 12. Localized app metadata — `resources/<locale>/appinfo.json` (2026-08-23)
 
@@ -1774,7 +1673,7 @@ each carrying exactly two properties, UTF-8 without BOM:
 ```json
 {
   "title": "Dispatcharr TV",
-  "appDescription": "비공식 네이티브 Plex 클라이언트 - Plex와 제휴 관계가 없습니다"
+  "appDescription": "비공식 네이티브 Dispatcharr 클라이언트 - Dispatcharr와 제휴 관계가 없습니다"
 }
 ```
 
@@ -1787,8 +1686,8 @@ Three decisions in that file are deliberate and each has a gate behind it in `ci
   `ci/check-package.py` have never heard of. This is `ci/flavor.py`'s "PATCH, DO NOT DUPLICATE"
   arrived at from the other direction, and it is also what LG asks for.
 * **The description is a near-literal translation, not marketing copy per market.** The English
-  sentence is a **trademark disclaimer** (*"not affiliated with Plex"*), so it is graded against
-  the English rather than rewritten — and the mark itself stays Latin `Plex` in every locale, which
+  sentence is a **trademark disclaimer** (*"not affiliated with Dispatcharr"*), so it is graded against
+  the English rather than rewritten — and the name itself stays Latin `Dispatcharr` in every locale, which
   is asserted, because a transliteration would both weaken the disclaimer and misuse the mark.
   Chinese is absent for a related reason: `zh` alone does not say Hans or Hant, and guessing a
   script for a legal sentence is worse than shipping English.
@@ -1875,10 +1774,9 @@ section closed anything at all.
 **Superseded: the UI is localized now.** When this section was written the UI was English-only,
 with ~203 display literals across 45 files and no string ownership story, and the native UI was
 locale-blind apart from a best-effort `X-Plex-Language` read from the POSIX locale environment.
-Both are gone. The app's own text comes from bundled catalogs (English, Spanish, French, Belarusian), the
-UI language resolves from a saved Settings → Language override, then the TV UI language reported
-by the native Settings Service, then the process locale, then English, and
-`plex::identity::language` now sends that resolved language as `X-Plex-Language`.
+Both are gone. The app's own text comes from bundled catalogs (English, Spanish, French, Belarusian),
+and the UI language resolves from the TV UI language reported by the native Settings Service, then
+the process locale, then English.
 [`docs/localization.md`](localization.md) is the current account of runtime behaviour and of its
 verification on the television.
 

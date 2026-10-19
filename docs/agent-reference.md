@@ -5,15 +5,22 @@ coding agents. The concise, always-loaded project contract is `AGENTS.md`; Claud
 
 ## What this is
 
-A **real, native Plex client for LG webOS 4.5 TVs** — built toward production quality, not a
-throwaway. **Build proper, reusable, well-factored components and finish them** — a shortcut is
+A **real, native live-TV client for LG webOS TVs**, playing the channels of a
+[Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) server — built toward production quality,
+not a throwaway. **Build proper, reusable, well-factored components and finish them** — a shortcut is
 never justified by "it's only a demo." See `rust-modules/ui/src/CLAUDE.md` for how the UI is
-expected to be built. It's cross-compiled from macOS and sideloaded onto a rooted 32-bit ARM TV,
-renders an Apple-TV-style gallery/shelf UI with SDL2 + OpenGL ES 2, and plays video from a Plex
-Media Server (PMS) entirely in-app.
+expected to be built. It is cross-compiled (from macOS or Linux) to a 32-bit ARM binary, sideloaded
+onto the TV, draws its UI with SDL2 + OpenGL ES 2, and plays live streams entirely in-app on the
+TV's hardware decoder.
+
+It grew from [PlxNative](https://github.com/GLinnik21/plx-native), a native Plex client: the playback
+engine, the UI framework, the build and the release machinery came from there, and the Plex
+screens, data layer and VOD player were removed. Prose in this file that names a Plex screen, a
+PMS or plex.tv describes how a mechanism was built or measured there; it is kept where the
+mechanism is still in the tree.
 
 **Almost everything is Rust** in `rust-modules/` (UI, event loop, input, player orchestration,
-the streaming/demux pipeline, and the Plex data layer), compiled to a static lib and linked in
+the streaming/demux pipeline, and the Dispatcharr data layer), compiled to a static lib and linked in
 (see the Makefile). Only two things stay C: `src/main.c` — a small **boot shim** (the event-log
 handle, stderr capture, process bring-up) that then calls the Rust `plx_run()` — and
 `src/starfish.c`, the **StarfishMediaAPIs C++/ACB seam**. Two more `.c` files sit beside them:
@@ -22,7 +29,11 @@ safe **crash tracer**, lifted out of `main.c` into its own translation unit for 
 `ci/crashtrace-test.c` links it ALONE and can therefore fault a process on purpose and check how it
 died. Doing that immediately found a seven-week-old bug no log could have shown (below).
 
-Target device: LG 49SM9000PLA, webOS 4.5, rooted, reached as `root` over ssh. **Its address is NOT
+Target device: an LG OLED C1 (OLED65C1PUB), webOS 6.5.3, rooted, reached as `root` over ssh — on
+it the app takes the webOS 5+ exported-window video path, not ACB. (PlxNative was developed on an
+LG 49SM9000PLA, webOS 4.5; measurements in this file and in `docs/` that predate 2026-10 were taken
+there.) A second set, an LG OLED B8 on webOS 4.4.3, takes installs on request and is never tested
+on. **Its address is NOT
 in the repo** — it comes from one line (an IP or hostname) in a gitignored file, found by ONE shared
 resolver, **`tools/tv-config.sh`** (`host` / `mac` / `dir` / `set-mac`), which the Makefile's `TV`
 and every `tools/` script, `tests/run.py` and the wake-tv skill call instead of carrying their own
@@ -52,10 +63,10 @@ the opt-in stack sampler's pinned libunwind build), and `sshpass` (Homebrew; dep
 
 - `make setup-env` — download + extract + `relocate-sdk.sh` the webOS NDK into `$(WEBOS_SDK)`
   (default `~/webos-ndk/…`). One-time; re-run `relocate-sdk.sh` if you move the SDK.
-- `tools/sim.ps1 setup|build|run|shot|send` — Windows 11 UI/Plex simulator through the existing
+- `tools/sim.ps1 setup|build|run|shot|send` — Windows 11 UI simulator through the existing
   Ubuntu 22.04 WSLg runtime. It uses GPU-accelerated desktop OpenGL, keeps build/runtime state on
   WSL's Linux filesystem, and stages fonts, their notice and the bundled ASS renderer into an isolated app directory. Its `make sim-wsl`
-  build is optimized and deliberately skips host FFmpeg, so it covers UI, sign-in, Plex browsing,
+  build is optimized and deliberately skips host FFmpeg, so it covers UI, Setup, the Guide,
   screenshots and remote commands but not demux/clock-sink playback. WSLg's non-blocking GLX swap
   is capped at 60 Hz in the Linux host build, as is SDL's display-less `offscreen` driver (a
   headless box's screenshots and recordings; uncapped, a recording outgrows the replay budget). The launcher also refuses WSLg's `use_gfxredir=0`
@@ -189,8 +200,7 @@ the opt-in stack sampler's pinned libunwind build), and `sshpass` (Homebrew; dep
   and `ci/test_ci_split.py` fails on a test file that no gate runs. Because steps overlap, a step
   must write only to a directory it made, bind port 0 and not touch the checkout
   (`ci/test_check_collisions.py` runs a mix of them together and scans for fixed ports); the manifest's
-  header lists the rules. Two of those gates are registries rather than tests: `ci/check-plex-requests.py` makes every
-  request the plex layer can make say whether it pages, and `ci/check-list-caps.py` (registry `ci/list-caps.ini`) makes every
+  header lists the rules. One of those gates is a registry rather than a test: `ci/check-list-caps.py` (registry `ci/list-caps.ini`) makes every
   cap-shaped bound on a collection (`.take(N)`, `.truncate`, a length `.min(N)`, a `MAX`/`CAP`/`LIMIT` constant, a `[..N]` cut) say
   whether it bounds work, previews a list that is reached some other way (the `route`), is a format limit, or is an open `reach` cap on
   what the user can reach, which is the only class that is tracked rather than accepted; `--sites` lists every hit with its class.
@@ -750,7 +760,7 @@ threading model, the Starfish/ACB ABI + bind-order gotchas, seek/PTS rebase. Rea
 touching playback):** LG's in-process **StarfishMediaAPIs** (`libplayerAPIs.so`) in
 `BUFFERSTREAM` **buffer-feed** mode, the decoded sink bound to the hardware video plane via
 **`libAcbAPI` (ACB)** — in-process is what lets ACB bind the app-owned sink. The media pipeline
-is all Rust: `PMS HTTP GET` → demux (**`ff.rs`, over a custom AVIO on the
+is all Rust: the channel's stream `HTTP GET` → demux (**`ff.rs`, over a custom AVIO on the
 FFmpeg the app BUNDLES** — not the television's; see the linking section, and note ours is built
 `--disable-network`, so the AVIO is the *only* way bytes reach it) → AU queues with backpressure
 (`aq.rs`) → the pump `Feed()`s the Starfish
@@ -758,15 +768,15 @@ pipeline. Two worker threads (demux, media/load) sit beside the main loop, which
 ACB/Starfish control calls. **That GET has TWO transports and the part URL's SCHEME picks one**,
 once, in `ff::demux`: `http` reads through `stream.rs`'s raw socket, `https` through
 **`curlio.rs`** — libcurl's *multi* interface behind a `read`/`seek`/`size`/`status`/`abort` pull
-source, so `ff.rs` never learns curl-multi mechanics. It exists because LG's reviewers have no PMS
-on their LAN and stream from the public internet, which `stream.rs` cannot reach: it speaks
-cleartext. So **libcurl is used by two modules for two jobs** — `net.rs` for plex.tv plus HTTPS PMS
-control calls, `curlio.rs` for the media bytes — and each binds its own `dynlib!` table,
+source, so `ff.rs` never learns curl-multi mechanics. It exists for `https://` stream URLs, which
+`stream.rs` cannot reach: it speaks cleartext. So **libcurl is used by two modules for two jobs** —
+`net.rs` for HTTPS control calls (a Dispatcharr server at an `https://` address), `curlio.rs` for
+the media bytes — and each binds its own `dynlib!` table,
 which the linking section explains is load-bearing rather than tidy.
 
 ### Module-cycle ratchet (`ci/check-module-cycle.py`)
 
-The intended layering is gfx/text/i18n < ui < screens < app and plex < route/player < app
+The intended layering is gfx/text/i18n < ui < screens < app and dispatcharr < route/player < app
 (`ci/module-layers.ini` is the full target, gated per reference by `ci/check-module-layers.py`). A
 few thin upward references once closed one strongly connected component of top-level modules
 holding 44 of them; the module-layer migration (`docs/module-layers.md`) cut it to 13 by step L14
@@ -833,8 +843,8 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   one-consumer AU FIFO with byte-cap backpressure. Both are Rust ports of the deleted C headers;
   the hand-rolled `mkv.rs` demuxer they fed is retired — `ff.rs` is the only demux path.)
 - `rust-modules/base/src/eventlog/` (`scrub.rs`, `ring.rs`) — **the redaction pass and the log ring**. `scrub.rs` is the one that matters and it is **UNGATED**: `plx_base::eventlog::log` runs
-  `scrub_local` on every line in every build, so credentials, hosts, bare addresses, Plex GUIDs,
-  search queries and this household's names are rewritten **before the write**, not on the way out.
+  `scrub_local` on every line in every build, so credentials, hosts, bare addresses and the signed-in
+  username are rewritten **before the write**, not on the way out.
   **Two exits, differing in exactly one respect** — `scrub` (network) may DROP a line it cannot
   make safe; `scrub_local` (disk) may only rewrite one, because a line silently vanishing from the
   primary debugging surface is worse than a leaky one. `eventlog/ring.rs` and `diag/zlib.rs` (both in `plx_base`) stay feature-gated to
@@ -845,7 +855,8 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   the mechanism for viewing content is that call sites do not write it, pinned by a test that greps
   the tree — see `no_log_call_site_interpolates_viewing_content`. Adding a `log(&format!(…))` that
   interpolates an item title, a search query or subtitle text will fail `make check`.
-  Identities come from `plex::session::publish_identities`, PUSHED on load/save; the scrubber must
+  Identities come from `dispatcharr::account` (load, save and clear publish the username to
+  `scrub::set_identities`), PUSHED rather than pulled; the scrubber must
   never call `session::peek()` from the log path — it is now cache-served, with a refresh queued to
   `storage_worker` and no direct file I/O, but worker startup holds `storage_worker::SHARED` across
   `task::spawn`, whose refusal logs. A `peek()` that schedules a refresh from that log tries to take
@@ -869,7 +880,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   A watchdog poll gap >400 ms discards the uncertain interval, clears warnings and rebases the
   stall timer and fatal latch: a stopped or starved observer is not evidence against the main thread.
   Escape hatch: write `log` into `/tmp/dispatcharrtv-guard` before launch (sim: instance runtime root).
-  This boot-latched DIAG trigger requires `devtriggers`, keeps the picker unchanged and downgrades
+  This boot-latched trigger requires `devtriggers` and downgrades
   both fatal paths to logs plus warnings. Release builds contain none of these new dev paths.
 - `rust-modules/base/src/dynlib.rs` — the runtime library binder (`dlopen`, by SONAME candidate list or
   by absolute path). **Four** callers in a lab build and three in every other, each for its own
@@ -918,15 +929,15 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   selftest` proves upload, ordered redelivery/ack and refusal paths on loopback with no television,
   and runs inside `make check`.
 - `tools/netcond.py` — **network-conditioning TCP proxy** (host-side), for the failures a healthy LAN
-  cannot produce. Sits between the TV and the PMS (`--listen 32499 --target 127.0.0.1:32400
-  --allow-client <TV_IP>`; the PMS runs on the dev Mac) and makes the server misbehave on demand
-  via `/tmp/netcond.mode`. A non-loopback listener refuses to start without an allowlisted client:
-  PMS request URLs carry credentials, so a LAN-wide forwarding proxy may never be open by default.
+  cannot produce. Sits between the TV and the server (`--listen <port> --target <server>:<port>
+  --allow-client <TV_IP>`) and makes the server misbehave on demand via `/tmp/netcond.mode`. A
+  non-loopback listener refuses to start without an allowlisted client: requests carry the server's
+  API key, so a LAN-wide forwarding proxy may never be open by default.
   Modes:
   `pass` / `stall` (accept, hold open, answer nothing — the case that turns a join into a parked
   frame loop) / `blackhole` / `reject` / `delay:<ms>` / **`rate:<kbps>`**. Any mode scopes to
-  matching requests — `stall@/:/timeline` freezes the progress reporter while video keeps
-  streaming, which is what makes a clean experiment possible. **That sentence was FALSE for as
+  matching requests — a mode scoped to one API path freezes those requests while the stream keeps
+  flowing, which is what makes a clean experiment possible. **That sentence was FALSE for as
   long as it existed and became true on 2026-08-23**: `serve_conn` consulted the scope-aware
   `applies()` to decide reject/blackhole, then handed `relay` a bare `Mode.split`, which throws
   the scope away — so a scoped mode really applied to every open connection, media stream
@@ -947,7 +958,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   an empty read) — the "allow incoming connections?" GUI prompt must be clicked once per python
   path, so start netcond BEFORE going headless, and treat "netcond logs nothing" as this, not as a
   quiet TV.
-  Measured with it 2026-07-29: teardown's join of the `/:/timeline` reporter parked the main loop
+  Measured with it in PlxNative, 2026-07-29 (Plex's `/:/timeline` progress reporter, since removed): teardown's join of the `/:/timeline` reporter parked the main loop
   **6974 ms**; after moving that join onto the scrobble worker, BACK→teardown is **0.5 s**.
   **That run was taken while the scope bug above was live, so the proxy was stalling EVERY
   connection and not only the reporter's — and the number and the conclusion both survive it,
@@ -974,39 +985,9 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   the kernel maps an IPv6 route metric of 0 to 1024, which is why a metric trick was not the
   answer). `off` proves both halves from the set's own tables or fails. `off` writes the restore script
   ON the set and starts a watchdog there, so a dead harness or a sleeping Mac cannot leave the
-  household offline past the TTL; `on` restores at once. `tests/run.py` drives it from a case's
-  `"wan": "off"`, restores in the case's `finally` and again in `teardown()`. Two more case
-  attributes came with it: `"session": "stored"` boots from the install's OWN sign-in instead of
-  the injected token (the injected path installs a plaintext origin and never touches the
-  `plex.direct` name a real sign-in persists, so an offline case through it is a false pass by
-  construction; the case refuses when the install holds no sign-in), and `"primary_ipv6": true`
-  re-points the primary onto its IPv6 `plex.direct` origin read off plex.tv, with its `pin`.
-  `offline_play` and `offline_play_v6` are the cases, and `expect.resolve_pin` /
-  `expect.offline` are their assertions (the latter keyed on the slot the play was dispatched
-  on, requiring that slot's `hubs: source N ok`, with the negative control being any plex.tv
-  refusal the app logged OR — when a managed profile is active and the boot makes no plex.tv
-  call at all — the tool's own `resolve plex.tv -> FAIL` probe from the set; the former, for `v6`, also requires the v6
-  re-point line to PRECEDE the play start, since the scrubber turns every host into `<host>`
-  and the pin line itself names only the family — a dashed `plex.direct` label is a LAN
-  address spelled sideways and is never logged). Both PASSED on the dev build, real cut,
-  2026-09-05 (`docs/measurements/offline-wan-cut-tv-2026-09-05.log`). **The release build
-  cannot be a harness case** — `run.py` refuses a release binary and its key injection needs
-  the dev-only FIFO — so the store configuration is proven by hand: `make RELEASE=1
-  FLAVOR=debug deploy`, `tools/tv-session.sh wan off 900`, launch, pick the profile with the
-  physical remote, browse, play, then read `tv-session.sh log 'resolves|hubs: source|curl rc'`
-  and `wan on`. **Done 2026-09-06 by the owner, with the router's uplink really down — and it
-  FAILED at the picker**: the origin was pinned and the roster restored, but every profile pick
-  went to plex.tv's `/switch` and timed out (`docs/measurements/offline-picker-red-tv-2026-09-06.log`;
-  the active profile is the PIN-protected admin, which the one no-network shortcut excluded).
-  The fix caches each profile's credentials at its ONLINE seating (`Session::profiles`, a PIN as
-  a local verifier) and seats from that when plex.tv does not answer — `plex/CLAUDE.md` has the
-  mechanism, `offline_pick_cached` is the harness case (its `prime_online` step seats the tile
-  once with the link up, so the cache is the case's own doing), and the PIN half is proven on
-  the simulator (`offline-picker-sim-green-2026-09-06.log`) because the harness cannot type a
-  PIN it does not know. The by-hand release-build proof is owed AGAIN for the fixed build: it
-  was deployed to the debug install the same day and awaits the owner's next real cut. The
-  router-side alternative (Keenetic's per-client "No Internet access" policy) is manual and was
-  not needed.
+  household offline past the TTL; `on` restores at once. It is the condition for checking that the app needs nothing beyond the LAN: with the
+  uplink cut, a server on the same network must still sign in, load the guide and play. (PlxNative's
+  harness drove it from offline cases that were removed with the Plex client.)
 - `tools/sockprobe.c` — standalone ARM diagnostic (`make sockprobe`, scp, run, delete) for socket
   semantics **the host suite cannot answer**: `cargo test` runs on Darwin, the app on Linux, and
   they disagree. Measured 2026-07-28: on this kernel `shutdown(2)` **does** abort a `connect(2)`
@@ -1068,8 +1049,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
 - `docs/two-installs.md` — **why two builds live on one television and what they do and do not
   share**: the `FLAVOR` axis and its seven query targets, the identity model (the app id is the
   install DIRECTORY's name, read from `/proc/self/exe`, so nothing about it reaches codegen), the
-  shared-resource inventory (separate: runtime root and everything in it, session file, plex.tv
-  device name, launcher tile, the Load payload's `option.appId` and the ACB id — still shared: the
+  shared-resource inventory (separate: runtime root and everything in it, account file, launcher tile, the Load payload's `option.appId` and the ACB id — still shared: the
   jail template, the ONE video plane, `/media/developer`, `splash.png`, the `requiredMemory`
   budget), the two name traps, and the ordered list of what only a television can settle. Read it
   before adding anything per-install, and before assuming a log came from the install you meant.
@@ -1079,7 +1059,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
 
 - **This repository is PUBLIC, and some of the data in this working copy is not the maintainer's
   to publish.** Several paths are gitignored for that reason — `.tv-host`, `.tv-mac`,
-  `src/config.local.h` (a live Plex token), `tests/manifest.local.json` and `pkg/auth.json` among
+  `src/config.local.h` (a private build config from the Plex era; nothing reads it now), `tests/manifest.local.json` and `pkg/auth.json` among
   them — and the per-user `~/.config/dispatcharrtv/tv-host` / `tv-mac` (outside every checkout, so not
   gitignored, but the same values and guarded the same way: `USER_TV_FILES` in the hook,
   `PRIVATE_NAMES` in `ci/source_bundle.py`); the LIST is `PRIVATE_FILES` in
@@ -1134,21 +1114,18 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   events — `0x103`/`0x104` (will/did enter **background**) and `0x105`/`0x106` (will/did enter
   **foreground**). On background during playback the loop **suspends the buffer-feed** (preserving the
   session) and **PARKS the page stack**: `Dispatcher::suspend`, which sends `ScreenEvent::Suspend`
-  down every mounted body and moves nothing. **It used to drop to Home and that was a bug**, fixed
-  by restructure phase 12 (D1): writing `route = Home` turned into a `Root(Home)` that RETIRED the
-  player entry and the page it was launched from, so `0x106` minted a fresh player over a stack
-  that was now just Home. Nothing noticed while the two things that would have — the playback
-  session and the player's return target — lived outside the tree; the return target is an
-  `EntryId` on the page beneath the player now, so destroying entries destroys the way back.
+  down every mounted body and moves nothing. (In PlxNative it used to drop to Home, which retired
+  the player entry and the page beneath it; the return target is an `EntryId` on the page beneath
+  the player now — the Guide — so destroying entries would destroy the way back.)
   **Consequence when reading a log: the heartbeat reports `route=player` while the app is
-  backgrounded**, not `route=home`. On foreground `0x106` it un-parks (`Dispatcher::resume`, called
+  backgrounded**, not `route=guide`. On foreground `0x106` it un-parks (`Dispatcher::resume`, called
   on both edges because it is idempotent and webOS promises nothing about their order); the player
   is still the top entry, because the park moved nothing, so the `show_page(Player)` beside the
   reload is ordinarily a no-op and is written out only so that a foreground finding the player gone
   puts it back rather than resuming a session with nothing on screen. A channel is not resumed at
   a position: the background stops the stream (`Player.parked`) and `0x106` tunes the same channel
-  again at the live edge (`resume_parked`, the reconnect path). In-app
-  Home/Settings are *overlays* and do **not** fire these — only a real OS app-switch does. Preserve
+  again at the live edge (`resume_parked`, the reconnect path). In-app overlays do **not** fire
+  these — only a real OS app-switch does. Preserve
   the suspend/reload pairing if you touch playback or routing.
 - **Crash forensics is the C tracer (`src/crashtrace.c`), and nothing is sent.** Crash reporting
   (Sentry Native and its `sentry-crash` daemon) was removed with the rest of telemetry
@@ -1172,7 +1149,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   module is the honest ceiling.
   **Two things about it were broken until 2026-08-29 and neither was visible in a log** — and the
   first of them had been **written down and left undone for five weeks**, as finding **C3** of
-  `docs/architecture-review-2026-07-26.md`, which named the same six unsafe calls and prescribed the
+  the 2026-07-26 architecture review (PlxNative; not carried over), which named the same six unsafe calls and prescribed the
   same fix ("use `write(2)` into a pre-opened fd with a preformatted buffer"). It was filed
   *medium / Wave 1*. Worth knowing when reading either: only the SECOND was a discovery.
   (1) The handler was not async-signal-safe: it called `fprintf`/`fopen`/`fgets`/`sscanf`/`fclose`,
@@ -1378,9 +1355,10 @@ means nightly is what ships. `make check` is that command **plus `make lint`** (
 named clippy lints, see the build section — the shadowed-branch gate, ~1s warm); it is deliberately
 **not** a prerequisite of `all`, so an ordinary `make` still cross-compiles without ever invoking a
 host toolchain run. Run it before `make test` — it is free by comparison, and it is the only signal
-you get without waking a television. What it covers today, by module:
+you get without waking a television. What it covers, by module (a sample, not a census — count
+them with `make check` rather than trusting a number here):
 
-  - `stream.rs` (10) — **socket semantics against real loopback sockets, plus response-header
+  - `stream.rs` and its `stream_*_tests.rs` — **socket semantics against real loopback sockets, plus response-header
     parsing**: `connect(2)` giving up on its deadline (RFC 5737 TEST-NET black hole), a refused
     connect failing fast rather than reporting success, every failed open retiring its fd (asserted
     by counting `/dev/fd`), `shutdown(2)` waking a reader already blocked in `recv`, the fd being
@@ -1388,27 +1366,22 @@ you get without waking a television. What it covers today, by module:
     one non-UTF-8 byte cannot turn a good 200 into a transport failure, that a status line
     straddling the status offset is rejected rather than fatal, and that header names are found
     whatever their casing.
-  - `remote.rs` (3) — **the remote-FIFO token framing**: complete tokens fire while a partial
+  - `remote.rs` — **the remote-FIFO token framing**: complete tokens fire while a partial
     trailing one is held over to the next drain, and a multi-byte whitespace separates tokens
     without panicking the tokenizer (the separator search is ASCII-only because the split that
     follows is by BYTE index). The FIFO is world-writable in `/tmp` and drained every frame on every
     boot, so a panic here unwinds out of the SDL loop and kills the app.
-  - `ff.rs` (11) — the **pure** demuxer logic: the `nal_end` 32-bit bounds guard, AVCC→Annex-B
+  - `ff.rs` — the **pure** demuxer logic: the `nal_end` 32-bit bounds guard, AVCC→Annex-B
     conversion (keyframe detection, parameter-set prepending, truncation instead of panic), and the
     AVIO abort guards (a seek after teardown must not open a second connection — graded on an
     accept COUNT from a counting listener, not a return value).
-  - `route/plan.rs` (8) — direct-play vs transcode **selection policy**: track fallbacks, a real
-    server pick and a show's language over the file's default, the flagged default, part-id parsing, mkv-only direct play.
-  - `screens/home/tests.rs` + `ui/card_row.rs` — **focus/geometry/spring math**: every strip
-    element decoding to exactly one destination, row stepping staying inside the shelf array, the
-    pointer hit column matching the drawn card at every snap phase, and the shelf heading's
-    clearance behaviour frame by frame. (This bullet read `ui/home.rs` (5) until that file was
-    retired; the contracts moved to the owned screen with the screen — the ledger is
-    `docs/measurements/home-legacy-contract-ledger.md`.)
-  - `metadata.rs` (2) + `browse.rs` (2) — **async landing/mailbox invariants**: a detail or season
-    response only installs while it is still the one being awaited (a failed `/children` must not
-    land as an empty season), and `reset` clearing the single-flight flags and retry backoff.
-  - `task.rs` (3) — **threading invariants**: a refused spawn is a return value not a panic, and the
+  - `dispatcharr/` — **the server contract**: API replies parsed from recorded shapes, the account
+    file's storage rules (0600, atomic replace, narrowed back after a widening), discovery and the
+    server-clock offset the Guide uses when the TV's clock is wrong.
+  - `screens/guide_tests.rs` and `screens/setup_tests.rs` — **the screens as machines**: focus,
+    groups and favourites, OK tuning, BACK at the root, every Setup failure and label fitting in
+    every shipped language.
+  - `task.rs` — **threading invariants**: a refused spawn is a return value not a panic, and the
     `MainThread` token cannot cross a spawn (an absent `!Send` impl is invisible to ordinary code,
     so it is detected via inherent-vs-trait const resolution, with a `Send` control case).
 
@@ -1421,57 +1394,38 @@ you get without waking a television. What it covers today, by module:
   shape to watch for. **(2) It runs on Darwin; the app runs on Linux, and they disagree**
   — see `tools/sockprobe.c` above, where `shutdown`-during-`connect` behaves oppositely on the two
   kernels. A socket assertion that passes here is evidence about macOS, not about the TV.
-  **(3) Some app async seams remain process-wide**, so some tests are serialized rather than parallel:
-  `metadata.rs`'s test that drives `set_current_for_test` still takes
-  `plx_base::testlock::serial()` (one lock per test binary: `plx_data`'s tests and the application's each have their own) — not because its own state is global any more (`MetadataState` and
-  `MetadataAdapter`, detail and season mailboxes included, are per-owner fields now, like the other
-  five stores), but because `set_current_for_test`'s `assert_held` enforces the SAME
-  lock the genuinely-still-global seams (route's play mailbox, the player's SHARED block) also
-  take, and the convention is one lock, not one per module. Browse, Hubs, Metadata, Person, Search
-  and ViewState are all owned now: a production `Bridge` owns each store's state, adapters and
-  notices, so separate owners share neither state nor landings; their fixtures use explicit
-  `Stores` owners. Those locks are load-bearing for the remaining globals, not incidental
-  — hold one for anything that touches the shared registry, compatibility state or the app frame.
-  **Since 2026-09-10 the lock also records WHICH THREAD holds it, and the stores ASSERT it.** A
-  mutex nobody is obliged to take is a convention, and a convention broken by one test in two
-  thousand does not fail — it hands some other module's test a wiped store, at a rate that reads
-  as flakiness. Browse's owned reset path (`BrowseCmd::Reset`), `plex::servers::reset_for_test`
-  and the whole app frame
-  (`app::bridge::frame_with_results`, which drains the aggregate notices and pumps every store)
-  call `testlock::assert_held`, so an unguarded write is now a deterministic panic in
-  the culprit rather than an intermittent failure in a bystander. That is how
-  `app::chrome::four_libraries_on_two_servers_publish_two_type_destinations` was finally
-  attributed: it lost both library destinations about one full-suite run in six, and the cause was
-  three `app::heartbeat_word_tests` cases that took no lock and derived their word alphabet by
-  running real frames — whose Browse owner reaches `sync_roster`, which resets that owner's table
-  on any source the live registry does not hold, i.e. on every Browse fixture in the suite.
+  **(3) Some app async seams remain process-wide** (route's play mailbox, the player's SHARED
+  block), so the tests that touch them are serialized rather than parallel: they take
+  `plx_base::testlock::serial()` (one lock per test binary). **The lock also records WHICH THREAD
+  holds it, and the seams ASSERT it** (`testlock::assert_held`): a mutex nobody is obliged to take
+  is a convention, and a convention broken by one test in two thousand does not fail — it hands
+  some other module's test a wiped state, at a rate that reads as flakiness. With the assertion, an
+  unguarded write is a deterministic panic in the culprit rather than an intermittent failure in a
+  bystander.
 
 **Tier 1.5 — the desktop simulator (`make sim-macos` or `tools/sim.ps1`), which DOES draw pixels
 on the host.** This tier
 did not exist before 2026-08-14, and the line below used to read "there is no host *runtime*" flatly
 — that is now wrong for the UI half and right for everything else. `dispatcharrtv-sim` is the same app
 core built with `--features hostsim` and linked against desktop SDL2 + desktop GL 4.1 core: it
-renders the real interface against a real PMS, boots to a screen with the same `dispatcharrtv-*`
+renders the real interface against a real Dispatcharr server (or `tests/mock_dispatcharr.py`), boots to a screen with the same `dispatcharrtv-*`
 triggers, is driven by the same remote-FIFO tokens, and screenshots itself. **The
 `ui-sim` skill is the loop.** It exists because the TV is a mutex — one set, one app instance, two
 harness jobs kill each other — while N simulators run side by side, each pointed at its own
 instance root (`DISPATCHARRTV_RUNTIME_DIR`, which is where the triggers, FIFO and event log now come
 from; unset it and everything resolves to `/tmp` exactly as before). It answers layout, focus,
-navigation, every screen, and the whole Plex data layer.
-**On macOS, since 2026-08-28 it STREAMS — real HTTP, real demux, real HLS, the real adaptive
-controller.** `make sim-macos` builds a HOST copy of the same bundled FFmpeg 9.0 from the same
+navigation, every screen, and the whole Dispatcharr data layer.
+**On macOS, since 2026-08-28 it STREAMS — real HTTP, real demux.** `make sim-macos` builds a HOST copy of the same bundled FFmpeg 9.0 from the same
 `ci/build-ffmpeg.sh` component list (`HOST=1`, into `vendor/ffmpeg-prefix-host`, staged into
 `pkg/` as `libavformat-plx.63.dylib` beside the ARM `.so.63`), and `ff.rs` carries a second ABI
 table selected on `target_pointer_width` with `ci/ffabi-assert.c` holding both. Arm
 `dispatcharrtv-clocksink` (`player/ffi_host.rs` — AUs accepted and discarded, a presentation clock
 clamped to the last fed PTS, position reported at the television's measured 5 Hz) and the whole
 pipeline between the socket and the decoder runs on the Mac: both AVIO transports, `ff.rs`'s
-demux, the AU queues and their byte-cap backpressure, the feed-ahead throttle, rung transactions,
-seek. The Windows `sim-wsl` target deliberately omits FFmpeg and stops at the host no-video seam.
-Measured the day the macOS path landed: 94 `abr:` lines and a rung commit in one 30 s host run against
-`tests/serve_fixtures.py`. Until then this half was device-only and `make sim-macos` said so
-(`ff: FFmpeg unavailable — the app runs, playback will refuse`), which is why the ABR work was
-pinned to the one-television mutex.
+demux, the AU queues and their byte-cap backpressure, the feed-ahead throttle, seek on a sized
+clip. The Windows `sim-wsl` target deliberately omits FFmpeg and stops at the host no-video seam.
+Until that landed (PlxNative, 2026-08-28) this half was device-only and `make sim-macos` said so
+(`ff: FFmpeg unavailable — the app runs, playback will refuse`).
 It still CANNOT answer frame rate (different
 GPU — every simulator heartbeat carries **`sim=1`** so a pasted log cannot be mistaken for a
 device measurement), text rasterization, the cached modal ground (its frame cache is off —
@@ -1580,16 +1534,6 @@ green.
   under its own uid, so a root-owned file left in place is one it cannot write (log stays 0 bytes,
   every assertion reads as a total regression). `make run` keeps the old sleep-then-`cat` shape
   because the FPS scenes need a fixed sampling window; both share `BOOT_SH`.
-- **A case's start position is server state, so the harness resets it every time.** The resume
-  point (`viewOffset`) lives on the PMS, outlives the run, and the app's timeline reporter posts
-  progress every 10s while playing — so before this was fixed, a case inherited wherever the
-  previous case *or the previous run* stopped (`rk=4` is shared by five cases, `rk=1804` by three),
-  and `resume_ns` resumes anything past 10s. "Play from the start" was silently a resume test. Now
-  `run_case` **always** clears first, then seeds `setup.viewOffset_ms` if the case declares one.
-  **The reset must be `/:/unscrobble`** — a `PUT /:/progress?time=0` returns 200 and changes
-  nothing (verified live; `time=1` too), which is exactly what makes this look already handled.
-  Don't make the reset conditional again to save the pre-seed close: the wandering seek-tier
-  failures were this, not the player.
 - **A settled non-player screen STOPS PRESENTING** (`plx_machine::idle`, the whole-frame present gate). The
   loop keeps running at full rate — input, pumps and every `*_update` are untouched, so key latency
   and timers are unchanged — but `glViewport`…`SDL_GL_SwapWindow` is skipped while nothing is
@@ -1606,7 +1550,7 @@ green.
   FROZEN before they were made to report, and no fps scene caught it because those grade `loop=`.
   The rest test is visibility — magnitude-relative, capped under a quarter pixel, velocity judged
   as `vel*dt` (the travel this frame) — not a bare epsilon.
-  Measured 2026-07-31 on a still Home grid: **39.6%
+  Measured in PlxNative, 2026-07-31, on a still Home grid: **39.6%
   → 1.67% of one core** (ours 15.4→1.05, `surface-manager` 24.2→0.62). Consequences for anyone
   reading a log: the heartbeat carries **two different rates and they are easy to swap** —
   **`fps=<n>`** is frames actually swapped that second (the real frame rate, what this gate moves)
@@ -1614,14 +1558,13 @@ green.
   `loop=0` is an app in trouble, and `fps=0` on its own is not a fault at all; the on-screen
   counter draws the last completed `fps=` window and HOLDS when idle (it is drawn, so it can
   only update on an ordinary present) and that is expected, not a hang; and **an fps floor taken on a static
-  screen now grades nothing**, which is why `fps:home-grid` arms `dispatcharrtv-homeosc` and the still
-  case is gated by `fps:home-idle`'s `fps_ceiling` instead. `/tmp/dispatcharrtv-noidle` turns the
-  gate off (DIAG-exempt, so an A/B does not also change which screen you boot to), and
-  `/tmp/dispatcharrtv-nobudget` is its twin for the FRAME BUDGET (DIAG for the same reason):
+  screen grades nothing** — measure a moving screen, or grade a still one by its `fps` ceiling.
+  `/tmp/dispatcharrtv-noidle` turns the gate off, and `/tmp/dispatcharrtv-nobudget` is its twin
+  for the FRAME BUDGET:
   admission as it was before phase 11 — the poster quota of three per frame, no time ceiling and
   no solo frame — so an A/B leg prices the admission rule rather than two builds. **The exclusion
   is the bound video plane, not the player route** — pre-bind (the Resolving/Loading spinner) and
-  post-unbind (the failure read-out, teardown) player frames are gated exactly like Home, which is
+  post-unbind (the failure read-out, teardown) player frames are gated exactly like the Guide, which is
   why `PlayerScreen::clock_fingerprint` exists: every clock-driven player animator reports motion
   through it once the route no longer gets a free pass.
 - **The heartbeat's WIRE ORDER, since phase 11** (`rust-modules/base/src/diag/heartbeat.rs::heartbeat_tail` is the one
@@ -1661,24 +1604,21 @@ green.
   a loop rate as a frame rate. Analysis docs under `docs/` still quote the old names against the
   line numbers of their day and carry a mapping banner instead of being rewritten.
 - **The once/sec `loop=` heartbeat carries `pos=<s>` while frames are presenting** — the same
-  `SHARED.playpos_ns` the 10s `/:/timeline` reporter posts, sampled at 1 Hz. The harness grades
-  playback progress from it (`progress_secs`), because observing a 15s climb through 10s samples
-  costs ~30s of playback. It is gated on `player::is_playing()`, not `is_started()`: a direct-play
-  resume does not seed `playpos_ns` (only the transcode branch does), so the pre-roll would log a
-  0 and a 0→600 step reads as 600s of "climb" in one second — a false PASS.
+  `SHARED.playpos_ns`, sampled at 1 Hz. The harness grades playback progress from it
+  (`progress_secs`). It is gated on `player::is_playing()`, not `is_started()`: before the first
+  presented frame the position is not seeded, so the pre-roll would log a 0 and a 0→600 step would
+  read as 600s of "climb" in one second — a false PASS.
   **Beside it since 2026-08-27 is `play=<pm>`: media time advanced per WALL millisecond, in per
   mille — 1000 is the film running at speed and 670 is it crawling — and it is the ONLY field on
   that line that can see a slow film.** `fps=` counts our GL swaps and sits at 60 through a stream
-  the television is decoding at two-thirds speed; every buffer number the adaptive controller reads
-  is a RESERVE, and a reserve is media time measured against the same playhead, so when the
-  playhead slows the reserve stops draining and `slope`, `min_buf_ms` and `draining()` all read
-  healthy at exactly the moment the picture is worst. `max_stall_s` is blind from the other side —
+  the television is decoding at two-thirds speed; a buffer reserve is media time measured against
+  the same playhead, so when the playhead slows the reserve stops draining and reads healthy at
+  exactly the moment the picture is worst. `max_stall_s` is blind from the other side —
   it grades the clock STOPPING, and this is the clock advancing too slowly. The harness derives the
   same quantity from `pos=` alone (`playback_rate`, reported on every case's `timeline_climb`
   evidence, asserted only where a case declares `min_play_rate_pm`), so an old log is still
   readable. There is deliberately no magnitude gate on `play=`: a seek reads as a huge or negative
   value and a catch-up leg as something above 1000, and both are real observations.
-  `docs/measurements/local-original-blind.md` is what it found first.
 - **Since 2026-09-03 every playback case in BOTH tiers also grades `presented_rate`**: the frame
   rate the video sink PRESENTED against the rate the app DECLARED on the `load:` line. The
   instrument is the sink's `non-flushable-displayed-frames`, polled by libpf every 200 ms once
@@ -1688,15 +1628,15 @@ green.
   time) and compared as a median within ±6 % plus a one-in-five floor at 85 %. It exists because a
   4K H.264 24p stream declared at `maxFrameRate: 60` was presented at **13 fps** while `play=`
   read 1000 pm, `fps=` read 60 and the sink's own drop counter (type 46) read 0 — three healthy
-  instruments over a picture the maintainer could see was wrong. A transcode declares no rate and
-  is skipped, said so in the evidence; `expect.presented_rate: false` opts out. Replayed over the
+  instruments over a picture the maintainer could see was wrong. A case that declares no rate is
+  skipped, said so in the evidence; `expect.presented_rate: false` opts out. Replayed over the
   saved logs it fails the 60-declared run at a median of 14 and passes the 24-declared one.
 - **`tests/run.py` always cleans the TV on exit** — pass, fail, Ctrl-C, `kill`, or crash: it closes
-  the app, clears every `dispatcharrtv-*` trigger in that install's runtime root **including the
-  injected PMS token**, and reaps stray ssh clients. Runtime `*.log` files
+  the app, clears every `dispatcharrtv-*` trigger in that install's runtime root, puts back the
+  Dispatcharr account it moved aside for the run, and reaps stray ssh clients. Runtime `*.log` files
   survive, including the storage diagnostics snapshot. Nothing did this before
-  2026-07-28 except the normal path, so an interrupted run left the app playing (scrobbling a
-  resume point the next run then inherited) and a live per-server token in world-readable `/tmp`.
+  2026-07-28 except the normal path, so an interrupted run left the app playing and a live
+  credential in world-readable `/tmp`.
   The teardown is armed at the moment the harness commits to driving the TV, so `--list` and a
   no-match `--filter` still exit without closing an app you are watching.
 - **`ps | grep dispatcharrtv` finds NOTHING on this TV even while the app is running** — busybox `ps`
@@ -1715,7 +1655,7 @@ green.
   output. `DISPLAY` = video plane + UI composited (use this); `VIDEO`-only failing with "no
   signal state" is itself a diagnostic that nothing is decoded on the video plane.
 - **Perf:** there is no FPS regression suite. The scenes `tests/run.py --fps` graded were all
-  Plex screens and Plex playback panels, and went with them. A frame-rate or smoothness question
+  PlxNative's Plex screens and playback panels, and went with them. A frame-rate or smoothness question
   goes to the `profile-tv` skill — the heartbeat's `loop=` / `fps=` / `worstframe=` fields,
   `tools/profile-graphics` and `tools/tv-sched-trace.sh` — on an `ARM_PROFILE=release` deploy.
 - **Dev trigger files (read once at boot, in the install's RUNTIME ROOT).** There are ~40; this
@@ -1747,154 +1687,57 @@ green.
   logs (`capture::init` is compiled out, so there is no listener on ANY port — a compile-time fact;
   device-verified on the stable install: no FIFO and nothing on `:8910`. This line used to assert
   the device measurement alone, which could only ever have probed the one port it knew about). The same feature gates `Remote::open` and
-  `capture::init` — those are structural surfaces with no path literal, which is also why
-  `dev::any_trigger_present` (the whole-`/tmp` scan behind the picker suppression) lives there
-  rather than being greppable. The harness is unaffected: `tests/run.py` builds with plain `make`.
+  `capture::init` — those are structural surfaces with no path literal. The harness is unaffected:
+  `tests/run.py` builds with plain `make`.
   Two behaviours bite:
   `make run` clears ONLY the event log (unlike `tests/run.py`, which glob-clears triggers), so a
-  by-hand run inherits whatever the last session armed; and any non-DIAG trigger left behind also
-  suppresses the who's-watching picker, silently changing which screen you boot to. The
+  by-hand run inherits whatever the last session armed. The
   **`tv-session` skill** drives all of this (clear → arm → launch → assert) and owns the
-  screen-to-trigger recipes. **`/tmp/dispatcharrtv-storepolicy`** gives a developer build the STORE's
-  credential policy (`CredentialPolicy::HttpsOnly`, `plex/origin.rs`) for the whole launch: every
-  `devtriggers` build otherwise lets a token ride plaintext, so the upstream Sentry issue 10 "Connect without
-  encryption?" flow — reachable only when plaintext needs a consented grant — cannot be reached in
-  the sim or on the TV without it. It only tightens, and a store build has no trigger to read. The
-  end-to-end reproduction against `tests/mock_pms.py --plaintext-only-lan` is in the mock's
-  `--help`. Other triggers worth knowing: `/tmp/dispatcharrtv-softfloat` (the host↔ARM soft-float differential table, spec §4.2:
-  logs `softfloat: … MATCH|DIVERGE` against the host's pinned hash and writes the table beside
-  it; `make softfloat-probe` fetches it),   `/tmp/dispatcharrtv-url` (override the streamed part
-  URL) and **`/tmp/dispatcharrtv-playurl`** (the same, plus the LOAD DECLARATION — one JSON object,
-  `{"url":…,"vcodec":…,"acodec":…,"fps":…,"dovi":{…},"atmos":…}`, which is what the pipeline test
-  tier drives and the only way to declare HEVC / `"AC3 PLUS"` / Dolby for a stream no PMS chose;
-  it also ENTERS the player on its own from a boot with no session, since there is no home grid to
-  press OK on), **`/tmp/dispatcharrtv-replay[=N]`** (once a `playurl` stream reaches EOS,
-  start it AGAIN, N times — LG checklist #46's replay half; a COUNTER rather than a lifted latch
-  because `auto_tried` also guards the autoplay+playidx arm, which fetches a catalog item, so an
-  unconditionally re-armable latch would loop a real playback forever. Absent = 0 = the one-shot
-  behaviour every other boot has),
+  screen-to-trigger recipes. Triggers worth knowing:
+  `/tmp/dispatcharrtv-softfloat` (the host↔ARM soft-float differential table, spec §4.2: logs
+  `softfloat: … MATCH|DIVERGE` against the host's pinned hash and writes the table beside it;
+  `make softfloat-probe` fetches it), `/tmp/dispatcharrtv-url` (override the streamed URL) and
+  **`/tmp/dispatcharrtv-playurl`** (the same, plus the LOAD DECLARATION — one JSON object,
+  `{"url":…,"vcodec":…,"acodec":…,"fps":…,"live":…,"dovi":{…},"atmos":…}`, which is what the clip
+  harness drives and the only way to declare HEVC / `"AC3 PLUS"` / Dolby for a stream the server did
+  not describe; it also ENTERS the player on its own from a boot with no account),
+  **`/tmp/dispatcharrtv-replay[=N]`** (once a `playurl` stream reaches EOS, start it AGAIN, N times;
+  absent = 0 = the one-shot behaviour every other boot has),
   **`sample.h264` / `sample.h265`** (feed the player a local raw Annex-B sample instead of
-  streaming — the two names that predate the `dispatcharrtv-` prefix, and since the flavour split the
-  last two runtime surfaces to stop being pinned to a shared `/tmp`: they resolve through the
+  streaming — the two names that predate the `dispatcharrtv-` prefix; they resolve through the
   install's own root like everything else, `$(make -s print-rundir)/sample.h264`),
-  `/tmp/dispatcharrtv-autoplay` (auto-press OK for headless capture), `/tmp/dispatcharrtv-autoseek` (empty =
-  one seek to 140s; else a seek script: optional `gap=<ms>` + comma steps, absolute `120` or
-  tap-relative `+10`/`-10` — rapid-burst seek testing), `/tmp/dispatcharrtv-ptype` (ACB playerType
-  bisect knob), `/tmp/dispatcharrtv-holdload[=ms]` (sleep `ms` — default 30000 for a bare/empty
-  trigger — on `threads::load_thread` right after the real `sf_load` call returns and BEFORE the
-  Load-returned flag publishes, making issue #74 D.1's budget observable on demand: the pump's
-  `deferring` line, then, past `NATIVE_LOAD_BUDGET`, the failure read-out; NOT `DIAG`, since it
-  changes playback behaviour), `/tmp/dispatcharrtv-marker[=intro|credits]` (once playing, seek to 5s before that
-  server marker — the only practical way to reach the Skip Intro / Skip Credits pill, and, via a
-  `final` credits marker, the whole finish → Up Next → auto-advance chain, without playing 50
-  minutes of episode first),
+  `/tmp/dispatcharrtv-autoplay` (auto-press OK for headless capture), `/tmp/dispatcharrtv-autoseek`
+  (empty = one seek to 140s; else a seek script: optional `gap=<ms>` + comma steps, absolute `120`
+  or tap-relative `+10`/`-10` — for a sized clip; a live channel has nothing to seek to),
+  `/tmp/dispatcharrtv-ptype` (ACB playerType bisect knob), `/tmp/dispatcharrtv-holdload[=ms]`
+  (sleep `ms` — default 30000 for a bare/empty trigger — on `threads::load_thread` right after the
+  real `sf_load` call returns and BEFORE the Load-returned flag publishes, making the native Load
+  budget observable on demand: the pump's `deferring` line, then, past `NATIVE_LOAD_BUDGET`, the
+  failure read-out; NOT `DIAG`, since it changes playback behaviour),
   **`/tmp/dispatcharrtv-nowan[=slow]`** (the OFFLINE reproduction: every name that would have gone
-  to a resolver — plex.tv, discover, an UNPINNED `plex.direct` origin — fails as it does on a LAN
-  whose uplink is down, while a literal or a pinned name is untouched; `slow` first spends the
-  connect budget a dead resolver would have cost. It is how `plex::ResolvePin`, the fix that dials
-  the household's own `plex.direct` name at the address plex.tv advertised beside it, is shown red
-  and green on the simulator with a stored session; pair a `/tmp/dispatcharrtv-servers` entry's
-  `"scheme":"https"` with its new `"pin":"<address>"` field to put a pinned TLS origin through the
-  registry headlessly),
+  to a resolver fails as it does on a LAN whose uplink is down, while a literal address is
+  untouched; `slow` first spends the connect budget a dead resolver would have cost),
   `/tmp/dispatcharrtv-failtest[=verdict|audio|novideo|stream|connection|tv|jail|none]` (force one
   variant of the full-screen **failure read-out** — the one screen that cannot be reached on
-  purpose, since it needs a server that refuses, and the one most meant to be LOOKED at: it is
-  shaped to survive a phone photograph in an issue thread. Live-read, so arming it mid-playback
-  swaps the frame at once; `stream`, `connection`, and `tv` exercise the runtime media-source,
-  interrupted-transfer, and native-pipeline reasons; `jail` forces the missing-`/dev/rtkmem`
-  read-out regardless of the real device probe, since most dev machines are not an affected SoC;
-  pair `audio` with
-  `/tmp/dispatcharrtv-nopass` for the PLEX PASS capsule line. Every arm but `jail` feeds the real
-  `player::error_shape` (`jail` is the one `ErrorShape` `error_shape` never produces, so it calls
-  the sibling `jail_error_shape` directly instead), and forces the STATE only at
-  `appkit::player_hud::busy` — never at `player::state()`, which the pump acts on),
+  purpose, and the one most meant to be LOOKED at: it is shaped to survive a phone photograph in an
+  issue thread. Live-read, so arming it mid-playback swaps the frame at once; `stream`,
+  `connection`, and `tv` exercise the runtime media-source, interrupted-transfer, and
+  native-pipeline reasons; `jail` forces the missing-`/dev/rtkmem` read-out regardless of the real
+  device probe. Every arm but `jail` feeds the real `player::error_shape` (`jail` calls the sibling
+  `jail_error_shape` directly instead), and forces the STATE only at `appkit::player_hud::busy` —
+  never at `player::state()`, which the pump acts on), and
   `/tmp/dispatcharrtv-testpat=<spec>` — **replace the page's picture with a SYNTHETIC ground**
   (`flat:<L*>`, `ramp`, `edge`, `checker:<px>`, `lines:<px>`, `hbars:<px>`, `hue[:L*]`, `rainbow[:L*]`,
-  `solid:<deg>[:L*]`), drawn as page content so it is exactly what the tab track samples and what
-  the backdrop blur sources. The remote token **`pat:<spec>`** changes it live, which is what makes a
-  graded ladder one scripted run instead of a dozen launches that each land on a different hero;
-  `tools/glass-patterns.py` drives that ladder and assembles the contact sheets. It exists because
-  judging a glass material against whatever poster the hero happened to be showing is not
-  repeatable — the hero advances on its own clock and two simulators launched together drift apart
-  within seconds — and two comparisons were silently mis-paired that way before it did.
-  And the Library browse set: `/tmp/dispatcharrtv-library[=N]` (boot straight into the
-  library on section N), **`/tmp/dispatcharrtv-libosc`** (a perpetual focus sweep of that library's
-  whole DOCUMENT — the library pill strip at the head where there is one (two or more eligible
-  libraries; a lone favourite draws no selector at all), each published shelf, the grid's control
-  row, then the poster grid — reversing at the document's own ENDS rather than on a clock, which is
-  the one
-  oscillator here that does. The owned Library handles `LibraryCmd::Sweep`; the rule dates to
-  2026-09-05: at the shared 350 ms
-  cadence a clock reversing every 3 s gives about eight presses a leg, and a twelve-shelf library
-  spends more than four of those seconds just reaching the grid — so `fps:library-scroll`, whose
-  whole purpose is to sweep the seam between the last shelf and the poster wall, graded a sweep
-  that could not reach it), and
-  `/tmp/dispatcharrtv-libswitch` (cycle every switch: tabs, sort menu, unwatched, filter→genre), the three
-  Settings-family scene triggers added 2026-09-06 for the frame-TIME gates (`worst_ceiling_ms` /
-  `stall_ceiling_ms`, graded from `worstframe=` and `FRAMEDROP`): `/tmp/dispatcharrtv-modalosc` (with
-  `dispatcharrtv-settings=root`, open and dismiss Settings every 1.5 s — `fps:modal-ramp`),
-  `/tmp/dispatcharrtv-legaldoc` (with `=legal`, one OK on the index so the boot lands on a pushed
-  document — `fps:legal-document`) and `/tmp/dispatcharrtv-alert` (with `=privacy`, open the
-  "Delete all local data?" decision alert, deleting nothing — `fps:decision-alert`); and the
-  Search pair: `/tmp/dispatcharrtv-search[=<query>]` (boot straight into Search with the field already
-  holding `<query>` — the seed is not a convenience, since neither the harness nor `sim-shot` can
-  type and the TV's own keyboard is raised by a user, so without it every headless look at this
-  screen is the empty state) and `/tmp/dispatcharrtv-searchosc` (sweep the result shelves' focus down↔up
-  perpetually, 350 ms per step reversing every 3 s — the same cadence and the same CLOCK reversal
-  as `homeosc`; `libosc` shares the cadence and reverses at its document's ends instead, above). The
-  oscillator does NOT reach the screen on its own: pair it with `dispatcharrtv-search`, and with a query
-  the library actually matches, or `fps:search-type` has no shelves to sweep. Design, and the
-  on-screen-keyboard research behind the field (three traps, two dead ends): **`docs/tv-keyboard.md`**.
-  Plus
-  `/tmp/dispatcharrtv-navosc[=<ratingKey>]` (bounce the ROUTE every 1400 ms through the real press path —
-  the only scenes that change route, and so the only ones that sample the whole-screen page
-  cross-fade `ui::nav` draws. EMPTY = Home↔the first library section, the two pages that SHARE the
-  top tab bar (`fps:home-library-nav`); a ratingKey = Home↔that item's DETAIL page instead, which
-  has no shared chrome, a hero backdrop and ambient ground on the far side, and a real teardown at
-  the fade floor (`fps:home-detail-nav`). Both boot to Home). The COUNTED stress-bench twins of
-  the two above: `/tmp/dispatcharrtv-pushbench[=<n>[,<ratingKey>]]` (n push→settle→pop cycles rotating
-  Detail/Person/Library, default n=100 — `fps:push-100`) and
-  `/tmp/dispatcharrtv-modalbench[=<n>[,<ratingKey>]]` (n present→settle→dismiss cycles rotating every
-  modal Style reachable without a TV-only gesture — `fps:modal-100`); both log one `bench:` line
-  per cycle (worst-frame ms, presented frames, RSS, first-frame ms, missed refreshes per half) and a `bench: ... done` line once, then go
-  idle. A third, `/tmp/dispatcharrtv-deepbench[=<depth>[,<ratingKey>]]`
-  (default depth=100 — `fps:deep-100`), does not round-trip: it pushes `depth` pages with NO pop in
-  between, rotating Detail/Person only (never Library — its only entry point is a peer swap,
-  `NavOp::SelectTab`, that would collapse the very depth this scene builds, see
-  `dev::scenarios::bench::DeepBench`'s doc), then pops all the way back to the root one page at a
-  time — `2*depth` `bench: kind=deep` lines, each ONE nav op (`dir=push|pop`, plus `depth=`), and a
-  `bench: kind=deep done … rss_root_kb=<r>` line once, graded by `grade_deep_bench` (adds
-  `bench_depth_rss_kb`/`bench_root_rss_kb` to the STRESS family, above). See `dev::scenarios::bench`'s module doc. Plus
-  `/tmp/dispatcharrtv-itemmenu` (snap into the grid, then open the **press-and-hold card context menu**
-  on the focused card — `route=home overlay=itemmenu` since UI-restructure phase 10, when the menu
-  became a `ModalStack` surface and `route=itemmenu` stopped existing; the interactive path is a
-  real ≥500 ms hold, which no boot trigger can express). Note `/tmp/dispatcharrtv-press` is its TAP twin: it now schedules its own release
-  ~150 ms in, because a down with no up is past `press::LONG_MS` and is a HOLD, not a tap.
-  `/tmp/dispatcharrtv-holdbench[=<n>[,<period_ms>[,tap]]]` is the counted twin of both
-  (`dev::scenarios::bench::PressBench`; default n=100, period 1500 ms hold / 350 ms tap, a tap is capped
-  under `LONG_MS`): a REAL press on the focused card through the remote's key path, so the card's
-  press-in, the hold capsule's fill, the item menu's open and its dismissal are inside the graded
-  halves, which `itemmenu` (a direct `request_home_menu`, graded after a 6 s warmup) never covers.
-  Hold: OK-down and nothing else (never a key-up, and no OK is queued while a menu is up, since a hold
-  menu opens on its Play row), then Back only while the menu is up. `tap`: OK-down, then a direction key
-  before the threshold, which is the app's real press-cancel path (no activation, one-card focus move,
-  right then left). Works on a Home card (pair with `dispatcharrtv-grid`), a Library card and a Collection
-  page card (`dispatcharrtv-collection=<rk>`; it seats the first card with one Down if the page opened on
-  the header). One `bench: kind=hold ... target=<home|library|collection>` line per cycle, `target`
-  suffixed `-nocard`/`-nomenu` when the cycle pressed nothing or opened no menu, which `grade_bench`
-  fails; fps scenes `home-hold`, `collection-hold`, `home-tap`, `collection-tap`, all `--mock`-runnable
-  and measured on the television on 2026-10-08 (one run each, debug build with `ARM_PROFILE=release`, mock,
-  panel on): home-hold `bench_missed_max` 110 / `bench_iv_max_ms` 55 (fixed build read 81, iv 46.7),
-  collection-hold 60 / 50 (41, 42.6), home-tap and collection-tap 8 / 40 with `bench_drift_ms` 4.0 (4 and 3
-  missed). A tree WITHOUT the item-menu opener-lift fix (PR #561) reads 525 / 498 / 12 missed on home-hold /
-  collection-hold / home-tap, so the hold scenes FAIL there and depend on #561 being on main.
+  `solid:<deg>[:L*]`), drawn as page content so it is exactly what the backdrop blur sources; the
+  remote token **`pat:<spec>`** changes it live, so a graded glass ladder is one scripted run.
+  (PlxNative's screen-scene triggers — the Home, Library, Search, Settings and Detail oscillators
+  and stress benches — went with those screens.)
   Remote-driving: `/tmp/dispatcharrtv-remote` is **not** a trigger — the app mkfifos and drains it
-  every frame on every boot (so it never affects the picker; its DIAG entry is a permanent
-  requirement, not an exception). Write key tokens like `down`/`ok`, or pointer clicks `ck:X,Y`
+  every frame on every boot. Write key tokens like `down`/`ok`, or pointer clicks `ck:X,Y`
   in authored 1920x1080 coords, and they replay through the real key/pointer handlers. `ok` is a
   TAP (both edges at once); **`okdown` / `okup` are the split halves**, which is the only way to
-  drive a press-and-**hold** — `okdown`, sleep past `press::LONG_MS` (500 ms), `okup` opens the
-  item context menu;
+  drive a press-and-**hold** — `okdown`, sleep past `press::LONG_MS` (500 ms), `okup` — which on
+  the Guide toggles a favourite and in the player goes back to the previous channel;
   With `devtriggers`, `hang:<ms>` stalls the frame thread under the `dev hang probe` guard and
   `hang-raw:<ms>` sleeps without a label; both accept unsigned decimal u64 milliseconds capped at
   5000, via `tools/tv-session.sh key hang:1000` or `key hang-raw:1000` with the existing TV lock.
@@ -1918,17 +1761,6 @@ green.
   and `ff.rs`'s `venc` section (the device-verified FFmpeg ABI offsets + the RGBA→NV12-NEON
   colorspace path). `make deploy` also ships the NDK's NEON libjpeg-turbo next to the binary
   best-effort, which JPEG mode dlopen's).
-  **Any `dispatcharrtv-*` file in the install's runtime root marks the boot as automated and suppresses
-  the boot who's-watching picker** unless it is EXEMPT — and the exemption list is **`dev::DIAG` in
-  `rust-modules/src/dev.rs`, and only that**. This line used to transcribe it as the logs plus five
-  names, and the array had already grown well past that — the GPU-time log, the hardware-counter
-  pair, the GStreamer pair and the focus probe are exempt as well. A transcribed list, or a count,
-  rots here without anything failing, because nothing compiles this file. Read the array; its doc
-  comment carries the reasoning per entry, and it is the thing to extend when a new diagnostic must
-  not move the boot screen out from under the very session it was armed to watch.
-  `/tmp/dispatcharrtv-token` beats the stored session entirely — so headless runs always land on a
-  deterministic Home.
-  `/tmp/dispatcharrtv-pickuser=<index>` forces the picker anyway and auto-picks that roster tile.
 - **The binary carries no credential and no reporting endpoint** — no compiled server token, no
   demo URL, and (since telemetry was removed, `docs/telemetry-removed.md`) no ingest key; the
   release audit's `telemetry endpoints` row checks the packaged bytes for one. Server access comes from the Dispatcharr
@@ -1936,30 +1768,18 @@ green.
   a boot without one on Setup (`screens::setup`). Automated sessions arrange the account with
   `tools/tv-session.sh up --account real|none|mock=…`, which moves the set's own aside and puts it
   back; nothing is compiled in.
-- Normal interactive flow: who's-watching picker (multi-user, unless Automatically Sign In is on) → Home; D-pad/pointer to focus a
-  card → **OK** opens the detail page → Play starts playback; OK toggles play/pause, LEFT/RIGHT
-  scrub-seek, **BACK/Stop** returns. The strip's **last pill is Search** (a mark, not a word) — a
-  peer of Home and the Library, not a page stacked over them, so BACK from it returns to Home. BACK
-  at **Home's own root** is the end of that chain and hands the screen back to the TELEVISION
-  (`app::input::back_at_root` → `tv::home::go_home`), with the app still running — which is what the
-  platform itself does at an app's entry page on this firmware, and what LG's submission rules
-  require. **The same rule covers three roots** — Home, the who's-watching picker and the QR
-  sign-in — which is what issues #16–#18 were: the latter two used to DROP a root BACK, because
-  both handed it to `auth::cancel` and ignored its `false`. **The first-run consent question was a
-  fourth root and was NOT covered until phase 5b (2026-09-07), and the fix confirms what this
-  section used to say about the shape of the gap: it needed a screen change, not a BACK-arm one.**
-  While the question was a `Popover` (`ui/consent.rs`), `on_back` was a bare `bool` that could not
-  distinguish "stepped back a stage" from "the platform took the screen" — so the loop's BACK arm
-  had nothing to key the root press on. The owned replacement (`screens::consent.rs`) answers with
-  a request instead of a bool: BACK at the first stage asks the loop for `LoopReq::BackAtRoot`
-  (`app::input::back_at_root` → `tv::home::go_home`, the same call the other three roots use) rather
-  than stepping or dismissing, and doing so does NOT answer or dismiss the question — selecting the
-  app's tile again lands straight back on it, exactly as Home, the picker and QR sign-in do at
-  theirs (`app/bridge.rs`'s `back_at_the_first_consent_stage_is_the_root_press_and_leaves_the_question_up`
-  pins both halves). BACK is no longer a quit anywhere — the remote's EXIT key
-  still is, and `closeByAppId` is still how `make kill`, `tests/run.py` and `tools/tv-session.sh`
-  close the app — so the `/tmp/dispatcharrtv-noexitconfirm` bypass went with the "Exit Dispatcharr TV?"
-  alert it existed for (both retired 2026-09-03). Text
+- Normal interactive flow: a boot with an account lands on the Guide — or, with *Start on the last
+  channel* on and a last channel stored, straight into that channel in the player; a boot without
+  one lands on Setup. On the Guide, D-pad/pointer moves focus, **OK** tunes the focused channel and
+  **hold OK** toggles it as a favourite. In the player, CH▲/CH▼, number entry, OK/UP/DOWN for the
+  banner, **hold OK** back to the previous channel, and **BACK returns to the Guide**. BACK at the
+  Guide's own root, or on Setup's entry page, is the end of the chain and hands the screen back to
+  the TELEVISION (`LoopReq::BackAtRoot` → `tv::home::go_home`), with the app still running — which
+  is what the platform itself does at an app's entry page, and what LG's submission rules require.
+  BACK is not a quit anywhere — the remote's EXIT key still is, and `closeByAppId` is still how
+  `make kill`, `tests/run.py` and `tools/tv-session.sh` close the app — so the
+  `/tmp/dispatcharrtv-noexitconfirm` bypass went with the "Exit?" alert it existed for (both
+  retired 2026-09-03). Text
   entry is the **television's own keyboard**, raised by plain `SDL_StartTextInput` — the backend is
   in LG's Wayland driver, not the webOS extension API, which is why `SDL_webOS.h` looks like it has
   no keyboard. Every trap in that path is documented in **`docs/tv-keyboard.md`**.

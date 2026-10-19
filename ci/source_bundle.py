@@ -62,9 +62,6 @@ def safe_name(name):
 
 def allowed(name):
     p = safe_name(name)
-    # Historical raw measurements are not build inputs.
-    if name.startswith('docs/measurements/'):
-        return False
     if name in {'ipkroot/ctl/control', '.agents/skills/wake-tv/wake-tv.sh'} or name.startswith('.claude/hooks/'):
         return True
     if name in ROOT_FILES or p.parts[0] in ROOT_DIRS:

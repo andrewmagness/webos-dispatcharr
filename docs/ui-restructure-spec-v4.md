@@ -13,6 +13,11 @@
 
 # Dispatcharr TV UI restructure — specification v4
 
+> **Inherited from PlxNative.** This record was written for the Plex client this project grew from
+> ([PlxNative](https://github.com/GLinnik21/plx-native)), and its measurements were taken on that
+> project's development television (an LG 49SM9000, webOS 4.x) unless it says otherwise. What
+> still holds for Dispatcharr TV: retui and the restructure's architecture are what the Guide, Setup and the player are built on; the Plex screens it names (Home, Detail, the Library, Search, the sign-in flow) are gone.
+
 One owner for every state, event and resource; every rule defined in exactly one section and referenced from everywhere else. Sections are numbered so a rule can be cited as §N.M. This version replaces v3 wholesale; it folds in the owner's review (five mandatory fixes, two focus clarifications, four carried remarks) and the six-angle board review (ownership, determinism/privacy, frame cost, focus/hit engine, migration/gates, library boundary), each finding verified against the tree before adoption.
 
 ## 0. Goal and definition of done
@@ -433,7 +438,7 @@ rule), and `Dispatcher::state_hash` is folded into the recorder frame as the `tr
 for 5b.
 
 **Phase 4 (2026-09-07) put the STORES behind one vocabulary and one step — `rust-modules/data/src/stores/` (`rust-modules/src/stores/` until the data split),
-designed in `docs/stores-as-machines.md`.** Browse, Person and ViewState were the first physical
+designed in PlxNative's stores-as-machines record (not carried over).** Browse, Person and ViewState were the first physical
 owners; Search, Hubs and Metadata completed the port in later stages, so all six are now physical
 owners: each `app::bridge::Bridge` owns a `Stores` aggregate containing a `BrowseStore`,
 `PersonStore`, `ViewStateStore`, `SearchStore`, `HubsStore` and `MetadataStore`, each with

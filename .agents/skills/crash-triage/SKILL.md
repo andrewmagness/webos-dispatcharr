@@ -61,8 +61,8 @@ an old crash, **read a SAM `exit_status` of 35584 as a SIGSEGV** (`139 << 8`), 3
 (`134 << 8`), and do not conclude from an absent crashd report that the process did not take a
 signal. It was found by `ci/crashtrace-test.c`, which faults a process on purpose and asks how it
 died — the one question the crash log cannot answer about itself. (The *other* half of that
-change, making the handler async-signal-safe, was not a discovery at all: it is finding C3 of
-`docs/architecture-review-2026-07-26.md`, filed five weeks earlier and left undone.)
+change, making the handler async-signal-safe, was not a discovery at all: an architecture review
+had filed it five weeks earlier, and it was left undone.)
 
 The `reg:` line arrived with the same change (the rewrite that made the handler actually
 async-signal-safe — it had been calling `fprintf`/`fopen`/`sscanf`), so an older log will not have

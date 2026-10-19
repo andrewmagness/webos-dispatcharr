@@ -112,7 +112,21 @@ class BundledLibrarySymbols(unittest.TestCase):
 class NightlyHomebrewRepository(unittest.TestCase):
     def test_the_nightly_build_generates_its_manifest_and_release_does_too(self):
         self.assertEqual(re.findall(r"homebrew-manifest: (.*)", code("nightly.yml")), ["true"])
-        self.assertEqual(re.findall(r"homebrew-manifest: (.*)", code("release.yml")), ["true"])
+        # The release's manifest is the webosbrew listing's, deferred by the owner (2026-10-19):
+        # kept, and off unless the repository variable turns it on.
+        self.assertEqual(re.findall(r"homebrew-manifest: (.*)", code("release.yml")),
+                         ["${{ vars.HOMEBREW_LISTING == 'true' }}"])
+
+    def test_the_deferred_listing_leaves_the_release_publishable_without_a_manifest(self):
+        release = code("release.yml")
+        self.assertIn("${{ vars.HOMEBREW_LISTING == 'true' && 'dist/*.manifest.json' || '' }}", release)
+        self.assertNotRegex(release, r"\n\s*dist/\*\.manifest\.json\n", "an unconditional manifest asset fails the publish")
+        note = release.split("- name: Propagation note", 1)[1]
+        self.assertIn("if: vars.HOMEBREW_LISTING == 'true'", note.split("run:", 1)[0])
+        render = release.split("name: Render the release body", 1)[1].split("- name:", 1)[0]
+        self.assertIn("if grep -qE '__IPK_SIZE__|__INSTALLED_SIZE__'", render)
+        verify = (WORKFLOWS.parent.parent / "ci/verify-published.sh").read_text()
+        self.assertIn('if [ -f "$MF" ]; then', verify)
 
     def test_only_debug_is_refused_a_manifest(self):
         build = code("build-package.yml")
@@ -543,7 +557,6 @@ class CiPathFilter(unittest.TestCase):
         ".claude/hooks/outbound-guard.py", ".claude/hooks/outbound-guard-test.py",
         ".agents/skills/wake-tv/wake-tv.sh",
         "PRIVACY.md", "LICENSE", "LICENSING.md", "TRADEMARKS.md", "THIRD-PARTY-NOTICES.md",
-        "docs/measurements/p1b-logs/pipe_abr_pin_320.log",
     )
     # Prose, images and repository metadata: no gate reads them (the evidence is in ci.yml).
     MUST_NOT_TRIGGER = (
@@ -552,8 +565,7 @@ class CiPathFilter(unittest.TestCase):
         ".github/CODEOWNERS", ".github/dependabot.yml",
         "README.md", "CONTRIBUTING.md", "SECURITY.md", "AGENTS.md", "CLAUDE.md",
         "docs/agent-reference.md", "docs/troubleshooting.md", "docs/release-notes/v0.8.0.md",
-        "docs/assets/sentry-wordmark-dark.svg",
-        "docs/webosbrew-package.yml", "docs/measurements/m2-verbose-rerun.txt",
+        "docs/webosbrew-package.yml", "docs/release-notes/v0.1.0.md",
         "rust-modules/media/src/player/CLAUDE.md", ".agents/skills/ui-sim/SKILL.md",
         ".claude/settings.json", ".claude/workflows/swarm-gate.js", ".claude/agents/doc-claim-auditor.md",
         ".codex/agents/doc-claim-auditor.toml",

@@ -13,10 +13,10 @@ The compiler combines each language's files; file names organize ownership, not 
 
 ```json
 {
-  "library.results": {
-    "value": {"one": "{count} result", "other": "{count} results"},
+  "dispatcharr.setup.channels": {
+    "value": {"one": "{count} channel", "other": "{count} channels"},
     "args": {"count": "i64"},
-    "description": "Number of results above the library grid"
+    "description": "Under the connected verdict: how many channels the account can watch"
   }
 }
 ```
@@ -25,25 +25,25 @@ Spanish would provide:
 
 ```json
 {
-  "library.results": {
-    "one": "{count} resultado",
-    "many": "{count} resultados",
-    "other": "{count} resultados"
+  "dispatcharr.setup.channels": {
+    "one": "{count} canal",
+    "many": "{count} canales",
+    "other": "{count} canales"
   }
 }
 ```
 
 Keep placeholder names unchanged, but reorder them to suit the language. Translate the complete
-phrase. Never translate protocol identifiers, URLs, brand names or server-returned media titles.
+phrase. Never translate protocol identifiers, URLs, brand names, or channel names and programme titles your server returns.
 Double braces (`{{` and `}}`) render literal braces. A placeholder accepts `str` or `i64`;
 integers are formatted with the TV's regional settings. A plural message's `count` selects a
 CLDR cardinal category for the UI language. Other arguments must appear in every form; count
 may be omitted when the form spells it out. Belarusian needs `one`, `few`, `many`, and `other`;
 Spanish and French need `one`, `many`, and `other`; English needs `one` and `other`.
 
-Use readable, natural wording. Belarusian switch labels use `Укл.` and `Выкл.`. Preserve the meaning of consent and privacy disclosures exactly.
+Use readable, natural wording. Belarusian switch labels use `Укл.` and `Выкл.`.
 Third-party license texts stay verbatim. Screenshots of the affected screen help reviewers assess
-context and wrapping; do not include tokens, private server addresses or personal media data.
+context and wrapping; do not include API keys, private server addresses or your channel line-up.
 
 ## Check and submit
 
@@ -55,11 +55,9 @@ wording can change without renaming its key; change a key only when its meaning 
 
 Some slots have a fixed width and line count, and a translation that overflows one ends in `…`.
 Host tests measure each shipped language with the TV's own glyph widths and fail when such a line
-would not fit. The covered slots are Settings row titles and subtitles, the sign-in failure
-read-out, alert answer buttons, the player's More menu, Subtitles panel and subtitle-timing control,
-the Library's TYPE menu, and the
-collection page's meta line and season marks. When one of these tests fails, shorten
-the wording; do not abbreviate it past readability.
+would not fit — Setup's labels (`screens/src/setup_tests.rs`), the player's failure read-out
+(`appkit/src/player_hud.rs`) and the clock notice (`src/app/clock_notice.rs`) among them. When one
+of these tests fails, shorten the wording; do not abbreviate it past readability.
 
 Review the affected screens with the desktop simulator. `DISPATCHARRTV_LOCALE=es`, `be` or `en`
 selects a language for a simulator launch; `DISPATCHARRTV_FORMAT_LOCALE=de-DE` exercises separate
@@ -86,48 +84,27 @@ a sentence. Note any wording they changed and why.
 
 Add a catalog directory using its BCP-47 language tag, translating all source keys. This currently
 also requires a code change: extend the compiler's locale list and plural requirements, the
-runtime language and preference enums, the Settings choices, and tests. Select CLDR plural rules
+runtime language and preference enums, and tests. Select CLDR plural rules
 for that language, add launcher metadata, and verify every character in both bundled font faces.
 The current renderer supports the shipped Latin and Cyrillic languages; Arabic/Hebrew and other
 scripts requiring shaping or bidirectional layout need renderer work before being offered.
 
 ## Runtime behavior
 
-Settings → Language defaults to the television's UI language. Explicit English, Spanish, French and
-Belarusian choices apply the next time the app starts. The running UI and Plex request language
-remain unchanged until then; playback is not interrupted. The contribution action displays this
-guide's URL and QR code for opening on another device.
+The app follows the television's UI language; there is no language setting inside the app. At
+boot, the native Settings Service supplies `localeInfo.locales.UI`, `locales.FMT` and `clock`. UI
+resolution is the TV's UI language, then the process locale, then English; unsupported UI languages
+use English. Missing formatting settings use the resolved UI language's regional default. Numeric
+Gregorian dates, numbers and the guide's clock times use the formatting locale and the TV's 12/24-hour
+setting. Locale data and catalogs are bundled, so translating the UI requires no network.
 
-At boot, the native Settings Service supplies `localeInfo.locales.UI`, `locales.FMT` and `clock`.
-UI resolution is saved override, TV UI language, process locale, then English. Unsupported UI
-languages use English. Missing formatting settings use the resolved UI language's regional
-default. Numeric Gregorian dates and numbers use the formatting locale; playback clocks remain
-durations. Locale data and catalogs are bundled, so translating the UI requires no network.
+Channel names and programme titles come from your Dispatcharr server as it stores them; the UI
+language does not change them. Launcher metadata (`pkg/resources/<locale>/appinfo.json`) follows
+webOS's system language.
 
-Plex requests carry the resolved UI language in `X-Plex-Language`. Servers may still return their
-own stored language. This preference does not change media audio/subtitle selection or library
-sorting. Launcher metadata follows webOS's system language independently of the app override.
+## History
 
-Controlled record/replay runs use the captured session's language preference; System resolves to
-English and regional formatting is pinned to en-US/24-hour in both modes. They do not read live
-TV settings or simulator language environment variables. Use ordinary simulator launches for
-language screenshots.
-
-## Verification of the initial implementation
-
-On 2026-09-27, the host suite, shipping-feature type check, ARM build, ELF audit and supported
-firmware loader matrix passed. Simulator captures covered English, Spanish, Belarusian and the
-expanded pseudo-locale across browsing, detail, search, sign-in, language settings, privacy,
-contribution and consent screens. In that initial version, long consent actions reflowed and
-disclosures remained scrollable at the standard body size. The later design correction uses
-concise answer verbs in one measured row and allocates more space to the disclosure.
-
-The installed native debug app on the webOS 4.5 television successfully queried the Settings
-Service. Remote-driven language selection remained unchanged during the running session and
-persisted across relaunches into Belarusian and Spanish, independently of the TV formatting
-locale. Native captures verified Cyrillic text, abbreviated switch values, complete consent
-questions, disclosure scrolling and the contribution page. The QR code decoded to the guide URL.
-The device preference was restored to System default afterward.
-
-These checks cover localization and UI behavior. They do not replace decoder/playback tests,
-and a Plex server may still return metadata in its own stored language.
+The catalog system, the four languages and the glyph-width tests were built in the PlxNative code
+this project grew from and verified there on 2026-09-27, including on a webOS 4.5 television that
+queried the Settings Service. Its screens were since replaced; the Dispatcharr screens' strings live
+in `locales/<tag>/dispatcharr.json`.

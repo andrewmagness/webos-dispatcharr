@@ -18,10 +18,10 @@ unknown: cancelling the LS2 wait cannot promise that the root command stopped.
 Success requires the exact result marker and a fresh readability check from this app's jail.
 Close Dispatcharr TV completely and reopen it before playing. The cached preflight is deliberately
 not cleared by success. The repair does not root a TV, install a service, download a file, or
-send Plex credentials to Homebrew Channel.
+send your Dispatcharr credentials to Homebrew Channel.
 
-Source evidence: v0.6.6 (`48866094e73493eb57a045723cdb6e195d9f4361`),
-[issue #74](https://github.com/andrewmagness/webos-dispatcharr/issues/74#issuecomment-5634518876), and
+Source evidence: PlxNative v0.6.6 (`48866094e73493eb57a045723cdb6e195d9f4361`),
+[PlxNative issue #74](https://github.com/GLinnik21/plx-native/issues/74#issuecomment-5634518876), and
 [Homebrew Channel PR #202](https://github.com/webosbrew/webos-homebrew-channel/pull/202).
 The source records one reporter's k5lp 43UM7400PLB playback confirmation after a root-shell
 jailer repair. This port has host evidence only. It does not newly establish Repair execution,

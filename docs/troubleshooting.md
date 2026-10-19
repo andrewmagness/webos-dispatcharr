@@ -5,67 +5,71 @@ This page is about what to do when something doesn't work.
 
 ## The app tile does nothing
 
-Dispatcharr TV needs **webOS 4.0 or newer** (webOS 3.4.3 has also been tested and works). Older
-firmware may not be able to start it at all, so the tile just does nothing when you select it. See [Will it work on my
-television?](../README.md#will-it-work-on-my-television) for the full picture, including sets
-that start but hit a specific known problem.
+Dispatcharr TV starts on every firmware from webOS 3.4 up that it has been checked against, and on
+nothing older: on webOS 2 and earlier the television stops it before anything appears, so the tile
+just does nothing when you select it. See the [README's status section](../README.md#status) for
+which televisions have actually been watched playing.
 
 ## Developer Mode removed the app
 
 LG Developer Mode expires and removes every app it installed unless you renew the session before
 it lapses. [Renew it in the Developer Mode app](install-and-verify.md#important-developer-mode-expires),
-or reinstall Dispatcharr TV if the session already expired. Installing Homebrew Channel through
-Developer Mode does not remove that requirement — only a rooted TV with Homebrew Channel has no
-expiry.
+or reinstall Dispatcharr TV if the session already expired.
 
-## Sign-in doesn't survive closing the app
+## Setup can't sign in
 
-This used to happen and is fixed: Dispatcharr TV now keeps your sign-in in its own private storage, and
-uses the TV's key manager service where the platform provides one. If you still see it on the
-current release, [open an issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose)
-with your TV model and webOS platform release. If the sign-in screen shows a failure, also use
-**Details → Send report** and quote the **Report ID** it then shows in your issue, as described in
-[Can't sign in, or no servers are found](#cant-sign-in-or-no-servers-are-found). A report on its
-own carries no way to reply to you.
+Setup looks for a Dispatcharr server on your network and fills in the address it finds; if it finds
+none, type the address (for example `192.168.1.10:9191`). Setup then says what stopped it:
 
-## Can't sign in, or no servers are found
+- **"Nothing answered at that address."** Check the address, that the server is running, and that
+  the TV can reach it — a server reachable only through a VPN on your computer is not reachable from
+  the TV.
+- **"Something answered at that address, but it is not Dispatcharr."** The address or port points at
+  another service. Dispatcharr listens on port 9191 unless you changed it.
+- **"Wrong username or password."** Use the account you sign in to Dispatcharr's web interface with.
+- **"The server refused this TV."** Dispatcharr's network access settings do not allow the TV's
+  address. Allow it in Dispatcharr, then try again.
+- **"Too many attempts."** Wait a minute before trying again.
+- **"Signed in, but this TV could not save the sign-in."**, or **"Saved only until this TV
+  restarts."** The TV had nowhere permanent to keep the sign-in. [Collect the event
+  log](#collecting-logs) and open an issue.
 
-The sign-in screen says what stopped it. The wording that matters most:
+The address field notes **"Not encrypted on your network"** for an `http://` address: your username
+and password cross your network unencrypted once, at sign-in. Use an `https://` address if your
+server has one.
 
-- **"Signed in as *your account*. This Plex account has no server yet."** Sign-in worked, but
-  plex.tv listed no Plex Media Server on that account, so the app had nothing to connect to. This
-  is about the account, not your network. Check that you signed in with the same Plex account your
-  server is signed in to, and that it is the account you use in Plex's own apps. Signed in
-  with a different account, you will see exactly this.
-- **"plex.tv listed your servers, but none of them answered. Make sure your Plex Media Server is on
-  and online, then try again."** The account has a server, but the TV could not reach it. Check
-  that it is running and connected.
-- **"Your Plex server refused the connection — check its network access settings."** The server
-  answered and said no.
-- **"This TV couldn't make a secure connection to plex.tv. Check the TV's date and time, then try
-  again."**, or on the Home screen **"This TV's clock looks wrong. Connect the TV to the internet
-  once, then try again."** A certificate is only valid between two dates, so a TV with the wrong
-  date or time can fail to make a secure connection. Set it right in the TV's settings.
+## The Guide says "Couldn't load the guide" or shows no programmes
 
-If none of that explains it, press **Details** on the failure screen. Once a report has been sent
-or saved, the card shows **Report ID** followed by letters and digits in groups of four
-(for example `41de 4cd3 88e4 0416 54de 38f2 787c 3922`). If it shows no Report ID yet and offers
-**Send report**, press that, then open **Details** again. The report says which sign-in step failed
-and how the connection answered; it never includes your account name, tokens, PIN, sign-in code or
-network addresses.
+- **"The server no longer accepts this TV's key."** The API key the TV kept was revoked or the
+  account changed. Choose **Sign in again**.
+- **"No channels."** The account you signed in with can watch no channels. Add channels to it in
+  Dispatcharr.
+- **Channels but "No information" for every programme.** Your server has no guide data (EPG) for
+  those channels, or none for the time shown. The app also compares the TV's clock with the server's
+  and uses the server's when the TV's is far off, so a TV whose clock is wrong still shows the right
+  programmes; setting the TV's date and time to update automatically is still worth doing.
 
-A report carries no name or account, so I can only find yours by its Report ID. Please quote the
-**Report ID** when you ask for help, either in [Discussions >
-Q&A](https://github.com/andrewmagness/webos-dispatcharr/discussions/categories/q-a) or in a [GitHub
-issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose), together with your TV model and
-webOS platform release.
+## A channel won't play
+
+The failure screen says why:
+
+- **"This channel's video format can't play on this TV"**, naming MPEG-2 for example. The TV's
+  playback pipeline does not take that video codec. In Dispatcharr, give the channel a stream
+  profile that converts to H.264.
+- **A channel with DTS audio fails to start.** Many 2020-and-later LG sets cannot decode DTS; use a
+  stream profile with AC-3 or AAC audio for that channel.
+- **"The media stream could not be opened"**, or a stream that keeps reconnecting. The server did
+  not deliver the stream: check the channel plays in Dispatcharr itself, and that your provider's
+  stream limit is not already used by another viewer.
+
+**Try again** on the failure screen tunes the channel afresh, as does changing channel and back. A
+stream that drops or freezes while you watch is tuned again automatically.
 
 ## Playback reports `jail_missing_rtkmem`
 
 This is a specific problem on Realtek **k5lp/k3lp** sets: LG's Developer Mode sandbox on some of
 these sets withholds a device (`/dev/rtkmem`) that native video decoding needs. Dispatcharr TV detects
-this and reports it instead of crashing. See the [Known
-issues](../README.md#known-issues) table for which sets are affected.
+this and reports it instead of crashing.
 
 On a **rooted TV with Homebrew Channel**, the failure screen offers **Repair**, which asks
 Homebrew Channel's elevated service to patch the sandbox. Read the [full repair procedure and its
@@ -73,8 +77,8 @@ limits](native-video-sandbox.md) before using it: it only runs once per app sess
 leaves the outcome unknown until you fully close and reopen Dispatcharr TV. **Without root, there is
 currently no fix.**
 
-Don't use Repair for a plain black screen, a refused transcode, an unsupported codec, or any
-failure other than `jail_missing_rtkmem` — it addresses that one sandbox problem and nothing else.
+Don't use Repair for a plain black screen, an unsupported codec, or any failure other than
+`jail_missing_rtkmem` — it addresses that one sandbox problem and nothing else.
 
 ## Collecting logs
 
@@ -87,7 +91,7 @@ rooted, Dev Manager should be able to download them, because they are readable b
 
 | What happened | Attach |
 | --- | --- |
-| Playback failed, stalled or stopped (for example "Playback stopped after it had started") | the event log |
+| A channel did not start, froze or stopped (for example "Playback stopped after it had started") | the event log |
 | The app closed by itself, vanished, or the TV returned to the launcher | the crash log **and** the event log |
 | The app does not start, or shows a black screen and exits | the stderr log **and** the crash log |
 
@@ -145,15 +149,15 @@ Logs help most with a few facts beside them:
 
 - your TV model (from the sticker on the back, or Settings, then About This TV) and webOS
   platform release;
-- the Dispatcharr TV version, and how you installed it (Dev Manager, Homebrew Channel or nightly);
-- whether the item was Direct Play or a chosen quality;
+- the Dispatcharr TV version, and whether it is a release or a nightly;
+- your Dispatcharr version, and the stream profile the channel uses if you know it;
 - what you did and what happened.
 
 On a playback failure screen, the small line at the bottom adds facts the project needs. For
 example:
 
 ```
-Dispatcharr TV 0.8.0 · webOS 9.2.4 · k24 · K24_DVB · BOARD_DV_1ST · playback_interrupted
+Dispatcharr TV 0.1.0 · webOS 9.2.4 · k24 · K24_DVB · BOARD_DV_1ST · playback_interrupted
 ```
 
 It reads: the Dispatcharr TV version, the webOS release, then what the TV reports about itself — on
@@ -164,64 +168,20 @@ Copy the line exactly into your report, or photograph the screen.
 
 ### What the logs contain
 
-Every line of the event log is cleaned before it is written: tokens and other credentials, server and
-profile names, network addresses, Plex GUIDs and search queries are removed or rewritten, and
-titles and subtitle text are never written. What remains includes ratingKeys,
-which are Plex's item numbers on your server. Someone with access to the same server could match
-one to a title, so think before you post a log in a public issue. The crash and stderr logs are
-not cleaned line by line the same way; they hold fault addresses and whatever the TV's libraries
+The event log replaces your username before each line is written, and never contains your password
+(the app does not keep it). It does contain your server's channel identifiers and the technical
+detail of each stream, so think before you post a log in a public issue. The crash and stderr logs
+are not cleaned line by line the same way; they hold fault addresses and whatever the TV's libraries
 print. [The privacy policy](../PRIVACY.md) and [what the app
-writes](install-and-verify.md#what-it-writes) spell this out. Never post a Plex token or a
-passphrase, even if you see one in a file.
+writes](install-and-verify.md#what-it-writes) spell this out. Never post your server's API key or
+the Developer Mode passphrase, even if you see one in a file.
 
-### Sending a report from the app instead
+The app sends nothing on its own: it has no crash reporting and no analytics, so a log you attach is
+the only way the project sees what happened.
 
-There is no "send logs" button in the app, and the playback failure screen has no **Send report**
-button (only the sign-in screen has one). Two optional switches in **Settings → Privacy & data** send technical details to the
-project by themselves. **Crash reports** is off until you turn it on. With it on, the app sends a
-crash report, and also a short report when playback reaches the failure screen: the failure kind
-and coarse connection and quality details, with no title, address or token. It does not send these
-log files, and it does not replace an issue with your TV details. Turning it on is your choice and
-never needed to get help.
+## Other problems
 
-## AV1 and VP9 files don't play
-
-Dispatcharr TV direct plays AV1 only on a television whose own codec table lists an AV1 decoder, and
-VP9 only on one whose table lists a VP9 decoder, and 10-bit (Profile 2) VP9, HDR10 included, only on a
-webOS 4 television, the one family it has been measured on. On any other set, or for a 10-bit VP9 file
-on a newer webOS, the server has to convert the item, which fails when your server can't transcode or
-transcoding is switched off.
-
-AV1 and VP9 direct play are new. An owner of an LG OLED A2 (webOS 10.3.1) reported AV1 playing, with no log
-to read it from; VP9 has been played on the dev set: 8-bit and 10-bit SDR files, and a PQ-tagged file whose HDR
-the television picked up (webOS 4 family only). That is a handful of models. Both reach
-people through the [nightly build](nightly-builds.md) first. If your TV
-decodes AV1 or VP9 and you want to try it:
-
-1. Install **Dispatcharr TV Nightly** by adding `https://andrewmagness.github.io/webos-dispatcharr/nightly/repo.json` to Homebrew
-   Channel, as the [nightly builds guide](nightly-builds.md) describes. The newest build is always
-   linked from [latest.json](https://andrewmagness.github.io/webos-dispatcharr/nightly/latest.json).
-2. Play the AV1 or VP9 item.
-3. If it still doesn't play, [collect the event log](#collecting-logs) before you reopen the app
-   and attach it to a [GitHub issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose).
-   The log's `devcaps:` line says `av1=true` (or `vp9=true`) when the TV reports that decoder, and
-   `av1=false` (`vp9=false`) when it doesn't, which tells us right away whether the TV or the app is
-   at fault.
-
-## Other playback failures
-
-Try the current release first, then photograph the failure screen and [collect the
-logs](#collecting-logs) before you reopen the app. Include:
-
-- your TV model (from the sticker on the back, or Settings, then About This TV) and webOS
-  platform release;
-- the Dispatcharr TV version;
-- whether the item was Direct Play or a chosen quality;
-- what happened after you pressed Play.
-
-Report it in [GitHub Issues](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose).
-
-If you're sharing an old event log, know that log redaction has improved across releases — a log
-written by a much older Dispatcharr TV version can still show an address that a current release would
-scrub before writing it. Where you can, capture a fresh log on the release you're reporting
-against.
+Try the current release first, then photograph any failure screen and [collect the
+logs](#collecting-logs) before you reopen the app, and report it in [GitHub
+Issues](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose) with the facts listed
+in [What to include in the report](#what-to-include-in-the-report).

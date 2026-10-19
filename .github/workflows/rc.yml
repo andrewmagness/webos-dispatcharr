@@ -22,8 +22,8 @@ name: Release candidate
 # the next one. Delete the tag (and any release) first to reuse it.
 #
 # DRY RUNS — `dry_run: true`, and any same-repo pull request that touches this file or ci/rc.py —
-# build the line as it stands under the next candidate number, bump nothing, push nothing and
-# publish nothing. Fork pull requests are skipped.
+# build the line as it stands under the next candidate number, check the release note and audit of
+# the version the bump would cut, and commit, push and publish nothing. Fork pull requests are skipped.
 
 on:
   workflow_dispatch:
@@ -108,11 +108,14 @@ jobs:
           SPEC: ${{ inputs.version || inputs.bump || 'minor' }}
         run: |
           set -euo pipefail
+          # The bump is applied in a dry run too: it is what decides which release note and audit the
+          # assertions below look for, and planning the version already written asked for the note of
+          # a release that shipped (or, before the first one, for v0.0.0's). A dry run never commits
+          # or pushes this checkout, and the build below is of the line as it stands.
+          python3 ci/bump-version.py "$SPEC"
           if [ "$DRY" = true ]; then
-            # The line as it stands, under its own version: proves the pipeline, cuts nothing.
             python3 ci/rc.py plan --version "$(python3 ci/bump-version.py --current)" --line "$LINE" --dry >> "$GITHUB_OUTPUT"
           else
-            python3 ci/bump-version.py "$SPEC"
             python3 ci/rc.py plan --version "$(python3 ci/bump-version.py --current)" --line "$LINE" >> "$GITHUB_OUTPUT"
           fi
           # The four version files agree, and the release note and audit for this version exist —

@@ -124,7 +124,7 @@ gh release view "v$V" --repo $REPO --json body -q .body | grep -oE 'https?://[^ 
 
 ```sh
 diff <(gh release view "v$V" --repo $REPO --json body -q .body) \
-     <(sed "s|__IPK_SHA256__|$(shasum -a 256 com.beb.dispatcharrtv_${V}_arm.ipk | cut -d' ' -f1)|" \
+     <(sed "s|__IPK_SHA256__|$(shasum -a 256 com.magness.dispatcharrtv_${V}_arm.ipk | cut -d' ' -f1)|" \
        docs/release-notes/v$V.md)
 # only GitHub's appended "What's Changed" / "Full Changelog" tail may differ
 ```

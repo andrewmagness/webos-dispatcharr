@@ -1149,7 +1149,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   module is the honest ceiling.
   **Two things about it were broken until 2026-08-29 and neither was visible in a log** — and the
   first of them had been **written down and left undone for five weeks**, as finding **C3** of
-  `docs/architecture-review-2026-07-26.md`, which named the same six unsafe calls and prescribed the
+  the 2026-07-26 architecture review (PlxNative; not carried over), which named the same six unsafe calls and prescribed the
   same fix ("use `write(2)` into a pre-opened fd with a preformatted buffer"). It was filed
   *medium / Wave 1*. Worth knowing when reading either: only the SECOND was a discovery.
   (1) The handler was not async-signal-safe: it called `fprintf`/`fopen`/`fgets`/`sscanf`/`fclose`,

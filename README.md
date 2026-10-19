@@ -49,7 +49,7 @@ Early and under active development. Nothing here has been released yet; the firs
 | M2 — live MPEG-TS playback on the television | done — H.264/AAC channels play on the TV's hardware decoder |
 | M3 — the programme guide | done — grid, logos, OK to tune |
 | M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, hold-OK recall, favourites, start on the last channel |
-| M5 — codec coverage, error handling, packaging and release | in progress — dropped or frozen streams reconnect, a busy server is retried, a channel's real codecs are detected and declared (H.264/HEVC video; AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio — the dev C1 (2021) refuses a DTS stream, as many 2020+ LG sets cannot decode DTS); an MPEG-2 video channel says how to fix it in Dispatcharr. The 0.1.0 [release note](docs/release-notes/v0.1.0.md) and [audit](docs/release-audits/v0.1.0.md) are written; the release candidate is next |
+| M5 — codec coverage, error handling, packaging and release | in progress — dropped or frozen streams reconnect, a busy server is retried, a channel's real codecs are detected and declared (H.264/HEVC video; AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio — the dev C1 (2021) refuses a DTS stream, as many 2020+ LG sets cannot decode DTS); an MPEG-2 video channel says how to fix it in Dispatcharr. The 0.1.0 [release note](docs/release-notes/v0.1.0.md) and [audit](docs/release-audits/v0.1.0.md) are written, the release-candidate pipeline passes end to end, and the stable package installs on the C1. 0.1.0 will be published as a GitHub release; a Homebrew Channel listing comes after a few releases |
 
 ### Tested televisions
 
@@ -83,9 +83,10 @@ the Plex transcode machinery (seek and quality flights, Original trials, the fil
 the Plex adaptive-bitrate and HLS playback engine, the Plex play resolve, timeline reporting
 and subtitle routing (side reader, sidecars, server burns), the Plex library data stores
 (Home, Library, Detail, Search, Person, Collection, watch state, subtitle search), the Plex player
-settings, the Plex fields of the optional crash and analytics reports, and the Plex client library
-itself (the typed Plex API, its sign-in and server registry, and the poster art path) have been
-removed. Some design notes under `docs/` still describe the Plex client and are being retired.
+settings, the crash and analytics reporting, and the Plex client library itself (the typed Plex
+API, its sign-in and server registry, and the poster art path) have been removed. Engineering
+records under `docs/` that came from PlxNative — measured on its development television, about
+mechanisms this app still uses — say so at the top and name what still applies.
 
 ## Licence
 

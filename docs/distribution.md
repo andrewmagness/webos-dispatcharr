@@ -197,7 +197,7 @@ the native-app fields — **Native SDK version, chipset, resolution** and the pa
 out of the archive we uploaded. A portal that classifies a package as native, names the SDK it was
 built against and asks for the chipset is not a portal that has no native app model. Native
 submission is therefore an **established premise** of everything downstream in this repo —
-`docs/lg-self-checklist.md`, `docs/ux-scenario.md`, and the QA questions in §9 — rather than a
+PlxNative's App Self Checklist record (not carried over), PlxNative's UX scenario document (not carried over), and the QA questions in §9 — rather than a
 caveat those documents have to open by hedging.
 
 **What the old argument actually rested on, and why it never supported the conclusion.** The quoted
@@ -235,9 +235,9 @@ evidence that "native" is a shape LG's own tools emit.
 Lounge account (individual or corporate), an ipk ≤ 2 GB, a mandatory **UX-scenario document** and
 **self-checklist**, and three-stage QA. Hard UX rules include: every selectable element must respond
 to 4-way + OK + Back, and on webOS 23–25 Back on the entry page must show the Home screen. What this
-app would be graded on is recorded item by item in `docs/lg-self-checklist.md` — four genuine
+app would be graded on is recorded item by item in PlxNative's App Self Checklist record (not carried over) — four genuine
 failures and a column of untested items — and the transport-control question is answered by
-**`docs/ux-scenario.md`**, which is the document LG's checklist item 45 defers to by name.
+**PlxNative's UX scenario document** (not carried over), which is the document LG's checklist item 45 defers to by name.
 
 **Content policy is not an obstacle either** — Jellyfin and Emby both ship on the LG Content Store,
 so "client for a self-hosted media server" is an accepted category, and Plex ships an official webOS

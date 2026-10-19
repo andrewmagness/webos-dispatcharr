@@ -57,7 +57,7 @@ def read(p):
         return open(p).read()
     except OSError:
         return ""
-EDITED = ("base/src/cbuf.rs", "machine/src/motion.rs", "platform/src/devcaps.rs", "gfx/src/overdraw.rs", "net/src/stream_redirect.rs", "ui/src/dwell.rs", "dispatcharr/src/dispatcharr/time.rs", "telemetry/src/telemetry/window.rs", "data/src/metadata/track_names.rs", "media/src/abr/units.rs", "appkit/src/live_banner.rs", "screens/src/player/ass_subtitles.rs", "src/coldstart.rs", "ui/src/lib.rs")
+EDITED = ("base/src/cbuf.rs", "machine/src/motion.rs", "platform/src/devcaps.rs", "gfx/src/overdraw.rs", "net/src/stream_redirect.rs", "ui/src/dwell.rs", "dispatcharr/src/dispatcharr/time.rs", "telemetry/src/telemetry/window.rs", "data/src/metadata/track_names.rs", "media/src/player/vp9_hdr.rs", "appkit/src/live_banner.rs", "screens/src/player/ass_subtitles.rs", "src/coldstart.rs", "ui/src/lib.rs")
 if os.environ.get("FAKE_FAIL_ON_EDIT") and "build-bench edit" in "".join(read(p) for p in EDITED):
     sys.stderr.write("error: fake cargo failed on the edited tree\n")
     sys.exit(101)
@@ -129,7 +129,7 @@ UI_LEAF = "rust-modules/ui/src/dwell.rs"
 DISPATCHARR_LEAF = "rust-modules/dispatcharr/src/dispatcharr/time.rs"
 TELEMETRY_LEAF = "rust-modules/telemetry/src/telemetry/window.rs"
 DATA_LEAF = "rust-modules/data/src/metadata/track_names.rs"
-MEDIA_LEAF = "rust-modules/media/src/abr/units.rs"
+MEDIA_LEAF = "rust-modules/media/src/player/vp9_hdr.rs"
 APPKIT_LEAF = "rust-modules/appkit/src/live_banner.rs"
 SCREENS_LEAF = "rust-modules/screens/src/player/ass_subtitles.rs"
 APP_LEAF = "rust-modules/src/coldstart.rs"

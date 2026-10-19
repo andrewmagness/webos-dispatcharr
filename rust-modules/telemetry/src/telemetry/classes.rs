@@ -9,7 +9,7 @@
 //! layer owns the schema; `player::report` is the producer that classifies a live playback into
 //! it, and `player::FailureKind::class` is the one conversion from the player's own failure enum.
 //! Nothing here names the player, the route layer or the ABR controller: a constructor that needs
-//! one of their types (a `QualityClass` from a `route::Quality` or an `abr::Rung`) is a function
+//! one of their types (a class from a route or player type) is a function
 //! of the producing layer.
 //!
 //! Pure data and pure bucketing, so every boundary is graded on the host. The producer's own tests

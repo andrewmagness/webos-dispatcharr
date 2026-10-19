@@ -332,12 +332,6 @@ pub enum HlsPlayCompletion {
     Stale,
 }
 
-#[derive(Clone, Copy, Debug)]
-struct AbrSeed {
-    estimate: crate::abr::CapacityEstimate,
-    observed_at: Instant,
-}
-
 /// one client-rendered subtitle cue (content-time ns). `track` is the 0-based subtitle-stream
 /// index it belongs to; the demuxer pushes cues for ALL text tracks and the render filters by
 /// the selected `desired_sub_idx`, so switching tracks is instant (no re-demux of the buffered
@@ -849,30 +843,6 @@ pub struct Shared {
     /// successful rollback erase its own cause before the diagnostics panel could photograph it.
     pub abr_failure_kind: AtomicU8,
     pub abr_failure_status: AtomicI32,
-    /// **The controller's own model state**, published beside the measurements above so the
-    /// read-out shows what the DECISION was made on rather than what a reader can infer. Every
-    /// one is `-1` until the controller has produced it; `crate::abr::ControllerTelemetry` is the
-    /// single struct they are all taken from, in one go, so the panel can never show a budget
-    /// from one sample beside an uncertainty from the next.
-    ///
-    /// Safe budget (what selection may actually spend), the operating point the model would pick
-    /// for this link ignoring hysteresis, the delivery estimate's own dispersion and sample count,
-    /// the buffer's slope, its starvation horizon in seconds (`-1` = no deficit, so no horizon),
-    /// the predicted production cost of the current candidate, and the risk score.
-    /// **The live link estimate, carried ACROSS A SEEK** (I8) — and deliberately not a `dg_`
-    /// field, because this coherent posterior decides something. An HLS seek tears the engine
-    /// down and builds a fresh `Controller`, so before this the only survivor was
-    /// `session().auto_prior_kbps`, whose
-    /// writer on the fallback path is the rate measured at the moment Original FAILED. Every seek
-    /// therefore re-seeded from the worst rate the playback had ever measured, at maximum
-    /// uncertainty with one sample, and the ladder re-ramped for five to ten segments: ten to
-    /// twenty seconds of visibly softer picture after every skip.
-    ///
-    /// One coherent estimate plus the wall instant it was last observed. Cleared by
-    /// [`Shared::clear_abr_seed`] and **deliberately NOT by [`Shared::reset_session`]**. The time
-    /// is load-bearing: a pause, app background or reload gap with no segment observations must
-    /// age the carried evidence before a new controller may use it.
-    abr_seed: Mutex<Option<AbrSeed>>,
     /// `vp_place` return, and the size it was called with. `i32::MIN` = never called.
     pub dg_place_rv: AtomicI32,
     pub dg_placed_w: AtomicI32,
@@ -909,7 +879,6 @@ impl Shared {
             dg_load_a: AtomicU8::new(0),
             abr_failure_kind: AtomicU8::new(0),
             abr_failure_status: AtomicI32::new(0),
-            abr_seed: Mutex::new(None),
             dg_place_rv: AtomicI32::new(i32::MIN),
             dg_placed_w: AtomicI32::new(0),
             dg_placed_h: AtomicI32::new(0),
@@ -1386,38 +1355,6 @@ impl Shared {
             state.phase = NativeSessionPhase::Unloaded { epoch };
         }
         Some(result)
-    }
-    /// reset per-file state on stop (mirrors the tail of stop_bufferfeed).
-    /// **Drop the carried link estimate.** Called from `engine::teardown` on a real STOP only —
-    /// `reset_session` runs on a reload too, and a reload is the same item on the same link at a
-    /// new position, which is exactly the case I8 exists to preserve. Splitting it out rather than
-    /// making `reset_session` caller-conditional keeps "clear everything about this session" a
-    /// method with no exceptions in it.
-    pub fn clear_abr_seed(&self) {
-        *self.abr_seed.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    }
-
-    pub fn publish_abr_seed(&self, estimate: crate::abr::CapacityEstimate) {
-        self.publish_abr_seed_at(estimate, Instant::now());
-    }
-
-    fn publish_abr_seed_at(&self, estimate: crate::abr::CapacityEstimate, observed_at: Instant) {
-        let mut seed = self.abr_seed.lock().unwrap_or_else(|e| e.into_inner());
-        *seed = (estimate.samples > 0).then_some(AbrSeed {
-            estimate,
-            observed_at,
-        });
-    }
-
-    /// Delivery evidence carried across an engine reload, aged by every wall interval for which
-    /// no segment could refresh it. This includes accepted Pause, app background and teardown —
-    /// all three are the same epistemic fact: the old link observation was not repeated.
-    pub fn abr_seed(&self) -> Option<crate::abr::CapacityEstimate> {
-        let seed = (*self.abr_seed.lock().unwrap_or_else(|e| e.into_inner()))?;
-        let mut estimate = seed.estimate;
-        let elapsed_ms = u64::try_from(seed.observed_at.elapsed().as_millis()).unwrap_or(u64::MAX);
-        estimate.age_ms(elapsed_ms, &crate::abr::AbrPolicy::measured());
-        Some(estimate)
     }
 
     /// Clear a playback's sticky Original failure. Kept separate from [`Shared::reset_session`]
@@ -2958,53 +2895,6 @@ mod tests {
             });
             assert!(written, "dg_{f} is declared and read but NOTHING writes it — the panel would print its sentinel as fact");
         }
-    }
-
-    /// **`reset_session` must NOT drop the ABR seed, and `clear_abr_seed` must** (I8).
-    ///
-    /// `engine::teardown` calls `reset_session` on both paths — a real stop AND a reload — and a
-    /// reload is the same item on the same link at a new position: a seek, a quality pick, an
-    /// app-switch resume. Re-measuring the link from nothing across one is what made every skip
-    /// re-ramp the ladder for ten to twenty seconds. So the split is load-bearing and this is the
-    /// assertion that keeps it: the two methods are one keystroke apart and merging them back would
-    /// otherwise be silent.
-    #[test]
-    fn the_carried_link_estimate_survives_a_reload_and_not_a_stop() {
-        let s = Shared::new();
-        let estimate = crate::abr::CapacityEstimate::from_snapshot(40_000, 41_000, 200, 19)
-            .expect("valid measured estimate");
-        s.publish_abr_seed(estimate);
-
-        s.reset_session();
-        let carried = s
-            .abr_seed()
-            .expect("a reload tears the engine down and keeps the link; this is the seek path");
-        assert_eq!(carried.samples, 19);
-        assert_eq!(carried.slow_kbps, 40_000);
-
-        s.clear_abr_seed();
-        assert!(
-            s.abr_seed().is_none(),
-            "a real stop ends the playback, and the next one measures its own link",
-        );
-    }
-
-    #[test]
-    fn a_carried_link_estimate_ages_across_an_unobserved_reload_gap() {
-        let s = Shared::new();
-        let estimate = crate::abr::CapacityEstimate::from_snapshot(40_000, 42_000, 100, 19)
-            .expect("valid measured estimate");
-        let half_life = crate::abr::AbrPolicy::measured().stale_half_life_ms;
-        let observed_at = Instant::now()
-            .checked_sub(Duration::from_millis(u64::from(half_life) * 2))
-            .expect("test instant");
-        s.publish_abr_seed_at(estimate, observed_at);
-
-        let aged = s.abr_seed().expect("a reload carries the estimate");
-        assert!(
-            aged.uncertainty_pm > estimate.uncertainty_pm,
-            "pause/background/reload wall time must widen carried evidence",
-        );
     }
 
     /// The one invariant that cannot be recovered from if it breaks, and breaks SILENTLY: a session

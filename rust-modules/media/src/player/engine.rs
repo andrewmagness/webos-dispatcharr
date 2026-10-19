@@ -1790,11 +1790,6 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         TX.reset();
     }
     if !for_reload {
-        // **The carried link estimate dies with the PLAYBACK, not with the engine** (I8). A reload
-        // is the same item on the same link at a new position — a seek, a quality pick, an
-        // app-switch resume — and re-measuring the link from nothing across one is what made every
-        // skip re-ramp the ladder for ten to twenty seconds.
-        SHARED.clear_abr_seed();
         // The failure is retained across the rollback reload only; a new playback must not carry
         // another item's PMS response into its diagnostics.
         SHARED.clear_abr_failure();

@@ -16,8 +16,9 @@ Windows and needs no webOS NDK; run `tools/sim.ps1 setup` there.
 
 - The **webOS NDK**, fetched by `make setup-env` (a few hundred MB, once).
 - A **Rust nightly** toolchain with `rust-src` (for `-Z build-std`) and `clippy` (the lint gate).
-- **CMake** — the normal build cross-compiles Sentry Native, and `ci/build-sentry-native.sh` stops
-  with an explicit error without it.
+- **CMake** — only for `make dispatcharrtv-stackwalk`, the optional development stack sampler, which
+  cross-compiles Sentry Native's unwinder (`ci/build-sentry-native.sh` stops with an explicit error
+  without CMake). The app itself links none of it.
 - `sshpass`, for the deploy/run targets that talk to a television. Optional if your ssh key is
   authorized on it: `tools/tv-ssh` tries the key first and falls back to the password only when the
   key is refused.
@@ -79,7 +80,7 @@ The platform entry points are deliberately separate:
 - macOS: `make sim-macos`, `make sim-macos-run`, and `make sim-macos-shot`. This build includes
   host FFmpeg, so the pipeline between the socket and decoder runs on the host. The historical
   `sim`, `sim-run`, and `sim-shot` names remain aliases for these macOS targets.
-- Linux: `make sim-linux` builds the optimized UI/Plex simulator without host FFmpeg. Run the
+- Linux: `make sim-linux` builds the optimized UI simulator without host FFmpeg. Run the
   resulting `rust-modules/target-sim/release/dispatcharrtv-sim` under X11 or Wayland with
   `DISPATCHARRTV_APP_DIR=pkg` (or use the matching path below a custom `SIM_TDIR`).
 - Windows/WSLg: `tools/sim.ps1 build|run|shot|send`, backed by the `make sim-wsl` compatibility

@@ -1,7 +1,9 @@
 # Nightly builds
 
-> **Not published yet.** No nightly is being built for Dispatcharr TV (the nightly build needs
-> telemetry keys this project has not set), and nothing serves the repository below.
+> **Not published yet.** No nightly has been published for Dispatcharr TV, and nothing serves the
+> repository below yet. The nightly workflow's source-rebuild check cannot pass until the first
+> release (0.1.0) has moved `main`'s version on; until then this page describes how nightlies will
+> work.
 
 A nightly is the newest Dispatcharr TV build from `main`, published on most days the code changes. It
 installs **beside** the regular app as **Dispatcharr TV Nightly** - its own launcher tile and its own
@@ -47,7 +49,7 @@ install the new build over the old one. Updates happen when you select them - no
 itself.
 
 Homebrew Channel offers an update whenever the version it lists differs from the one installed, so
-the version shown in its list is the nightly's package version (for example `0.8.20261006`), not
+the version shown in its list is the nightly's package version (for example `0.2.20261106`), not
 the longer version the app shows about itself. [The versions section](#versions) explains both.
 
 New builds appear once the day's build has finished publishing; the site's cache can add up to
@@ -90,8 +92,8 @@ app itself need different things from a version.
 
 | What | Looks like | Where you see it | What it is for |
 | --- | --- | --- | --- |
-| Reported version | `0.8.0-nightly-20261006` | About screen, diagnostics, bug reports | Telling people which build you ran. **Quote this.** |
-| Package version | `0.8.20261006` | Homebrew Channel, the TV's installer | Telling the installer a build is different and newer. |
+| Reported version | `0.2.0-nightly-20261106` | the bottom line of a playback failure screen, the event log's `release:` line | Telling people which build you ran. **Quote this.** |
+| Package version | `0.2.20261106` | Homebrew Channel, the TV's installer | Telling the installer a build is different and newer. |
 
 The reported version reads **`<release it is heading to>-nightly-<date it was cut>`**. The package
 version keeps the same `major.minor` and uses the **date as its patch number**. A real patch
@@ -102,8 +104,8 @@ How releases are told apart:
 
 | Release | Cut from | Version moves | The nightlies after it |
 | --- | --- | --- | --- |
-| Minor (the normal case) | `main` | `0.7.0` to `0.8.0` | head for the next minor: `0.9.<date>` |
-| Patch | a maintenance branch (`release/vX.Y`) | `0.7.0` to `0.7.1` | `main` is unaffected; nightlies still come only from `main` |
+| Minor (the normal case) | `main` | `0.1.0` to `0.2.0` | head for the next minor: `0.3.<date>` |
+| Patch | a maintenance branch (`release/vX.Y`) | `0.1.0` to `0.1.1` | `main` is unaffected; nightlies still come only from `main` |
 | Major | `main`, bumped by hand | `0.x.y` to `1.0.0` | head for `1.1.<date>` |
 
 Some consequences:
@@ -132,5 +134,5 @@ Some consequences:
 ## Reporting problems
 
 [Open an issue](https://github.com/andrewmagness/webos-dispatcharr/issues/new/choose) and include the **reported
-version** from the About screen, for example `0.8.0-nightly-20261006`, with your TV model and webOS
-version. Do not post passwords, Plex tokens or screenshots that show them.
+version** — the bottom line of a playback failure screen, or the event log's `release:` line — for example `0.2.0-nightly-20261106`, with your TV model and webOS
+version. Do not post passwords, your server's API key or screenshots that show them.

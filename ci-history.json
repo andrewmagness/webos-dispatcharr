@@ -1,4 +1,4 @@
-{"updated":"2026-10-19T13:54:27Z",
+{"updated":"2026-10-19T13:54:47Z",
 "ci":[
 {"id":38635451190,"at":"2026-10-14T20:50:33Z","sha":"e492ceeae","title":"docs: a sign-in answers Connected and no longer reads the lineup","pr":1,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"host unit tests (hostsim)":678,"host python/shell/C gates":242,"host harness tests":273,"host lint + type-checks":303,"host unit tests (default features)":876,"host checks (NOT a device gate)":4},"failed":["cross-build (armv7) + artifact assertions"]},
 {"id":38637798632,"at":"2026-10-14T21:07:46Z","sha":"72966a388","title":"Setup: example addresses from the documentation range, not a LAN one","pr":1,"event":"pull_request","conclusion":"success","attempt":1,"jobs":{"host harness tests":161,"host unit tests (default features)":507,"host lint + type-checks":151,"host unit tests (hostsim)":332,"host python/shell/C gates":150,"cross-build (armv7) + artifact assertions":404,"host checks (NOT a device gate)":4}},
@@ -206,5 +206,5 @@
 {"id":39208595978,"at":"2026-10-19T06:12:38Z","sha":"5998d7ead","title":"Merge remote-tracking branch 'origin/main' into release-0.1.0-docs","pr":47,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":17},"failed":["ARM build + gates / build + verify"]},
 {"id":39252977557,"at":"2026-10-19T12:33:25Z","sha":"9143b3995","title":"rc: a dry run builds the version a real candidate would cut","pr":48,"event":"pull_request","conclusion":"failure","attempt":1,"jobs":{"plan today's nightly":24},"failed":["ARM build + gates / build + verify"]}
 ],
-"cancelled":{"2026-10-15":{"push":1,"pull_request":0},"2026-10-16":{"push":2,"pull_request":0}},
+"cancelled":{"2026-10-15":{"push":1,"pull_request":0},"2026-10-16":{"push":2,"pull_request":0},"2026-10-19":{"push":1,"pull_request":0}},
 "daily":[]}

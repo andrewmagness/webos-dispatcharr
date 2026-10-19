@@ -51,6 +51,15 @@ on:
           for every other build; only `flavor: stable` accepts it.
         type: string
         default: ''
+      bump-to:
+        description: >
+          X.Y.Z to write into the version files and commit, locally and never pushed, right after
+          checkout — a release-candidate DRY run's stand-in for the bump commit a real candidate
+          tags. Without it the dry run built the line's own version, and before the first release
+          that is 0.0.0, whose stable package the release-documents gate rightly refuses. Empty for
+          every other build, which builds `ref` exactly as it stands.
+        type: string
+        default: ''
       artifact:
         description: 'upload-artifact name for the built package + evidence files.'
         type: string
@@ -133,6 +142,20 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.ref }}
+
+      - name: Commit the dry run's version bump (local only)
+        if: inputs.bump-to != ''
+        env:
+          VERSION: ${{ inputs.bump-to }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bump-to must be X.Y.Z, got '$VERSION'"; exit 1; }
+          python3 ci/bump-version.py "$VERSION"
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add pkg/appinfo.json ipkroot/ctl/control rust-modules/Cargo.toml rust-modules/Cargo.lock
+          # rc.yml's message for the same commit; the source bundle reads HEAD, so it is a commit.
+          git diff --cached --quiet || git commit -q -m "release: $VERSION"
 
       - name: Install pinned nightly Rust
         # Pinned by DATE for releases. `-Z build-std` recompiles std from source and is the most

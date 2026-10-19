@@ -284,20 +284,15 @@ all three produce evidence about the wrong thing, which is worse.
 
 ### 4.1 `dispatcharrtv-` — why the runtime root's separator is a DOT
 
-`dev::any_trigger_present` decides whether the boot is automated by scanning the runtime root for
-entries whose name begins `dispatcharrtv-`, and suppressing the who's-watching picker if it finds one.
-It is the one surface in `dev.rs` that names no path at all.
+Every `dispatcharrtv-*` entry in a runtime root is a trigger, and the tools that reset a run clear
+them by that glob (`tests/run.py`'s setup and teardown). A second install's root named
+`/tmp/dispatcharrtv-debug` would therefore sit in the stable install's root (`/tmp`) looking like a
+trigger to every one of them — a glob clear could delete the other install's whole runtime root. The
+full app id contains no `dispatcharrtv-`, so `/tmp/com.magness.dispatcharrtv.debug` cannot match.
 
-A second install's root named `/tmp/dispatcharrtv-debug` would therefore sit in `/tmp` reading, to the
-*other* install, as a permanently armed trigger — silently changing which screen the released app
-boots to, with no line in any log. The full app id contains no `dispatcharrtv-`, so
-`/tmp/com.magness.dispatcharrtv.debug` cannot. That is the first reason.
-
-The second is independent, because a failure this quiet deserves two: `any_trigger_present` now
-also requires the entry to be a **file**, so a directory matching the prefix cannot arm anything
-whatever it is called. The host suite grades it (`dev.rs::a_directory_is_not_an_armed_trigger`,
-holding `testlock::serial()` — the runtime root is a crate global in exactly the sense that lock
-exists for).
+*History:* in PlxNative the same scan also decided whether a boot was automated and suppressed the
+who's-watching picker if it found a trigger, which is how this rule was first found; that boot
+switch went with the picker.
 
 ### 4.2 `com.magness.dispatcharrtv` is a PREFIX of `com.magness.dispatcharrtv.debug`
 

@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-19T06:28:13Z",
+ "generated": "2026-10-19T10:00:18Z",
  "metrics": [
   {
    "change30_pct": null,
@@ -53,9 +53,9 @@
    "id": "bench.app",
    "kind": "local",
    "label": "Rebuild after editing the app crate",
-   "n_now": 3,
+   "n_now": 4,
    "n_prev": 0,
-   "now": 3.8,
+   "now": 4.1,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -74,9 +74,9 @@
    "id": "bench.screens",
    "kind": "local",
    "label": "Rebuild after editing plx_screens",
-   "n_now": 3,
+   "n_now": 4,
    "n_prev": 0,
-   "now": 4.4,
+   "now": 5.2,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -95,9 +95,9 @@
    "id": "bench.ui",
    "kind": "local",
    "label": "Rebuild after editing plx_ui",
-   "n_now": 3,
+   "n_now": 4,
    "n_prev": 0,
-   "now": 15.7,
+   "now": 16.0,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -116,9 +116,9 @@
    "id": "bench.leaf",
    "kind": "local",
    "label": "Rebuild after editing plx_base",
-   "n_now": 3,
+   "n_now": 4,
    "n_prev": 0,
-   "now": 46.5,
+   "now": 44.1,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -137,9 +137,9 @@
    "id": "bench.tests",
    "kind": "local",
    "label": "Unit suite",
-   "n_now": 3,
+   "n_now": 4,
    "n_prev": 0,
-   "now": 60.4,
+   "now": 68.9,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -410,7 +410,7 @@
    "id": "bench.noop",
    "kind": "local",
    "label": "No-op build",
-   "n_now": 3,
+   "n_now": 4,
    "n_prev": 0,
    "now": 0.4,
    "prev7": null,
@@ -461,31 +461,31 @@
    "group": "local",
    "id": "bench.tests",
    "label": "Unit suite",
-   "now": 60.4
+   "now": 68.9
   },
   {
    "group": "local",
    "id": "bench.leaf",
    "label": "Rebuild after editing plx_base",
-   "now": 46.5
+   "now": 44.1
   },
   {
    "group": "local",
    "id": "bench.ui",
    "label": "Rebuild after editing plx_ui",
-   "now": 15.7
+   "now": 16.0
   },
   {
    "group": "local",
    "id": "bench.screens",
    "label": "Rebuild after editing plx_screens",
-   "now": 4.4
+   "now": 5.2
   },
   {
    "group": "local",
    "id": "bench.app",
    "label": "Rebuild after editing the app crate",
-   "now": 3.8
+   "now": 4.1
   }
  ],
  "thresholds": {

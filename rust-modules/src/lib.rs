@@ -11,6 +11,7 @@
 //! shapes are migration legacy, not ABI).
 mod app; // run_application — the Rust app core / event loop (the entry inverted from main.c; port.rs's `plx_run` hands over to it)
 mod capture; // dev live UI capture stream: own-GLES-frame grab → MPEG1/TS or JPEG → TCP (UI plane only)
+mod crash_image; // the running binary's build id and load base, written to the crash log at startup
 mod coldstart; // retires old last-page bookmarks; authenticated cold boots now stay on Home
 mod dev; // the /tmp/dispatcharrtv-* trigger surface, behind one `devtriggers` feature — read it before adding a trigger
 mod focusprobe; // dev: one diffable line naming everything app.rs's key ladder can move, logged when it changes

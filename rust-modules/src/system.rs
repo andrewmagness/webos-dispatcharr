@@ -103,8 +103,6 @@ pub(crate) fn ls2_pump() {
 }
 
 pub(crate) fn sys_grab_wayland(winp: *mut c_void) {
-    plx_telemetry::telemetry::window::record(plx_telemetry::telemetry::window::Observation::step(
-        plx_telemetry::telemetry::window::Stage::WmQuery, None));
     unsafe {
         let mut wmbuf = [0u8; 512];
         // SDL_VERSION(&wm->version): major/minor/patch (u8) at offset 0.
@@ -767,26 +765,15 @@ pub(crate) fn frame_probe_fields() -> String {
 unsafe fn update_wayland_info(ok: c_int, info: &[u8; 512]) {
     sys_release_wayland();
     let subsystem = i32::from_ne_bytes(info[4..8].try_into().unwrap());
-    let (mut display_present, mut surface_present) = (false, false);
     if ok != 0 && subsystem == 6 { // SDL_SYSWM_WAYLAND
         let pointers = info.as_ptr().add(8) as *const *mut c_void;
         let display = pointers.read_unaligned();
         let surface = pointers.add(1).read_unaligned();
-        display_present = !display.is_null();
-        surface_present = !surface.is_null();
-        if display_present && surface_present {
+        if !display.is_null() && !surface.is_null() {
             G_WL_DISPLAY = display;
             G_WL_SURFACE = surface;
         }
     }
-    use plx_telemetry::telemetry::window::{Observation, Stage};
-    let stage = if ok == 0 { Stage::WmFailed }
-        else if subsystem != 6 { Stage::WmWrongBackend }
-        else if G_WL_SURFACE.is_null() { Stage::WmNoSurface }
-        else { Stage::WmReady };
-    plx_telemetry::telemetry::window::record(Observation { stage, playing: None,
-        version: Some([info[0], info[1], info[2]]),
-        display: Some(display_present), surface: Some(surface_present) });
 }
 
 #[cfg(test)]

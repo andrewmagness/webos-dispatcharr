@@ -395,7 +395,7 @@ impl Diagnostics {
         self.rows = if idle { device_rows() } else { Vec::new() };
         self.columns = if idle { Vec::new() } else { pipeline_rows(ps, &d, prev, now) };
         self.prev_fed = (d.fed_v, d.fed_a, now);
-        self.history.record(plx_media::route::playback_trace_generation(), &d, now);
+        self.history.record(plx_media::route::playback_generation(), &d, now);
         self.chart_values = chart_values(&self.history);
         // a re-sample changes what is on screen, and no spring is involved — see `plx_machine::idle`
         plx_machine::idle::invalidate();

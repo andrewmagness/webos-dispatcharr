@@ -64,9 +64,8 @@ pub(crate) fn desktop_window_size() -> (c_int, c_int) {
 /// generated. `crashtrace.c` says so itself. Two deliberate SIGSEGVs produced the signal status and
 /// an empty `/var/log/reports/librdx/`.
 ///
-/// The record this hook writes (the panic line and its `time:` line) is also the crash channel's
-/// PANIC input: `telemetry::crashreport` reads the log on the next launch, hashes the message and
-/// sends the location and the bounded crash time, never the message.
+/// The record this hook writes (the panic line and its `time:` line) stays on the television, in
+/// the append-only crash log a developer reads after a crash (`crash-triage` skill).
 pub(crate) fn install_panic_logger() {
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -87,7 +86,7 @@ pub(crate) fn install_panic_logger() {
         let _ = record_panic_in_crash_log(
             &plx_base::paths::in_runtime_dir(plx_base::paths::runtime_file::CRASH),
             &line,
-            plx_telemetry::telemetry::crashreport::now_secs(),
+            now_secs(),
         );
         default(info); // preserve default behaviour (stderr -> dispatcharrtv-stderr.log)
     }));
@@ -106,17 +105,23 @@ pub(crate) fn install_panic_logger() {
 /// ignore: a panic hook has nowhere to report a failure to.
 ///
 /// **The record is two lines in ONE write:** the panic line and the `time: <unix seconds>` line the
-/// C tracer also writes under a signal record ([`plx_telemetry::telemetry::crashreport::crash_time_record`]
-/// is the one spelling). The crash importer sends it as the event's `timestamp`, so the report says
-/// when the panic happened rather than when the next launch found it. `0` (a clock that reads
-/// nothing) writes no time line.
+/// C tracer also writes under a signal record, so a reader can tell when the panic happened rather
+/// than when the log was read. `0` (a clock that reads nothing) writes no time line.
 fn record_panic_in_crash_log(path: &std::path::Path, line: &str, unix_secs: u64) -> std::io::Result<()> {
     let mut record = plx_base::eventlog::scrub::scrub_local(line);
     if unix_secs > 0 {
         record.push('\n');
-        record.push_str(&plx_telemetry::telemetry::crashreport::crash_time_record(unix_secs));
+        record.push_str(&format!("time: {unix_secs}"));
     }
     plx_base::eventlog::append_record(path, &record)
+}
+
+/// The wall clock in Unix seconds, `0` if it reads before the epoch.
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -148,13 +153,6 @@ mod panic_log_tests {
         assert!(
             written.ends_with("\ntime: 1750000000\n") && written.matches('\n').count() == 2,
             "the panic line, then its time line, newline-terminated: {written}"
-        );
-        // And the crash report parser still reads the scrubbed record, with the time it was given.
-        let reports = plx_telemetry::telemetry::crashreport::parse(&written);
-        assert_eq!(reports.len(), 1, "{written}");
-        assert!(
-            matches!(&reports[0], plx_telemetry::telemetry::crashreport::Report::Panic(p) if p.crash_time == Some(1_750_000_000)),
-            "{reports:?}"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -208,9 +206,7 @@ mod seam_order_tests {
     /// `plx_base::identity` reports the version it is handed (`set_version`) and, in a
     /// shipping build, panics when asked for it earlier, so the hand-in has to be the first thing
     /// the one entry point does: nothing before it can build a header or a `User-Agent`. It also
-    /// has to hand in `PLX_VERSION` itself, the string `ci/check-package.py` grades in the binary
-    /// (as `dispatcharrtv@` + version, see the telemetry hand-in below), and no second production site
-    /// may hand in anything else. Reads the source, like the tests
+    /// has to hand in `PLX_VERSION` itself, and no second production site may hand in anything else. Reads the source, like the tests
     /// below, because no host test can run `enter_application`.
     #[test]
     fn the_version_is_handed_in_first_and_only_there() {
@@ -229,22 +225,6 @@ mod seam_order_tests {
             .find(|line| !line.is_empty() && !line.starts_with("//"))
             .expect("a first statement");
         assert_eq!(first, hand_in, "set_version must be enter_application's first statement");
-        // `plx_telemetry` reports the release it is handed the same way (and also panics when asked
-        // earlier in a shipping build). It is composed here with `concat!`, not by the telemetry
-        // crate, because `ci/check-package.py` greps the packaged binary for that exact string.
-        let release = concat!("plx_telemetry::telemetry::", "set_release(concat!(\"dispatcharrtv@\", env!(\"PLX_VERSION\")));");
-        let second = body
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with("//"))
-            .nth(1)
-            .expect("a second statement");
-        assert_eq!(second, release, "set_release must be enter_application's second statement");
-        assert_eq!(
-            source.matches(concat!("telemetry::", "set_release(")).count(),
-            1,
-            "one production hand-in of the release"
-        );
         assert_eq!(
             source.matches(concat!("identity::", "set_version(")).count(),
             1,
@@ -254,36 +234,6 @@ mod seam_order_tests {
             source.matches(concat!("match enter_", "application()")).count(),
             1,
             "enter_application has one caller, run_application"
-        );
-    }
-
-    /// `enter_application` installs the player's error-trace eraser before telemetry first loads a
-    /// decision (`pre_boot_diagnostics` -> `telemetry::boot`, which already erases through it) and
-    /// before anything can play. It was installed by `player::report::requested`, which a
-    /// detail-page preview never passes, so a failed preview's trace outlived a withdrawal. This
-    /// reads the source, like the diagnostics boot-order test below, because no host test can
-    /// run `enter_application`; what the eraser reaches is graded by `player::report`'s
-    /// `a_failed_preview_trace_is_erased_through_telemetrys_hook`.
-    #[test]
-    fn the_trace_eraser_is_installed_before_telemetry_loads_or_anything_plays() {
-        let source = include_str!("mod.rs");
-        let body = source
-            .split_once("fn enter_application(")
-            .expect("enter_application")
-            .1
-            .split_once("/// The ten-line public skeleton")
-            .expect("end of enter_application")
-            .0;
-        let eraser = body
-            .find("plx_media::player::report::install_trace_eraser();")
-            .expect("enter_application must install telemetry's error-trace eraser");
-        let telemetry = body
-            .find("pre_boot_diagnostics();")
-            .expect("telemetry's boot load");
-        let boot = body.find("boot(main_thread)").expect("application boot");
-        assert!(
-            eraser < telemetry && eraser < boot,
-            "the eraser must be installed before telemetry loads and before anything can play"
         );
     }
 
@@ -628,22 +578,6 @@ pub(crate) unsafe fn construct(mt: plx_base::task::MainThread) -> Result<App, c_
     // means this device has no libcurl we can bind, so plex.tv sign-in will not work — the app
     // still runs, and `net::global_init` has already said so in the event log.
     let _ = plx_net::net::global_init();
-    // Drain whatever the LAST session left behind, on a worker — and **after `global_init`,
-    // which is the whole reason this line is here and not beside `telemetry::boot()` 170 lines
-    // up.** It was there first, and the end-to-end run showed why that was wrong: the worker
-    // reached `post_ca` before libcurl was bound, `net::available()` was false, every record
-    // came back Keep, and the log read `holding 5 records` immediately ABOVE `net: bound
-    // libcurl`. So the first flush of every launch failed, always, and the failure was
-    // indistinguishable from a television with no network. Worse than the lost flush: curl's
-    // own init is documented as not thread-safe, and a worker that got there first would have
-    // been doing it off the main thread.
-    //
-    // Boot is the right cadence for a television. Sessions are long, and the reports most worth
-    // having are about how one ENDED — a crash is the end, so the record was written by a
-    // process that no longer exists and this is the first moment anything can send it. A record
-    // queued during THIS session goes out at the next launch, or sooner if a consent change
-    // flushes.
-    plx_telemetry::telemetry::flush_soon();
 
     // The poster workers and the dev live UI capture stream: the Guide's channel logos come
     // through the same texture pipeline the poster adapter feeds.
@@ -849,7 +783,6 @@ pub(crate) unsafe fn construct(mt: plx_base::task::MainThread) -> Result<App, c_
         instr,
         measure_fault_logged: false,
         input: plx_ui::input::Input::new(),
-        telemetry_guard: None,
         present: plx_machine::present::Present::new(),
         glass,
         // **The application's page stack runs the route DIP** (§6.2). It ran `Immediate` until

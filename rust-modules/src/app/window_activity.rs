@@ -7,37 +7,21 @@
 /// protect. Owned by the app's main loop, and never inferred from the current UI route.
 pub(crate) struct WindowActivity {
     active: bool,
-    first_frame: bool,
 }
 
 impl WindowActivity {
-    pub(crate) const fn new() -> Self { Self { active: true, first_frame: true } }
+    pub(crate) const fn new() -> Self { Self { active: true } }
 
     pub(crate) fn event(&mut self, event: u32) {
         match event {
             0x103 | 0x104 => self.active = false,
-            0x106 => { self.active = true; self.first_frame = true; }
+            0x106 => self.active = true,
             _ => {} // WILL foreground does not yet authorize rendering.
         }
     }
 
     pub(crate) fn allow_present(&self, requested: bool) -> bool {
         self.active && requested
-    }
-
-    pub(crate) fn begin_present(&self, playing: bool) {
-        if self.first_frame {
-            plx_telemetry::telemetry::window::record(plx_telemetry::telemetry::window::Observation::step(
-                plx_telemetry::telemetry::window::Stage::FirstFrame, Some(playing)));
-        }
-    }
-
-    pub(crate) fn presented(&mut self, playing: bool) {
-        if self.first_frame {
-            self.first_frame = false;
-            plx_telemetry::telemetry::window::record(plx_telemetry::telemetry::window::Observation::step(
-                plx_telemetry::telemetry::window::Stage::FirstSwapComplete, Some(playing)));
-        }
     }
 }
 

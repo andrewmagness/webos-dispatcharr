@@ -15,7 +15,6 @@ use super::{log, sink, threads, ACB_OK, PTYPE, SHARED, TX};
 use crate::aq::{AuNode, AuQueue};
 use plx_net::stream::HttpStream;
 use plx_base::task::MainThread;
-use plx_telemetry::telemetry::window::Stage as WindowStage;
 use std::os::raw::{c_char, c_int, c_long, c_void};
 use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -366,7 +365,6 @@ fn release_native_object(mt: &MainThread, epoch: u32) {
     // object is preferable to letting D1 turn a late producer callback into a use-after-free.
     if unsafe { sink().ready(mt) } != 0 {
         unsafe { sink().unload(mt) };
-        window_step(WindowStage::NativeUnload);
         let callback_gate_proven = unsafe { sink().callback_gate_retire(mt) } != 0;
         let callback_intercepts = unsafe { sink().callback_intercepts(mt) };
         let unload_completed = SHARED.native_unload_completed(epoch);
@@ -388,21 +386,16 @@ fn release_native_object(mt: &MainThread, epoch: u32) {
         }
         if ACB_OK.load(Ordering::Relaxed) {
             unsafe { sink().plane_unload(mt) };
-            window_step(WindowStage::AcbPlaneUnload);
         }
         match native_object_disposition(unload_completed, callback_gate_proven, rust_epoch_retired)
         {
             NativeObjectDisposition::Destroy => {
                 if unsafe { sink().destroy(mt) } == 0 {
                     log("native lifecycle: C seam rejected D1 and quarantined the object");
-                    window_step(WindowStage::NativeQuarantined);
-                } else {
-                    window_step(WindowStage::NativeDestroyed);
                 }
             }
             NativeObjectDisposition::Quarantine => {
                 unsafe { sink().quarantine(mt) };
-                window_step(WindowStage::NativeQuarantined);
             }
         }
     } else if !SHARED.retire_native_session(epoch) {
@@ -416,21 +409,6 @@ fn release_native_object(mt: &MainThread, epoch: u32) {
     // otherwise leak it, and the next Load would ask for another. Unguarded because the seam
     // already no-ops in the other modes (see starfish.h).
     unsafe { sink().destroy_window(mt) };
-    if sink().window_mode() == super::VP_EXPORTED {
-        window_step(WindowStage::ExportedWindowDestroy);
-    }
-}
-
-/// One closed teardown/exported-window breadcrumb on a native crash event, **only inside an app
-/// switch's background or foreground cycle** (`window::record_in_cycle`): this runs for every
-/// engine that comes and goes (a trailer, a seek or quality reload, an abandoned Load), and those
-/// would fill the shared 16-slot ring with steps of no cycle. Consent-gated inside
-/// `window::record` and a no-op while the crash backend is not running; carries no data beyond the
-/// label, so a crash in the next step shows which step had already returned.
-fn window_step(stage: WindowStage) {
-    plx_telemetry::telemetry::window::record_in_cycle(
-        plx_telemetry::telemetry::window::Observation::step(stage, None),
-    );
 }
 
 /// Bind the decoded video sink to the display plane, whichever way this television does it.
@@ -965,7 +943,6 @@ fn with_window_id(mt: &MainThread, p: &str) -> String {
         return p.to_string();
     }
     let id = unsafe { sink().create_window(mt) };
-    window_step(WindowStage::ExportedWindowCreate);
     if id.is_null() {
         log("windowId: no exported window — video will not bind");
         return p.to_string();
@@ -1683,7 +1660,6 @@ fn teardown(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
     // suspend — each of which destroys an ENGINE and keeps the playback — so reporting an ending on
     // either would count a channel that is still being watched as ended.
     if !for_reload {
-        crate::player::report::ended();
     }
     // 1. unblock every thread (abort queues, close the demux socket)
     if stream {
@@ -2844,242 +2820,6 @@ mod native_lifecycle_host_seam_tests {
         assert!(SHARED.retire_native_session(refused));
     }
 
-    /// S12a: the window breadcrumbs `release_native_object` leaves, as a host can see them. The
-    /// capture sits behind the consent check, so the test grants the crash-report answer first and
-    /// puts the previous one back.
-    struct Consented(Option<plx_telemetry::telemetry::consent::Consent>);
-
-    impl Consented {
-        fn grant() -> Self {
-            use plx_telemetry::telemetry::consent::{self, Consent};
-            let previous = consent::current();
-            let mut granted = Consent::default();
-            granted.errors = true;
-            granted.asked_version = consent::POLICY_VERSION;
-            consent::install(granted);
-            // Another test's lifecycle edges may have left a cycle open on this process-wide flag.
-            plx_telemetry::telemetry::window::close_cycle_for_test();
-            plx_telemetry::telemetry::window::take_recorded_for_test();
-            Self(previous)
-        }
-
-        /// Consent granted with a background cycle open, as the teardown and create steps are
-        /// recorded only inside one (`window::record_in_cycle`). The lifecycle edge's own crumb is
-        /// drained, so a test sees only the steps it runs.
-        fn grant_in_cycle() -> Self {
-            let granted = Self::grant();
-            plx_telemetry::telemetry::window::lifecycle(0x103, true);
-            plx_telemetry::telemetry::window::take_recorded_for_test();
-            granted
-        }
-    }
-
-    impl Drop for Consented {
-        fn drop(&mut self) {
-            plx_telemetry::telemetry::consent::install(self.0.take().unwrap_or_default());
-            plx_telemetry::telemetry::window::close_cycle_for_test();
-            plx_telemetry::telemetry::window::take_recorded_for_test();
-        }
-    }
-
-    fn loaded_epoch(mt: &MainThread) -> u32 {
-        let epoch = SHARED.begin_native_session().expect("native epoch");
-        assert_eq!(unsafe { crate::player::sink().load(c"{}".as_ptr(), epoch) }, 1);
-        assert_eq!(unsafe { crate::player::sink().ready(mt) }, 1);
-        epoch
-    }
-
-    #[test]
-    fn a_proven_release_leaves_unload_destroyed_and_window_destroy_in_order() {
-        let _serial = plx_base::testlock::serial();
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        SHARED.reset_session();
-        let _fresh_process = FreshProcess;
-        let consent = Consented::grant_in_cycle();
-        let mt = unsafe { MainThread::assume() };
-        let epoch = loaded_epoch(&mt);
-        release_native_object(&mt, epoch);
-        assert_eq!(
-            plx_telemetry::telemetry::window::take_recorded_for_test(),
-            ["native_unload", "native_destroyed", "exported_window_destroy"],
-        );
-        drop(consent);
-    }
-
-    #[test]
-    fn an_unproven_release_records_quarantine_not_destroyed() {
-        let _serial = plx_base::testlock::serial();
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        SHARED.reset_session();
-        let _fresh_process = FreshProcess;
-        let consent = Consented::grant_in_cycle();
-        let mt = unsafe { MainThread::assume() };
-        let epoch = loaded_epoch(&mt);
-        // No callback ever crossed the gate: the evidence is incomplete and the object is kept.
-        crate::player::ffi_host::force_callback_intercepts_for_test(0);
-        release_native_object(&mt, epoch);
-        assert_eq!(
-            plx_telemetry::telemetry::window::take_recorded_for_test(),
-            ["native_unload", "native_quarantined", "exported_window_destroy"],
-        );
-        drop(consent);
-    }
-
-    #[test]
-    fn a_seam_rejected_destroy_is_recorded_as_quarantine() {
-        let _serial = plx_base::testlock::serial();
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        SHARED.reset_session();
-        let _fresh_process = FreshProcess;
-        let consent = Consented::grant_in_cycle();
-        let mt = unsafe { MainThread::assume() };
-        let epoch = loaded_epoch(&mt);
-        // Rust's three proofs hold, but the C seam's own evidence does not: `destroy` answers 0,
-        // and the crumb must say so rather than "destroyed".
-        crate::player::ffi_host::force_destroy_refusal_for_test(true);
-        release_native_object(&mt, epoch);
-        let recorded = plx_telemetry::telemetry::window::take_recorded_for_test();
-        assert!(recorded.contains(&"native_quarantined"), "{recorded:?}");
-        assert!(!recorded.contains(&"native_destroyed"), "{recorded:?}");
-        drop(consent);
-    }
-
-    #[test]
-    fn the_acb_plane_unload_is_a_step_only_when_acb_is_the_plane() {
-        let _serial = plx_base::testlock::serial();
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        SHARED.reset_session();
-        let _fresh_process = FreshProcess;
-        let consent = Consented::grant_in_cycle();
-        let mt = unsafe { MainThread::assume() };
-        let epoch = loaded_epoch(&mt);
-        ACB_OK.store(true, Ordering::Relaxed);
-        release_native_object(&mt, epoch);
-        ACB_OK.store(false, Ordering::Relaxed);
-        let recorded = plx_telemetry::telemetry::window::take_recorded_for_test();
-        let at = |label| recorded.iter().position(|l| *l == label);
-        assert!(
-            at("native_unload") < at("acb_plane_unload") && at("acb_plane_unload") < at("native_destroyed"),
-            "{recorded:?}",
-        );
-        drop(consent);
-    }
-
-    #[test]
-    fn without_a_dispatchable_object_or_an_exported_window_nothing_is_recorded() {
-        let _serial = plx_base::testlock::serial();
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(false);
-        SHARED.reset_session();
-        let _fresh_process = FreshProcess;
-        let consent = Consented::grant_in_cycle();
-        let mt = unsafe { MainThread::assume() };
-        let epoch = SHARED.begin_native_session().expect("native epoch");
-        release_native_object(&mt, epoch);
-        assert!(
-            plx_telemetry::telemetry::window::take_recorded_for_test().is_empty(),
-            "the seam's destroy_window is a no-op outside VP_EXPORTED, so it is not a step",
-        );
-        drop(consent);
-    }
-
-    #[test]
-    fn creating_the_exported_window_is_a_step_only_in_that_mode() {
-        let _serial = plx_base::testlock::serial();
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        SHARED.reset_session();
-        let _fresh_process = FreshProcess;
-        let consent = Consented::grant_in_cycle();
-        let mt = unsafe { MainThread::assume() };
-        crate::player::ffi_host::force_clocksink_for_test(false);
-        let _ = with_window_id(&mt, "{}");
-        assert!(plx_telemetry::telemetry::window::take_recorded_for_test().is_empty());
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        let _ = with_window_id(&mt, "{}");
-        assert_eq!(
-            plx_telemetry::telemetry::window::take_recorded_for_test(),
-            ["exported_window_create"],
-        );
-        drop(consent);
-    }
-
-    /// One engine's native life through the real create and release paths: what a trailer's start
-    /// and stop, a seek or quality reload's teardown and an abandoned Load's release all run.
-    fn engine_comes_and_goes(mt: &MainThread) {
-        let _ = with_window_id(mt, "{}");
-        let epoch = loaded_epoch(mt);
-        release_native_object(mt, epoch);
-    }
-
-    /// S12a: **the 16-slot ring belongs to the lifecycle cycle.** The webOS 5 exported-window path
-    /// costs a trailer four steps, so browsing four trailers used to push `will_foreground`,
-    /// `wm_*` and `first_frame` out of the ring before the next background cycle. Teardown and
-    /// window steps are crumbs of a lifecycle cycle only: this drives the REAL create and release
-    /// paths through the longest cycle (webOS 5, playing, foreground reload) with trailer churn
-    /// before, between and after, and checks the cycle's own steps are all the ring ever holds.
-    #[test]
-    fn trailer_starts_and_reloads_add_no_window_crumbs_and_a_whole_cycle_fits_the_ring() {
-        use plx_telemetry::telemetry::window::{self, Observation, Stage};
-        let _serial = plx_base::testlock::serial();
-        crate::player::ffi_host::reset_native_lifecycle_for_test();
-        crate::player::ffi_host::force_clocksink_for_test(true);
-        SHARED.reset_session();
-        let _fresh_process = FreshProcess;
-        let consent = Consented::grant();
-        let mt = unsafe { MainThread::assume() };
-        let step = |stage| window::record(Observation::step(stage, Some(true)));
-        let mut ring = Vec::new();
-
-        for _ in 0..6 {
-            engine_comes_and_goes(&mt);
-        }
-        assert_eq!(
-            window::take_recorded_for_test(),
-            Vec::<&str>::new(),
-            "browsing trailers and reloading engines is not a lifecycle cycle",
-        );
-
-        // Background, with playback: the engine is released inside the cycle.
-        window::lifecycle(0x103, true);
-        step(Stage::WaylandReleased);
-        window::lifecycle(0x104, true);
-        let epoch = loaded_epoch(&mt);
-        release_native_object(&mt, epoch);
-        step(Stage::BackgroundDone);
-        ring.extend(window::take_recorded_for_test());
-
-        // Foreground: the window is grabbed, then the restoring Load creates its exported window.
-        window::lifecycle(0x105, true);
-        window::lifecycle(0x106, true);
-        step(Stage::WmQuery);
-        step(Stage::WmReady);
-        let _ = with_window_id(&mt, "{}");
-        step(Stage::ForegroundDone);
-        ring.extend(window::take_recorded_for_test());
-
-        // The app is up again: trailers come and go before and after the first resumed frame.
-        engine_comes_and_goes(&mt);
-        step(Stage::FirstFrame);
-        step(Stage::FirstSwapComplete);
-        engine_comes_and_goes(&mt);
-        ring.extend(window::take_recorded_for_test());
-
-        assert_eq!(
-            ring,
-            [
-                "will_background", "wayland_released", "did_background", "native_unload",
-                "native_destroyed", "exported_window_destroy", "background_done",
-                "will_foreground", "did_foreground", "wm_query", "wm_ready",
-                "exported_window_create", "foreground_done", "first_frame", "first_swap_complete",
-            ],
-        );
-        assert!(ring.len() <= window::LIMIT, "{} steps would evict the start of the cycle", ring.len());
-        drop(consent);
-    }
 }
 
 #[cfg(test)]

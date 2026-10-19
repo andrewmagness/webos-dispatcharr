@@ -48,10 +48,6 @@ fn native_load_gate_ready(epoch: u32) -> bool {
             ));
             SHARED.load_failed.store(true, Release);
             SHARED.load_timed_out.store(true, Release);
-            super::report::note_load_gate_for(
-                crate::route::playback_trace_generation(),
-                super::report::LoadElapsedClass::from_ms(elapsed.as_millis() as i64),
-            );
         }
         Some(_) => {}
         // `native_load_elapsed` shares its precondition with `native_load_returned` — both
@@ -68,13 +64,6 @@ fn native_load_gate_ready(epoch: u32) -> bool {
             );
             SHARED.load_failed.store(true, Release);
             SHARED.load_timed_out.store(true, Release);
-            // The epoch left Active before this arm ever saw an elapsed reading, so the exact
-            // in-flight time is unknown — bucket it as the budget's own ceiling, which is the
-            // honest floor for "still deferred when Active was lost".
-            super::report::note_load_gate_for(
-                crate::route::playback_trace_generation(),
-                super::report::LoadElapsedClass::Over20s,
-            );
         }
     }
     false
@@ -556,10 +545,6 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
                 ));
                 SHARED.load_failed.store(true, Release);
                 SHARED.load_timed_out.store(true, Release);
-                super::report::note_load_gate_for(
-                    crate::route::playback_trace_generation(),
-                    super::report::LoadElapsedClass::from_ms(elapsed.as_millis() as i64),
-                );
             }
             Some(_) => {}
             // Same rationale as the `None` arm above: losing `Active` (a synchronous
@@ -572,10 +557,6 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
                 );
                 SHARED.load_failed.store(true, Release);
                 SHARED.load_timed_out.store(true, Release);
-                super::report::note_load_gate_for(
-                    crate::route::playback_trace_generation(),
-                    super::report::LoadElapsedClass::Over20s,
-                );
             }
         }
     }

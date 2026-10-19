@@ -16,8 +16,7 @@ pub(super) fn request_play_intent(
         plx_screens::registry::PlayIntent::Live(tune) => {
             let uuid = tune.channel().map(|c| c.uuid.clone()).unwrap_or_default();
             let tune = super::dispatcharr::with_previous(super::dispatcharr::with_known_codecs(tune.clone()));
-            let ok = plx_media::route::request_live(session, tune,
-                plx_media::player::report::AttemptOrigin::Fresh, plx_dispatcharr::dispatcharr::api::unix_now());
+            let ok = plx_media::route::request_live(session, tune, plx_dispatcharr::dispatcharr::api::unix_now());
             if ok {
                 super::dispatcharr::remember_last(&uuid);
             }

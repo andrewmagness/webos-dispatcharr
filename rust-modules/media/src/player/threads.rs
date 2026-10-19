@@ -52,13 +52,6 @@ pub fn load_thread(
             .native_load_elapsed_ms
             .store(elapsed_ms, Ordering::Relaxed);
         super::log(&format!("native: Load returned after {elapsed_ms}ms"));
-        // issue #74 item 3: the Load-returned gate opening, bucketed — never the millisecond
-        // count. This is the ordinary path; `pump.rs`'s two D.1.4 budget arms record the other
-        // half, for a Load that never returns at all.
-        super::report::note_load_gate_for(
-            crate::route::playback_trace_generation(),
-            super::report::LoadElapsedClass::from_ms(elapsed_ms as i64),
-        );
     }
     if let Some(ticket) = route_start {
         crate::route::publish_route_start_result(

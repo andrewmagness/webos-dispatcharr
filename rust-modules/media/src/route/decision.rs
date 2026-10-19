@@ -13,7 +13,6 @@
 //! (the claim table, the enhancement step, the plans and the PMS attempts) stay here.
 
 use std::os::raw::c_char;
-use std::sync::atomic::{AtomicU32, Ordering};
 use super::plan::*;
 
 // ---- ONE playback session, as ONE value -----------------------------------------------------
@@ -301,41 +300,12 @@ mod live_url_tests {
         assert!(!is_live(&ps), "a file URL replaces it");
     }
 
-    /// **A tune is a playback attempt, and the usage funnel counts it.** Every way into live
-    /// playback (the Guide's OK, CH▲/▼, a reconnect, the foreground re-tune) goes through
-    /// `request_live`, so that is where the attempt is minted: `playback.requested` is emitted and
-    /// the attempt's trace generation becomes the one the engine's workers report under. Without
-    /// it no attempt exists, and `started`/`failed`/`ended` have nothing to join. The caller names
-    /// why the tune is made, and a failure report carries that cause.
-    #[test]
-    fn a_tune_is_a_playback_attempt_the_funnel_counts() {
-        use crate::player::report::AttemptOrigin as O;
-        let _g = plx_base::testlock::serial();
-        let mut ps = PlaybackSession::IDLE;
-        let before = playback_trace_generation();
-        let (ok, events) = plx_telemetry::diag::test_events::capture(|| {
-            request_live(&mut ps, tune(&["http://192.0.2.1:9191/a"], 0), O::Fresh, 50)
-        });
-        assert!(ok);
-        assert!(
-            events.iter().any(|e| matches!(e, plx_telemetry::diag::schema::DiagEvent::PlaybackRequested { .. })),
-            "a tune must emit playback.requested: {events:?}"
-        );
-        assert_ne!(playback_trace_generation(), before, "the tune publishes its attempt's trace generation");
-        assert_eq!(crate::player::report::attempt_snapshot().0, O::Fresh);
-        // The app's reconnect of the same channel is the session's second open, and says so.
-        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a"], 0), O::Recovery, 60));
-        let (origin, ordinal) = crate::player::report::attempt_snapshot();
-        assert_eq!((origin.code(), ordinal.code()), ("recovery", "2"));
-        clear_url(&mut ps);
-    }
-
     #[test]
     fn a_tune_installs_the_channel_its_lineup_and_its_declaration() {
         let mut ps = PlaybackSession::IDLE;
-        assert!(!request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 1), crate::player::report::AttemptOrigin::Fresh, 50), "no stream, no tune");
+        assert!(!request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 1), 50), "no stream, no tune");
         assert!(live_tune(&ps).is_none());
-        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 0), crate::player::report::AttemptOrigin::Fresh, 50));
+        assert!(request_live(&mut ps, tune(&["http://192.0.2.1:9191/a", ""], 0), 50));
         assert!(is_live(&ps));
         assert_eq!(url(&ps), "http://192.0.2.1:9191/a");
         assert_eq!((stream_vcodec(&ps).as_str(), stream_acodec(&ps).as_str()), ("h264", "aac"));
@@ -1095,13 +1065,13 @@ pub fn retire_route(_ps: &mut PlaybackSession) {
 
 use plx_base::cbuf::set as set_c; // shared fixed-C-buffer write (the session's HUD title/ctxline)
 
-/// Trace generation owned by the plan that is actually installed. It deliberately remains the
-/// outgoing generation while the next plan resolves, because that engine is still alive; its
-/// workers carry the same token and are ignored by the newly reset report trace.
-static ACTIVE_TRACE_GENERATION: AtomicU32 = AtomicU32::new(0);
+/// A number that changes with every tune, so a reader that keeps per-playback history (the
+/// diagnostics panel's chart) can tell one playback from the next.
+static PLAYBACK_GENERATION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-pub fn playback_trace_generation() -> u32 {
-    ACTIVE_TRACE_GENERATION.load(Ordering::SeqCst)
+/// The current playback's generation (see [`PLAYBACK_GENERATION`]).
+pub fn playback_generation() -> u32 {
+    PLAYBACK_GENERATION.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 /// **Tune a live channel** (a Dispatcharr stream): `tune`'s channel in its lineup. There is no
@@ -1116,7 +1086,6 @@ pub fn playback_trace_generation() -> u32 {
 pub fn request_live(
     ps: &mut PlaybackSession,
     mut tune: super::LiveTune,
-    origin: crate::player::report::AttemptOrigin,
     now: i64,
 ) -> bool {
     let Some(channel) = tune.channel().filter(|c| c.tunable()) else {
@@ -1141,12 +1110,7 @@ pub fn request_live(
         }
     } };
     crate::player::log(&format!("live: tune #{} v={vcodec} a={acodec}", tune.index));
-    // **The playback funnel's denominator, minted HERE**: every way into live playback (the Guide's
-    // OK, CH▲/▼, a reconnect, the foreground re-tune) comes through this function, and it is past
-    // every refusal above, so a press that cannot tune is not an attempt. The engine's workers
-    // report under the trace generation published here, and `origin` says which of those it was.
-    let trace_generation = crate::player::report::requested(origin);
-    ACTIVE_TRACE_GENERATION.store(trace_generation, Ordering::SeqCst);
+    PLAYBACK_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     set_live_url(ps, &url);
     tune.at = now;
     ps.tune = Some(tune);

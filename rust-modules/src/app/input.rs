@@ -260,9 +260,6 @@ pub(crate) unsafe fn key_ok(
     if super::bridge::player(pages).is_some() {
         if !super::lifecycle::viewer_paused() {
             if set_transport_paused(pa, true) {
-                plx_telemetry::diag::event(plx_telemetry::diag::schema::DiagEvent::FeatureUsed {
-                    feature: plx_telemetry::diag::schema::Feature::Pause,
-                });
             }
         } else {
             set_transport_paused(pa, false);

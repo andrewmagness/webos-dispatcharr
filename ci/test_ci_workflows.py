@@ -112,7 +112,21 @@ class BundledLibrarySymbols(unittest.TestCase):
 class NightlyHomebrewRepository(unittest.TestCase):
     def test_the_nightly_build_generates_its_manifest_and_release_does_too(self):
         self.assertEqual(re.findall(r"homebrew-manifest: (.*)", code("nightly.yml")), ["true"])
-        self.assertEqual(re.findall(r"homebrew-manifest: (.*)", code("release.yml")), ["true"])
+        # The release's manifest is the webosbrew listing's, deferred by the owner (2026-10-19):
+        # kept, and off unless the repository variable turns it on.
+        self.assertEqual(re.findall(r"homebrew-manifest: (.*)", code("release.yml")),
+                         ["${{ vars.HOMEBREW_LISTING == 'true' }}"])
+
+    def test_the_deferred_listing_leaves_the_release_publishable_without_a_manifest(self):
+        release = code("release.yml")
+        self.assertIn("${{ vars.HOMEBREW_LISTING == 'true' && 'dist/*.manifest.json' || '' }}", release)
+        self.assertNotRegex(release, r"\n\s*dist/\*\.manifest\.json\n", "an unconditional manifest asset fails the publish")
+        note = release.split("- name: Propagation note", 1)[1]
+        self.assertIn("if: vars.HOMEBREW_LISTING == 'true'", note.split("run:", 1)[0])
+        render = release.split("name: Render the release body", 1)[1].split("- name:", 1)[0]
+        self.assertIn("if grep -qE '__IPK_SIZE__|__INSTALLED_SIZE__'", render)
+        verify = (WORKFLOWS.parent.parent / "ci/verify-published.sh").read_text()
+        self.assertIn('if [ -f "$MF" ]; then', verify)
 
     def test_only_debug_is_refused_a_manifest(self):
         build = code("build-package.yml")

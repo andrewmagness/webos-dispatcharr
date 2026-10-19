@@ -1,9 +1,15 @@
 name: Release
 
-# Publishes the .ipk and the webosbrew manifest.json to a GitHub Release, so that
-# `releases/latest/download/com.magness.dispatcharrtv.manifest.json` is a stable URL the Homebrew Channel
-# package YAML can point at forever. The package YAML is submitted ONCE; every later version flows
-# through this workflow with no further PR to webosbrew/apps-repo.
+# Publishes the .ipk, its checksum and the source assets to a GitHub Release.
+#
+# THE HOMEBREW CHANNEL LISTING IS DEFERRED (owner decision, 2026-10-19: not until a couple of
+# releases have shipped). Everything it needs is kept and switched off by ONE repository variable:
+# with `HOMEBREW_LISTING` unset (the default) a release generates no webosbrew manifest, publishes
+# none, and says nothing about the Channel. To list the app later: submit docs/webosbrew-package.yml
+# to webosbrew/apps-repo (its header says how) and set the repository variable
+# `HOMEBREW_LISTING=true`. From then on every release publishes
+# `releases/latest/download/com.magness.dispatcharrtv.manifest.json`, the stable URL that package
+# YAML points at, and later versions flow through this workflow with no further PR to apps-repo.
 #
 # TWO TRAPS THIS WORKFLOW GUARDS AGAINST, both of which fail silently rather than loudly:
 #  1. gen-manifest writes a BARE FILENAME into ipkUrl, resolved relative to the manifest URL. That
@@ -11,7 +17,7 @@ name: Release
 #     the `build` job below, which calls it) — but the constraint is still this workflow's to keep:
 #     the .ipk and the manifest must be assets of the SAME release, which is why `publish` uploads
 #     them together from one artifact.
-#  2. A draft or prerelease is excluded from `releases/latest`, so publishing one leaves users
+#  2. (listing on) A draft or prerelease is excluded from `releases/latest`, so publishing one leaves users
 #     resolving the PREVIOUS release's manifest — an update that silently never arrives.
 #     Hence: no draft, no prerelease (enforced below, in `publish`).
 #
@@ -364,7 +370,9 @@ jobs:
       # checksum rather than a flavour.
       flavor: stable
       artifact: release-assets
-      homebrew-manifest: true
+      # Off until the listing is (see the header): a repository variable, so turning it on later is
+      # one setting, not an edit of this workflow.
+      homebrew-manifest: ${{ vars.HOMEBREW_LISTING == 'true' }}
       source-asset: true
       # The per-binary firmware-database check nightly has carried since #137; a release ships
       # dispatcharrtv-storage too (its DT_NEEDED list is ci/expected-dt-needed-storage.txt), so it owes the same
@@ -430,8 +438,15 @@ jobs:
           # reader, they move with every build (the bundled FFmpeg's size depends on the build), and
           # the standard's §1.9 defect was exactly a size somebody typed. Read from the manifest,
           # which is the artifact the note tells the reader they came from.
-          size=$(python3 -c "import json;print(json.load(open('dist/com.magness.dispatcharrtv.manifest.json'))['ipkSize'])")
-          inst=$(python3 -c "import json;print(json.load(open('dist/com.magness.dispatcharrtv.manifest.json'))['installedSize'])")
+          # The manifest exists only while the Homebrew Channel listing is on; a note that uses a
+          # size sentinel without it is refused rather than published with the sentinel showing.
+          size=; inst=
+          if grep -qE '__IPK_SIZE__|__INSTALLED_SIZE__' "$note"; then
+            mf=dist/com.magness.dispatcharrtv.manifest.json
+            [ -f "$mf" ] || { echo "::error::$note uses a size sentinel, which needs the Homebrew manifest (HOMEBREW_LISTING)"; exit 1; }
+            size=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['ipkSize'])" "$mf")
+            inst=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['installedSize'])" "$mf")
+          fi
           # ONE sentinel is mandatory: the artifact's sha256, which is the only tamper check a
           # user of an unsigned binary has. A note that lost it would publish a body with no hash
           # at all, and `verify-published.sh` would only catch that once the release was public.
@@ -512,14 +527,15 @@ jobs:
           body_path: dist/body.md
           append_body: true
           # NEITHER of these may become true: both exclude the release from `releases/latest`,
-          # which is the URL the webosbrew package YAML resolves the manifest through.
+          # which is the URL the webosbrew package YAML resolves the manifest through (once the
+          # listing is on) and the "latest release" link a user follows today.
           draft: false
           prerelease: false
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
             dist/*.ipk
-            dist/*.manifest.json
+            ${{ vars.HOMEBREW_LISTING == 'true' && 'dist/*.manifest.json' || '' }}
             dist/ipk.sha256
             dist/ffmpeg-*.tar.xz
             dist/build-ffmpeg.sh
@@ -585,6 +601,7 @@ jobs:
           fi
 
       - name: Propagation note
+        if: vars.HOMEBREW_LISTING == 'true'
         run: |
           {
             echo "### Published"

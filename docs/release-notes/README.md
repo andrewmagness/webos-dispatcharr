@@ -112,7 +112,7 @@ Updating it:
 - **A third-party report is added with the reporter's name as a profile link, the date and the version they ran.** Never generalise a report from one release to its neighbours, and never restate someone's hedge as a verdict.
 - **When a release changes something on a path that is known broken, do not restate the old failure as present fact.** Say what changed and that nobody has run it there. That is what `Help test this release` is for, and it is the only way this project ever gets the report it needs.
 - **The static tier is regenerated from the release run's `webosbrew-ipk-verify` output, never retyped.** The full matrix lives in the audit; the note carries the one-line summary of it.
-- **A compatibility or scope change is a two-artifact change**: this note *and* a PR to `webosbrew/apps-repo` updating the package description, which is the only text an owner reads before installing. Sync `docs/webosbrew-package.yml` in the same commit.
+- **A compatibility or scope change also updates `docs/webosbrew-package.yml`** in the same commit. The Homebrew Channel listing is deferred (not submitted), so that file is not published yet; keeping it in step means the description is right on the day it is.
 
 ## Installing — fixed shape
 

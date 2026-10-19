@@ -27,7 +27,7 @@ note() { printf '  \033[33mnote\033[0m  %s\n' "$1"; NOTE=$((NOTE+1)); }
 head_() { printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
 
 # A build-machine path in a shipped file. Anchored on a non-path character so ordinary URLs do not
-# trip it — the app talks to plex.tv's /api/v2/home/users, which is not a build path.
+# trip it — a URL path such as `/api/v2/home/users` is not a build path.
 HOSTPATH='(^|[^A-Za-z0-9/_.-])/(Users|home)/[a-z]'
 # The NDK's own location is unavoidable: --cross-prefix must be absolute (the wrapper gcc dies when
 # invoked through PATH), so it rides in FFmpeg's recorded configure string. It is identical on every
@@ -41,8 +41,8 @@ ALLOWED='webos-ndk|/home/runner/'
 # check existed to prevent, caught only by testing it against a release known to be dirty.
 #
 # The match KEEPS its leading boundary character and strips it afterwards, because dropping the
-# anchor to tokenise reintroduces the opposite error: plex.tv's own `/api/v2/home/users` looks like
-# `/home/users` once you extract without context. Both failure modes were observed; this shape is
+# anchor to tokenise reintroduces the opposite error: a URL path such as `/api/v2/home/users` looks
+# like `/home/users` once you extract without context. Both failure modes were observed; this shape is
 # the one that gets both right.
 scan_paths() { # $1 = file
   local hits
@@ -74,13 +74,20 @@ if true; then
     && ok "shasum -c works where the two assets land side by side" \
     || bad "ipk.sha256 does not verify beside the .ipk (a pkg/ prefix in it breaks this for everyone)"
 
-  # Four copies of the hash must agree: the artifact, the checksum file, the manifest, the note.
+  # Every copy of the hash must agree: the artifact, the checksum file, the note, and the Homebrew
+  # Channel manifest when the release carries one (only while the listing is on — release.yml's
+  # HOMEBREW_LISTING; it is deferred, so a release without one is the expected shape).
   grep -q "$SHA" "$WORK/ipk.sha256" 2>/dev/null && ok "checksum file matches the artifact" || bad "checksum file disagrees with the artifact"
-  python3 - "$WORK/com.magness.dispatcharrtv.manifest.json" "$SHA" "$IPK" <<'PY' && ok "manifest hash and size match the artifact" || bad "manifest disagrees with the artifact"
+  MF="$WORK/com.magness.dispatcharrtv.manifest.json"
+  if [ -f "$MF" ]; then
+    python3 - "$MF" "$SHA" "$IPK" <<'PY' && ok "manifest hash and size match the artifact" || bad "manifest disagrees with the artifact"
 import json, sys, os
 m = json.load(open(sys.argv[1]))
 sys.exit(0 if m["ipkHash"]["sha256"] == sys.argv[2] and m["ipkSize"] == os.path.getsize(sys.argv[3]) else 1)
 PY
+  else
+    note "no Homebrew Channel manifest published (the listing is off)"
+  fi
   gh release view "$TAG" --json body --jq .body 2>/dev/null | grep -q "$SHA" \
     && ok "the release note quotes this hash" || bad "the note's hash is not the published artifact's"
 

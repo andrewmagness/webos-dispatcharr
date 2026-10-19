@@ -1,125 +1,82 @@
-# The webosbrew Homebrew Channel submission for this app.
+# The webosbrew Homebrew Channel listing for Dispatcharr TV — DEFERRED, NOT SUBMITTED.
 #
-# THIS FILE DOES NOT BELONG TO THIS REPOSITORY AT RUNTIME. It is kept here so the submission is
-# version-controlled and reviewable alongside the thing it describes. To submit, fork
-# https://github.com/webosbrew/apps-repo and copy this file to `packages/com.magness.dispatcharrtv.yml`.
+# Owner decision, 2026-10-19: the app is not listed on webosbrew/apps-repo until a couple of
+# releases have shipped. This file is kept, current, so the listing is a copy-and-submit when that
+# day comes; nothing in the release process reads it or submits it.
+#
+# WHEN IT IS TIME:
+#   1. Re-read every claim below against the release being listed (versions, televisions watched,
+#      known issues) — it describes v0.1.0.
+#   2. Set the repository variable HOMEBREW_LISTING=true, so the release workflow generates and
+#      publishes the manifest `manifestUrl` points at (.github/workflows/release.yml, its header),
+#      and cut a release so the URL resolves.
+#   3. Fork https://github.com/webosbrew/apps-repo and copy this file to
+#      `packages/com.magness.dispatcharrtv.yml`.
 #
 # Schema: content/schemas/packages/PackageInfo.json in that repo.
-# Required: title, iconUri, manifestUrl, category, pool, description. Verified 2026-08-04.
+# Required: title, iconUri, manifestUrl, category, pool, description.
 
 title: Dispatcharr TV
 
-# Both icon URLs are raw links to THIS repository's default branch, so they resolve only once the
-# repo is public — and `repogen.lintpkg` rejects a submission whose iconUri does not return 200.
-# 160 for the listing card, 320 for the detail page; tools/mkicons.py cuts both from the master.
+# Raw links to this repository's default branch; `repogen.lintpkg` rejects an iconUri that does not
+# return 200. 160 for the listing card, 320 for the detail page; tools/mkicons.py cuts both.
 iconUri: https://raw.githubusercontent.com/andrewmagness/webos-dispatcharr/main/pkg/icon160.png
 detailIconUri: https://raw.githubusercontent.com/andrewmagness/webos-dispatcharr/main/pkg/icon320.png
 
-# `releases/latest/download/...` always resolves to the newest release, which is how the channel
-# picks up an update without this file changing. The release workflow sets neither `draft` nor
-# `prerelease` precisely because either would exclude the release from `latest` and break this URL.
+# `releases/latest/download/...` always resolves to the newest release, which is how the Channel
+# picks up an update without this file changing. It resolves only once a release has been
+# published with HOMEBREW_LISTING on (step 2 above).
 manifestUrl: https://github.com/andrewmagness/webos-dispatcharr/releases/latest/download/com.magness.dispatcharrtv.manifest.json
 
 category: multimedia
+# `main` requires open source; the source and its licences are in the repository and attached to
+# every release (the bundled FFmpeg's corresponding source included).
 pool: main
 
 # Max 80 characters (schema-enforced).
-shortDescription: A native, Apple-TV-style Plex client for LG webOS TVs — no browser
+shortDescription: Live TV from your Dispatcharr server, on the TV's own video decoder
 
 requirements:
-  # Passed VERBATIM to `webosbrew-ipk-verify --fw-releases`, the same tool and flag the release CI
-  # runs against the built binary. This bound exists ONLY here — the manifest CI generates carries
-  # no version requirement.
-  #
-  # THE UPPER BOUND IS GONE, and the reasoning is worth keeping. It used to read '>=4.0, <5.0'
-  # because the binary genuinely could not START past webOS 4.x: it named libAcbAPI and four
-  # FFmpeg SONAMEs in DT_NEEDED, all of which vanish at 5.0, so the loader killed the process
-  # before main. That is no longer true — those libraries are resolved at runtime and FFmpeg is
-  # bundled, and `tools/fwcompat.py` grades the binary clean on every release from 4.4.2 to
-  # 11.2.0 against real firmware inventories.
-  #
-  # THE CEILING CAME BACK AND WENT AGAIN, 2026-08-09, and the round trip is worth recording.
-  # mariotaku's first report from real webOS 6 and 10 hardware read as "crashes or didn't start",
-  # which is known-broken and deserves a ceiling. His correction an hour later was the opposite:
-  # the app runs, signs in and browses the library there — only playback sticks in buffering. That
-  # is an unfinished feature on a working app, not a broken app, and the submission is a DRAFT that
-  # cannot land until playback works anyway. Ceiling off.
-  #
-  # THE FLOOR IS AN INFERENCE, not a measurement, and it should be read as one. webosbrew's
-  # firmware database carries exactly ONE image below 4.4.2, so releases 4.0 through 4.3 are graded
-  # by nothing. What makes '>=4.0' defensible is webosbrew's own bucketing: their data keys every 
-  # release by CODENAME, and 4.0~4.4 are all `goldilocks` with one library set between them
-  # (docs/develop/guides/library-version.md). So the claim is "the whole goldilocks bucket looks
-  # like the 4.4.2 we graded", which is their model, not ours.
-  #
-  # AND IT IS SETTLED, 2026-08-11, in the affirmative. The exported-window path that replaces ACB
-  # on 5+ has now run on real hardware: mariotaku played six of eight items on an LG 65UP7560AUD
-  # (6.5.2) — H.264 1080p and 4K, HEVC, AAC, AC3, an episode, an item watched to the end
-  # (github.com/andrewmagness/webos-dispatcharr/issues/22). His two failures were a server-side defect fixed
-  # in v0.3.0 and were firmware-independent. That is ONE firmware, so 5.x, 10 and 11 are still
-  # start-verified only and the description says so — but "playback does not start on 5+" is no
-  # longer a true sentence and must not be restated. A floor with no ceiling is also how every
-  # other package in this repository declares itself.
+  # Passed verbatim to `webosbrew-ipk-verify --fw-releases`. The binary STARTS on every firmware
+  # image webosbrew has from 3.4.0 up (tools/fwcompat.py, graded in every release audit) and not on
+  # webOS 2 and older; video has been WATCHED on 4.4.3 (an LG B8) and 6.5.3 (an LG C1). The floor
+  # below is the playback evidence, not the start evidence — revisit it at submission against the
+  # release audit of the version being listed.
   webosRelease: '>=4.0'
 
 description: |
-  An unofficial, native Plex client for LG webOS televisions.
+  A native live-TV app for LG webOS televisions that plays the channels of your own
+  [Dispatcharr](https://github.com/Dispatcharr/Dispatcharr) server.
 
-  The official Plex app on these sets runs in Chromium, and on older hardware it shows: shelves
-  stutter, posters open a beat late. Dispatcharr TV draws its interface directly on the GPU and hands
-  video to the TV's own hardware decoder — the same silicon the built-in apps use — so the picture
-  sits on the video plane with the interface composited over it.
+  It draws its interface directly on the GPU and hands video to the television's own hardware
+  decoder — the same one the built-in apps use — so live channels play without a browser and
+  without asking your server to transcode.
 
   **What it does**
 
-  * Sign in on the TV with an on-screen QR code, pick a Plex Home profile, browse and play
-  * Every server your account can reach, at once — your own and any a friend has shared with you,
-    merged on the home screen and side by side in the library list
-  * Search across all of them from one field, typed with the television's own keyboard
-  * Direct play wherever the TV can decode it, including HEVC, 4K and 10-bit; the server is asked
-    to transcode only when it genuinely cannot
-  * Resume, seek and scrub, chapters, audio and subtitle track switching (including image
-    subtitles), Skip Intro / Skip Credits, Up Next with auto-advance, and progress reported back
-    to your server
-  * Dolby Vision and Dolby Atmos are declared to the television rather than sent down unlabelled,
-    so a Dolby Vision file is no longer played as if it were ordinary HDR, and the panel is
-    confirmed to switch into its Dolby Vision mode on one television — see the scope note below
+  * Finds your Dispatcharr server on your home network during Setup (or type its address), and
+    signs in once with your Dispatcharr username and password; the television keeps an API key,
+    never the password
+  * A programme guide of every channel with logos and what is on now and next, your Dispatcharr
+    channel groups, and a favourites list of your own
+  * Changing channel the way a remote does it: CH▲/CH▼, number entry, a now/next banner, and
+    hold-OK back to the channel you watched before
+  * Starts on the last channel you watched, tunes it again when you come back from another app,
+    and reconnects on its own when a stream drops or freezes
+  * H.264 and HEVC video with AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio, on the hardware decoder
 
-  **Scope — please read before installing**
+  **Please read before installing**
 
-  * **Movies and TV shows only.** No music, photos, live TV or DVR.
-  * **Unencrypted connections to your server, including over the internet.** The app speaks plain
-    HTTP to a numeric address, with your access token in the URL — it has no TLS and no name
-    resolver. Your own server on your own LAN is reached there, as before; a library a friend has
-    shared is normally reached at a public address, and that traffic crosses the internet in clear
-    text. Servers behind Plex Relay, servers that require secure connections, and servers reachable
-    only by hostname or IPv6 cannot be dialled at all, and there is nowhere to enter an address.
-  * **Video plays on sets from 2018 through webOS 11.** The author verifies it on a 2019 LG
-    (platform release 4.10.2) before every release, and opt-in usage reports show playback, direct
-    and transcoded, on Developer Mode installs of every firmware line from 4.4.2 to 11.2.0. Known
-    exceptions: some 2019 sets on LG's k5lp or k3lp chip, whose Developer Mode sandbox withholds a
-    device the video path needs; 2018 sets on platform release 3.9.3, where video has never been
-    seen to start (issue #249); and a crash on k6hp sets (issue #174).
-  * **Dolby Vision is confirmed on ONE television.** On the 2019 set this is developed against, a
-    Profile 5 or Profile 8 film moves the panel into its Dolby Vision picture mode, and a Profile 7
-    film — the dual-layer kind this app cannot feed — is refused and lands on HDR10, which is what
-    refusing it should produce. That is one set. If yours is a different year or a different panel,
-    that is still the report worth sending.
-  * **Seeking on webOS 5 and newer takes a slower route.** It reloads the stream rather than
-    moving within it. It works; it has not been watched on hardware.
-  * **Bit depth is asserted, not probed.** The app reads the codec table your television publishes
-    and reports the codecs and resolutions it actually lists — but that table has no column for
-    bit depth, so 10-bit is still claimed without asking.
+  * **You need a Dispatcharr server.** This app has no channels of its own.
+  * **Watched on two televisions.** An LG OLED C1 on webOS 6.5.3 and an LG OLED B8 on webOS 4.4.3.
+    Other sets from webOS 4 up are expected to work but have not been watched; a report either
+    way is welcome.
+  * **MPEG-2 video channels do not play** — set an H.264 stream profile for them in Dispatcharr.
+    Some televisions cannot decode DTS audio; use an AC-3 or AAC profile for those channels.
 
-  The app talks to the Plex Media Servers your account can reach, to plex.tv to sign in, and to
-  discover.provider.plex.tv for cast biographies. Error reports and usage are two separate
-  switches. The first question presents both selected, but that is only an inert draft: nothing is
-  collected or sent until you explicitly save reporting settings, BACK cancels, and Continue
-  without reporting records both as off. The choices remain reversible under Account → Reporting
-  settings, the question shows the exact messages before anything can be enabled, and no title,
-  search term, server name or address can appear in one. Sign-in to your Plex account is
-  encrypted; traffic to a media server is not (above).
+  The app talks only to your Dispatcharr server and the logo images its channels name. It has no
+  crash reporting and no analytics.
 
-  Not affiliated with, endorsed by, or sponsored by Plex GmbH or LG Electronics.
+  Not affiliated with, endorsed by, or sponsored by the Dispatcharr project or LG Electronics.
 
-  Source, screenshots and issues: https://github.com/andrewmagness/webos-dispatcharr
+  Source, issues and the privacy policy: https://github.com/andrewmagness/webos-dispatcharr

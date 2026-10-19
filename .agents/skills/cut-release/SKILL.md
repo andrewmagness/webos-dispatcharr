@@ -354,20 +354,19 @@ directory beside those logs: that is the *other* install's runtime root, not a l
 It is named for the app id — the reason the separator is a dot and not a hyphen — so it matches no
 `dispatcharrtv-*` glob and cannot be mistaken for a trigger by the check or by the app.
 
-### 7. Tell the people who are waiting
+### 7. The Homebrew Channel listing — deferred, so nothing to do
 
-The listing and the submission are separate artifacts from the release and both go stale:
+**The app is not listed on `webosbrew/apps-repo`, and a release does not change that.** The owner
+decided on 2026-10-19 to list it only after a couple of releases have shipped. Until then:
 
-- **`webosbrew/apps-repo` PR** — the body argues for the requirements line. When compatibility
-  changes, that argument changes. It has previously sat for weeks defending a ceiling that had
-  already been removed.
-- **`packages/com.magness.dispatcharrtv.yml`** — the description thousands of channel users read before
-  installing. Its "please read before installing" section is where the honest limits live.
-- **A comment on the PR** if the reviewer is waiting on something this release affects.
-
-Comments and PR text go out **under the maintainer's name**. Write as them: state what changed, do
-not apologise on their behalf for something an agent did, and match the terse register of the
-thread rather than the house style of a commit message.
+- `docs/webosbrew-package.yml` is the ready-to-submit listing. Keep its description and
+  `requirements` in step with the release (the release-notes README asks for that), but do **not**
+  open an apps-repo PR and do **not** set the `HOMEBREW_LISTING` repository variable without the
+  owner saying so. That variable is what makes `release.yml` generate and publish the manifest the
+  listing points at; unset, a release publishes none.
+- When the owner does say so, the file's header is the procedure. From then on this step becomes:
+  update the apps-repo PR or package file when compatibility or scope changes, and write PR text
+  and comments as the maintainer — state what changed, in the thread's own terse register.
 
 ## After publishing
 

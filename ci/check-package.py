@@ -1356,7 +1356,7 @@ if binary.exists():
     # `RELEASE_LINE` marker at the repo root, see `expected_dev_version`'s doc and
     # `rust-modules/src/release_line.rs`), the next PATCH instead (`0.6.1` published, `0.6.2-dev`
     # in the tree). That exists so a developer build stops impersonating the last release in
-    # X-Plex-Version, in the Sentry release and on the diagnostics panel — and it means a version
+    # its User-Agent, its release log line and on the diagnostics panel — and it means a version
     # string now has a way to be wrong that no file comparison can see: a package for the stable id
     # whose binary reports a version no release will ever carry, or, once this rule exists, a
     # developer build that silently stopped saying so.
@@ -1372,10 +1372,8 @@ if binary.exists():
     # between grading `PLX_VERSION` and grading whatever digits happen to be in .rodata: the About
     # page and any release note text carry the version too, so a bare-number search was satisfiable
     # by a page the version mechanism never touched. `enter_application`
-    # composes `concat!("dispatcharrtv@", env!("PLX_VERSION"))` in the application crate and hands it to
-    # `plx_telemetry::telemetry::set_release`, which every report reads, in every configuration —
-    # telemetry is ungated on purpose — so this witnesses the emitted value itself. (The telemetry
-    # crate cannot compose it: a `cargo:rustc-env` reaches the application crate only.)
+    # logs `concat!("release: dispatcharrtv@", env!("PLX_VERSION"))` in every configuration, so this
+    # witnesses the emitted value itself (a `cargo:rustc-env` reaches the application crate only).
     #
     # NIGHTLY IS GRADED SEPARATELY. Its package version is `X.Y.<cut date>` (checked against
     # Cargo.toml and the stamp above), while its REPORTED version is `X.Y.Z-nightly-<date>` with
@@ -1701,7 +1699,7 @@ for loc in staged_locales:
 
 print("== ipk payload ==")
 expected = {
-    "dispatcharrtv", "sentry-crash", "libass-plx.so.0", "appinfo.json", "icon.png", "largeIcon.png", "splash.png",
+    "dispatcharrtv", "libass-plx.so.0", "appinfo.json", "icon.png", "largeIcon.png", "splash.png",
     # appfont-cjk.ttf is the fallback face. Its absence is not a cosmetic loss: every Korean,
     # Japanese and Chinese title in the library becomes tofu, which is LG checklist #6 and #48.
     "appfont.ttf", "appfont-bold.ttf", "appfont-cjk.ttf", "OFL.txt",
@@ -1747,8 +1745,9 @@ if data_blob is not None:
               "the ipk's le-roots.pem holds exactly ISRG Root X1, X2, YR and YE (by SHA-256 of each certificate)")
     check(modes.get("dispatcharrtv") == 0o755,
           "native app is executable by its jailed runtime uid")
-    check(modes.get("sentry-crash") == 0o755,
-          "native crash handler is executable in the archive")
+    # Crash reporting was removed (docs/telemetry-removed.md): the Sentry crash handler must not
+    # come back into the package by accident.
+    check("sentry-crash" not in names, "payload carries no crash-report handler")
     # **The simulator's Mach-O FFmpeg lives in pkg/ too, and must never be in the package.** It
     # cannot get there today — `APP_FILES` is an explicit list, not a glob — but "cannot" is a
     # property of one Makefile line, and what it guards against is 2 MB of unrunnable arm64 shipped

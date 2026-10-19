@@ -9,7 +9,6 @@
 #include <limits.h>
 
 int plx_run(void) { return 0; }
-int plx_sentry_spool_external(const char *path) { (void)path; return 0; }
 void plx_crash_write_image_marker(int fd) { (void)fd; }
 void plx_crash_install(int event_fd, int crash_fd) { (void)event_fd; (void)crash_fd; }
 
@@ -38,10 +37,8 @@ static const char *const sinks[] = {
  * `main()` dup2()s the stderr log over fd 2, which would otherwise swallow every later FAIL line. */
 static void boot_shim_once(void) {
     int saved = dup(STDERR_FILENO);
-    char arg0[] = "dispatcharrtv";
-    char *argv[] = { arg0, NULL };
     expect(saved >= 0, "stderr saved");
-    expect(plx_boot_main(1, argv) == 0, "boot shim returned");
+    expect(plx_boot_main() == 0, "boot shim returned");
     if (saved >= 0) {
         dup2(saved, STDERR_FILENO);
         close(saved);

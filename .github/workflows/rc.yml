@@ -1,7 +1,7 @@
 name: Release candidate
 
 # A release CANDIDATE: the stable package (`com.magness.dispatcharrtv`) of a version that has not shipped,
-# built by the same pipeline as a release (`build-package.yml`, production telemetry, every gate)
+# built by the same pipeline as a release (`build-package.yml`, every gate)
 # and published as a GitHub prerelease for people to install and try before the release is cut.
 # `ci/rc.py`'s module doc is the full account; the short one:
 #
@@ -23,7 +23,7 @@ name: Release candidate
 #
 # DRY RUNS — `dry_run: true`, and any same-repo pull request that touches this file or ci/rc.py —
 # build the line as it stands under the next candidate number, bump nothing, push nothing and
-# publish nothing. Fork pull requests are skipped: the build needs SENTRY_AUTH_TOKEN.
+# publish nothing. Fork pull requests are skipped.
 
 on:
   workflow_dispatch:
@@ -153,18 +153,11 @@ jobs:
       # The released id: a candidate is the release build of the app users install.
       flavor: stable
       rc: ${{ needs.prepare.outputs.rc }}
-      # PRODUCTION, like the release: a candidate is what will ship, and its reports are filed
-      # under their own Sentry release (`dispatcharrtv@X.Y.Z-rc.N`), apart from the final's.
-      telemetry: production
       artifact: rc-assets
       homebrew-manifest: false
       source-asset: true
       fwcompat: true
-      # A pull request's dry run publishes nothing (see nightly.yml for the same choice).
-      upload-debug-files: ${{ github.event_name != 'pull_request' }}
       caches: false
-    secrets:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   publish:
     name: publish the candidate prerelease

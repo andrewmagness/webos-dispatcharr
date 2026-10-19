@@ -1140,7 +1140,7 @@ taught is mostly about what would have gone quiet:
   because under `test-support` alone it is dead code (`persistence`'s helper-store arms and their
   `cfg(any(<ARM>, test))` gates, `spool::on_append_for_test`, `diag`'s `record_stamp_used`), and the
   `cfg_attr(test, allow(dead_code))` on `consent::state_override` is gone, since a `pub` function
-  is never dead. `cargo check -p plx_telemetry --features test-support` is clean with no new
+  is never dead. `cargo check --features test-support` is clean with no new
   `allow`.
 - **The shipping build was checked for the seams, in the artifact.** `cargo tree -e normal -f '{p}
   [{f}]'` for `dispatcharrtv` lists no `test-support` on any crate, with the default features
@@ -1191,7 +1191,7 @@ taught is mostly about what would have gone quiet:
   after the move, and the `test-support` build needed only the three reverts above. Nothing named
   `crate::telemetry` or `crate::diag` except the application's own references, which the script
   rewrote.
-- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_dispatcharr -p plx_telemetry`) in the
+- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_dispatcharr`) in the
   Makefile, the workflow, `tools/build-bench.py` and the tests that pin them, and in the docs that
   quote them; `--src rust-modules/telemetry/src` for the line budget (450,644 lines counted, limit
   485,000); `RUST_INPUTS`; `ci/test_no_host_staticlib.py` holds the crate to `rlib`; and `make
@@ -1420,7 +1420,7 @@ not ship:
   `SessionHost` are implemented in the application's tests for the application's own types, which
   is legal; the compiler was the checker (`cargo check --lib --tests` of all ten crates, the
   hostsim set and the lab set passed after the move).
-- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_telemetry -p plx_data`)
+- **Tooling that knows the tree's shape**: the `-p` lists (`... -p plx_data`)
   in the Makefile, the workflow, `tools/build-bench.py` and the tests that pin them, and in the
   docs that quote them; `--src rust-modules/session/src` for the line budget; `RUST_INPUTS`;
   `ci/test_no_host_staticlib.py` holds the crate to `rlib`; and `make build-bench` has a `session`

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Separate the symbols of one BUNDLED shared object into a `.debug` file Sentry can match.
+# Separate the symbols of one BUNDLED shared object into a `.debug` file a crash can be symbolicated against.
 #
 #   TOOLPREFIX=<cross prefix> ci/extract-so-symbols.sh SHIPPED UNSTRIPPED OUT.debug
 #
@@ -9,8 +9,8 @@
 # and whatever DWARF the build left, and `.text` becomes NOBITS, exactly as `make symbols` treats
 # pkg/dispatcharrtv.
 #
-# FAILS CLOSED, because `sentry-cli debug-files check` passes a stripped object with no symbols and
-# an upload of a file that matches nothing is silent until a real crash fails to symbolicate:
+# FAILS CLOSED, because a `.debug` that matches nothing is silent until a real crash fails to
+# symbolicate:
 #   * the shipped library must carry a GNU build id (`-Wl,--build-id=sha1` on its link), and the
 #     `.debug` must carry the SAME one. Without it the id is a hash of `.text`, which a `.text`-less
 #     `.debug` cannot reproduce;

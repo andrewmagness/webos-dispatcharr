@@ -2233,80 +2233,6 @@ pub fn post_pinned(
     )
 }
 
-/// Blocking **CA-verified, unpinned** HTTPS POST to a third-party endpoint — the telemetry sinks.
-///
-/// # Why this exists, given that [`https_post`] is already CA-verified and unpinned
-///
-/// The plan this was built to called for a new request mode on the grounds that [`post_pinned`]
-/// sets `SSL_VERIFYPEER=0`, so "Sentry and PostHog need the opposite". They do — and `request` has
-/// been that opposite since it was written: `VERIFYPEER=1`/`VERIFYHOST=2` by default, lowered in
-/// exactly two places: the lab's pinning branch and [`keypin`]'s date-only retry, which needs a
-/// remembered key for the host and so never applies to a telemetry sink. The premise was wrong,
-/// and the mode it asked for already existed. Recording that rather than quietly building it,
-/// because "add a mode that is already the default" is the kind of finding that otherwise gets
-/// rediscovered.
-///
-/// What a telemetry sender genuinely needs beyond [`https_post`] is three other things:
-///
-/// * **a bounded response sink.** `https_post` passes `max_body: None`. plex.tv is a service this
-///   app is built around; a telemetry endpoint is not, and an unbounded sink on a 1.68 GB
-///   television is a memory risk for a reply we only read a status code from;
-/// * **its own deadlines.** [`API`] is tuned for a call a person is waiting on. A background flush
-///   holding a worker for 25 s to report a crash that already happened has the priority backwards;
-/// * **our own roots, when we ship them.** The device's trust store was frozen in 2019 and cannot
-///   be updated; a third party's CA rotation should not be able to end reporting on every
-///   television at once. When `roots.pem` sits beside the binary this uses it, and says which it
-///   used — otherwise "which trust store verified that" is unanswerable after the fact.
-///
-/// **Never pinned, deliberately.** Pinning a third party's SPKI means going dark at their next key
-/// rotation, on televisions nobody can update. That is the opposite trade from the lab receiver's.
-#[allow(dead_code)] // no sender yet — see `telemetry::sentry`
-pub fn post_ca(url: &str, headers: &[String], body: &[u8], t: Timeouts) -> Option<Resp> {
-    let bundle = shipped_ca_bundle(plx_base::paths::app_dir());
-    // Once per process, not per send. Which trust store verified a telemetry endpoint is a fact
-    // that is unanswerable after the event and free to state before it — but it does not change
-    // between sends, and a line per upload would drown the log it is written into.
-    static SAID: std::sync::Once = std::sync::Once::new();
-    SAID.call_once(|| match &bundle {
-        Some(p) => plx_base::eventlog::log(&format!("net: telemetry TLS verifies against the shipped bundle ({p})")),
-        None => plx_base::eventlog::log("net: telemetry TLS verifies against the DEVICE trust store (no roots.pem beside the binary)"),
-    });
-    let tls = match bundle.as_deref() {
-        Some(p) => Tls::CaBundle(p),
-        None => Tls::Ca,
-    };
-    request_tls(
-        url,
-        headers,
-        "POST",
-        Some(body),
-        t,
-        false,
-        Some(TELEMETRY_MAX_REPLY),
-        tls,
-    )
-}
-
-/// The shipped PEM bundle beside the binary, if there is one.
-///
-/// Split out from [`post_ca`] because the interesting behaviour is the FALLBACK, and the fallback
-/// is silent by nature: no bundle means the device's own 2019 trust store verifies instead, which
-/// works right up until it does not. A host test can watch this choose, and cannot watch a socket.
-///
-/// `to_str` rather than a lossy conversion — a path that is not UTF-8 cannot become a `CString`
-/// curl would open, and answering `None` sends us down the working path rather than into a
-/// guaranteed error 77.
-fn shipped_ca_bundle(dir: &std::path::Path) -> Option<String> {
-    let p = dir.join("roots.pem");
-    p.is_file().then(|| p.to_str().map(str::to_owned)).flatten()
-}
-
-/// How much of a telemetry endpoint's reply is worth keeping. Both vendors answer a small JSON
-/// object and the only field either sender acts on is the status code; the body is kept at all so a
-/// rejection can be logged with the server's own explanation, which is the difference between
-/// debugging a 400 and guessing at one.
-const TELEMETRY_MAX_REPLY: usize = 4096;
-
 /// The `nowan` gate shared by the three resolver doors ([`request_tls_result`],
 /// [`crate::curlio`] and [`crate::stream`]): `true` when `/tmp/dispatcharrtv-nowan` is armed and
 /// `host` is a NAME rather than a literal, i.e. when a dead resolver would have refused it. The
@@ -2536,9 +2462,7 @@ pub mod keypin {
     const X509_NO_ISSUER: c_long = 2;
     const X509_NO_LOCAL_ISSUER: c_long = 20;
     const X509_NO_LEAF_SIGNATURE_KEY: c_long = 21;
-    /// The shipped bundle's file name, beside the binary (`pkg/le-roots.pem`). NOT `roots.pem`:
-    /// that name belongs to [`super::post_ca`]'s telemetry bundle, which is a different trust
-    /// decision for a different set of hosts.
+    /// The shipped bundle's file name, beside the binary (`pkg/le-roots.pem`).
     pub const ROOTS_FILE: &str = "le-roots.pem";
     /// The only host names the bundled roots are ever offered for.
     const PLEX_DIRECT_SUFFIX: &str = ".plex.direct";
@@ -4337,55 +4261,6 @@ mod legacy_tests {
             libc::pthread_mutex_unlock(&mut lock);
             libc::pthread_mutex_destroy(&mut lock);
         }
-    }
-}
-
-#[cfg(test)]
-mod tls_mode_tests {
-    use super::*;
-
-    /// **The fallback is the interesting half, and it is silent.** With no `roots.pem` beside the
-    /// binary a telemetry POST verifies against the television's own 2019 trust store — which works
-    /// until a third party rotates to a root that firmware never shipped, and then stops working on
-    /// every set at once with nothing to read. Pinned here so the day the bundle starts shipping,
-    /// the change in behaviour is a test diff rather than a discovery.
-    #[test]
-    fn a_missing_bundle_falls_back_to_the_device_trust_store() {
-        let dir = std::env::temp_dir().join(format!("plx-net-ca-absent-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        assert_eq!(shipped_ca_bundle(&dir), None);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// …and a bundle that IS there is selected, by absolute path. FFmpeg's `$ORIGIN` lesson applies
-    /// to curl too: nothing beside this binary is on any search path, so the only workable form is
-    /// the one `app_dir()` resolves at runtime.
-    #[test]
-    fn a_shipped_bundle_is_selected_by_absolute_path() {
-        let dir = std::env::temp_dir().join(format!("plx-net-ca-present-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("temp dir");
-        std::fs::write(dir.join("roots.pem"), b"-----BEGIN CERTIFICATE-----\n").expect("write");
-        let got = shipped_ca_bundle(&dir).expect("the bundle beside the binary is found");
-        assert!(got.ends_with("roots.pem"));
-        assert!(
-            std::path::Path::new(&got).is_absolute(),
-            "curl is given an absolute path"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// A DIRECTORY named `roots.pem` is not a bundle. `exists()` would accept it and hand curl a
-    /// path it fails to read as error 77 — a send that dies at perform rather than falling back to
-    /// the store that would have worked.
-    #[test]
-    fn a_directory_named_like_the_bundle_is_not_one() {
-        let dir = std::env::temp_dir().join(format!("plx-net-ca-dir-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("roots.pem")).expect("temp dirs");
-        assert_eq!(shipped_ca_bundle(&dir), None);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 

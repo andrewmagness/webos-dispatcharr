@@ -152,7 +152,7 @@ class TestFastRuns(unittest.TestCase):
             self.assertEqual(call["target_dir"], TDIR)
             self.assertTrue(call["cwd"].endswith("rust-modules"), call["cwd"])
             self.assertEqual(call["runtime_dir_set"], "yes")
-            self.assertRegex(call["args"], r"^\+\S+ test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --message-format=json-render-diagnostics$")
+            self.assertRegex(call["args"], r"^\+\S+ test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --message-format=json-render-diagnostics$")
             # The filter goes to each test binary (the runner builds first, then runs), not to cargo.
             self.assertEqual(len(fake.bin_calls()), 13)
             self.assertTrue(all(line.endswith("args=route::") for line in fake.bin_calls()), fake.bin_calls())
@@ -161,7 +161,7 @@ class TestFastRuns(unittest.TestCase):
         with FakeCargoHome() as fake:
             self.assertEqual(fake.run("test-fast").returncode, 0)
             (call,) = fake.calls()
-            self.assertRegex(call["args"], r"^\+\S+ test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --message-format=json-render-diagnostics$")
+            self.assertRegex(call["args"], r"^\+\S+ test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run --message-format=json-render-diagnostics$")
             self.assertNotIn("--features", call["args"])
             self.assertEqual(len(fake.bin_calls()), 13)
             self.assertTrue(all(line.endswith("args=") for line in fake.bin_calls()), fake.bin_calls())

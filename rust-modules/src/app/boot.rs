@@ -225,6 +225,15 @@ mod seam_order_tests {
             .find(|line| !line.is_empty() && !line.starts_with("//"))
             .expect("a first statement");
         assert_eq!(first, hand_in, "set_version must be enter_application's first statement");
+        // The release name `ci/check-package.py` grades the binary for, as one literal.
+        let release = concat!("log(concat!(\"release: dispatcharrtv@\", env!(\"PLX_VERSION\")));");
+        let second = body
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with("//"))
+            .nth(1)
+            .expect("a second statement");
+        assert_eq!(second, release, "the release line must be enter_application's second statement");
         assert_eq!(
             source.matches(concat!("identity::", "set_version(")).count(),
             1,

@@ -207,5 +207,3 @@ python3 ci/check-placeholders.py
 python3 ci/test_check_list_caps.py
 python3 ci/check-list-caps.py
 
-# ci/check-debug-files.py (the Sentry upload step's "debug-files check must show symbols" gate), exercised against a stub CLI.
-python3 ci/test_check_debug_files.py

@@ -257,9 +257,8 @@ def telemetry_endpoints(binary: bytes) -> str:
     dsn = SENTRY_DSN_RE.findall(binary)
     key = POSTHOG_KEY_RE.findall(binary)
     if not dsn and not key:
-        return ("none — this build carries no endpoint at all and **cannot report anything**. "
-                "`option_env!` resolved to `None` at compile time, so there is no URL in these "
-                "bytes to reach")
+        return ("none — this app has no reporting at all (telemetry was removed; "
+                "`docs/telemetry-removed.md`), and no endpoint is in these bytes")
     parts = []
     for d in sorted({x.decode() for x in dsn}):
         region = "EU" if (urlparse(d).hostname or "").endswith(".de.sentry.io") else "**NOT the EU region**"

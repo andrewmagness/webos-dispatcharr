@@ -431,6 +431,9 @@ fn enter_application() -> Result<App,c_int> {
     // What the app reports as its version is this build's `PLX_VERSION`, which a
     // `cargo:rustc-env` makes visible to this crate only; before anything can build a header.
     plx_base::identity::set_version(env!("PLX_VERSION"));
+    // The build's release name, composed as one contiguous literal because `ci/check-package.py`
+    // grades the packaged binary for exactly this string; the event log's first lines carry it.
+    log(concat!("release: dispatcharrtv@", env!("PLX_VERSION")));
     pre_boot_diagnostics();
     // Resolve the diagnostic latches' filesystem state outside `FrameScope`, so their first `stat`
     // cannot happen from a render frame.

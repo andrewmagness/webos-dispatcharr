@@ -4,9 +4,9 @@
 //! Not affiliated with, endorsed by, or sponsored by Dispatcharr or LG Electronics.
 //!
 //! dispatcharrtv — the Rust app core, built as a staticlib and linked into the C
-//! boot shim. The crate's C surface is tiny: C calls `plx_run` (port.rs), writes the fallback
-//! image marker through `plx_crash_write_image_marker`, re-enters the native-crash spool through
-//! `plx_sentry_spool_external`, and forwards the two Starfish callbacks (`sf_on_event`/
+//! boot shim. The crate's C surface is tiny: C calls `plx_run` (port.rs), writes the crash log's
+//! image marker through `plx_crash_write_image_marker` (crash_image.rs), and forwards the two
+//! Starfish callbacks (`sf_on_event`/
 //! `acb_on_event`, `plx_media`'s player/mod.rs). Everything else is Rust-internal (the per-module `repr(C)`
 //! shapes are migration legacy, not ABI).
 mod app; // run_application — the Rust app core / event loop (the entry inverted from main.c; port.rs's `plx_run` hands over to it)

@@ -37,13 +37,8 @@ name: Nightly
 # the steps that would actually mutate the repo's releases (the immutable-tag guard, tagging and
 # `gh release create`, and the post-publish download/verify) are individually gated on `dry`.
 #
-# FORK PULL REQUESTS ARE SKIPPED ENTIRELY (see `plan`'s own `if:`). `build`, even in dry mode,
-# runs the whole of build-package.yml, and `secrets.SENTRY_AUTH_TOKEN` is passed to it — GitHub
-# does not expose repository secrets to a workflow run triggered by a fork's pull request.
-# Running anyway would not "run drier", it would hit a missing secret and read as this pipeline
-# being broken rather than as the sandboxing that it is. (A same-repo pull request's dry run no
-# longer uploads debug files to Sentry — `upload-debug-files` below — but the fork skip is
-# unchanged: it is the owner's call, not part of that change.)
+# FORK PULL REQUESTS ARE SKIPPED ENTIRELY (see `plan`'s own `if:`). It is the owner's call; the
+# build itself no longer needs a repository secret since telemetry was removed.
 
 on:
   schedule:
@@ -189,11 +184,6 @@ jobs:
       ref: ${{ needs.plan.outputs.sha }}
       flavor: nightly
       nightly-date: ${{ needs.plan.outputs.date }}
-      # The DEVELOPMENT telemetry pair — a nightly is unreleased and untested on a television, so
-      # its crash reports and usage events belong in the project's development project
-      # (`dispatcharr-tv-dev`), not mixed into what a real release reports. build-package.yml's own
-      # build step asserts this pair specifically for `telemetry: development`.
-      telemetry: development
       artifact: nightly-assets
       # The package REDISTRIBUTES FFmpeg, so the LGPL corresponding-source obligation applies here
       # exactly as it does to a stable release — this is the fail-closed default anyway, but named
@@ -201,12 +191,6 @@ jobs:
       # obligation as a stable release.
       source-asset: true
       fwcompat: true
-      # A PULL REQUEST's dry run publishes nothing, so uploading its debug files to Sentry only
-      # costs 12-66 s and files symbols for a package nobody can install. Every other run keeps
-      # the upload: the schedule, and a `workflow_dispatch` even with `dry_run: true` (which
-      # exists to prove the whole pipeline, upload included). The event name, not `plan`'s `dry`
-      # output, is the discriminator: `dry` is also true for that dispatch.
-      upload-debug-files: ${{ github.event_name != 'pull_request' }}
       # Release deliberately builds uncached for reproducibility; nightly runs once a day rather
       # than on every push, so the cache's turnaround benefit is smaller and not worth the same
       # trade here either.
@@ -216,8 +200,6 @@ jobs:
       # NOT the webosbrew catalogue's stable listing — that one is keyed to the stable app id
       # and release.yml alone feeds it.
       homebrew-manifest: true
-    secrets:
-      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   publish:
     name: publish nightly prerelease

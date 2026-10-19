@@ -3,8 +3,6 @@
 
 * `cache-cleanup.yml` runs on `pull_request_target`, which is safe only while it never checks out
   or runs pull request code and holds nothing but `actions: write`;
-* the nightly's and the release candidate's Sentry debug-file upload is skipped on a pull
-  request's dry run and nowhere else (a release, the schedule and a dispatched dry run keep it);
 * the tests against the bundled FFmpeg and libass run in a job of their own, and still run;
 * the host FFmpeg and libass builds in the simulator jobs are CACHED where the build scripts really
   write, under a key that names every input the scripts key on (a cache that "hits" and still
@@ -73,47 +71,9 @@ class CacheCleanup(unittest.TestCase):
         self.assertIn("--delete", body)
 
 
-class SentryUpload(unittest.TestCase):
-    def test_only_a_pull_requests_nightly_run_skips_the_upload(self):
-        nightly = code("nightly.yml")
-        self.assertEqual(re.findall(r"upload-debug-files: (.*)", nightly),
-                         ["${{ github.event_name != 'pull_request' }}"])
-        self.assertNotIn("upload-debug-files", code("release.yml"))
-
-    def test_only_a_pull_requests_candidate_run_skips_the_upload(self):
-        self.assertEqual(re.findall(r"upload-debug-files: (.*)", code("rc.yml")),
-                         ["${{ github.event_name != 'pull_request' }}"])
-
-    def test_the_input_defaults_to_uploading_and_the_step_honours_it(self):
-        build = code("build-package.yml")
-        self.assertRegex(build, r"upload-debug-files:\n(?:        .*\n)*?        type: boolean\n        default: true\n")
-        step = build[build.index("Upload debug files to Sentry"):build.index("ELF + packaging assertions")]
-        self.assertIn("UPLOAD: ${{ inputs.upload-debug-files }}", step)
-        self.assertIn("ci/check-debug-files.py", step)
-        self.assertLess(step.index("ci/check-debug-files.py"), step.index('"$UPLOAD" != true'))
-        self.assertLess(step.index('"$UPLOAD" != true'), step.index("debug-files upload"))
-
-
 class BundledLibrarySymbols(unittest.TestCase):
-    """A frame inside a bundled `.so` symbolicates only if its unstripped symbols were kept, carry the
-    shipped copy's build id, were checked to show symbols, and were uploaded. Every link in that chain
-    fails silently (the upload still succeeds), so each is pinned here."""
-
-    def step(self):
-        build = code("build-package.yml")
-        return build[build.index("Upload debug files to Sentry"):build.index("ELF + packaging assertions")]
-
-    def test_every_symbol_file_is_checked_for_features_before_the_token_guarded_upload(self):
-        step = self.step()
-        self.assertIn("python3 ci/check-debug-files.py pkg/dispatcharrtv.debug pkg/symbols/*.debug", step)
-        self.assertLess(step.index("ci/check-debug-files.py"), step.index('"$UPLOAD" != true'))
-        self.assertLess(step.index('"$UPLOAD" != true'), step.index("debug-files upload pkg/symbols"))
-
-    def test_libraries_upload_without_sources_and_sentry_crash_is_not_uploaded(self):
-        step = self.step()
-        self.assertNotIn("sentry-crash", step)
-        self.assertNotRegex(step, r"--include-sources[^\n]*pkg/symbols")
-        self.assertEqual(len(re.findall(r"debug-files upload", step)), 2)
+    """A frame inside a bundled `.so` symbolicates offline only if its unstripped symbols were kept
+    and carry the shipped copy's build id, so the build makes them and asserts one per library."""
 
     def test_the_build_makes_them_and_the_build_asserts_one_per_shipped_library(self):
         build = code("build-package.yml")
@@ -145,7 +105,6 @@ class BundledLibrarySymbols(unittest.TestCase):
         self.assertIn("FFMPEG_UNSTRIPPED_DIR = $(FFMPEG_PREFIX)/lib/unstripped", make)
         self.assertIn("LIBASS_UNSTRIPPED     = vendor/libass-prefix/lib/libass-plx.so.0", make)
         self.assertIn("symbols-libs: $(SO_SYMBOLS)", make)
-        self.assertIn("sentry-symbols: symbols symbols-libs", make)
         self.assertRegex(make, r"\.PHONY:[^\n]* symbols-libs ")
         self.assertIn("pkg/symbols/", (ROOT / ".gitignore").read_text())
 

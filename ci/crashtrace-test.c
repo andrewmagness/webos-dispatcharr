@@ -157,8 +157,7 @@ static void one_case(const char *name, int sig, const char *signame, enum how ho
     expect(name, count(log, " lr=0x") == 2, "no lr= field");
 
     /* The crash's own wall-clock second, on the line under the signal line, once per descriptor.
-     * It is what the importer sends as the event's `timestamp`; without it Sentry shows the time
-     * of the NEXT LAUNCH. The value is checked against the clock this test runs on (the child
+     * It is what tells a reader when the crash happened rather than when the log was read. The value is checked against the clock this test runs on (the child
      * wrote it a moment ago), not against a constant. */
     expect(name, count(log, "\ntime: ") == 2, "no time: line under the signal line");
     {

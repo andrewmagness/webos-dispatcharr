@@ -318,7 +318,7 @@ the pinned Sentry Native cross-build), and `sshpass` (Homebrew; deploy/run use y
   a **no-op** host test build (`cargo test --lib -p dispatcharrtv -p plx_base -p plx_machine -p plx_platform -p plx_gfx -p plx_net -p plx_ui -p plx_dispatcharr -p plx_telemetry -p plx_data -p plx_media -p plx_appkit -p plx_screens --no-run`; it reports from cargo's JSON `fresh`
   flag whether the app crate was rebuilt and flags a recompile as UNEXPECTED, the
   `ci/test_build_not_always_dirty.py` hazard); an **edit-rebuild** after appending a comment to a
-  leaf file of each crate (`plx_base`'s `cbuf.rs`, `plx_machine`'s `motion.rs`, `plx_platform`'s `devcaps.rs`, `plx_gfx`'s `overdraw.rs`, `plx_net`'s `stream_redirect.rs`, `plx_ui`'s `dwell.rs`, `plx_dispatcharr`'s `time.rs`, `plx_telemetry`'s `window.rs`, `plx_data`'s `metadata/track_names.rs`, `plx_media`'s `units.rs`, `plx_appkit`'s `live_banner.rs`, `plx_screens`'s `player/ass_subtitles.rs`, the application's `coldstart.rs`) and to a hub (`plx_ui`'s `lib.rs`), non-incremental (`CARGO_INCREMENTAL=0`, the
+  leaf file of each crate (`plx_base`'s `cbuf.rs`, `plx_machine`'s `motion.rs`, `plx_platform`'s `devcaps.rs`, `plx_gfx`'s `overdraw.rs`, `plx_net`'s `stream_redirect.rs`, `plx_ui`'s `dwell.rs`, `plx_dispatcharr`'s `time.rs`, `plx_telemetry`'s `window.rs`, `plx_data`'s `metadata/track_names.rs`, `plx_media`'s `player/vp9_hdr.rs`, `plx_appkit`'s `live_banner.rs`, `plx_screens`'s `player/ass_subtitles.rs`, the application's `coldstart.rs`) and to a hub (`plx_ui`'s `lib.rs`), non-incremental (`CARGO_INCREMENTAL=0`, the
   default `target`) and incremental (`CARGO_INCREMENTAL=1`, `target-fast`; skipped with a note when
   that tree is absent unless `--cold`); the **unit suite** run on a warm tree, through the same
   `tools/cargo-test-parallel.py` wrapper the Makefile's recipes use (`UNIT_RUN` in `print-bench-config`), with its `test
@@ -820,7 +820,7 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   playback deep-dive; read it before touching playback**), `ff.rs` (THE demuxer — the **bundled,
   pinned** libavformat shipped beside the binary, *not* the TV's), `aq.rs` (the AU pipeline behind
   `plx_net`'s HTTP socket, `rust-modules/net/src/stream.rs`; libcurl/TLS is `rust-modules/net/src/net.rs`),
-  `curlio.rs`, `abr/` and `route/`; and the Dispatcharr client (`rust-modules/dispatcharr/`, crate
+  `curlio.rs` and `route/`; and the Dispatcharr client (`rust-modules/dispatcharr/`, crate
   `plx_dispatcharr`: sign-in, the per-user API key, channels, groups and the guide).
 - `rust-modules/ui/src/` (workspace crate `plx_ui`) — **the UI, as a shared design system**: `theme.rs` tokens, the retui core
   (`lib.rs` `Painter`/`View`), reusable components (`widgets.rs`/`table.rs`/`label.rs`/`icons.rs`),

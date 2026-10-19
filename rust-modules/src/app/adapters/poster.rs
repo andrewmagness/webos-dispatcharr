@@ -557,22 +557,18 @@ fn load_direct(key_s: &str, cache_gen: u64) -> Loaded<(u32, u32, Vec<u8>)> {
     let mut out = Loaded { art: None, from_disk: false, transient: false };
     let Some((url, bw, bh)) = parse_direct_key(key_s) else { return out };
     let decode = |b: &[u8]| img::img_decode_fit(b, bw, bh);
-    let namespace = format!("direct:{}", plx_net::net::origin::split(url).0.base());
-    let disk = if crate::dev::scenarios::imagecache_bypass_armed() {
-        None
-    } else {
-        plx_platform::imgcache::classify(&namespace, key_s)
-    };
+    let disk = if crate::dev::scenarios::imagecache_bypass_armed() { None } else { direct_disk_key(url, key_s) };
+    let mut stale = None;
     if let Some(k) = &disk {
         if let Some(cached) = plx_platform::imgcache::read_at(cache_gen, k) {
             match decode(&cached.bytes) {
-                // A stale hit is still drawn; a direct image has no grant to refresh it under, and
-                // the next miss after its eviction fetches it afresh.
-                Some(art) => {
+                Some(art) if !cached.stale => {
                     out.art = Some(art);
                     out.from_disk = true;
                     return out;
                 }
+                // Past the tier's refresh age: fetched afresh, and drawn only if that fails.
+                Some(art) => stale = Some(art),
                 None => plx_platform::imgcache::remove_at(cache_gen, k),
             }
         }
@@ -584,9 +580,26 @@ fn load_direct(key_s: &str, cache_gen: u64) -> Loaded<(u32, u32, Vec<u8>)> {
     if let (Some(_), Some(k), Some(body)) = (&fetched.art, &disk, &fetched.body) {
         plx_platform::imgcache::write_at(cache_gen, k, body);
     }
-    out.art = fetched.art;
-    out.transient = fetched.transient;
-    out
+    settle_direct(fetched, stale)
+}
+
+/// What a [`tex::DIRECT`] load hands back once the network has answered: the fetched art when
+/// there is some, else the stale disk copy (so a logo the server changed replaces the cached one
+/// within a refresh period, and a server that is down still shows the last one), else nothing —
+/// with `transient` only then, since a drawn stale copy is not a failure to retry.
+fn settle_direct(fetched: DirectFetch, stale: Option<(u32, u32, Vec<u8>)>) -> Loaded<(u32, u32, Vec<u8>)> {
+    match (fetched.art, stale) {
+        (Some(art), _) => Loaded { art: Some(art), from_disk: false, transient: false },
+        (None, Some(art)) => Loaded { art: Some(art), from_disk: true, transient: false },
+        (None, None) => Loaded { art: None, from_disk: false, transient: fetched.transient },
+    }
+}
+
+/// The disk tier's key for a [`tex::DIRECT`] image: namespaced by the URL's origin, keyed by the
+/// whole key (the URL and its box). `None` means the image is never kept on disk.
+fn direct_disk_key(url: &str, key_s: &str) -> Option<plx_platform::imgcache::DiskKey> {
+    let namespace = format!("direct:{}", plx_net::net::origin::split(url).0.base());
+    plx_platform::imgcache::classify_direct(&namespace, key_s)
 }
 
 /// One [`tex::DIRECT`] fetch, decoded and fitted: the art, the body it came from (what the disk
@@ -1871,6 +1884,38 @@ mod tests {
         // A body that is not an image is not art, and is not kept.
         let junk = fetch_direct(&serve_once(200, "text/html", b"<html></html>".to_vec()), 96, 56);
         assert!(junk.art.is_none() && junk.body.is_none());
+    }
+
+    /// A channel logo is kept on the disk tier, so the Guide's logos survive a restart without being
+    /// fetched again: every [`tex::DIRECT`] key the adapter builds has a disk key, one per box, and
+    /// two URLs never share one. (The tier used to accept only a Plex `/photo/:/transcode` request,
+    /// so no logo was ever written.)
+    #[test]
+    fn a_direct_image_has_a_disk_key_per_url_and_box() {
+        let url = "http://192.0.2.10:9191/api/channels/logos/12/cache/";
+        let other = "http://192.0.2.10:9191/api/channels/logos/13/cache/";
+        let key = |u: &str, w: u32, h: u32| format!("{u}{DIRECT_FIT}{w}x{h}");
+        let small = direct_disk_key(url, &key(url, 240, 120)).expect("a logo is kept on disk");
+        let large = direct_disk_key(url, &key(url, 480, 240)).expect("at every box");
+        let next = direct_disk_key(other, &key(other, 240, 120)).expect("for every channel");
+        assert_ne!(small, large, "each box is its own entry");
+        assert_ne!(small, next, "two logos never share an entry");
+        assert_eq!(Some(small), direct_disk_key(url, &key(url, 240, 120)), "and the key is stable");
+        let query = "https://cdn.example/logo.png?v=3";
+        assert!(direct_disk_key(query, &key(query, 240, 120)).is_some(), "a URL with a query too");
+    }
+
+    #[test]
+    fn a_stale_logo_is_replaced_by_a_fresh_fetch_and_kept_when_the_fetch_fails() {
+        let art = |v: u8| (1u32, 1u32, vec![v; 4]);
+        let fetched = |a: Option<(u32, u32, Vec<u8>)>, transient: bool| DirectFetch { art: a, body: None, transient };
+        let fresh = settle_direct(fetched(Some(art(2)), false), Some(art(1)));
+        assert_eq!((fresh.art, fresh.from_disk), (Some(art(2)), false), "the server's current logo wins");
+        let kept = settle_direct(fetched(None, true), Some(art(1)));
+        assert_eq!((kept.art, kept.from_disk, kept.transient), (Some(art(1)), true, false),
+                   "a server that is down still shows the last logo, and that is not a failure to retry");
+        let none = settle_direct(fetched(None, true), None);
+        assert!(none.art.is_none() && none.transient, "with nothing cached a busy server is retried");
     }
 
     /// A failing server owns its own latch whatever its slot number: servers past the first sixteen

@@ -181,34 +181,24 @@ def rc_stamp_number(stamp: str) -> "str | None":
     return m.group(1) if m else None
 
 
-# ---- the dev-trigger catalog, derived from dev.rs and devtrig.rs themselves ----------------------
+# ---- the dev-trigger catalog, derived from the code that reads triggers --------------------------
 #
-# #138 taught a RELEASE build to fold every `/tmp` trigger away at compile time (`devtrig::flag`/
-# `devtrig::read` are `false`/`None` without `devtriggers`, so the branches behind them vanish), and
-# gave `ci/check-package.py` ONE witness of that: `DEV_WITNESS = b"dispatcharrtv-noidle"`, a name
-# `dev.rs`'s own `DIAG` array carries as a full, literal `"dispatcharrtv-noidle"` string. That witness
-# proves DIAG-as-a-whole is gated — but it names only one member of it, and every OTHER
-# `dispatcharrtv-*` name `dev.rs` (or a sibling module) treats as part of the trigger surface could
-# still leak into a release binary with nothing here to notice. `dev_trigger_catalog` generalises
-# the single witness to the WHOLE vocabulary those two arrays actually declare:
+# A RELEASE build folds every `/tmp` trigger away at compile time (`devtrig::flag`/`devtrig::read`
+# are `false`/`None` without `devtriggers`, so the branches behind them vanish), but a trigger's NAME
+# can still survive in a log line or a struct field outside the gate. The catalog is the whole
+# vocabulary the code can arm, so the packaged binary is graded against every name, not one witness.
 #
-#   * `CONTROLLED` — the bare names a controlled/recorded boot may carry (`devtrig.rs`'s own comment:
-#     "a full trigger name in the release binary is exactly what `ci/check-package.py` grades as
-#     'dev triggers compiled in'").
-#   * `DIAG` — already-prefixed full names, `#[cfg(any(feature = "devtriggers", test))]`-gated at
-#     the array itself, so every genuine member is compile-time absent from `--no-default-features`
-#     unless something ELSE outside that gate spells the same string (which is exactly the class of
-#     leak this project has now shipped twice: `ui/anim.rs`'s log sink and `dev/scenarios.rs`'s
-#     disabled-both diagnostic both spelled a DIAG name in code the feature never touched).
-#
-# PARSED, not hand-copied: a literal Python list here would rot exactly the way `DEV_WITNESS` did —
-# silently, the day somebody renames or adds a trigger and does not think to update a second file.
-# Regexing the two array bodies out of the CURRENT `dev.rs` and `devtrig.rs` means this check is
-# always grading the vocabulary the source actually declares this commit, never a stale snapshot.
-DEV_RS = ROOT / "rust-modules/src/dev.rs"
-# `CONTROLLED` moved with the trigger primitives (`flag`/`read`/`controlled_trigger`) to the base
-# layer, so the catalog's two arrays now live in two files: `DIAG` in `dev.rs`, `CONTROLLED` here.
-DEVTRIG_RS = ROOT / "rust-modules/base/src/devtrig.rs"
+# PARSED from the readers themselves, not from a declared list: a hand-kept array rotted exactly as a
+# single witness had — it still named the Plex screens' triggers long after they were deleted and
+# never learned the live-TV ones. Three spellings read a trigger, and each is matched:
+#   * `devtrig::flag("x")`, `devtrig::read("x")`, `devtrig::read_sample("x")` anywhere in the tree;
+#   * bare `flag("x")` / `read("x")` inside `devtrig.rs` itself (its typed accessors);
+#   * `latched_flag! { … fn name = "x"; }`, the per-process latch.
+RUST_ROOT = ROOT / "rust-modules"
+DEVTRIG_RS = RUST_ROOT / "base/src/devtrig.rs"
+_TRIGGER_CALL = re.compile(r'devtrig::(?:flag|read|read_sample)\(\s*"([a-z0-9_.-]+)"')
+_TRIGGER_LOCAL = re.compile(r'(?<![\w:])(?:flag|read|read_sample)\(\s*"([a-z0-9_.-]+)"')
+_TRIGGER_LATCH = re.compile(r'latched_flag!\s*\{.*?fn\s+\w+\s*=\s*"([a-z0-9_.-]+)"', re.S)
 
 # Names that are real `dispatcharrtv-*` bytes in every configuration ON PURPOSE, so a hit here is not a
 # leak — allowlisted once, with the reason, rather than excluded from the catalog silently.
@@ -218,9 +208,7 @@ RELEASE_LEGITIMATE_TRIGGER_NAMES = {
     # C shim's private logs; `dispatcharrtv-diag.log` is the storage worker's group-readable snapshot.
     "dispatcharrtv-events.log", "dispatcharrtv-crash.log", "dispatcharrtv-stderr.log",
     "dispatcharrtv-diag.log",
-    # The remote-key FIFO (`remote.rs`) is a shipped PRODUCTION feature, not a dev trigger, even
-    # though `DIAG` also lists it (so that its presence does not suppress the who's-watching
-    # picker the way an actual trigger file would).
+    # The remote-key FIFO (`remote.rs`) is a shipped PRODUCTION feature, not a dev trigger.
     "dispatcharrtv-remote",
     # `ui/rec.rs:65`'s erasure list — a STABLE/nightly install deletes these leftovers from a
     # devtriggers install that shared the same system `/tmp` (AGENTS.md: `/tmp` is shared across
@@ -274,30 +262,27 @@ def _catalog_name_in_binary(
         start = i + 1
 
 
-def parse_dev_trigger_catalog(dev_rs_text: str) -> "set[str]":
-    """Every full `dispatcharrtv-<name>` string the `CONTROLLED` (devtrig.rs) and `DIAG` (dev.rs) arrays declare,
-    parsed out of the given source text (a parameter, not a file read, so this can be pinned
-    against a fixture independently of whatever `dev.rs` says today — see `_selftest`).
+def parse_dev_trigger_catalog(text: str, *, local: bool = False) -> "set[str]":
+    """Every full `dispatcharrtv-<name>` the given Rust source arms, by the three spellings above.
+    `local` also matches the bare `flag("x")`/`read("x")` form, which only `devtrig.rs` may use. A
+    parameter, not a file read, so `_selftest` pins the regexes against a fixture.
     """
-    names: "set[str]" = set()
-    controlled = re.search(r"const CONTROLLED: &\[&str\] = &\[(.*?)\];", dev_rs_text, re.S)
-    if controlled:
-        names.update(f'dispatcharrtv-{n}' for n in re.findall(r'"([a-z0-9_.-]+)"', controlled.group(1)))
-    diag = re.search(r"const DIAG: \[&str; \d+\] = \[(.*?)\];", dev_rs_text, re.S)
-    if diag:
-        names.update(re.findall(r'"(dispatcharrtv-[a-z0-9_.-]+)"', diag.group(1)))
-    return names
+    names = set(_TRIGGER_CALL.findall(text)) | set(_TRIGGER_LATCH.findall(text))
+    if local:
+        names |= set(_TRIGGER_LOCAL.findall(text))
+    return {f"dispatcharrtv-{n}" for n in names}
 
 
 def dev_trigger_catalog() -> "set[str]":
-    """[`parse_dev_trigger_catalog`] against the real `dev.rs` (`DIAG`) and `devtrig.rs`
-    (`CONTROLLED`), minus the release-legitimate
-    allowlist — the set `ci/check-package.py` actually grades a packaged binary against.
+    """[`parse_dev_trigger_catalog`] over every tracked Rust source, minus the release-legitimate
+    allowlist — the set `ci/check-package.py` grades a packaged binary against.
     """
-    return (
-        parse_dev_trigger_catalog(DEV_RS.read_text() + "\n" + DEVTRIG_RS.read_text())
-        - RELEASE_LEGITIMATE_TRIGGER_NAMES
-    )
+    names: "set[str]" = set()
+    for path in sorted(RUST_ROOT.rglob("*.rs")):
+        if any(part.startswith("target") for part in path.relative_to(RUST_ROOT).parts):
+            continue
+        names |= parse_dev_trigger_catalog(path.read_text(errors="replace"), local=path == DEVTRIG_RS)
+    return names - RELEASE_LEGITIMATE_TRIGGER_NAMES
 
 
 def _selftest() -> int:
@@ -448,36 +433,29 @@ def _selftest() -> int:
     print(f"check-package: nightly exact-substring grading "
           f"{len(nightly_blob_cases) - nightly_blob_bad}/{len(nightly_blob_cases)} cases correct")
 
-    # `parse_dev_trigger_catalog` against a FIXTURE, independent of whatever the real `dev.rs`
-    # says today — this is the regression test for the regex itself, so a change to the two
-    # arrays' shape (a renamed const, a reformatted literal) fails HERE instead of silently
-    # parsing zero names out of the real file and making the binary-grading check vacuous, which
-    # is exactly the failure class `DEV_WITNESS` itself shipped as (`build_configuration`'s own
-    # docstring above).
+    # `parse_dev_trigger_catalog` against a FIXTURE, independent of the real tree — the regression
+    # test for the regexes themselves, so a change to how triggers are read fails HERE instead of
+    # silently parsing zero names and making the binary-grading check vacuous.
     catalog_fixture = '''
-const CONTROLLED: &[&str] = &[
-    "rec", "recplay", "focus", "noidle", "token",
-];
-
-const DIAG: [&str; 6] = [
-    "dispatcharrtv-events.log",
-    "dispatcharrtv-diag.log",
-    "dispatcharrtv-remote",
-    "dispatcharrtv-noidle",
-    "dispatcharrtv-overdraw",
-    "dispatcharrtv-rec",
-];
+let on = plx_base::devtrig::flag("noidle");
+let spec = devtrig::read( "playurl" ).unwrap_or_default();
+let sample = devtrig::read_sample("sample-test");
+plx_base::devtrig::latched_flag! {
+    /// a doc line
+    pub(crate) fn bypass_armed = "imagecache-bypass";
+}
+let local = read("holdload");
+let not_a_trigger = std::fs::read("/etc/os-release");
 '''
     got_catalog = parse_dev_trigger_catalog(catalog_fixture)
-    want_catalog = {
-        "dispatcharrtv-rec", "dispatcharrtv-recplay", "dispatcharrtv-focus", "dispatcharrtv-noidle",
-        "dispatcharrtv-token", "dispatcharrtv-events.log", "dispatcharrtv-diag.log", "dispatcharrtv-remote",
-        "dispatcharrtv-overdraw",
-    }
-    catalog_bad = 0 if got_catalog == want_catalog else 1
+    want_catalog = {"dispatcharrtv-noidle", "dispatcharrtv-playurl", "dispatcharrtv-sample-test",
+                    "dispatcharrtv-imagecache-bypass"}
+    got_local = parse_dev_trigger_catalog(catalog_fixture, local=True)
+    catalog_bad = 0 if (got_catalog == want_catalog
+                        and got_local == want_catalog | {"dispatcharrtv-holdload"}) else 1
     if catalog_bad:
-        print(f"  FAIL — parse_dev_trigger_catalog(fixture) = {sorted(got_catalog)}, "
-              f"want {sorted(want_catalog)}")
+        print(f"  FAIL — parse_dev_trigger_catalog(fixture) = {sorted(got_catalog)} / "
+              f"local {sorted(got_local)}, want {sorted(want_catalog)} (+ holdload locally)")
     print(f"check-package: parse_dev_trigger_catalog fixture "
           f"{'1/1' if not catalog_bad else '0/1'} correct")
 
@@ -493,24 +471,18 @@ const DIAG: [&str; 6] = [
     print(f"check-package: unconditional runtime sink allowlist "
           f"{len(unconditional_sinks) - len(missing_sinks)}/{len(unconditional_sinks)} correct")
 
-    # And a live sanity check against the REAL `dev.rs` and `devtrig.rs`: the catalog must not have
-    # gone empty (a regex that silently stopped matching would make the binary-grading check pass
-    # on EVERY release, vacuously — the exact failure `DEV_WITNESS` shipped as, generalised to a
-    # whole set instead of one string), and the historic witness must still be a member of it. Each
-    # file is checked on its own: `noidle` is in BOTH arrays, so the witness alone would not notice
-    # one of the two regexes going blind.
-    # `dev.rs` no longer declares a `DIAG` array (it served the who's-watching boot rule, gone with
-    # the Plex screens), so `devtrig.rs`'s `CONTROLLED` is the one array that must parse.
+    # And a live sanity check against the REAL tree: the catalog must not have gone empty (a regex
+    # that silently stopped matching would make the binary-grading check pass on EVERY release,
+    # vacuously), and it must hold triggers read by each of the three spellings.
     real_catalog = dev_trigger_catalog()
-    controlled_part = parse_dev_trigger_catalog(DEVTRIG_RS.read_text())
-    catalog_vacuous = (not real_catalog or "dispatcharrtv-noidle" not in real_catalog
-                       or not controlled_part)
+    witnesses = {"dispatcharrtv-noidle", "dispatcharrtv-playurl", "dispatcharrtv-imagecache-bypass",
+                 "dispatcharrtv-holdload"}
+    catalog_vacuous = not witnesses <= real_catalog
     if catalog_vacuous:
-        print(f"  FAIL — dev_trigger_catalog() against the real dev.rs/devtrig.rs is "
-              f"{sorted(real_catalog) or 'EMPTY'} (wants dispatcharrtv-noidle, and names from "
-              f"devtrig.rs's CONTROLLED ({len(controlled_part)}))")
-    print(f"check-package: dev_trigger_catalog() against the real dev.rs and devtrig.rs "
-          f"{'is non-vacuous' if not catalog_vacuous else 'WENT VACUOUS'}")
+        print(f"  FAIL — dev_trigger_catalog() against the real tree is missing "
+              f"{sorted(witnesses - real_catalog)} ({len(real_catalog)} names found)")
+    print(f"check-package: dev_trigger_catalog() against the real tree "
+          f"{'is non-vacuous (' + str(len(real_catalog)) + ' names)' if not catalog_vacuous else 'WENT VACUOUS'}")
 
     # `_catalog_name_in_binary` against the exact adjacency a real ARM release build produced
     # (2026-09-19): `...jsonldispatcharrtv-hwcnt.jsonlloginonboardli...`, `dispatcharrtv-hwcnt.jsonl`
@@ -1278,15 +1250,15 @@ if shipped:
 # is not one of the unconditional create-only sinks allowlisted above. Measured on the two shipped
 # artifacts — published v0.3.0 .ipk: 0 occurrences; CI's dev .ipk for 8827d32c: 2.
 #
-# ONE WITNESS NAMES ONLY ITSELF, though: every OTHER `dispatcharrtv-*` name `CONTROLLED`/`DIAG` declare
+# ONE WITNESS NAMES ONLY ITSELF, though: every OTHER `dispatcharrtv-*` name the code arms
 # could leak by a route the `format!` argument never takes — a literal spelled directly in code
 # that sits outside the `devtriggers` gate. Two shipped that way before this check existed to catch
 # it: `ui/anim.rs`'s log sink hard-coded `"dispatcharrtv-anim.log"` in a function gated only by a
 # runtime flag (always `false` without the feature, but still COMPILED, still IN THE BYTES), and
 # `dev/scenarios.rs`'s disabled-both diagnostic spelled `dispatcharrtv-profile`/`dispatcharrtv-hwcnt` in an
 # ungated function for the same reason. `dev_trigger_catalog()` (above) generalises the single
-# witness to the whole vocabulary `CONTROLLED`/`DIAG` name, so a THIRD leak like those two fails
-# here instead of shipping.
+# witness to the whole vocabulary the code reads, so a THIRD leak like those two fails here instead
+# of shipping.
 binary = PAYLOAD / "dispatcharrtv"
 check(binary.exists(), f"the staged payload carries the binary ({binary.name})")
 
@@ -1341,11 +1313,11 @@ if binary.exists():
     elif BUILD:
         # GRADED FROM BOTH SIDES, which is the repair for the defect class rather than for one
         # string: a witness that cannot fail is not a gate. The dev leg asserts the catalog is
-        # still emitted at ALL, so the day `CONTROLLED`/`DIAG` are renamed or emptied CI fails on
-        # the next push instead of quietly grading the release leg against nothing forever.
+        # still emitted at ALL, so the day the readers change shape CI fails on the next push
+        # instead of quietly grading the release leg against nothing forever.
         check(bool(dev_hits),
               "the packaged binary is the DEV build the stamp records — which is also what proves "
-              "dev.rs's DIAG / devtrig.rs's CONTROLLED catalog still witnesses the trigger surface"
+              "the trigger catalog still witnesses the trigger surface"
               + ("" if dev_hits else " (0 catalog names found in the bytes)"))
     else:
         print("  SKIP — pkg/.build-config is neither shipped configuration; not grading the binary")

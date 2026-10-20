@@ -6,14 +6,5 @@
   "settings.consent.delete_question": "Supprimer toutes les données locales ?",
   "settings.cancel": "Annuler",
   "settings.back": "Retour",
-  "settings.playback.subtitle_size.small": "Petite",
-  "settings.playback.subtitle_size.medium": "Moyenne",
-  "settings.playback.subtitle_size.large": "Grande",
-  "settings.playback.subtitle_size.extra_large": "Très grande",
-  "settings.playback.subtitle_position": "Position des sous-titres",
-  "settings.playback.subtitle_position.low": "Basse",
-  "settings.playback.subtitle_position.middle": "Centrale",
-  "settings.playback.subtitle_position.high": "Haute",
-  "settings.playback.auto": "Auto",
   "settings.login.unknown_device": "appareil inconnu"
 }

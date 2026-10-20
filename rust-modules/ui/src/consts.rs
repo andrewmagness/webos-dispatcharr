@@ -4,8 +4,7 @@
 //! The input half is the keycodes AND the vocabulary built on them: [`is_ok`]/[`is_back`] and
 //! [`classify`], which resolves a raw `(sym, wcode)` pair to the one [`Key`] `app.rs`'s ladder
 //! dispatches on. A spelling belongs here with the code it matches, and its test with it: the
-//! ladder itself sits inside the SDL event loop, where no host test reaches it (which is the
-//! premise `tools/keytable.py` was written on).
+//! ladder itself sits inside the SDL event loop, where no host test reaches it.
 #![allow(dead_code)]
 use std::os::raw::{c_int, c_uint};
 

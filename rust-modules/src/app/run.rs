@@ -918,8 +918,8 @@ unsafe fn ingest_sdl_event_with_window(app: &mut App, fr: &mut Frame,
             //
             // Whether any real event carries that pair is unrecorded: nothing in the
             // tree names the sym beside wcode 0x1e4, `remote_token_key` never emits it,
-            // and the simulator cannot produce one — so `tools/keytable.py` is blind to
-            // this by construction. Settling it needs a `key` line off the television.
+            // and the simulator cannot produce one. Settling it needs a `key` line off
+            // the television.
         } else if matches!(key, Key::Ok) {
             key_ok(&mut app.player.session,
                 &mut app.adapters.player,

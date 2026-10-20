@@ -3638,10 +3638,10 @@ impl GlassRim {
 /// So this exists for the same reason `ui::widgets::tab_glass_stops`'s density override
 /// does: the values are a judgement about a picture, and a judgement about a picture is made by
 /// putting the ladder side by side. Absent, the returned params are byte-identical to the variant's
-/// own. Read once per process, so a simulator instance is one capture of one rung —
-/// `tools/glass-patterns.py --lens "off:2,0,0 b:12,12,0 c:12,24,0"` launches one per rung and
-/// drives them in lockstep over the same grounds, which is how 12/24 was picked — over
-/// `checker:96`, `hbars:64` and `edge`, the three grounds coarse enough to survive the blur.
+/// own. Read once per process, so a simulator instance is one capture of one rung; 12/24 was picked
+/// (in PlxNative) by launching one instance per rung in lockstep over the same synthetic grounds
+/// (`dispatcharrtv-testpat`) — `checker:96`, `hbars:64` and `edge`, the three coarse enough to
+/// survive the blur.
 #[cfg(feature = "devtriggers")]
 fn swept() -> Option<(f32, f32, [f32; 4], Option<f32>, Option<f32>)> {
     static SEEN: std::sync::OnceLock<Option<(f32, f32, [f32; 4], Option<f32>, Option<f32>)>> =

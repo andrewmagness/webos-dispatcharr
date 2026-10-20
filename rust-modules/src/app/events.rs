@@ -59,7 +59,7 @@ pub(crate) fn rd_u32(ev: &[u8], off: usize) -> u32 {
 ///
 /// It used to be `unused`, so **every wcode-ONLY token was dead**: `play`, `pause`, `stop`, `ff`,
 /// `rew`, `playpause`, `exit`, `chup`, `chdown` all decoded as wcode 1 and did nothing at all, and
-/// `tests/keytable.json` recorded three of them as `moved: false` — which reads as "that key does
+/// a recorded key table graded three of them as `moved: false` — which reads as "that key does
 /// nothing on that screen" and actually meant the press never arrived. An instrument silent by
 /// construction: prove it can see the thing before reading its silence.
 ///
@@ -206,8 +206,7 @@ pub(crate) fn rd_f32(ev: &[u8], off: usize) -> f32 {
 /// channel rocker's raw codes — and lets a device question be rehearsed against the simulator
 /// first (`k:0,269` is HOME, `k:53,34` is the digit `5` exactly as the television spells it).
 /// Both fields are DECIMAL and both are required, because a pair with one field guessed is the
-/// bug class `decode_key` exists to prevent. `tools/keytable.py` drives its unsupported-key and
-/// pager rows through this.
+/// bug class `decode_key` exists to prevent.
 pub(crate) fn remote_token_key(tok: &str) -> Option<(c_uint, c_uint)> {
     if let Some(rest) = tok.strip_prefix("k:") {
         let (s, w) = rest.split_once(',')?;

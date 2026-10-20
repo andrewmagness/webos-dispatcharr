@@ -1,7 +1,7 @@
 //! The `/tmp` developer-trigger PRIMITIVES: the one door onto `/tmp/dispatcharrtv-*`.
 //!
-//! This app is driven headlessly by ~44 files under `/tmp/dispatcharrtv-*`: which screen to boot to,
-//! which item to play, which URL to stream, whether to auto-press OK, which PMS token to use.
+//! This app is driven headlessly by files under `/tmp/dispatcharrtv-*`:
+//! which URL to stream and how to declare it, whether to auto-press OK.
 //! That is how `tests/run.py` and every capture scene work, and it is not going away. This module
 //! is the READ side of that surface — [`flag`], [`read`], [`read_sample`], the per-process latch
 //! [`latched_flag!`], and the handful of triggers whose answer is a plain value ([`no_wan`],
@@ -13,10 +13,8 @@
 //!
 //! It must not exist in a public build. `/tmp` is the SHARED system `/tmp` in the production jail
 //! too (mode 1777, both jail profiles), so on an ordinary user's TV every one of those files is a
-//! behaviour switch any co-resident process can throw. Three are outright takeovers:
-//! `dispatcharrtv-token` beats the signed-in session (`app.rs`'s boot gate), `dispatcharrtv-servers` hands
-//! the app a whole additional server — an address AND the token to trust it with — and
-//! `dispatcharrtv-url` replaces the stream the player feeds.
+//! behaviour switch any co-resident process can throw — `dispatcharrtv-url` and
+//! `dispatcharrtv-playurl`, for two, replace the stream the player feeds.
 //!
 //! So every read goes through here, and here is `#[cfg]`-gated on the `devtriggers` feature. In a
 //! `--no-default-features` build [`flag`] is `false` and [`read`] is `None` at COMPILE time, so
@@ -27,7 +25,7 @@
 //! folds away, but not reliably: once the answer is carried through a struct field (the
 //! `nobudget` flag on `DevFlags`), the optimizer may keep the branch and its string literals
 //! in a release build, and `ci/check-package.py` fails the package because it greps the shipped
-//! bytes for every trigger name `dev`'s `DIAG` list and [`CONTROLLED`] declare. So every
+//! bytes for every trigger name the code reads (it parses the `flag`/`read`/`latched_flag!` calls). So every
 //! statement whose literal names a trigger (a log line saying `/tmp/dispatcharrtv-…`) carries its own
 //! `#[cfg(feature = "devtriggers")]`. Never rely on constant folding for this.
 //!
@@ -35,47 +33,6 @@
 //! `dev` and the unconditional log sinks, `ci/check-deps.sh`'s `tmppath`) is the only thing
 //! keeping the property true. A trigger's bare name is the argument to [`flag`] / [`read`] and the
 //! `dispatcharrtv-` prefix is added in [`path`], so no literal path exists to find.
-
-/// The triggers a CONTROLLED boot (`app::bootstrap`: the recorder, a replay, an explicit
-/// `app-init`) may carry, as bare names. Anything else armed on a recording boot makes its typed
-/// initial unsupported, so a replay cannot silently run under a trigger it never modelled.
-///
-/// One gated table rather than literals at each consumer, for the reason `dev`'s `DIAG` is
-/// gated: a full trigger name in the release binary is exactly what `ci/check-package.py` grades as
-/// "dev triggers compiled in", and `dispatcharrtv-noidle` is its witness. A release build never arms a
-/// trigger (`dev::armed_triggers` is empty there), so it has no vocabulary to check against
-/// and the accessors below answer "not supported" / "not listed" without naming one.
-///
-/// `ci/check-package.py` parses this array out of THIS file (and `DIAG` out of `dev.rs`), so it
-/// stays one array literal of bare names, and no other text in this file spells its declaration.
-#[cfg(any(feature = "devtriggers", test, feature = "test-support"))]
-const CONTROLLED: &[&str] = &[
-    "rec", "recplay", "focus", "noidle", "token", "app-init", "settings",
-    "detail", "detailsec", "detailok", "filmography", "personcredits", "nowan",
-];
-
-/// Is the recorded trigger `trigger` (full `dispatcharrtv-<name>` form, as `dev::armed_triggers`
-/// lists it) one a controlled boot supports? See [`CONTROLLED`].
-#[cfg(any(feature = "devtriggers", test, feature = "test-support"))]
-pub fn controlled_trigger(trigger: &str) -> bool {
-    trigger.strip_prefix("dispatcharrtv-").is_some_and(|name| CONTROLLED.contains(&name))
-}
-#[cfg(not(any(feature = "devtriggers", test, feature = "test-support")))]
-pub fn controlled_trigger(_trigger: &str) -> bool {
-    false
-}
-
-/// Does a recorded trigger list (full names, as `dev::armed_triggers` returns them) carry
-/// the trigger `name` (bare)? The typed-initial counterpart of [`flag`]: it reads the list a boot
-/// was captured with, never the filesystem. Always `false` in a release build, whose list is empty.
-#[cfg(any(feature = "devtriggers", test, feature = "test-support"))]
-pub fn listed(triggers: &[String], name: &str) -> bool {
-    triggers.iter().any(|trigger| trigger.strip_prefix("dispatcharrtv-") == Some(name))
-}
-#[cfg(not(any(feature = "devtriggers", test, feature = "test-support")))]
-pub fn listed(_triggers: &[String], _name: &str) -> bool {
-    false
-}
 
 /// Is the trigger `name` (bare, without the `dispatcharrtv-` prefix) present?
 #[cfg(feature = "devtriggers")]
@@ -179,11 +136,9 @@ pub fn no_wan() -> Option<NoWan> {
 /// `Some(ms)` when armed (default 30000 for a bare/empty trigger, per its own `parse` fallback),
 /// else `None`. `player::threads::load_thread` sleeps this many milliseconds right after the real
 /// `sf_load` call returns and BEFORE `Shared::mark_native_load_returned` publishes that fact — so
-/// issue #74 D.1's budget (the pump's `deferring` line, then, past `NATIVE_LOAD_BUDGET`, the
+/// the native Load budget (the pump's `deferring` line, then, past `NATIVE_LOAD_BUDGET`, the
 /// failure read-out) becomes observable on a real television on demand, rather than only on a
-/// k5lp set that happens to hang there for real. Deliberately NOT `DIAG`: it changes playback
-/// behaviour (a real Load attempt now waits), so arming it must suppress the who's-watching
-/// picker like every other automation trigger.
+/// k5lp set that happens to hang there for real.
 #[cfg(feature = "devtriggers")]
 pub fn holdload_delay_ms() -> Option<u64> {
     let raw = read("holdload")?;

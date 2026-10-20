@@ -111,7 +111,6 @@ RUN_TOGETHER = (
     'python3 tools/dispatcharrtv-lab selftest',
     'python3 ci/test_libass_fetch.py',
     'python3 ci/test_deploy_manifest.py',
-    'python3 tests/test_image_cache_stress.py',
     'python3 ci/test_verify_deploy.py',
 )
 # A fixed port in a bind or a server constructor. Port 0 (the kernel picks) is what a test may use.

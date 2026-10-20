@@ -270,7 +270,5 @@
   "browse.home.hub.recently_added_music": "Нядаўна дададзеная музыка",
   "browse.home.hub.recently_added_videos": "Нядаўна дададзенае відэа",
   "browse.home.hub.recently_added_photos": "Нядаўна дададзеныя фота",
-  "browse.library.hub.recently_added": "Нядаўна дададзенае",
-  "browse.clock.notice_year": "Час на тэлевізары, здаецца, няправільны ({year}). Злучэнне па захаваным ключы.",
-  "browse.clock.notice": "Час на тэлевізары, здаецца, няправільны. Злучэнне па захаваным ключы."
+  "browse.library.hub.recently_added": "Нядаўна дададзенае"
 }

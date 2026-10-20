@@ -263,7 +263,5 @@
   "browse.home.hub.recently_added_music": "Musique ajoutée récemment",
   "browse.home.hub.recently_added_videos": "Vidéos ajoutées récemment",
   "browse.home.hub.recently_added_photos": "Photos ajoutées récemment",
-  "browse.library.hub.recently_added": "Ajouts récents",
-  "browse.clock.notice_year": "L’horloge de la TV semble incorrecte ({year}). Connecté grâce à la clé mémorisée.",
-  "browse.clock.notice": "L’horloge de la TV semble incorrecte. Connecté grâce à la clé mémorisée."
+  "browse.library.hub.recently_added": "Ajouts récents"
 }

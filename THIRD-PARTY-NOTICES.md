@@ -380,15 +380,14 @@ They carry no copyright licence of their own; they are published by their issuer
 use, to be installed in trust stores. Each certificate's SHA-256 fingerprint is in the file's own
 header comments.
 
-*Why it ships:* a Plex Media Server's `*.plex.direct` certificate is issued by Let's Encrypt, and
-a television whose trust store predates the 2025 roots cannot verify a chain that ends in
-ISRG Root YR or YE. For a `*.plex.direct` host whose verification against the television's own
-store failed for that reason, the application retries once against this file, with the
-certificate chain, its dates and the host name all still checked. It is offered for no other host
-name, and only after the television's own store has said no (for ten minutes after it has verified a
-host, a request to that host starts there instead of repeating the handshake the store failed). A
-redirect is a request of its own, verified against the television's own store, and is offered this
-file only if its target is itself a `*.plex.direct` name that fails the same way.
+*Why it ships:* many HTTPS servers — a Dispatcharr server behind a reverse proxy among them — use a
+Let's Encrypt certificate, and a television whose trust store predates the 2025 roots cannot verify
+a chain that ends in ISRG Root YR or YE. When an HTTPS request's verification against the
+television's own store fails for that reason, the application retries once against this file, with
+the certificate chain, its dates and the host name all still checked. It is offered only after the
+television's own store has said no (for ten minutes after it has verified a host, a request to that
+host starts there instead of repeating the handshake the store failed). A redirect is a request of
+its own, to its own host, with the same rule.
 
 ---
 

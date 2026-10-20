@@ -1632,7 +1632,7 @@ _LE_ROOTS = {
     "e14ffcad5b0025731006caa43a121a22d8e9700f4fb9cf852f02a708aa5d5666": "ISRG Root YE",
 }
 _roots_pem = ROOT / "pkg/le-roots.pem"
-check(_roots_pem.exists(), "pkg/le-roots.pem present — the roots-mode fallback bundle (rust-modules/net/src/net.rs, keypin)")
+check(_roots_pem.exists(), "pkg/le-roots.pem present — the roots-mode fallback bundle (rust-modules/net/src/net.rs, roots)")
 if _roots_pem.exists():
     _got = [_hashlib.sha256(_b64.b64decode("".join(m.split())))
             .hexdigest() for m in _re.findall(r"-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----",
@@ -1705,9 +1705,9 @@ expected = {
     # appfont-cjk.ttf is the fallback face. Its absence is not a cosmetic loss: every Korean,
     # Japanese and Chinese title in the library becomes tofu, which is LG checklist #6 and #48.
     "appfont.ttf", "appfont-bold.ttf", "appfont-cjk.ttf", "OFL.txt",
-    # le-roots.pem is the roots-mode fallback bundle (`net::keypin::Mode::Roots`): without it a
-    # `*.plex.direct` server whose certificate chains to a 2025 Let's Encrypt root is unreachable on
-    # a 2020 firmware, silently — the fallback just never engages.
+    # le-roots.pem is the roots-mode fallback bundle (`net::roots::Mode::Roots`): without it an
+    # HTTPS server whose certificate chains to a 2025 Let's Encrypt root is unreachable on a 2020
+    # firmware, silently — the fallback just never engages.
     "le-roots.pem",
     "THIRD-PARTY-NOTICES.md", "LICENSE", "LICENSING.md", "TRADEMARKS.md", *NEEDED_LICENCES,
 }

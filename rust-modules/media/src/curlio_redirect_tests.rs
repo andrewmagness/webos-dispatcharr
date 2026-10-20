@@ -4,24 +4,24 @@
 //! no-downgrade rule, the `Range` that rides every hop, a relative `Location`, which statuses are
 //! followed, what a `3xx` body and a missing `Location` do, and what of the original URL a hop
 //! receives. They also grade what only a hop-by-hop follower can promise: a hop is a request of its
-//! own, to its own host, under its own TLS decision (`net::keypin`), whichever mode the host that
+//! own, to its own host, under its own TLS decision (`net::roots`), whichever mode the host that
 //! sent it was in.
 //!
 //! The doubles are `net::spawn_scripted`'s: each records every request it reads, so a test can say
-//! what each hop received. Hosts are loopback ones and the synthetic `*.plex.direct` names of
-//! `curlio_roots_tests.rs`, which reach loopback through a resolve pin; a hop to a name no pin
-//! covers would need DNS, and no test here may. Every test holds `testlock::serial()`: the CA
-//! override and the roots bundle are process-global.
+//! what each hop received. Hosts are loopback ones (`localhost` and `127.0.0.1`, two names for two
+//! hosts); no test here may need DNS. Every test holds `testlock::serial()`: the CA override and the
+//! roots bundle are process-global.
 
-use crate::curlio::test_fixtures::{media_body, pin_to_loopback, PLEX_DIRECT};
+use crate::curlio::test_fixtures::{media_body, HOST};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use plx_net::net::{curl_ready, keypin, mint_ca_issued_cert, mint_cert, spawn_scripted, ymd_from_now, Observed, Reply, TestCaGuard, TestCert};
+use plx_net::net::{curl_ready, roots, mint_ca_issued_cert, mint_cert, spawn_scripted, ymd_from_now, Observed, Reply, TestCaGuard, TestCert};
 
 use crate::curlio::{CurlSource, OpenErr};
 
-const SECOND_PLEX_DIRECT: &str = "127-0-0-1.fedcba9876543210fedcba9876543210.plex.direct";
+/// A second name for loopback, so a hop is a different host from the one that sent it there.
+const SECOND_HOST: &str = "127.0.0.1";
 const TOKEN: &str = "test-token-0123456789";
 
 /// A leaf for `names` from a fresh CA; `pem` of the result is that CA.
@@ -29,9 +29,9 @@ fn leaf(names: &[&str]) -> Arc<TestCert> {
     Arc::new(mint_ca_issued_cert(names, ymd_from_now(-1), ymd_from_now(30)))
 }
 
-/// Clears what a test published about `host:port` in `net::keypin`'s tables when it ends.
-fn watch(host: &str, port: u16) -> keypin::Scoped {
-    keypin::Scoped::watch(&keypin::key_of(host, i32::from(port)))
+/// Clears the roots latch for `host:port` when the test ends.
+fn watch(host: &str, port: u16) -> roots::Scoped {
+    roots::Scoped::watch(&roots::key_of(host, i32::from(port)))
 }
 
 fn url_of(host: &str, port: u16, path: &str) -> String {
@@ -119,7 +119,7 @@ fn a_redirect_from_https_to_plain_http_is_refused_and_the_plain_target_is_never_
     let cert = leaf(&["127.0.0.1"]);
     let _ca = TestCaGuard::install(&cert.pem, "redirect-downgrade");
     let plain = Plain::spawn();
-    let served = spawn_scripted(cert, [("/start", Reply::redirect(302, &format!("http://127.0.0.1:{}/video.mkv?X-Plex-Token={TOKEN}", plain.port)))]);
+    let served = spawn_scripted(cert, [("/start", Reply::redirect(302, &format!("http://127.0.0.1:{}/video.mkv?token={TOKEN}", plain.port)))]);
     let _watch = watch("127.0.0.1", served.port);
 
     let err = CurlSource::open(&url_of("127.0.0.1", served.port, "/start"), 0)
@@ -376,26 +376,25 @@ fn the_body_of_a_redirect_is_not_the_body_the_open_returns() {
 fn the_token_in_the_original_url_never_reaches_a_cross_host_redirect_target_but_the_user_agent_does() {
     let _serial = plx_base::testlock::serial();
     if !curl_ready() { return; }
-    // One CA for both hosts: the household's `*.plex.direct` name and the CDN's address.
-    let cert = leaf(&[PLEX_DIRECT, "127.0.0.1"]);
+    // One CA for both hosts: the server's name and the CDN's address.
+    let cert = leaf(&[HOST, "127.0.0.1"]);
     let _ca = TestCaGuard::install(&cert.pem, "redirect-token");
     let cdn = spawn_scripted(Arc::clone(&cert), [("/cdn/video.mkv", Reply::ok(media_body()))]);
-    let household = spawn_scripted(cert, [("/start", Reply::redirect(302, &url_of("127.0.0.1", cdn.port, "/cdn/video.mkv?sig=abc")))]);
-    pin_to_loopback(PLEX_DIRECT, household.port);
-    let (_w1, _w2) = (watch("127.0.0.1", cdn.port), watch(PLEX_DIRECT, household.port));
+    let server = spawn_scripted(cert, [("/start", Reply::redirect(302, &url_of("127.0.0.1", cdn.port, "/cdn/video.mkv?sig=abc")))]);
+    let (_w1, _w2) = (watch("127.0.0.1", cdn.port), watch(HOST, server.port));
 
-    let mut src = CurlSource::open(&url_of(PLEX_DIRECT, household.port, &format!("/start?X-Plex-Token={TOKEN}")), 0)
-        .expect("the household's redirect to the CDN is followed");
+    let mut src = CurlSource::open(&url_of(HOST, server.port, &format!("/start?token={TOKEN}")), 0)
+        .expect("the server's redirect to the CDN is followed");
     assert_eq!(src.status(), 200);
     assert_eq!(read_to_end(&mut src), media_body());
 
-    let asked = requests(&household);
+    let asked = requests(&server);
     assert_eq!(asked.len(), 1);
-    assert!(asked[0].lines().next().unwrap_or_default().contains(&format!("X-Plex-Token={TOKEN}")), "the original request carried the token: {asked:?}");
+    assert!(asked[0].lines().next().unwrap_or_default().contains(&format!("token={TOKEN}")), "the original request carried the token: {asked:?}");
     let arrived = requests(&cdn);
     assert_eq!(arrived.len(), 1);
     assert_eq!(arrived[0].lines().next().unwrap_or_default(), "GET /cdn/video.mkv?sig=abc HTTP/1.1", "the hop is the Location, and only the Location");
-    assert!(!arrived[0].to_ascii_lowercase().contains("x-plex-token") && !arrived[0].contains(TOKEN), "no trace of the token on the hop: {:?}", arrived[0]);
+    assert!(!arrived[0].to_ascii_lowercase().contains("token=") && !arrived[0].contains(TOKEN), "no trace of the token on the hop: {:?}", arrived[0]);
     let agent = plx_base::identity::user_agent();
     assert!(!agent.is_empty());
     assert_eq!(header(&asked[0], "user-agent").as_deref(), Some(agent.as_str()));
@@ -406,81 +405,77 @@ fn the_token_in_the_original_url_never_reaches_a_cross_host_redirect_target_but_
 fn a_roots_mode_host_redirected_to_a_relative_path_on_itself_reads_the_body_through_the_bundle() {
     let _serial = plx_base::testlock::serial();
     if !curl_ready() { return; }
-    let cert = leaf(&[PLEX_DIRECT]);
+    let cert = leaf(&[HOST]);
     let served = spawn_scripted(
         Arc::clone(&cert),
         [("/start", Reply::redirect(302, "/video.mkv")), ("/video.mkv", Reply::ok(media_body()))],
     );
     // The device store holds nothing relevant; only the bundle can verify the host, on either hop.
     let _device = TestCaGuard::install(&mint_cert(&["unrelated.invalid"]).pem, "redirect-roots-same-host");
-    let _roots = keypin::test_roots::Guard::install(&cert.pem, "redirect-roots-same-host");
-    pin_to_loopback(PLEX_DIRECT, served.port);
-    let key = keypin::key_of(PLEX_DIRECT, i32::from(served.port));
-    let _watch = keypin::Scoped::watch(&key);
-    keypin::roots_established(&key, Some(20));
+    let _roots = roots::test_roots::Guard::install(&cert.pem, "redirect-roots-same-host");
+    let key = roots::key_of(HOST, i32::from(served.port));
+    let _watch = roots::Scoped::watch(&key);
+    roots::roots_established(&key, Some(20));
 
-    let mut src = CurlSource::open(&url_of(PLEX_DIRECT, served.port, "/start"), 0).expect("the bundle verifies both hops");
+    let mut src = CurlSource::open(&url_of(HOST, served.port, "/start"), 0).expect("the bundle verifies both hops");
     assert_eq!(src.status(), 200);
     assert_eq!(read_to_end(&mut src), media_body());
     assert_eq!(request_lines(&served), ["GET /start HTTP/1.1", "GET /video.mkv HTTP/1.1"]);
     assert_eq!(served.accepted(), 2, "a latched host starts in roots mode: no strict handshake first, one connection per hop");
-    assert!(keypin::is_roots_latched(&key), "still latched");
+    assert!(roots::is_roots_latched(&key), "still latched");
 }
 
-/// Two `*.plex.direct` names, neither verifiable by the device store, one CA (the bundle's) for both.
+/// Two hosts, neither verifiable by the device store, one CA (the bundle's) for both.
 /// Neither is latched, so the open goes strict, then roots, on the first, and is redirected to the
 /// second, which is a request of its own: it goes strict, then roots, under ITS key, from a ladder that
 /// remembers nothing the first hop's did (the bundle is offered once per hop, not once per open). Both
 /// end latched in roots mode. Each name reaches loopback through its own resolve pin, so the test
 /// needs no DNS.
 #[test]
-fn a_roots_mode_open_redirected_to_a_second_plex_direct_host_ends_in_the_media() {
+fn a_roots_mode_open_redirected_to_a_second_host_ends_in_the_media() {
     let _serial = plx_base::testlock::serial();
     if !curl_ready() { return; }
-    let cert = leaf(&[PLEX_DIRECT, SECOND_PLEX_DIRECT]);
+    let cert = leaf(&[HOST, SECOND_HOST]);
     let second = spawn_scripted(Arc::clone(&cert), [("/video.mkv", Reply::ok(media_body()))]);
-    let first = spawn_scripted(Arc::clone(&cert), [("/start", Reply::redirect(302, &url_of(SECOND_PLEX_DIRECT, second.port, "/video.mkv")))]);
+    let first = spawn_scripted(Arc::clone(&cert), [("/start", Reply::redirect(302, &url_of(SECOND_HOST, second.port, "/video.mkv")))]);
     let _device = TestCaGuard::install(&mint_cert(&["unrelated.invalid"]).pem, "redirect-roots-two-hosts");
-    let _roots = keypin::test_roots::Guard::install(&cert.pem, "redirect-roots-two-hosts");
-    pin_to_loopback(PLEX_DIRECT, first.port);
-    pin_to_loopback(SECOND_PLEX_DIRECT, second.port);
-    let first_key = keypin::key_of(PLEX_DIRECT, i32::from(first.port));
-    let _w1 = keypin::Scoped::watch(&first_key);
-    let _w2 = watch(SECOND_PLEX_DIRECT, second.port);
-    let second_key = keypin::key_of(SECOND_PLEX_DIRECT, i32::from(second.port));
+    let _roots = roots::test_roots::Guard::install(&cert.pem, "redirect-roots-two-hosts");
+    let first_key = roots::key_of(HOST, i32::from(first.port));
+    let _w1 = roots::Scoped::watch(&first_key);
+    let _w2 = watch(SECOND_HOST, second.port);
+    let second_key = roots::key_of(SECOND_HOST, i32::from(second.port));
 
-    let mut src = CurlSource::open(&url_of(PLEX_DIRECT, first.port, "/start"), 0).expect("both hops are verified by the bundle");
+    let mut src = CurlSource::open(&url_of(HOST, first.port, "/start"), 0).expect("both hops are verified by the bundle");
     assert_eq!(src.status(), 200);
     assert_eq!(read_to_end(&mut src), media_body());
     assert_eq!(request_lines(&first), ["GET /start HTTP/1.1"]);
     assert_eq!(request_lines(&second), ["GET /video.mkv HTTP/1.1"]);
-    assert!(keypin::is_roots_latched(&first_key), "the host the open began on is latched in roots mode");
-    assert!(keypin::is_roots_latched(&second_key), "so is the host it was redirected to: it went through the ladder under its own key");
+    assert!(roots::is_roots_latched(&first_key), "the host the open began on is latched in roots mode");
+    assert!(roots::is_roots_latched(&second_key), "so is the host it was redirected to: it went through the ladder under its own key");
 }
 
 /// The host a hop returns to is the host the open began on, unlatched at the start: the first request
 /// runs the ladder (strict fails, the bundle answers) and latches the host, and the second begins from
 /// that latch, in roots mode, with no doomed strict handshake of its own: three connections, not four.
 #[test]
-fn a_redirect_back_to_the_same_plex_direct_host_starts_its_second_hop_from_the_latch_the_first_set() {
+fn a_redirect_back_to_the_same_host_starts_its_second_hop_from_the_latch_the_first_set() {
     let _serial = plx_base::testlock::serial();
     if !curl_ready() { return; }
-    let cert = leaf(&[PLEX_DIRECT]);
+    let cert = leaf(&[HOST]);
     let served = spawn_scripted(
         Arc::clone(&cert),
         [("/start", Reply::redirect(302, "/video.mkv")), ("/video.mkv", Reply::ok(media_body()))],
     );
     let _device = TestCaGuard::install(&mint_cert(&["unrelated.invalid"]).pem, "redirect-roots-same-host-cold");
-    let _roots = keypin::test_roots::Guard::install(&cert.pem, "redirect-roots-same-host-cold");
-    pin_to_loopback(PLEX_DIRECT, served.port);
-    let key = keypin::key_of(PLEX_DIRECT, i32::from(served.port));
-    let _watch = keypin::Scoped::watch(&key);
-    assert!(!keypin::is_roots_latched(&key), "the open starts unlatched");
+    let _roots = roots::test_roots::Guard::install(&cert.pem, "redirect-roots-same-host-cold");
+    let key = roots::key_of(HOST, i32::from(served.port));
+    let _watch = roots::Scoped::watch(&key);
+    assert!(!roots::is_roots_latched(&key), "the open starts unlatched");
 
-    let mut src = CurlSource::open(&url_of(PLEX_DIRECT, served.port, "/start"), 0).expect("both hops are verified by the bundle");
+    let mut src = CurlSource::open(&url_of(HOST, served.port, "/start"), 0).expect("both hops are verified by the bundle");
     assert_eq!(src.status(), 200);
     assert_eq!(read_to_end(&mut src), media_body());
     assert_eq!(request_lines(&served), ["GET /start HTTP/1.1", "GET /video.mkv HTTP/1.1"]);
     assert_eq!(served.accepted(), 3, "the failed strict handshake and the bundle one for the first hop, one more for the second");
-    assert!(keypin::is_roots_latched(&key));
+    assert!(roots::is_roots_latched(&key));
 }

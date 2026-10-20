@@ -1,40 +1,23 @@
 //! **Where a server is, as one value: scheme + host + port.** The type every layer passes around
 //! instead of a bare `(host, port)` pair.
 //!
-//! **This file lives in the transport and the Plex layer re-exports it.** The transport has to read
-//! these values itself — [`crate::stream`]'s redirect follower walks `Origin`s hop by hop, and
-//! [`crate::net`]'s request funnel asks [`url_host`] whether a name needs resolving and applies a
-//! [`ResolvePin`] — and a transport that named the Plex layer for them would point UP the module
-//! graph (`docs/module-layers.md`, step L6). So the address types, the URL reading and the DNS pin
-//! sit here, below `plex`, which re-exports them from `plex::origin` and `plex` so no Plex caller
-//! changed. What stayed in `plex::origin` is the one thing that is about Plex policy and not about
-//! an address: `CredentialPolicy`.
+//! **This file lives in the transport.** [`crate::stream`]'s redirect follower walks `Origin`s hop
+//! by hop and [`crate::net`]'s request funnel asks [`url_host`] whether a name needs resolving, so
+//! the address types and the one reading of a URL sit here, below every layer that uses them (the
+//! Dispatcharr client, the media engine, the poster adapter).
 //!
 //! ## Why this type exists at all
 //!
-//! This app could once reach exactly one shape of server: **plaintext HTTP at a numeric IPv4
-//! address**. `stream.rs` built a `sockaddr_in` out of four decimal octets and spoke cleartext, so
-//! `(host, port)` was a complete description of a server, and every layer — the registry, the
-//! session file, the login flow, the stream URLs — carried those two values and nothing else.
+//! This code could once reach exactly one shape of server: **plaintext HTTP at a numeric IPv4
+//! address**, so `(host, port)` was a complete description of one. Every half of that limit is gone:
+//! `stream.rs` resolves through `getaddrinfo` and dials either address family, the CONTROL plane
+//! routes a TLS origin through libcurl, and the MEDIA plane uses `crate::curlio` as a libcurl-multi
+//! pull source. What `(host, port)` still could not say is the SCHEME, which is this type's reason
+//! for existing.
 //!
-//! Every half of that limit is gone, through separate transports:
-//! `stream.rs` resolves through `getaddrinfo` and dials either address family, and the CONTROL
-//! plane routes a TLS origin through libcurl (`crate::http` dispatches on the scheme), while the
-//! MEDIA plane uses `crate::curlio` as a libcurl-multi pull source. What
-//! `(host, port)` still could not say is the SCHEME, which is this type's reason for existing.
-//!
-//! It is not a complete description of the servers plex.tv actually advertises, and the gap is not
-//! cosmetic. `plex::probe` builds ranked candidates from an account's `/api/v2/resources`, and
-//! the one field that says where a candidate really is is `plex::probe::Candidate::url`
-//! — **not** `Candidate::address`. plex.tv advertises the `plex.direct` HOSTNAME in `uri` while
-//! `address` stays the dotted quad hiding behind it, and `probe`'s own doc says outright that
-//! "https to the bare IP fails validation by design": the certificate is issued for
-//! `203-0-113-9.hash.plex.direct`, so a TLS connection made to `203.0.113.9` fails hostname
-//! validation however well the packets flow. An origin rebuilt from `address` therefore *looks*
-//! like it speaks TLS and cannot: it is exactly the bug this type is here to make unwriteable.
-//!
-//! **So an `Origin` is PARSED from a URL, never assembled from an address.** [`Origin::parse`] is
-//! the front door, `plex::probe::Candidate::origin` is the one that matters, and
+//! **An `Origin` is PARSED from a URL, never assembled from an address.** A TLS certificate is
+//! issued for a NAME, so an origin rebuilt from the address behind it *looks* like it speaks TLS and
+//! fails hostname validation however well the packets flow. [`Origin::parse`] is the front door, and
 //! [`Origin::http`] is the deliberately-named plaintext constructor — every remaining caller of
 //! *that* is a place that still assumes cleartext, and `Origin::http(` is the grep that finds them.
 //!
@@ -43,45 +26,29 @@
 //! A v6 address appears in two different spellings and they are not interchangeable:
 //!
 //! * **`getaddrinfo` takes the BARE literal** — `::1`. Hand it `[::1]` and resolution fails.
-//! * **A URL takes the BRACKETED form** — `[::1]:32400`. Without the brackets the port colon is
-//!   indistinguishable from an address group, and `http://::1:32400` names nothing.
+//! * **A URL takes the BRACKETED form** — `[::1]:9191`. Without the brackets the port colon is
+//!   indistinguishable from an address group, and `http://::1:9191` names nothing.
 //!
 //! [`Origin::host`] is therefore **always unbracketed** (it is the resolver's node argument) and
 //! [`Origin::authority`] is **always bracket-correct** (it is URL serialization). Anything that
 //! dials calls `host()`; anything that builds a URL calls `authority()` or [`Origin::base`]. The
-//! round trip `http://[::1]:32400` → `host() == "::1"` → `authority() == "[::1]:32400"` →
-//! `base() == "http://[::1]:32400"` is pinned by a test, because the failure mode without it is
+//! round trip `http://[::1]:9191` → `host() == "::1"` → `authority() == "[::1]:9191"` →
+//! `base() == "http://[::1]:9191"` is pinned by a test, because the failure mode without it is
 //! silent: URL construction keeps looking right while name resolution quietly stops working.
 //!
-//! ## This is a PMS origin parser, not a general URL parser
+//! ## Two deliberate narrowings
 //!
-//! Two deliberate narrowings, both because every origin in this app is a Plex server's:
-//!
-//! * **The default port is 32400**, not 80/443. It is what `StreamUrl::parse` has always defaulted
-//!   to, and a PMS with no port in its URL is a PMS on the default port.
+//! * **A missing port is the scheme's own** — 80 for http, 443 for https ([`Scheme::default_port`]).
+//!   [`Origin::parse_with_port`] lets a caller supply another (Setup's bare address means 9191).
 //! * **Only `http` and `https` are recognised.** [`Origin::parse`] refuses anything else rather
 //!   than inventing a meaning for it.
 
-/// Which transport an origin names. Lives here rather than in `plex::probe` because it is a
-/// property of an ORIGIN; probe merely *ranks* it, and re-exports this type for that.
+/// Which transport an origin names.
 ///
-/// **Ordered best-first, and the derived `Ord` IS that preference** — `plex::probe::candidates`
-/// sorts on it directly.
-///
-/// **The two declarations were the other way round until the TLS control plane landed**, and this
-/// note is kept rather than replaced because the reversal is the whole of what changed. The old
-/// order was not a claim about which transport is better; it was a claim about which one this app
-/// could *dial*: the app spoke plain HTTP and nothing else, so an https `plex.direct` origin ranked
-/// first would have spent the first probe slot on something that could not connect. `crate::http`
-/// now routes an https origin through libcurl, and https is the better connection on every axis
-/// that matters here — it is the only one a certificate can authenticate, the only one that
-/// survives an owner's *Require secure connections*, and the only one that reaches a server from
-/// outside its LAN at all.
-///
-/// `Default` is still [`Scheme::Http`] — the scheme this app has always spoken, and what a session
-/// file or a dev trigger written before schemes existed meant. `Default` and `Ord` are independent
-/// here on purpose: the default is about reading an old file, the order is about picking an
-/// address.
+/// **Ordered best-first, and the derived `Ord` IS that preference**: https is the only connection a
+/// certificate can authenticate. `Default` is [`Scheme::Http`] — the scheme a URL with none written
+/// means, and what a file written before schemes existed meant. `Default` and `Ord` are independent
+/// on purpose: the default is about reading input, the order is about preferring a connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Scheme {
@@ -103,24 +70,22 @@ impl Scheme {
     pub fn is_tls(self) -> bool {
         self == Scheme::Https
     }
+    /// The port a URL of this scheme means when it names none: 80 or 443.
+    pub fn default_port(self) -> i32 {
+        match self {
+            Scheme::Http => 80,
+            Scheme::Https => 443,
+        }
+    }
 }
-
-/// The port a PMS origin means when its URL names none. See the module doc: 32400, not 80/443.
-pub const DEFAULT_PORT: i32 = 32400;
 
 /// A port this client could actually dial, narrowed to the `i32` the transport takes — `None` for
 /// anything outside `1..=65535`.
 ///
-/// **The narrowing is the point.** `port` arrives from plex.tv (and from the session file, and from
-/// the `dispatcharrtv-servers` trigger) as an `i64`, because PMS and plex.tv both string-encode numbers
-/// and every numeric field here goes through the lenient `de_i64` — so what lands in a `Candidate`
-/// is whatever the JSON said, not whatever a port can be. `port as i32` on that WRAPS: an answer of
-/// `4_294_999_696` becomes `32400` and the app dials a port nobody advertised, quietly and with a
-/// plausible-looking result. Every site that turns an advertised port into a connection goes
-/// through here.
-///
-/// Out of range drops the CANDIDATE, never the server: another of its addresses may still be
-/// dialable, and the same rule already applies to an address this transport cannot speak to.
+/// **The narrowing is the point.** A port can arrive as an `i64` (a URL's digits, a caller's
+/// fallback), and `port as i32` on that WRAPS: `4_294_999_696` becomes `32400` and the app dials a
+/// port nobody wrote, quietly and with a plausible-looking result. Every site that turns a number
+/// into a port to dial goes through here.
 pub fn dial_port(p: i64) -> Option<i32> {
     (1..=65535).contains(&p).then_some(p as i32)
 }
@@ -159,7 +124,7 @@ impl Origin {
     /// The **plaintext** constructor, named so that it is greppable.
     ///
     /// Every call is a place that still assumes cleartext — the legacy `(host, port)` registry
-    /// entry points, the compiled-in PMS host, a session file with no stored origin. Each of those
+    /// entry points, a file with no stored origin. Each of those
     /// really does mean plaintext (they have only an address to go on, and an address cannot carry
     /// the name a certificate is issued for), which is why they are spelled `Origin::http(` rather
     /// than `Origin::new(Scheme::Http, …)`: the grep is what finds them the day one of them learns
@@ -183,30 +148,22 @@ impl Origin {
     pub fn parse(url: &str) -> Option<Origin> {
         let p = Parts::of(url);
         (p.scheme_known && !p.host.is_empty() && !p.port_bad)
-            .then(|| Origin::new(p.scheme, p.host, p.port.unwrap_or(DEFAULT_PORT)))
+            .then(|| Origin::new(p.scheme, p.host, p.port.unwrap_or(p.scheme.default_port())))
     }
 
-    /// Parse an advertised `Connection.uri`, but fall back to the connection's own advertised
-    /// `port` — not [`DEFAULT_PORT`] — when the URI wrote none.
-    ///
-    /// plex.tv's `plex.direct` URIs always spell their port (`…plex.direct:32400`). A **custom
-    /// server-access URL** does not: `https://plex.example.com` carries no port, and its owner is
-    /// serving it on 443 (a reverse proxy), which is exactly what the connection's `port` field
-    /// reports. Parsing such a URI through [`parse`] would apply the 32400 PMS default and dial a
-    /// closed port — the whole server then reads as unreachable, with no relay to fall back on
-    /// (observed live: a share whose only remote was `https://<custom>` at `port:443`, timing out
-    /// at every probe deadline while the official client reached it fine). A URI that DID write a
-    /// port keeps it; `advertised` is the fallback, and only a `port_bad` URI (a written-but-
-    /// garbage port) is still refused.
-    pub fn parse_connection(uri: &str, advertised: i64) -> Option<Origin> {
+    /// [`parse`](Origin::parse), but a URL that writes no port takes `fallback` (when it is a
+    /// dialable port) rather than the scheme's default. Setup's address field uses it: a bare
+    /// `192.168.1.10` means Dispatcharr's 9191, while a written scheme means that scheme's port. A
+    /// URL that DID write a port keeps it, and a written-but-garbage port is still refused.
+    pub fn parse_with_port(uri: &str, fallback: i64) -> Option<Origin> {
         let p = Parts::of(uri);
         if !p.scheme_known || p.host.is_empty() || p.port_bad {
             return None;
         }
         let port = p
             .port
-            .or_else(|| dial_port(advertised))
-            .unwrap_or(DEFAULT_PORT);
+            .or_else(|| dial_port(fallback))
+            .unwrap_or(p.scheme.default_port());
         Some(Origin::new(p.scheme, p.host, port))
     }
 
@@ -271,12 +228,12 @@ impl Origin {
 /// `/tmp/dispatcharrtv-url` override into something to dial and has no failure path to take. Every
 /// degenerate input therefore yields *something*: a missing scheme reads as `http`, an unknown one
 /// is discarded rather than mistaken for a host, and a port that is absent or undialable becomes
-/// [`DEFAULT_PORT`] rather than wrapping into a port nobody wrote down (which is
+/// the scheme's default port rather than wrapping into a port nobody wrote down (which is
 /// [`dial_port`]'s reason for existing, one step downstream).
 pub fn split(url: &str) -> (Origin, &str) {
     let p = Parts::of(url);
     (
-        Origin::new(p.scheme, p.host, p.port.unwrap_or(DEFAULT_PORT)),
+        Origin::new(p.scheme, p.host, p.port.unwrap_or(p.scheme.default_port())),
         p.path,
     )
 }
@@ -284,11 +241,9 @@ pub fn split(url: &str) -> (Origin, &str) {
 /// The HOST of a URL, **bare** — a borrowed view for a caller that only wants to look at the host
 /// and has no use for an owned [`Origin`].
 ///
-/// Its callers are `plex::probe`'s ranking and `net`'s request funnel (the `nowan` gate). Both ask
-/// whether a host is a numeric literal or a name that needs resolving — and they must ask that of
-/// the URL's host and **not** of `plex::probe::Candidate::address`, which is the dotted quad hiding
-/// behind a `plex.direct` NAME. This lives here so that there is exactly one reading of a URL in
-/// the codebase; probe used to carry a second copy of it.
+/// Its caller is `net`'s request funnel (the `nowan` gate), which asks whether a host is a numeric
+/// literal or a name that needs resolving. This lives here so that there is exactly one reading of
+/// a URL in the codebase.
 pub fn url_host(url: &str) -> &str {
     Parts::of(url).host
 }
@@ -305,13 +260,13 @@ struct Parts<'a> {
     /// `None` when the URL wrote no port at all.
     port: Option<i32>,
     /// `true` when a `:` was written and what follows it is not a dialable port — the case that
-    /// must not silently become [`DEFAULT_PORT`] for a caller that can refuse.
+    /// must not silently become the default port for a caller that can refuse.
     ///
     /// **An EMPTY port counts.** `http://192.0.2.10:` is a truncated write or a half-finished hand
     /// edit, not a request for the default, and reading it as one is exactly the "dial a port
     /// nobody wrote down" outcome [`dial_port`] exists to prevent. RFC 3986 would let an empty port
-    /// mean the default; this is a PMS origin parser reading a file that can be corrupt, and the
-    /// two want opposite answers.
+    /// mean the default; this parser reads input that can be corrupt, and the two want opposite
+    /// answers.
     port_bad: bool,
     path: &'a str,
 }
@@ -334,7 +289,7 @@ impl<'a> Parts<'a> {
             None => (rest, ""),
         };
         // A bracketed v6 literal carries its own colons, so the port separator is the one AFTER
-        // the closing bracket. `probe` used to carry its own copy of this reading, which returned
+        // the closing bracket. A second copy of this reading once returned
         // the BRACKETED spelling — right for an authority, wrong for the resolver node this
         // produces, and precisely the confusion the module doc's bracket rule exists to end.
         let (host, port_txt) = match auth.strip_prefix('[').and_then(|r| r.split_once(']')) {
@@ -361,161 +316,6 @@ impl<'a> Parts<'a> {
     }
 }
 
-/// **A DNS shortcut for one origin, validated: dial this literal instead of resolving
-/// [`Origin::host`].** It never validates anything — TLS still checks the certificate against the
-/// hostname, which stays in the URL and in SNI. libcurl is merely told the answer DNS would have
-/// given (`CURLOPT_RESOLVE`), so no lookup happens at all.
-///
-/// ## Why it exists
-///
-/// plex.tv advertises the household's OWN server as `https://192-168-0-10.<hash>.plex.direct`,
-/// and that name resolves only through Plex's public wildcard zone. Discovery ranks TLS first and
-/// persists the winner, so a LAN server is normally stored under that name — and on a LAN whose
-/// uplink is down it can no longer be found, although it is one hop away. The plaintext twin
-/// `plex::probe::candidates` synthesizes for exactly this case cannot carry a token in a store
-/// build (`crate::http::credential_transport_allowed`), so the only offline route is the TLS name
-/// with its address supplied locally. That is this type.
-///
-/// ## What is accepted, and why the rule is narrow
-///
-/// A pin is built ONLY for a TLS origin whose host is a dashed-address `*.plex.direct` label, and
-/// only when the address that label ENCODES equals the address stored beside it — the
-/// `Connection.address` plex.tv advertised, persisted as `ServerRef::address` / `SourceRef::address`.
-/// The stored address is what is dialled (data copied from plex.tv); the decode is the cross-check. Two consequences:
-///
-/// * a mismatch, an undecodable label, a plain hostname or a literal host yields `None`, and the
-///   request resolves through DNS exactly as before — a wrong guess can only COST a pin, never
-///   produce a wrong one;
-/// * a valid pin is a pure function of the hostname, so a mapping recorded once can never become
-///   stale when a registry slot re-points. That is what lets `crate::net::resolve` keep an
-///   append-only table for the media plane instead of threading this value through the engine.
-///
-/// The IPv6 label is Plex's documented spelling — the full eight groups joined by dashes, no `::`
-/// shorthand — and it is what this account's server advertises on the wire (captured 2026-09-05
-/// alongside the v4 form). An abbreviated fixture such as `2001-db8--1` is therefore not a label
-/// this decoder accepts.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvePin {
-    host: String,
-    port: i32,
-    addr: std::net::IpAddr,
-}
-
-/// `CURLOPT_RESOLVE` learned bracketed IPv6 addresses in 7.57.0 (`0x073900`). Below it, the entry
-/// parser is `sscanf("%255[^:]:%d:%255s")` and takes the bare literal — verified in the 7.53.1
-/// source the development television runs.
-pub const CURL_RESOLVE_BRACKETS_SINCE: u32 = 0x07_39_00;
-
-impl ResolvePin {
-    /// The pin for `origin`, given the address plex.tv advertised (or a file persisted) beside it —
-    /// `None` unless every rule in the type doc holds.
-    pub fn for_origin(origin: &Origin, stored_address: &str) -> Option<ResolvePin> {
-        if !origin.is_tls() {
-            return None;
-        }
-        let stored: std::net::IpAddr = unbracket(stored_address.trim()).parse().ok()?;
-        let encoded = plex_direct_literal(origin.host())?;
-        (encoded == stored).then(|| ResolvePin {
-            host: origin.host().to_owned(),
-            port: origin.port(),
-            addr: stored,
-        })
-    }
-
-    /// A pin for a host no zone would ever answer for — the loopback tests' way of proving that a
-    /// name reached the wire through the pin and not through DNS. Production pins come only from
-    /// [`ResolvePin::for_origin`].
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn for_test(host: &str, port: i32, addr: std::net::IpAddr) -> ResolvePin {
-        ResolvePin {
-            host: host.to_owned(),
-            port,
-            addr,
-        }
-    }
-
-    pub fn host(&self) -> &str {
-        &self.host
-    }
-    pub fn port(&self) -> i32 {
-        self.port
-    }
-    pub fn addr(&self) -> std::net::IpAddr {
-        self.addr
-    }
-
-    /// The `CURLOPT_RESOLVE` list entry — `host:port:address`, the v6 address bracketed only on a
-    /// libcurl that parses brackets (see [`CURL_RESOLVE_BRACKETS_SINCE`]).
-    pub fn entry(&self, curl_version_num: u32) -> String {
-        match self.addr {
-            std::net::IpAddr::V4(a) => format!("{}:{}:{a}", self.host, self.port),
-            std::net::IpAddr::V6(a) if curl_version_num >= CURL_RESOLVE_BRACKETS_SINCE => {
-                format!("{}:{}:[{a}]", self.host, self.port)
-            }
-            std::net::IpAddr::V6(a) => format!("{}:{}:{a}", self.host, self.port),
-        }
-    }
-
-    /// `"v4"` or `"v6"` — the only thing about a pin the event log says. The host is a dashed
-    /// LAN address in disguise and the address is that address; neither belongs in the file
-    /// users paste into issues (the scrubber catches the bare address, not the label).
-    pub fn family(&self) -> &'static str {
-        if self.addr.is_ipv6() {
-            "v6"
-        } else {
-            "v4"
-        }
-    }
-
-    /// Host and address, for a test's eyes. Never logged — see [`ResolvePin::family`].
-    #[cfg(test)]
-    pub fn log_form(&self) -> String {
-        format!("{} -> {}", self.host, self.addr)
-    }
-}
-
-/// The address a dashed `plex.direct` label encodes, or `None` for anything else.
-///
-/// `192-168-0-10.<label>.plex.direct` → `192.168.0.10`; eight dash-joined hex groups → the v6
-/// address. Only the FIRST label is read; the hash label and the zone are checked for shape, not
-/// meaning. This is the reverse of a mapping plex.tv performs and is used as a cross-check against
-/// an address it advertised — never to build a hostname (`plex::probe`'s rule stands).
-pub fn plex_direct_literal(host: &str) -> Option<std::net::IpAddr> {
-    let host = unbracket(host);
-    let rest = host.strip_suffix(".plex.direct")?;
-    let (label, hash) = rest.split_once('.')?;
-    if hash.is_empty() || hash.contains('.') {
-        return None; // exactly `<address>.<hash>.plex.direct`
-    }
-    let groups: Vec<&str> = label.split('-').collect();
-    match groups.len() {
-        4 => {
-            let mut o = [0u8; 4];
-            for (i, g) in groups.iter().enumerate() {
-                if g.is_empty() || g.len() > 3 || !g.bytes().all(|b| b.is_ascii_digit()) {
-                    return None;
-                }
-                o[i] = g.parse().ok()?;
-            }
-            Some(std::net::IpAddr::V4(o.into()))
-        }
-        8 => {
-            if groups
-                .iter()
-                .any(|g| g.is_empty() || g.len() > 4 || !g.bytes().all(|b| b.is_ascii_hexdigit()))
-            {
-                return None;
-            }
-            groups
-                .join(":")
-                .parse::<std::net::Ipv6Addr>()
-                .ok()
-                .map(std::net::IpAddr::V6)
-        }
-        _ => None,
-    }
-}
-
 /// Strip the brackets a URL authority puts around a v6 literal, if they are there.
 fn unbracket(host: &str) -> &str {
     host.strip_prefix('[')
@@ -533,30 +333,19 @@ fn is_v6_literal(host: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// `parse_connection` falls back to the connection's advertised port for a portless custom URL,
-    /// keeps a port the URL DID write, and still refuses a written-but-garbage one. This is the
-    /// contract that stops a custom `https://host` (served on 443) from being dialled on 32400.
+    /// `parse_with_port` takes the caller's fallback for a URL that writes no port, keeps a port the
+    /// URL DID write, and still refuses a written-but-garbage one.
     #[test]
-    fn parse_connection_takes_the_advertised_port_only_when_the_uri_omits_one() {
-        // portless custom URL → the advertised 443, not the 32400 PMS default
-        let o = Origin::parse_connection("https://plex.example.com", 443).unwrap();
-        assert_eq!(
-            (o.scheme(), o.host(), o.port()),
-            (Scheme::Https, "plex.example.com", 443)
-        );
-        assert_eq!(o.base(), "https://plex.example.com:443");
-
-        // a plex.direct URL that spells its port keeps it, ignoring the advertised fallback
-        let o = Origin::parse_connection("https://1-2-3-4.hash.plex.direct:32400", 443).unwrap();
-        assert_eq!(o.port(), 32400);
-
-        // an empty advertised port is not a port — fall through to the PMS default rather than 0
-        let o = Origin::parse_connection("https://plex.example.com", 0).unwrap();
-        assert_eq!(o.port(), DEFAULT_PORT);
-
+    fn parse_with_port_takes_the_fallback_only_when_the_url_omits_one() {
+        let o = Origin::parse_with_port("192.0.2.10", 9191).unwrap();
+        assert_eq!((o.scheme(), o.host(), o.port()), (Scheme::Http, "192.0.2.10", 9191));
+        assert_eq!(o.base(), "http://192.0.2.10:9191");
+        assert_eq!(Origin::parse_with_port("http://192.0.2.10:8080", 9191).unwrap().port(), 8080);
+        // a fallback that is not a port falls through to the scheme's own rather than 0
+        assert_eq!(Origin::parse_with_port("https://tv.example.com", 0).unwrap().port(), 443);
         // a written-but-garbage port is still refused (the `port_bad` guard `parse` also honours)
-        assert!(Origin::parse_connection("https://plex.example.com:", 443).is_none());
-        assert!(Origin::parse_connection("ftp://plex.example.com", 443).is_none());
+        assert!(Origin::parse_with_port("https://tv.example.com:", 443).is_none());
+        assert!(Origin::parse_with_port("ftp://tv.example.com", 443).is_none());
     }
 
     /// **The bracket invariant, as a round trip.** `host()` is the resolver's node and is bare;
@@ -609,30 +398,30 @@ mod tests {
         assert!(!o.is_tls());
     }
 
-    /// **The whole reason this type is parsed and not assembled**: an https `plex.direct` origin
+    /// **The whole reason this type is parsed and not assembled**: an https origin
     /// keeps the NAME, which is what the certificate is issued for. Rebuilding it from the dotted
     /// quad behind that name gives a URL that connects and fails validation.
     #[test]
     fn an_https_origin_keeps_the_name_tls_validates_against() {
-        let o = Origin::parse("https://203-0-113-9.hash.plex.direct:31234").expect("parses");
+        let o = Origin::parse("https://tv.example.com:31234").expect("parses");
         assert_eq!(o.scheme(), Scheme::Https);
         assert!(o.is_tls());
-        assert_eq!(o.host(), "203-0-113-9.hash.plex.direct");
-        assert_eq!(o.base(), "https://203-0-113-9.hash.plex.direct:31234");
+        assert_eq!(o.host(), "tv.example.com");
+        assert_eq!(o.base(), "https://tv.example.com:31234");
     }
 
-    /// The defaults, each one a behaviour `StreamUrl::parse` has always had and must keep.
+    /// A missing scheme is http, and a missing port is the SCHEME's own — 80 for http, 443 for
+    /// https. It was Plex's 32400, which dialled a closed port for any URL the app did not build
+    /// itself: a redirect target, the `url` override, a logo on a CDN, a server behind a reverse
+    /// proxy written without a port.
     #[test]
-    fn a_missing_scheme_is_http_and_a_missing_port_is_the_pms_default() {
+    fn a_missing_scheme_is_http_and_a_missing_port_is_the_schemes_own() {
         let o = Origin::parse("192.0.2.10").expect("a bare host is an origin");
-        assert_eq!(
-            (o.scheme(), o.host(), o.port()),
-            (Scheme::Http, "192.0.2.10", DEFAULT_PORT)
-        );
-        assert_eq!(
-            Origin::parse("https://nas.example.com").unwrap().port(),
-            DEFAULT_PORT
-        );
+        assert_eq!((o.scheme(), o.host(), o.port()), (Scheme::Http, "192.0.2.10", 80));
+        assert_eq!(Origin::parse("https://nas.example.com").unwrap().port(), 443);
+        assert_eq!(split("https://tv.example.com/proxy/ts/stream/x").0.port(), 443);
+        assert_eq!(split("http://cdn.example/logo.png").0.base(), "http://cdn.example:80");
+        assert_eq!(split("http://192.0.2.10:9191/x").0.port(), 9191, "a written port is kept");
     }
 
     /// A path is not part of an origin — `base()` never grows one, whatever came in.
@@ -661,9 +450,9 @@ mod tests {
             None,
             "a scheme this app does not speak"
         );
-        // The port narrowing that `dial_port` exists for: plex.tv and the session file both
-        // string-encode numbers, so an out-of-range one is a shape that really arrives — and
-        // `4_294_999_696 as i32` is 32400, a port nobody advertised.
+        // The port narrowing that `dial_port` exists for: stored and typed input can
+        // carry an out-of-range number, so that shape really arrives — and
+        // `4_294_999_696 as i32` is 32400, a port nobody wrote.
         assert_eq!(Origin::parse("http://192.0.2.10:4294999696"), None);
         assert_eq!(Origin::parse("http://192.0.2.10:0"), None);
         assert_eq!(Origin::parse("http://192.0.2.10:70000"), None);
@@ -672,10 +461,7 @@ mod tests {
         // default. Reading it as 32400 is the same "port nobody wrote down" this list exists for.
         assert_eq!(Origin::parse("http://192.0.2.10:"), None);
         // …while a URL that writes no `:` at all really does mean the default
-        assert_eq!(
-            Origin::parse("http://192.0.2.10").unwrap().port(),
-            DEFAULT_PORT
-        );
+        assert_eq!(Origin::parse("http://192.0.2.10").unwrap().port(), 80);
     }
 
     /// [`split`] is the TOTAL sibling — its caller has no failure path — so the same inputs that
@@ -687,7 +473,7 @@ mod tests {
         assert_eq!(o.base(), "http://192.0.2.10:32400");
         assert_eq!(p, "/video/:/transcode/universal/start.mkv?a=1");
 
-        assert_eq!(split("192.0.2.10").0.base(), "http://192.0.2.10:32400");
+        assert_eq!(split("192.0.2.10").0.base(), "http://192.0.2.10:80");
         assert_eq!(
             split("192.0.2.10").1,
             "",
@@ -695,12 +481,12 @@ mod tests {
         );
         assert_eq!(
             split("http://192.0.2.10:70000/x").0.port(),
-            DEFAULT_PORT,
+            80,
             "undialable → the default"
         );
         assert_eq!(
             split("http://192.0.2.10:/x").0.port(),
-            DEFAULT_PORT,
+            80,
             "…and so does an empty one, here"
         );
         assert_eq!(split("http://192.0.2.10:/x").1, "/x");
@@ -721,10 +507,10 @@ mod tests {
             "byte-identical to the old line"
         );
         assert_eq!(
-            Origin::parse("https://nas.hash.plex.direct:32400")
+            Origin::parse("https://nas.example.com:32400")
                 .unwrap()
                 .log_form(),
-            "https://nas.hash.plex.direct:32400"
+            "https://nas.example.com:32400"
         );
         // a v6 literal is bracketed either way — it is a URL authority, not a resolver node
         assert_eq!(
@@ -733,8 +519,8 @@ mod tests {
         );
     }
 
-    /// [`url_host`] is the borrowed reading `plex::probe`'s ranking uses, and it must give the URL's own
-    /// host — the `plex.direct` NAME — not the address behind it.
+    /// [`url_host`] is the borrowed reading the `nowan` gate uses, and it must give the URL's own
+    /// host — the NAME — not an address behind it.
     #[test]
     fn url_host_reads_the_urls_own_host_without_scheme_or_port() {
         assert_eq!(url_host("http://203.0.113.9:31234"), "203.0.113.9");
@@ -748,8 +534,8 @@ mod tests {
             "the port is not a v6 group"
         );
         assert_eq!(
-            url_host("https://203-0-113-9.hash2.plex.direct:31234"),
-            "203-0-113-9.hash2.plex.direct"
+            url_host("https://tv2.example.com:31234"),
+            "tv2.example.com"
         );
     }
 
@@ -774,98 +560,7 @@ mod tests {
         // authenticate.
         assert!(
             Scheme::Https < Scheme::Http,
-            "probe RANKS on this order — TLS is the better connection"
+            "the derived order prefers TLS, the better connection"
         );
-    }
-
-    // ---- ResolvePin: the offline-mode shortcut ----
-
-    #[test]
-    fn a_plex_direct_v4_origin_with_a_matching_stored_address_yields_a_pin() {
-        let o = Origin::parse("https://192-168-0-10.h4sh.plex.direct:32400").unwrap();
-        let p = ResolvePin::for_origin(&o, "192.168.0.10").expect("pinned");
-        assert_eq!(p.host(), "192-168-0-10.h4sh.plex.direct");
-        assert_eq!(p.port(), 32400);
-        assert_eq!(p.addr(), "192.168.0.10".parse::<std::net::IpAddr>().unwrap());
-        assert_eq!(p.entry(0x07_35_01), "192-168-0-10.h4sh.plex.direct:32400:192.168.0.10");
-        assert_eq!(p.log_form(), "192-168-0-10.h4sh.plex.direct -> 192.168.0.10");
-        assert_eq!(p.family(), "v4");
-    }
-
-    #[test]
-    fn a_plex_direct_v6_origin_with_a_matching_stored_address_yields_a_pin() {
-        // The eight-group label plex.tv actually advertises (captured 2026-09-05), no `::`.
-        let o = Origin::parse("https://2001-0db8-0000-0000-0000-0000-0000-0001.h4sh.plex.direct:32400")
-            .unwrap();
-        let p = ResolvePin::for_origin(&o, "2001:db8::1").expect("pinned");
-        assert_eq!(p.addr(), "2001:db8::1".parse::<std::net::IpAddr>().unwrap());
-        assert_eq!(p.family(), "v6");
-        // …and a bracketed spelling of the stored address is the same address
-        assert_eq!(ResolvePin::for_origin(&o, "[2001:db8::1]"), Some(p));
-    }
-
-    #[test]
-    fn the_entry_is_bare_v6_below_7_57_and_bracketed_from_7_57() {
-        let o = Origin::parse("https://2001-0db8-0000-0000-0000-0000-0000-0001.h4sh.plex.direct:32400")
-            .unwrap();
-        let p = ResolvePin::for_origin(&o, "2001:db8::1").unwrap();
-        // the development television's 7.53.1 parses `%255[^:]:%d:%255s`: bare
-        assert_eq!(
-            p.entry(0x07_35_01),
-            "2001-0db8-0000-0000-0000-0000-0000-0001.h4sh.plex.direct:32400:2001:db8::1"
-        );
-        assert_eq!(
-            p.entry(CURL_RESOLVE_BRACKETS_SINCE),
-            "2001-0db8-0000-0000-0000-0000-0000-0001.h4sh.plex.direct:32400:[2001:db8::1]"
-        );
-        assert_eq!(
-            p.entry(0x08_00_00),
-            "2001-0db8-0000-0000-0000-0000-0000-0001.h4sh.plex.direct:32400:[2001:db8::1]"
-        );
-    }
-
-    #[test]
-    fn a_mismatched_or_undecodable_label_yields_no_pin() {
-        let v4 = Origin::parse("https://192-168-0-10.h4sh.plex.direct:32400").unwrap();
-        // the address the label encodes is not the one stored beside it: no pin, DNS as before
-        assert_eq!(ResolvePin::for_origin(&v4, "192.168.0.11"), None);
-        assert_eq!(ResolvePin::for_origin(&v4, ""), None);
-        assert_eq!(ResolvePin::for_origin(&v4, "nas.local"), None);
-        // plaintext never pins: the raw socket dials the literal it is given
-        let http = Origin::parse("http://192-168-0-10.h4sh.plex.direct:32400").unwrap();
-        assert_eq!(ResolvePin::for_origin(&http, "192.168.0.10"), None);
-        // a literal host has nothing to resolve
-        let lit = Origin::parse("https://192.168.0.10:32400").unwrap();
-        assert_eq!(ResolvePin::for_origin(&lit, "192.168.0.10"), None);
-        // a share's own hostname is not a plex.direct label
-        let name = Origin::parse("https://nas.example.net:31234").unwrap();
-        assert_eq!(ResolvePin::for_origin(&name, "203.0.113.9"), None);
-        // the abbreviated v6 spelling this repo's fixtures guessed is NOT what plex.tv sends
-        let abbrev = Origin::parse("https://2001-db8--1.h4sh.plex.direct:32400").unwrap();
-        assert_eq!(ResolvePin::for_origin(&abbrev, "2001:db8::1"), None);
-    }
-
-    #[test]
-    fn plex_direct_literal_decodes_only_the_documented_shapes() {
-        let ip = |s: &str| s.parse::<std::net::IpAddr>().unwrap();
-        assert_eq!(plex_direct_literal("192-168-0-10.h4sh.plex.direct"), Some(ip("192.168.0.10")));
-        assert_eq!(
-            plex_direct_literal("2001-0db8-0000-0000-0000-0000-0000-0001.h4sh.plex.direct"),
-            Some(ip("2001:db8::1"))
-        );
-        assert_eq!(plex_direct_literal("fe80-0-0-0-1-2-3-4.h4sh.plex.direct"), Some(ip("fe80::1:2:3:4")));
-        for bad in [
-            "192-168-0-10.plex.direct",        // no hash label
-            "192-168-0-10.h4sh.x.plex.direct", // one label too many
-            "192-168-0-256.h4sh.plex.direct",  // not an octet
-            "192-168-0.h4sh.plex.direct",      // three groups
-            "2001-db8--1.h4sh.plex.direct",    // abbreviated
-            "192-168-0-10.h4sh.plex.tv",       // wrong zone
-            "nas.h4sh.plex.direct",            // a name
-            "192.168.0.10",
-            "",
-        ] {
-            assert_eq!(plex_direct_literal(bad), None, "{bad}");
-        }
     }
 }

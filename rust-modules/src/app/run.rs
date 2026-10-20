@@ -84,7 +84,6 @@ impl Frame {
 /// needed a second token, and minting one is the hole `MainThread::assume` documents.
 pub(crate) unsafe fn run(app: &mut App) {
     let watchdog = plx_base::task::watchdog::LoopWatch::start();
-    let mut clock_notice = super::clock_notice::ClockNotice::new();
     while app.running {
         watchdog.advance();
         let _frame_scope = plx_base::task::FrameScope::enter();
@@ -104,8 +103,6 @@ pub(crate) unsafe fn run(app: &mut App) {
         app.instr.mark(plx_base::diag::heartbeat::Phase::Top);
         plx_platform::tv::window::pump_bus();
         plx_platform::tv::home::poll();
-        // The one toast key mode owes the viewer (`net::keypin`'s facts), on every route.
-        clock_notice.poll();
         ingest(app, fr);
         app.instr.mark(plx_base::diag::heartbeat::Phase::Ingest); // ingest
 

@@ -56,7 +56,7 @@ wording can change without renaming its key; change a key only when its meaning 
 Some slots have a fixed width and line count, and a translation that overflows one ends in `…`.
 Host tests measure each shipped language with the TV's own glyph widths and fail when such a line
 would not fit — Setup's labels (`screens/src/setup_tests.rs`), the player's failure read-out
-(`appkit/src/player_hud.rs`) and the clock notice (`src/app/clock_notice.rs`) among them. When one
+(`appkit/src/player_hud.rs`) among them. When one
 of these tests fails, shorten the wording; do not abbreviate it past readability.
 
 Review the affected screens with the desktop simulator. `DISPATCHARRTV_LOCALE=es`, `be` or `en`

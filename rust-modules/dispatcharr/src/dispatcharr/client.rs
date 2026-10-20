@@ -47,7 +47,7 @@ impl Server {
                 (format!("{scheme}://{rest}"), port)
             }
         };
-        Origin::parse_connection(&url, fallback)
+        Origin::parse_with_port(&url, fallback)
             .map(|origin| Server { origin })
             .ok_or(Error::BadAddress)
     }
@@ -118,7 +118,6 @@ pub(crate) fn send(
         net::API,
         false,
         Some(MAX_BODY),
-        None,
     )
     .ok_or(Error::Unreachable)?;
     if let Some(date) = net::last_response_date() {

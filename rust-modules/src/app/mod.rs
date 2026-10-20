@@ -109,7 +109,6 @@ pub(crate) mod boot;
 pub(crate) mod diagnostics;
 pub(crate) mod words;
 pub(crate) mod clock;
-mod clock_notice;
 mod window_activity;
 pub(crate) mod events;
 pub(crate) mod lifecycle;

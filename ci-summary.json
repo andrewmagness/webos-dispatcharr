@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-20T09:32:19Z",
+ "generated": "2026-10-21T09:29:35Z",
  "metrics": [
   {
    "change30_pct": null,
@@ -53,9 +53,9 @@
    "id": "bench.app",
    "kind": "local",
    "label": "Rebuild after editing the app crate",
-   "n_now": 5,
+   "n_now": 6,
    "n_prev": 0,
-   "now": 4.1,
+   "now": 4.3,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -74,7 +74,7 @@
    "id": "bench.screens",
    "kind": "local",
    "label": "Rebuild after editing plx_screens",
-   "n_now": 5,
+   "n_now": 6,
    "n_prev": 0,
    "now": 6.1,
    "prev7": null,
@@ -95,9 +95,9 @@
    "id": "bench.ui",
    "kind": "local",
    "label": "Rebuild after editing plx_ui",
-   "n_now": 5,
+   "n_now": 6,
    "n_prev": 0,
-   "now": 16.4,
+   "now": 16.0,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -116,9 +116,9 @@
    "id": "bench.leaf",
    "kind": "local",
    "label": "Rebuild after editing plx_base",
-   "n_now": 5,
+   "n_now": 6,
    "n_prev": 0,
-   "now": 41.6,
+   "now": 40.3,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -137,9 +137,9 @@
    "id": "bench.tests",
    "kind": "local",
    "label": "Unit suite",
-   "n_now": 5,
+   "n_now": 6,
    "n_prev": 0,
-   "now": 70.8,
+   "now": 74.0,
    "prev7": null,
    "shown": true,
    "state": "new",
@@ -410,7 +410,7 @@
    "id": "bench.noop",
    "kind": "local",
    "label": "No-op build",
-   "n_now": 5,
+   "n_now": 6,
    "n_prev": 0,
    "now": 0.4,
    "prev7": null,
@@ -461,19 +461,19 @@
    "group": "local",
    "id": "bench.tests",
    "label": "Unit suite",
-   "now": 70.8
+   "now": 74.0
   },
   {
    "group": "local",
    "id": "bench.leaf",
    "label": "Rebuild after editing plx_base",
-   "now": 41.6
+   "now": 40.3
   },
   {
    "group": "local",
    "id": "bench.ui",
    "label": "Rebuild after editing plx_ui",
-   "now": 16.4
+   "now": 16.0
   },
   {
    "group": "local",
@@ -485,7 +485,7 @@
    "group": "local",
    "id": "bench.app",
    "label": "Rebuild after editing the app crate",
-   "now": 4.1
+   "now": 4.3
   }
  ],
  "thresholds": {

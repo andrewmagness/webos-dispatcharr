@@ -234,7 +234,9 @@ pub(super) fn start_playback_with<R: PlaybackResources>(
     resources: &mut R,
 ) -> bool {
     let entering = resources.prepare_start(ps, pa);
-    if entering {
+    // A stream started for the Guide's corner (a reconnect, a codec correction, the foreground
+    // re-tune) stays there: the viewer is on the Guide, not on the player page.
+    if entering && !ps.preview {
         enter_player(pages, bridge, from, ret);
     }
     set_paused(false);
@@ -289,6 +291,7 @@ pub(crate) fn player_requests(
             PlayerReq::Exit => {
                 exit_player(ps, pa, pages);
             }
+            PlayerReq::ToGuide => to_guide(ps, pages),
         }
     }
 }
@@ -314,7 +317,8 @@ pub(super) fn return_from_player(
     }
 }
 
-/// The ONE leave-playback ritual (Stop key, BACK, EOS): close the overlays, stop the
+/// The ONE leave-playback ritual (Stop key, a BACK off anything but a live channel, EOS; BACK off a
+/// channel is [`to_guide`], which keeps the stream): close the overlays, stop the
 /// engine and put the page the session was LAUNCHED FROM back on screen.
 ///
 /// The return target is [`plx_screens::player::Origin`]'s `entry` — the container entry that was on top when Play was
@@ -331,6 +335,7 @@ pub(crate) fn exit_player(
     plx_media::route::cancel_play(ps); // BACK during a load: supersede, drop the landing
     close_player_overlays(pages);
     plx_media::player::stop_bufferfeed(ps, pa);
+    end_preview(ps);
     // The jail pre-flight refusal (also no Engine to teardown) is already retired above: it
     // lives on `ps.jail_load_blocked`, and `cancel_play` at the top of this function clears it
     // via `clear_play_verdict` the same way it clears a `/decision` refusal — see that function's
@@ -343,6 +348,76 @@ pub(crate) fn exit_player(
     // through `nav_pop_to`'s Home floor; a live Content entry with no identity takes the explicit
     // Home floor in `return_from_player`, preserving `return_page`'s old anti-strand contract.
     return_from_player(pages);
+}
+
+// ---- the Guide's corner preview -----------------------------------------------------------
+//
+// BACK off a live channel goes to the Guide and the channel keeps playing in its corner
+// (`plx_screens::guide::preview_rect`); `PlaybackSession::preview` says so. The engine is the
+// same one: nothing is stopped or re-tuned going in, or coming back for the same channel.
+
+/// **BACK off a live channel** (`PlayerReq::ToGuide`): the player page goes, the stream does not.
+/// The window moves to the Guide's corner (the pump re-places the picture already showing) and
+/// the page stack returns to where the playback was launched from, exactly as `exit_player` does.
+pub(crate) fn to_guide(
+    ps: &mut plx_media::route::PlaybackSession,
+    pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
+) {
+    close_player_overlays(pages);
+    ps.preview = true;
+    plx_media::player::set_video_rect(preview_viewport());
+    log("live: back to the Guide, still watching in its corner");
+    return_from_player(pages);
+}
+
+/// [`plx_screens::guide::preview_rect`] as the window the player places, on the same canvas.
+pub(crate) fn preview_viewport() -> plx_media::player::video_geometry::Viewport {
+    let r = plx_screens::guide::preview_rect();
+    plx_media::player::video_geometry::Viewport {
+        x: r.x.round() as i32,
+        y: r.y.round() as i32,
+        width: r.w.round() as i32,
+        height: r.h.round() as i32,
+    }
+}
+
+/// The preview is over: the window belongs to the whole canvas again. Whether the stream goes
+/// with it is the caller's decision — [`stop_preview`] stops it, [`resume_from_preview`] keeps it.
+pub(crate) fn end_preview(ps: &mut plx_media::route::PlaybackSession) {
+    ps.preview = false;
+    plx_media::player::set_video_rect(plx_media::player::video_geometry::Viewport::FULL);
+}
+
+/// **Stop the corner preview and its stream**: BACK on the Guide, leaving the Guide for another
+/// page, or a channel the preview could not keep playing. Frees the server's stream slot.
+pub(crate) fn stop_preview(
+    ps: &mut plx_media::route::PlaybackSession,
+    pa: &mut plx_media::player::adapter::PlayerAdapter,
+) {
+    log("live: the corner preview stops");
+    plx_media::player::stop_bufferfeed(ps, pa);
+    end_preview(ps);
+}
+
+/// Is `play` the channel already playing in the corner? Picking it again on the Guide returns to
+/// the full-screen player without tuning it again.
+pub(crate) fn plays_in_preview(ps: &plx_media::route::PlaybackSession, play: &plx_screens::registry::PlayIntent) -> bool {
+    let plx_screens::registry::PlayIntent::Live(tune) = play;
+    let uuid = |t: &plx_media::route::LiveTune| t.channel().map(|c| c.uuid.clone());
+    ps.preview && plx_media::route::live_tune(ps).and_then(uuid).is_some_and(|playing| uuid(tune) == Some(playing))
+}
+
+/// **The corner's own channel picked on the Guide**: the same stream, back on the full-screen
+/// player page, launched from the Guide as any Play is.
+pub(crate) fn resume_from_preview(
+    ps: &mut plx_media::route::PlaybackSession,
+    pages: &mut plx_ui::dispatch::Dispatcher<super::bridge::AppHost>,
+    bridge: &mut super::bridge::Bridge,
+    ret: Option<plx_ui::screen::ReturnState<u32, plx_screens::registry::PageMemory>>,
+) {
+    end_preview(ps);
+    log("live: the corner's channel picked; full screen again");
+    enter_player(pages, bridge, Origin::Here, ret);
 }
 
 /// The episode is OVER — drained to EOS, or the user skipped a `final` credits marker.

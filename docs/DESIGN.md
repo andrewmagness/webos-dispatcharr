@@ -130,7 +130,8 @@ This replaced a "Press [BACK] to return" hint, which spent a 60 px band restatin
 already has and could not say where the key went. Keep the BACK-return `KeyHint` on read-only ALERT
 panels, where it supplies their dismissal affordance; do not repeat it beside a route's return crumb.
 
-In the live player, BACK goes to the Guide.
+In the live player, BACK goes to the Guide and the channel keeps playing in the Guide's corner
+(`PlaybackSession::preview`); STOP leaves the player outright.
 
 ## Where to look when you are changing something
 

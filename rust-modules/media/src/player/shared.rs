@@ -843,6 +843,14 @@ pub struct Shared {
     pub dg_place_rv: AtomicI32,
     pub dg_placed_w: AtomicI32,
     pub dg_placed_h: AtomicI32,
+    /// **Where the video window goes**, on the 1920x1080 canvas ([`Viewport::pack`]): the whole
+    /// canvas, or the Guide's corner preview. Application policy rather than session state, so no
+    /// reset touches it: a channel started or reconnected while the preview is up must land in the
+    /// corner from its first frame. Written by `player::set_video_rect`, read by the pump, which
+    /// applies a change to a picture already showing (`pump::place_window`).
+    ///
+    /// [`Viewport::pack`]: super::video_geometry::Viewport::pack
+    video_dst: AtomicU64,
 }
 
 impl Shared {
@@ -878,6 +886,7 @@ impl Shared {
             dg_place_rv: AtomicI32::new(i32::MIN),
             dg_placed_w: AtomicI32::new(0),
             dg_placed_h: AtomicI32::new(0),
+            video_dst: AtomicU64::new(0x0000_0000_0780_0438), // Viewport::FULL, packed
             playpos_ns: AtomicI64::new(0),
             pres_fed: AtomicI64::new(0),
             frames: AtomicI32::new(0),
@@ -1364,6 +1373,14 @@ impl Shared {
         self.video_w.store(width, Ordering::Relaxed);
         self.video_h.store(height, Ordering::Relaxed);
         self.video_raster.store(packed, Ordering::Release);
+    }
+
+    pub fn video_dst(&self) -> super::video_geometry::Viewport {
+        super::video_geometry::Viewport::unpack(self.video_dst.load(Ordering::Relaxed))
+    }
+
+    pub fn set_video_dst(&self, r: super::video_geometry::Viewport) {
+        self.video_dst.store(r.pack(), Ordering::Relaxed);
     }
 
     pub fn video_raster(&self) -> (i32, i32) {

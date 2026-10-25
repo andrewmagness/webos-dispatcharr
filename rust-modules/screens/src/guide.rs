@@ -51,7 +51,7 @@ use plx_ui::time_grid::{self, CellLook, View as GridView};
 use plx_ui::widgets::{Button, StatusKind, StatusOverlay};
 use plx_ui::{consts, theme, Env, Painter, Rect, Spring, View};
 
-use super::registry::{word, AppFx, AppLike, ContentReq, DispatcharrCmd, GuideOutcome, LoopReq, PlayIntent};
+use super::registry::{word, AppFx, AppLike, ContentReq, DispatcharrCmd, GuideOutcome, LoopReq, PlayIntent, PlayerLike};
 
 /// The header's one control. Below `STRIP_BASE`: every element from there up is the shared tab
 /// strip's (`plx_ui::dispatch::PageWithStrip`), and the page is never asked about one.
@@ -109,6 +109,13 @@ mod layout {
         Rect::new(MARGIN_X, DETAIL_TOP, (SCR_W - 2.0 * MARGIN_X) * 0.62, DETAIL_H)
     }
 
+    /// The corner preview: 16:9 at the detail block's height, flush with the grid's right edge,
+    /// in the band the detail block leaves empty beside it.
+    pub fn preview() -> Rect {
+        let w = DETAIL_H * 16.0 / 9.0;
+        Rect::new(SCR_W - MARGIN_X - w, DETAIL_TOP, w, DETAIL_H)
+    }
+
     pub fn grid() -> TimeGrid {
         TimeGrid {
             frame: Rect::new(MARGIN_X, GRID_TOP, SCR_W - 2.0 * MARGIN_X, SCR_H - MARGIN_Y - GRID_TOP),
@@ -120,6 +127,12 @@ mod layout {
             slot: 1800,
         }
     }
+}
+
+/// **Where the channel being watched plays while the Guide is up** (`PlaybackSession::preview`), on
+/// the 1920x1080 canvas: the app places the video window here and the Guide leaves it transparent.
+pub fn preview_rect() -> Rect {
+    layout::preview()
 }
 
 /// Where the page is.
@@ -417,6 +430,24 @@ impl GuideScreen {
         let (reply, rx) = mpsc::channel();
         self.pending = Some(rx);
         fx.push(Fx::App(AppFx::Dispatcharr(DispatcharrCmd::Guide { reply })));
+    }
+
+    /// **Back with the channel still playing in the corner: focus that channel, now.** Derived
+    /// from what is playing rather than restored from what was pressed, because the two differ:
+    /// a channel resumed at launch was started before the page had seated anything (the saved
+    /// focus was the header's Account button, and OK then left the Guide), and CH▲/▼ on the
+    /// player change channel without the Guide hearing of it. OK on the seat this picks returns
+    /// to the same stream full screen.
+    fn seat_on_watched<H: AppLike>(&self, ps: &plx_media::route::PlaybackSession, fx: &mut Effects<'_, H>) {
+        if !ps.preview {
+            return;
+        }
+        let (Some(listing), Some(id)) = (&self.listing, plx_media::route::live_tune(ps).and_then(|t| t.channel()).map(|c| c.id))
+        else {
+            return;
+        };
+        let Some(row) = listing.channels.iter().position(|c| c.id == id) else { return };
+        self.reseat(listing.at(row, self.now).unwrap_or(cell(row, 0)), fx);
     }
 
     fn reseat<H: AppLike>(&self, elem: u32, fx: &mut Effects<'_, H>) {
@@ -1106,7 +1137,7 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
     }
 }
 
-impl<H: AppLike> Machine<H> for GuideScreen {
+impl<H: PlayerLike> Machine<H> for GuideScreen {
     type Ev = ScreenEvent<H>;
     fn step(&mut self, ev: &Self::Ev, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) -> Handled {
         let handled = self.step_inner(ev, cx, fx);
@@ -1116,9 +1147,15 @@ impl<H: AppLike> Machine<H> for GuideScreen {
 }
 
 impl GuideScreen {
-    fn step_inner<H: AppLike>(&mut self, ev: &ScreenEvent<H>, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) -> Handled {
+    fn step_inner<H: PlayerLike>(&mut self, ev: &ScreenEvent<H>, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) -> Handled {
         match ev {
             ScreenEvent::Mount => self.request(fx),
+            // Back from the player: the container restores the focus saved when the playback
+            // started, and this answers after it.
+            ScreenEvent::Enter(Enter::Restored) => {
+                self.seat_on_watched(H::session(cx), fx);
+                return Handled::No;
+            }
             ScreenEvent::Tick(t) => self.tick(*t, cx, fx),
             ScreenEvent::Activate(elem) => self.activate(*elem, fx),
             // A cell's holdable press (`ElemKind::Card`): the tap tunes, the hold is a favourite.
@@ -1132,7 +1169,8 @@ impl GuideScreen {
                 fx.invalidate(Provenance::Input);
             }
             ScreenEvent::Input(InputEvent { kind: InputKind::Key { key: Key::Back, edge: Edge::Down, .. }, .. }) => {
-                // The guide is the root: BACK hands the screen to the TV.
+                // The guide is the root: BACK hands the screen to the TV — after the loop has used
+                // the first one to stop a channel playing in the corner (`app::run::loop_requests`).
                 fx.push(Fx::App(AppFx::Loop(LoopReq::BackAtRoot)));
             }
             _ => return Handled::No,
@@ -1141,7 +1179,7 @@ impl GuideScreen {
     }
 }
 
-impl<H: AppLike> Screen<H> for GuideScreen {
+impl<H: PlayerLike> Screen<H> for GuideScreen {
     fn name(&self) -> &'static str {
         word::GUIDE
     }
@@ -1155,6 +1193,14 @@ impl<H: AppLike> Screen<H> for GuideScreen {
     fn draw(&mut self, f: &mut DrawFrame<'_, '_, H>) {
         let p = f.painter;
         self.ground.draw_default(Painter::root());
+        if H::session(f.cx).preview {
+            // The channel being watched shows through here; a hairline gives the window an edge
+            // against the ground while the stream is still black.
+            let r = layout::preview();
+            p.clear_through(r);
+            let line = plx_ui::widgets::HAIRLINE_H;
+            p.rring(Rect::new(r.x - line, r.y - line, r.w + 2.0 * line, r.h + 2.0 * line), 0.0, line, theme::HAIRLINE);
+        }
         let focus = f.focus.current.filter(|k| k.entry == self.entry).map(|k| k.elem);
         self.draw_header(f, p, focus);
         if self.phase == Phase::Ready {

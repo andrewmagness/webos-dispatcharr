@@ -157,6 +157,10 @@ pub struct Engine {
     /// webOS 5+ only: the source size the exported window was last placed with, so a corrective
     /// re-place happens exactly once if the demuxer publishes the real one later. 0 = never placed.
     pub placed_src: (c_int, c_int),
+    /// Where the window was last put on the canvas, either path; `None` until the first placement.
+    /// The pump compares it with `player::video_rect()` each pass and moves a showing picture
+    /// when the two differ (the Guide's corner preview and back).
+    pub placed_dst: Option<super::video_geometry::Viewport>,
     pub eos_pushed: bool, // Kodi VIDEO_DRAIN: pushEOS() sent once at true EOF
     pub rebase_pending: bool, // g_rebase_pending
     // In-place seek only: keyframes this far AHEAD of the seek target are stale frames the demuxer
@@ -1426,6 +1430,7 @@ fn start_bufferfeed_inner(
         stage: Stage::Loading,
         video_info_sent: false,
         placed_src: (0, 0),
+        placed_dst: None,
         eos_pushed: false,
         // if a seek is armed for the FIRST open (resume, or reload_at), rebase the first
         // post-seek keyframe to fed-pts 0 so the pipeline sees a 0-based timeline identical
@@ -3263,6 +3268,7 @@ mod prime_livelock_tests {
             stage: Stage::Streaming,
             video_info_sent: true,
             placed_src: (0, 0),
+            placed_dst: None,
             eos_pushed: false,
             rebase_pending: false,
             rebase_drops: 0,

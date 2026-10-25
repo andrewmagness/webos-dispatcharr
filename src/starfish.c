@@ -841,6 +841,13 @@ void acb_start(long x, long y, long w, long h) {
     acb.setDisplayWindow(g_acb, x, y, w, h, 1, &g_taskId);
     acb.setState(g_acb, APPSTATE_FOREGROUND, PLAYSTATE_PLAYING, &g_taskId);
 }
+/* Move a picture that is already PLAYING: setDisplayWindow alone, no state change. The ACB
+ * counterpart of vp_place's re-place (the Guide's corner preview and back). Same entry point and
+ * 3-arg-plus-taskId ABI as acb_start, so it adds no symbol. */
+void acb_place(long x, long y, long w, long h) {
+    if (!g_acb) return;
+    acb.setDisplayWindow(g_acb, x, y, w, h, 1, &g_taskId);
+}
 void acb_unload(void) {
     if (g_acb) acb.setState(g_acb, APPSTATE_FOREGROUND, PLAYSTATE_UNLOADED, &g_taskId);
 }

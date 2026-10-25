@@ -167,6 +167,20 @@ impl Bridge {
         }
     }
 
+    /// A page's `ContentReq`, as the page on top would have raised it from its own instance — for a
+    /// run-loop test that needs the Guide's Play without driving a press through the Guide.
+    #[cfg(all(test, feature = "hostsim"))]
+    pub(crate) fn push_content_for_test(&mut self, pages: &Dispatcher<AppHost>, req: ContentReq) {
+        let instance = pages.top_page().expect("a page is up");
+        self.content_reqs.push((MachineId::Instance(instance), req, ReturnState::default()));
+    }
+
+    /// The session the screens are shown this frame ([`Bridge::publish_playback`]).
+    #[cfg(all(test, feature = "hostsim"))]
+    pub(crate) fn published_session(&self) -> &plx_media::route::PlaybackSession {
+        &self.playback
+    }
+
     pub(crate) fn take_reqs(&mut self) -> Vec<LoopReq> {
         std::mem::take(&mut self.reqs)
     }
@@ -253,8 +267,8 @@ impl Bridge {
     ///
     /// Called once per iteration by the loop, BEFORE the dispatcher frame and the tree draw, so
     /// every screen in one frame reads one consistent picture of the playback. The copy is skipped
-    /// entirely when nothing that reads it is mounted: off the player route the publication is
-    /// `PlaybackSession::IDLE` and stays there.
+    /// entirely when nothing that reads it is mounted: with neither the player page up nor the
+    /// Guide's corner preview showing, the publication is `PlaybackSession::IDLE` and stays there.
     pub(crate) fn publish_playback(&mut self, session: &plx_media::route::PlaybackSession, live: bool) {
         if live {
             self.playback = session.publication();

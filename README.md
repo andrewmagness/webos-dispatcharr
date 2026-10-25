@@ -55,7 +55,8 @@ back to all of them; the two combine (your favourites in one group). While watch
 | OK | show the banner: what's on now and its progress, with what's up next on the right (OK again hides it) |
 | UP / DOWN | look through the other channels in the banner, each with its logo and what's on, without leaving the one playing; UP goes toward higher numbers. OK changes to the channel shown, BACK returns to the one playing, and if you leave it alone the banner goes away and you keep watching |
 | hold OK | back to the channel you watched before |
-| BACK | the Guide |
+| BACK | the Guide, with the channel still playing in its top-right corner; OK on it (focus lands there) goes back to it full screen, OK on any other programme changes to that channel, and BACK on the Guide stops it |
+| STOP | stop watching and go to the Guide |
 
 The app reopens on the last channel you watched; *Account* → *Start on the last channel* turns that
 off. Switch to another app and back and the channel you were watching tunes again, live.

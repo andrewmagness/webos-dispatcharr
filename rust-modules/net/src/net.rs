@@ -123,6 +123,10 @@ const CURLOPT_NOSIGNAL: c_int = 99;
 /// `curl/curl.h`; both have existed since libcurl 7.7. Set only by [`keypin::apply`].
 const CURLOPT_FRESH_CONNECT: c_int = 74;
 const CURLOPT_FORBID_REUSE: c_int = 75;
+/// `CURLOPT_SSL_SESSIONID_CACHE` (LONG + 150): 0 keeps this handle from resuming a cached TLS
+/// session, so a fresh connection is a full handshake. Read off `curl/curl.h`; libcurl 7.16.0+.
+/// Set only by [`keypin::apply`].
+const CURLOPT_SSL_SESSIONID_CACHE: c_int = 150;
 const CURLOPT_CONNECTTIMEOUT: c_int = 78;
 const CURLOPT_TIMEOUT: c_int = 13;
 const CURLOPT_TIMEOUT_MS: c_int = 155;
@@ -2433,7 +2437,7 @@ pub mod keypin {
     use super::{
         c_int, c_long, curl_easy_setopt_long, curl_easy_setopt_ptr, peer_leaf_pin, tls_verify_why,
         wall_clock_year, CURL, CURLOPT_CAINFO, CURLOPT_CERTINFO, CURLOPT_FORBID_REUSE,
-        CURLOPT_FRESH_CONNECT, CURLOPT_PINNEDPUBLICKEY, CURLOPT_SSL_VERIFYHOST,
+        CURLOPT_FRESH_CONNECT, CURLOPT_PINNEDPUBLICKEY, CURLOPT_SSL_SESSIONID_CACHE, CURLOPT_SSL_VERIFYHOST,
         CURLOPT_SSL_VERIFYPEER,
     };
     use std::collections::HashMap;
@@ -3156,6 +3160,12 @@ pub mod keypin {
     /// is one TLS handshake per key-mode request, accepted because key mode is a degraded state
     /// (a wrong clock) that the first strict success ends.
     ///
+    /// A fresh connection is not yet a full handshake: `CURLOPT_SSL_SESSIONID_CACHE` is 0 too, so
+    /// the handle cannot RESUME a cached TLS session either. A resumed handshake presents no
+    /// certificate, so [`confirm`] would again read none. libcurl 8.18 (Ubuntu 26.04) resumes the
+    /// open's session for a media seek or reopen on the same multi where 8.5 did not, and those were
+    /// refused as a pin mismatch: `curlio_keymode_tests` failed in CI from 2026-10-24.
+    ///
     /// # Safety
     /// `easy` is a live curl easy handle; `pin` outlives the transfer (libcurl 7.17+ copies it,
     /// but the caller holds it anyway).
@@ -3169,6 +3179,7 @@ pub mod keypin {
             (CURLOPT_CERTINFO, 1),
             (CURLOPT_FRESH_CONNECT, 1),
             (CURLOPT_FORBID_REUSE, 1),
+            (CURLOPT_SSL_SESSIONID_CACHE, 0),
             (CURLOPT_SSL_VERIFYHOST, 2),
             (CURLOPT_SSL_VERIFYPEER, 0),
         ] {

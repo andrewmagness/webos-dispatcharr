@@ -1,5 +1,5 @@
 {
- "generated": "2026-10-25T04:51:17Z",
+ "generated": "2026-10-25T04:57:36Z",
  "metrics": [
   {
    "change30_pct": null,
@@ -167,6 +167,27 @@
    "state30": "new",
    "threshold_abs": 240.0,
    "threshold_pct": 15.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "ci",
+   "id": "nightly|ARM build + gates / build + verify",
+   "kind": "job",
+   "label": "Nightly: ARM build + gates / build + verify",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 593,
+   "prev7": null,
+   "shown": true,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 120.0,
+   "threshold_pct": 25.0,
    "unit": "s"
   },
   {
@@ -360,6 +381,27 @@
   },
   {
    "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "ci",
+   "id": "nightly|publish nightly prerelease",
+   "kind": "job",
+   "label": "Nightly: publish nightly prerelease",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 16,
+   "prev7": null,
+   "shown": false,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 120.0,
+   "threshold_pct": 25.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
    "change7_pct": -17.6,
    "d30": null,
    "delta30": null,
@@ -377,6 +419,27 @@
    "state30": "new",
    "threshold_abs": 30.0,
    "threshold_pct": 20.0,
+   "unit": "s"
+  },
+  {
+   "change30_pct": null,
+   "change7_pct": null,
+   "d30": null,
+   "delta30": null,
+   "delta7": null,
+   "group": "ci",
+   "id": "nightly|plan today's nightly",
+   "kind": "job",
+   "label": "Nightly: plan today's nightly",
+   "n_now": 1,
+   "n_prev": 0,
+   "now": 13,
+   "prev7": null,
+   "shown": false,
+   "state": "new",
+   "state30": "new",
+   "threshold_abs": 120.0,
+   "threshold_pct": 25.0,
    "unit": "s"
   },
   {
@@ -427,6 +490,12 @@
  "slowest_ci": [
   {
    "group": "ci",
+   "id": "nightly|ARM build + gates / build + verify",
+   "label": "Nightly: ARM build + gates / build + verify",
+   "now": 593
+  },
+  {
+   "group": "ci",
    "id": "ci|host unit tests (default features)",
    "label": "CI: host unit tests (default features)",
    "now": 239
@@ -448,12 +517,6 @@
    "id": "ci|host lint + type-checks",
    "label": "CI: host lint + type-checks",
    "now": 121
-  },
-  {
-   "group": "ci",
-   "id": "sim|macOS tests against bundled FFmpeg and ASS",
-   "label": "Simulator CI: macOS tests against bundled FFmpeg and ASS",
-   "now": 114.5
   }
  ],
  "slowest_local": [

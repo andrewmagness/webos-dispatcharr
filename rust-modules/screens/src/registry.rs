@@ -117,8 +117,8 @@ pub enum SetupOutcome {
 /// loop performs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlayerReq {
-    /// Change channel: stop this stream and play `0`'s channel (the live player's CH▲/▼, UP/DOWN
-    /// and typed number). The loop performs it because the stop and the start need the engine.
+    /// Change channel: stop this stream and play `0`'s channel (the live player's CH▲/▼, typed
+    /// number, recall, and OK on a channel UP/DOWN browsed to). The loop performs it because the stop and the start need the engine.
     Tune(plx_media::route::LiveTune),
     /// Accepted only after the owned player confirmation. Never emitted by boot or Play.
     RepairSandbox,
@@ -516,8 +516,10 @@ pub const SCREEN_SHAPES: &[&str] = &[
 /// the Plex pages and panels and the Settings family left the alphabet, and `PageMemory` lost
 /// every page's arm (0xb076_c643_f4b1_5aac). Then the player became live-only: its transport,
 /// scrubber and panels left (`PlayerScreen`'s shape shrank and `PlayerOverlay` left the alphabet).
+/// Then the live controls grew the channel UP and DOWN browse in the banner (0x3adc_19f1_a36a_aa4e
+/// was the pin before it).
 #[cfg(test)]
-const SCREEN_SHAPES_PIN: u64 = 0x3adc_19f1_a36a_aa4e;
+const SCREEN_SHAPES_PIN: u64 = 0xfaeb_bf41_a9f7_9c2f;
 
 #[cfg(test)]
 mod arg_tests {

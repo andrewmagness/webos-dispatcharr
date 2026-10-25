@@ -41,7 +41,7 @@ pub const WORD: &str = "player";
 
 /// The fields [`PlayerScreen::write`] canonicalises, for the shape pin (§5.4).
 pub const SHAPE: &str = "PlayerScreen{origin:Option<u32>,repair_alert:{open:bool,confirm:bool,scroll:u32},\
-     live:{seen:Option<(u64,i64)>,seen_ms:u32,banner_until:u32,typed:str,typed_at:u32,missing:str,missing_until:u32,ok_down:Option<u32>,ok_fired:bool}}";
+     live:{seen:Option<(u64,i64)>,seen_ms:u32,banner_until:u32,typed:str,typed_at:u32,missing:str,missing_until:u32,ok_down:Option<u32>,ok_fired:bool,browse:Option<u64>}}";
 
 /// **The page this playback was launched from**, as the container's own identity.
 ///
@@ -138,6 +138,7 @@ impl PlayerScreen {
             }
             mix(self.live.typed.len() as u64);
             mix(u64::from(self.live.missing_visible(now)));
+            mix(self.live.browsing(now).map_or(u64::MAX, |i| i as u64));
         }
         mix(match self.busy {
             Busy::None => 1,
@@ -228,8 +229,9 @@ impl PlayerScreen {
 
     /// **A key on live TV** (see [`live`]): `Some` when the live player answered it, `None` for a
     /// key the player answers below (BACK, STOP, EXIT) or when nothing live plays. A failure
-    /// read-out keeps OK and its own row: a channel that failed can still be changed, and its
-    /// *Try again* still answers OK.
+    /// read-out keeps OK and its own row: a channel that failed can still be changed with CH, and
+    /// its *Try again* still answers OK. It covers the banner, so there is no browsing under it.
+    /// BACK is the live player's only while it ends a browse.
     #[allow(clippy::too_many_arguments)]
     fn live_key<H: AppLike>(
         &mut self,
@@ -242,14 +244,22 @@ impl PlayerScreen {
         fx: &mut Effects<'_, H>,
     ) -> Option<Handled> {
         let tune = plx_media::route::live_tune(ps)?;
+        let failed = player_hud::transport_hidden(ps);
+        if matches!(key, consts::Key::Back) && !failed && edge == Edge::Down && self.live.back(now) {
+            plx_machine::idle::invalidate();
+            return Some(Handled::Yes);
+        }
         let press = live::press_of(key, sym, wcode)?;
-        if player_hud::transport_hidden(ps) && matches!(press, live::LivePress::Ok | live::LivePress::Swallow) {
+        if failed && matches!(press, live::LivePress::Ok | live::LivePress::Swallow | live::LivePress::Browse(_)) {
             return None;
         }
-        // OK is answered on all three edges (tap on release, hold for recall). Everything else
-        // acts on the press alone: a held CH▲ does not race through the lineup, one Load a repeat.
+        // OK is answered on all three edges (tap on release, hold for recall). A browse steps on
+        // the press and on every repeat, so a held UP runs through the banner, which tunes
+        // nothing. Everything else acts on the press alone: a held CH▲ does not race through the
+        // lineup, one Load a repeat.
         let action = match press {
             live::LivePress::Ok => self.live.ok(tune, edge, now),
+            live::LivePress::Browse(_) if edge != Edge::Up => self.live.key(tune, press, now),
             _ if edge == Edge::Down => self.live.key(tune, press, now),
             _ => return Some(Handled::Yes),
         };
@@ -264,13 +274,15 @@ impl PlayerScreen {
         }
     }
 
-    /// The live chrome: the banner while it is up, and the typed number (or that it matched
+    /// The live chrome: the banner while it is up (on the channel being browsed, if one is), and
+    /// the typed number (or that it matched
     /// nothing) in the corner.
     fn draw_live<H: AppLike>(&self, ps: &plx_media::route::PlaybackSession, now: u32, f: &mut DrawFrame<'_, '_, H>) {
         let Some(tune) = plx_media::route::live_tune(ps) else { return };
         if self.live.banner_visible(now) {
-            if let Some(channel) = tune.channel() {
-                plx_appkit::live_banner::draw(f.painter, channel, self.live.wall_now(tune, now), f.measure);
+            let browsing = self.live.browsing(now).is_some();
+            if let Some(channel) = tune.lineup.channels.get(self.live.banner_index(tune, now)) {
+                plx_appkit::live_banner::draw(f.painter, channel, self.live.wall_now(tune, now), browsing, f.measure);
             }
         }
         if !self.live.typed.is_empty() {
@@ -566,6 +578,9 @@ impl LogicalState for PlayerScreen {
             c.u32(*t);
         });
         c.bool(self.live.ok_fired);
+        c.option(self.live.browse.as_ref(), |c, i| {
+            c.u64(*i as u64);
+        });
     }
     fn probe(&self, out: &mut String) {
         out.push_str(WORD);

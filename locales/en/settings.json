@@ -27,42 +27,6 @@
     "value": "Back",
     "description": "Settings, consent or sign-in UI: settings.back"
   },
-  "settings.playback.subtitle_size.small": {
-    "value": "Small",
-    "description": "Subtitle size picker option: the smallest client-rendered caption size."
-  },
-  "settings.playback.subtitle_size.medium": {
-    "value": "Medium",
-    "description": "Subtitle size picker option: the default client-rendered caption size."
-  },
-  "settings.playback.subtitle_size.large": {
-    "value": "Large",
-    "description": "Subtitle size picker option: a larger client-rendered caption size."
-  },
-  "settings.playback.subtitle_size.extra_large": {
-    "value": "Extra Large",
-    "description": "Subtitle size picker option: the largest client-rendered caption size."
-  },
-  "settings.playback.subtitle_position": {
-    "value": "Subtitle position",
-    "description": "Settings, consent or sign-in UI: how high above the bottom edge the client-rendered subtitle caption sits."
-  },
-  "settings.playback.subtitle_position.low": {
-    "value": "Low",
-    "description": "Subtitle position picker option: the caption sits near the bottom edge (the default)."
-  },
-  "settings.playback.subtitle_position.middle": {
-    "value": "Middle",
-    "description": "Subtitle position picker option: the caption sits further up the picture."
-  },
-  "settings.playback.subtitle_position.high": {
-    "value": "High",
-    "description": "Subtitle position picker option: the caption sits near the top of the safe area."
-  },
-  "settings.playback.auto": {
-    "value": "Auto",
-    "description": "Settings, consent or sign-in UI: settings.playback.auto"
-  },
   "settings.login.unknown_device": {
     "value": "unknown set",
     "description": "Settings, consent or sign-in UI: settings.login.unknown_device"

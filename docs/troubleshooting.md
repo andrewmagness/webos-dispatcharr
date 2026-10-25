@@ -7,7 +7,7 @@ This page is about what to do when something doesn't work.
 
 Dispatcharr TV starts on every firmware from webOS 3.4 up that it has been checked against, and on
 nothing older: on webOS 2 and earlier the television stops it before anything appears, so the tile
-just does nothing when you select it. See the [README's status section](../README.md#status) for
+just does nothing when you select it. See the [README's compatibility section](../README.md#compatibility) for
 which televisions have actually been watched playing.
 
 ## Developer Mode removed the app

@@ -429,8 +429,8 @@ fn a_roots_mode_host_redirected_to_a_relative_path_on_itself_reads_the_body_thro
 /// Neither is latched, so the open goes strict, then roots, on the first, and is redirected to the
 /// second, which is a request of its own: it goes strict, then roots, under ITS key, from a ladder that
 /// remembers nothing the first hop's did (the bundle is offered once per hop, not once per open). Both
-/// end latched in roots mode. Each name reaches loopback through its own resolve pin, so the test
-/// needs no DNS.
+/// end latched in roots mode. Both names are loopback (`localhost` and `127.0.0.1`), so the test needs
+/// no DNS.
 #[test]
 fn a_roots_mode_open_redirected_to_a_second_host_ends_in_the_media() {
     let _serial = plx_base::testlock::serial();

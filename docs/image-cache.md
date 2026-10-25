@@ -45,7 +45,7 @@ them.
 
 ## Stress testing
 
-PlxNative stress-tested this tier on 2026-09-26 with `tools/image-cache-stress.py`, a synthetic Plex
+PlxNative stress-tested this tier on 2026-09-26 with a since-removed tool serving a synthetic Plex
 library of 1,200 movies scrolled on its Library screen: every image survived a process restart
 from disk. That screen is gone, so the procedure cannot be run as written. The tier's own host tests
 (`rust-modules/platform/src/imgcache/tests.rs`) cover the limits, the LRU, recovery from corrupt

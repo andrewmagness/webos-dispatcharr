@@ -7,17 +7,39 @@ ask your server for it.
 
 *An independent project, not affiliated with Dispatcharr or LG.*
 
-## The goal
+## What it does
 
 webOS has no good way to watch a self-hosted IPTV lineup. Dispatcharr already does the hard work on
-the server — channels, EPG, stream proxying — so this app aims to be the living-room end of it:
+the server — channels, EPG, stream proxying — so this app is the living-room end of it:
 
 - **Setup on the TV.** The TV finds your Dispatcharr on the network and fills in its address; you
   enter your username and password once, and the TV keeps an API key, never your password.
-- **A real guide.** Every channel against time, with what's on now and next, logos, favourites,
-  your Dispatcharr channel groups and the coloured remote keys.
-- **Live playback that feels like a TV.** Channel up/down, number entry, last-channel recall and a
-  now/next banner, played through LG's native media pipeline.
+- **A real guide.** Every channel against time, with what's on now and next, logos, favourites and
+  your Dispatcharr channel groups.
+- **Live playback that feels like a TV.** Channel up/down, number entry, last-channel recall, a
+  now/next banner you can browse other channels in, played through LG's native media pipeline.
+
+## Installing
+
+You need an LG webOS TV with **Developer Mode** turned on (no root needed), a Dispatcharr server the
+TV can reach on your network, and a computer on the same network for the one-time install.
+
+1. Turn on Developer Mode on the TV, and connect to it from your computer with
+   [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop/releases/latest).
+2. Download `com.magness.dispatcharrtv_X.Y.Z_arm.ipk` from the
+   [latest release](https://github.com/andrewmagness/webos-dispatcharr/releases/latest) and check
+   it against the release's `ipk.sha256`.
+3. In Dev Manager, open **Apps** → **Install** and choose the `.ipk`. (On a rooted TV with the
+   Homebrew Channel, connect Dev Manager over its SSH option instead; the install is the same.)
+4. Open **Dispatcharr TV** on the TV. Setup finds your server on the network (or type its address,
+   such as `http://192.168.1.10:9191`); sign in with your Dispatcharr username and password.
+
+To update, install the newer `.ipk` over the old one; your sign-in and favourites are kept.
+
+**Developer Mode expires** unless you extend it in the Developer Mode app, and when it lapses LG
+removes the apps installed through it. [Installing and checking a download](docs/install-and-verify.md)
+walks through every step with the details, the hash check on each platform and how to keep Developer
+Mode alive; [troubleshooting](docs/troubleshooting.md) covers sign-in, guide and playback problems.
 
 ## Using it
 
@@ -30,36 +52,33 @@ back to all of them; the two combine (your favourites in one group). While watch
 |---|---|
 | CH▲ / CH▼ | the next or previous channel in the list you came from |
 | number keys (the Magic Remote's 123) | that channel, as soon as the number can only mean one |
-| OK, or UP / DOWN | show the banner: what's on now and its progress, with what's up next on the right (OK again hides it) |
+| OK | show the banner: what's on now and its progress, with what's up next on the right (OK again hides it) |
+| UP / DOWN | look through the other channels in the banner, each with its logo and what's on, without leaving the one playing; UP goes toward higher numbers. OK changes to the channel shown, BACK returns to the one playing, and if you leave it alone the banner goes away and you keep watching |
 | hold OK | back to the channel you watched before |
 | BACK | the Guide |
 
 The app reopens on the last channel you watched; *Account* → *Start on the last channel* turns that
 off. Switch to another app and back and the channel you were watching tunes again, live.
 
-## Status
+## Compatibility
 
-Early and under active development. Nothing here has been released yet; the first release will be
-0.1.0.
-
-| Milestone | State |
-|---|---|
-| M0 — fork, rebrand, x86_64 Linux build environment | done |
-| M1 — Dispatcharr client and the Setup screen | done |
-| M2 — live MPEG-TS playback on the television | done — H.264/AAC channels play on the TV's hardware decoder |
-| M3 — the programme guide | done — grid, logos, OK to tune |
-| M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, hold-OK recall, favourites, start on the last channel |
-| M5 — codec coverage, error handling, packaging and release | in progress — dropped or frozen streams reconnect, a busy server is retried, a channel's real codecs are detected and declared (H.264/HEVC video; AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio — the dev C1 (2021) refuses a DTS stream, as many 2020+ LG sets cannot decode DTS); an MPEG-2 video channel says how to fix it in Dispatcharr. The 0.1.0 [release note](docs/release-notes/v0.1.0.md) and [audit](docs/release-audits/v0.1.0.md) are written, the release-candidate pipeline passes end to end, and the stable package installs on the C1. 0.1.0 will be published as a GitHub release; a Homebrew Channel listing comes after a few releases |
-
-### Tested televisions
+0.1.0 is the first release. [What's in each release](https://github.com/andrewmagness/webos-dispatcharr/releases),
+including its known issues, is in its release notes.
 
 | Television | webOS | Notes |
 |---|---|---|
 | LG OLED C1 (2021, OLED65C1PUB) | 6.5.3 | the development set: every feature is verified here against a real Dispatcharr server |
 | LG OLED B8 (2018, OLED55B8PUA) | 4.4.3 | Setup found the Dispatcharr server on the network on its own; the guide and live playback perform well |
 
-Both sets are rooted (the app installs as a developer app). Features are also verified in the
-desktop simulator against a mock Dispatcharr server (`tests/mock_dispatcharr.py`).
+The app starts on every firmware from webOS 3.4.0 up (checked against each firmware image's
+libraries, which says nothing about video), and does not start on webOS 2 or older. Video has been
+watched only on the two sets above: if you try another, [open an issue](https://github.com/andrewmagness/webos-dispatcharr/issues)
+with your model and webOS version, whether it works or not. Channels with MPEG-2 video do not play,
+and many 2020-and-later sets cannot decode DTS audio; a Dispatcharr stream profile with H.264 video
+and AAC or AC-3 audio fixes either.
+
+Both test sets happen to be rooted; the app itself does not need root. Features are also verified in
+the desktop simulator against a mock Dispatcharr server (`tests/mock_dispatcharr.py`).
 
 ### Privacy
 
@@ -69,9 +88,9 @@ your Dispatcharr server. [`PRIVACY.md`](PRIVACY.md) lists what is stored on the 
 ## Building
 
 The app is Rust (with a small C shim) cross-compiled to 32-bit ARM. [`docs/building.md`](docs/building.md)
-covers the toolchain and the test loop; it is inherited from the upstream project and still being adapted.
-`make check` runs the host test suite and lint gates, and `make sim-linux` builds the desktop
-simulator.
+covers the toolchain, the two installs (the stable app and a developer build beside it) and the test
+loop. `make check` runs the host test suite and lint gates, `make` builds the television's binary,
+and `make sim-linux` builds the desktop simulator.
 
 ## Based on PlxNative
 

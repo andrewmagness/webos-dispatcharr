@@ -1389,8 +1389,8 @@ mod loopback_pms {
         listener.local_addr().unwrap().port()
     }
 
-    // The wrong-clock key-mode fixtures (issue #378), shared by the control-plane tests in
-    // `auth_discovery_tests.rs` and the media-plane ones in `curlio_keymode_tests.rs`.
+    // Fixtures shared by the control-plane roots tests (`net_roots_tests.rs`) and the media-plane
+    // ones (`curlio_roots_tests.rs`, `curlio_redirect_tests.rs`).
 
     /// libcurl is bound and usable on this host; says so, and answers false, when it is not.
     pub fn curl_ready() -> bool {
@@ -1844,7 +1844,7 @@ fn request_tls_evidence(
 }
 
 /// What is left of `t`'s whole-request deadline after `elapsed`, as a millisecond deadline, for a
-/// key-mode retry that follows a failed strict attempt: `None` when nothing is left (the caller
+/// roots-mode retry that follows a failed strict attempt: `None` when nothing is left (the caller
 /// returns the strict failure), `t` itself when the request has no whole-request deadline
 /// (`total_ms` and `total_s` both zero, the low-speed pair being the only bound).
 fn remaining_budget(t: Timeouts, elapsed: std::time::Duration) -> Option<Timeouts> {
@@ -2792,7 +2792,7 @@ mod budget_tests {
         Timeouts { connect_s: 8, total_s, total_ms, low_speed_bps: 0, low_speed_s: 0 }
     }
 
-    /// A key-mode retry spends what the failed strict attempt left of the caller's deadline, never a
+    /// A roots-mode retry spends what the failed strict attempt left of the caller's deadline, never a
     /// fresh whole one. (A request test would need the strict handshake to take a known time, which
     /// is a sleep; the arithmetic is what decides, so it is tested directly.)
     #[test]

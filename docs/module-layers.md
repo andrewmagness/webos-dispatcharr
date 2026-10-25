@@ -291,7 +291,7 @@ published values rather than hooks: the webOS code writes them into `tv::device`
 | locale | `tv::system_locale` and `tv::LocaleReply`; `i18n` still owns the parse and the log lines | `i18n` |
 | window, surface, video plane, bus pump and frame probe | `tv::window` | `app::boot`, `app::run`, `app/mod.rs` |
 | home key | `tv::home::{go_home, poll, take_root_press, release_root_press}` | `app::input`, `app::run`, `app::adapters::session`, `app::lifecycle`'s tests |
-| system toast | `tv::toast::{toast, send, Identity, Outcome, Sent}` | `app::clock_notice`, `dev::scenarios::toast_probe` |
+| system toast | `tv::toast::{toast, send, Identity, Outcome, Sent}` | `dev::scenarios::toast_probe` |
 
 `tv` may name only `base`, `machine` and `platform`. `port.rs` holds `plx_run` and the `PORT` table
 that points each hook at the `webos`, `keymanager` and `system` function behind it. The C shim and

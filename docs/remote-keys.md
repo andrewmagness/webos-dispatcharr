@@ -192,7 +192,7 @@ doc or a log predating the change comes to read as the opposite of what it says.
 answers `SDLK_PAGEUP`/`SDLK_PAGEDOWN` and 300/301 and nothing else.
 
 Graded three ways: `page_dir(digit) == None` and `is_bound(digit) == true` in `ui::consts`' host
-tests, and the `k:53,34` row of `tests/keytable.json`, which is inert on all three recorded screens.
+tests, and PlxNative's recorded key table, where the `k:53,34` row was inert on all three recorded screens.
 
 ### 4.2 `19` as an alternate PLAY — OPEN, not changed here
 
@@ -306,9 +306,9 @@ the ladder's own order — the duplication `page_dir` exists to have ended. A nu
 unlike a colour button, a key this app really does bind, so calling it bound is honest.
 
 Graded twice, because neither half implies the other: `app/input.rs`'s `unsupported_key_tests` covers the
-two global effects (invisible to any focus fingerprint), and `tools/keytable.py` covers "moves
+two global effects (invisible to any focus fingerprint), and PlxNative's key-table recorder (since removed) covered "moves
 nothing on any screen" — its `k:0,269` (HOME) and `k:53,34` (the digit 5) rows are inert on Home,
-Library and Search in `tests/keytable.json`.
+Library and Search.
 
 **What neither covers**: the player route. The simulator has no video path, so no fingerprint in
 that table was taken with a HUD on screen. The HUD half of this invariant has been graded as a unit
@@ -431,6 +431,6 @@ reproduce rather than a rule to obey by quitting.
   forwarding into SDL3 and the fields it preserves across `SDL_PushEvent` are not the obvious ones —
   `keysym.scancode` and `keysym.unused` are both discarded (`decode_key`'s doc has the measured
   table). Until 2026-08-23 the carrier was `unused`, so **every wcode-only FIFO token was silently
-  dead in the simulator** and three rows of `tests/keytable.json` recorded "did nothing" for presses
+  dead in the simulator** and three rows of PlxNative's recorded key table showed "did nothing" for presses
   that never arrived. Anything read off `make sim` about *which* code arrives is a fact about that
   shim, not about a remote.

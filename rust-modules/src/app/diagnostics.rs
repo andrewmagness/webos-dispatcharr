@@ -2052,7 +2052,25 @@ mod tests {
                 assert!(words.chars().count() <= 12, "{lang} {key} = {words:?} is too wide for the key gutter");
                 keys += 1;
             }
-            assert!(keys >= 25, "{lang}: every row key is in the catalog ({keys})");
+            // Not vacuous: every row key this panel draws is one of them.
+            let source = include_str!("diagnostics.rs");
+            let mut used: Vec<&str> = source
+                .match_indices("browse_diagnostics_field_")
+                .map(|(i, _)| {
+                    let rest = &source[i + "browse_diagnostics_field_".len()..];
+                    let end = rest.find(|c: char| !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')).unwrap_or(rest.len());
+                    &rest[..end]
+                })
+                .filter(|field| !field.is_empty())
+                .collect();
+            used.sort_unstable();
+            used.dedup();
+            assert!(!used.is_empty(), "the panel draws row keys");
+            for field in &used {
+                let key = format!("browse.diagnostics.field.{field}");
+                assert!(catalog.contains_key(&key), "{lang}: {key} is drawn but missing from the catalog");
+            }
+            assert!(keys >= used.len(), "{lang}: every row key is in the catalog ({keys} of {})", used.len());
         }
     }
 

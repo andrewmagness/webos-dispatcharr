@@ -116,7 +116,7 @@ the opt-in stack sampler's pinned libunwind build), and `sshpass` (Homebrew; dep
   before the record existed or installed from a package, both release, and is accepted as
   `unrecorded`). The profile is written to `profile-graphics`'s `metadata.json` and `summary.txt`;
   `tests/test_arm_profile_guard.py` pins the rule.
-  Graders that only read captured evidence (`tools/image-cache-stress.py`, `tools/analyze-*`) cannot
+  Graders that only read captured evidence (`tools/analyze-*`) cannot
   know which binary produced it: run that evidence on a `release` deploy. The staticlib lands in
   `rust-modules/<tdir>/arm-unknown-linux-gnueabi/<profile>/`, and a non-`release` profile adds
   `+profile:tvdev` to `pkg/.build-config` (nothing is added for `release`, so shipped stamps are

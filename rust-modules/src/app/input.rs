@@ -188,9 +188,8 @@ pub(crate) fn note_global_press(
     }
 }
 
-/// **The unsupported-key invariant, graded.** `tools/keytable.py` grades the other half — that an
-/// unbound press moves no focus on any screen — and cannot see either of these two, because neither
-/// appears in a focus fingerprint.
+/// **The unsupported-key invariant, graded**: an unbound press touches neither of the two global
+/// effects below, which no focus fingerprint can show.
 #[cfg(test)]
 mod unsupported_key_tests {
     use super::*;

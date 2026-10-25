@@ -194,6 +194,7 @@ pub enum AppMsg {}
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum LoopReq {
     /// BACK at a root the platform owns (the Guide, Setup): hand the screen to the television.
+    /// While the Guide's corner preview plays, the loop spends this BACK stopping it instead.
     BackAtRoot,
     /// **The Dispatcharr pages' three moves.** A screen cannot name `AppArg` in a `NavOp` (the
     /// bundle does not bind `Host::Arg`), so each is asked of the loop. Setup, once an account is

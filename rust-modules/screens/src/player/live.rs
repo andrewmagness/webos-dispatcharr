@@ -18,8 +18,9 @@
 //!   it for [`BANNER_MS`]. A tap acts on its RELEASE, because the same key held is recall.
 //! - Holding OK for [`HOLD_MS`] recalls the channel watched before this one (the owner's choice,
 //!   2026-10-14: the Magic Remote has no recall key). Holding it again goes back.
-//! - BACK, STOP and EXIT are not live keys: they leave the player for the Guide as they always did,
-//!   except that BACK while browsing only stops browsing.
+//! - BACK, STOP and EXIT are not live keys: the page answers them. BACK goes to the Guide with the
+//!   channel still playing in its corner (`PlayerReq::ToGuide`), STOP leaves the player, and BACK
+//!   while browsing only stops browsing.
 //! - LEFT/RIGHT and the transport keys do nothing on live TV. There is nothing to seek in, and a
 //!   paused live stream would fall behind the broadcast.
 

@@ -317,7 +317,8 @@ pub(super) fn return_from_player(
     }
 }
 
-/// The ONE leave-playback ritual (Stop key, BACK, EOS): close the overlays, stop the
+/// The ONE leave-playback ritual (Stop key, a BACK off anything but a live channel, EOS; BACK off a
+/// channel is [`to_guide`], which keeps the stream): close the overlays, stop the
 /// engine and put the page the session was LAUNCHED FROM back on screen.
 ///
 /// The return target is [`plx_screens::player::Origin`]'s `entry` — the container entry that was on top when Play was

@@ -1122,7 +1122,8 @@ every thin back-edge with `file:line` (the work list for breaking it up); `--dot
   on both edges because it is idempotent and webOS promises nothing about their order); the player
   is still the top entry, because the park moved nothing, so the `show_page(Player)` beside the
   reload is ordinarily a no-op and is written out only so that a foreground finding the player gone
-  puts it back rather than resuming a session with nothing on screen. A channel is not resumed at
+  puts it back rather than resuming a session with nothing on screen; a channel parked from the
+  Guide's corner preview is re-tuned into the corner with the Guide still up. A channel is not resumed at
   a position: the background stops the stream (`Player.parked`) and `0x106` tunes the same channel
   again at the live edge (`resume_parked`, the reconnect path). In-app overlays do **not** fire
   these — only a real OS app-switch does. Preserve
@@ -1772,7 +1773,10 @@ green.
   channel* on and a last channel stored, straight into that channel in the player; a boot without
   one lands on Setup. On the Guide, D-pad/pointer moves focus, **OK** tunes the focused channel and
   **hold OK** toggles it as a favourite. In the player, CH▲/CH▼, number entry, OK/UP/DOWN for the
-  banner, **hold OK** back to the previous channel, and **BACK returns to the Guide**. BACK at the
+  banner, **hold OK** back to the previous channel, and **BACK returns to the Guide with the channel
+  still playing in its corner** (`PlaybackSession::preview`, `app::playback::to_guide`; STOP leaves
+  the player outright). On the Guide, OK on the corner's channel returns to it full screen without
+  a retune, OK on another stops it and tunes that one, and the first BACK stops it. BACK at the
   Guide's own root, or on Setup's entry page, is the end of the chain and hands the screen back to
   the TELEVISION (`LoopReq::BackAtRoot` → `tv::home::go_home`), with the app still running — which
   is what the platform itself does at an app's entry page, and what LG's submission rules require.

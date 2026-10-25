@@ -1169,7 +1169,8 @@ impl GuideScreen {
                 fx.invalidate(Provenance::Input);
             }
             ScreenEvent::Input(InputEvent { kind: InputKind::Key { key: Key::Back, edge: Edge::Down, .. }, .. }) => {
-                // The guide is the root: BACK hands the screen to the TV.
+                // The guide is the root: BACK hands the screen to the TV — after the loop has used
+                // the first one to stop a channel playing in the corner (`app::run::loop_requests`).
                 fx.push(Fx::App(AppFx::Loop(LoopReq::BackAtRoot)));
             }
             _ => return Handled::No,

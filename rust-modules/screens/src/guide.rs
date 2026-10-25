@@ -432,6 +432,24 @@ impl GuideScreen {
         fx.push(Fx::App(AppFx::Dispatcharr(DispatcharrCmd::Guide { reply })));
     }
 
+    /// **Back with the channel still playing in the corner: focus that channel, now.** Derived
+    /// from what is playing rather than restored from what was pressed, because the two differ:
+    /// a channel resumed at launch was started before the page had seated anything (the saved
+    /// focus was the header's Account button, and OK then left the Guide), and CH▲/▼ on the
+    /// player change channel without the Guide hearing of it. OK on the seat this picks returns
+    /// to the same stream full screen.
+    fn seat_on_watched<H: AppLike>(&self, ps: &plx_media::route::PlaybackSession, fx: &mut Effects<'_, H>) {
+        if !ps.preview {
+            return;
+        }
+        let (Some(listing), Some(id)) = (&self.listing, plx_media::route::live_tune(ps).and_then(|t| t.channel()).map(|c| c.id))
+        else {
+            return;
+        };
+        let Some(row) = listing.channels.iter().position(|c| c.id == id) else { return };
+        self.reseat(listing.at(row, self.now).unwrap_or(cell(row, 0)), fx);
+    }
+
     fn reseat<H: AppLike>(&self, elem: u32, fx: &mut Effects<'_, H>) {
         fx.push(Fx::Deliver(
             MachineId::Instance(self.instance),
@@ -1119,7 +1137,7 @@ impl<H: AppLike> Focusable<H> for GuideScreen {
     }
 }
 
-impl<H: AppLike> Machine<H> for GuideScreen {
+impl<H: PlayerLike> Machine<H> for GuideScreen {
     type Ev = ScreenEvent<H>;
     fn step(&mut self, ev: &Self::Ev, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) -> Handled {
         let handled = self.step_inner(ev, cx, fx);
@@ -1129,9 +1147,15 @@ impl<H: AppLike> Machine<H> for GuideScreen {
 }
 
 impl GuideScreen {
-    fn step_inner<H: AppLike>(&mut self, ev: &ScreenEvent<H>, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) -> Handled {
+    fn step_inner<H: PlayerLike>(&mut self, ev: &ScreenEvent<H>, cx: &Cx<'_, H>, fx: &mut Effects<'_, H>) -> Handled {
         match ev {
             ScreenEvent::Mount => self.request(fx),
+            // Back from the player: the container restores the focus saved when the playback
+            // started, and this answers after it.
+            ScreenEvent::Enter(Enter::Restored) => {
+                self.seat_on_watched(H::session(cx), fx);
+                return Handled::No;
+            }
             ScreenEvent::Tick(t) => self.tick(*t, cx, fx),
             ScreenEvent::Activate(elem) => self.activate(*elem, fx),
             // A cell's holdable press (`ElemKind::Card`): the tap tunes, the hold is a favourite.

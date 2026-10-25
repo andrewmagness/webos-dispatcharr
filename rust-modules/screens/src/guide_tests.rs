@@ -23,9 +23,15 @@ impl Host for GuideHost {
     type Fx = AppFx;
     type Msg = AppMsg;
     type Elem = u32;
-    type Views<'a> = ();
+    type Views<'a> = &'a plx_media::route::PlaybackSession;
     type Init = TestInit;
-    type Memory = ();
+    type Memory = crate::registry::PageMemory;
+}
+
+impl crate::registry::PlayerLike for GuideHost {
+    fn session<'a>(cx: &Cx<'a, Self>) -> &'a plx_media::route::PlaybackSession {
+        cx.views
+    }
 }
 
 /// 2026-10-14T12:00:00Z, on a half hour.
@@ -34,8 +40,13 @@ const T0: i64 = 1_791_979_200;
 const NOW: i64 = T0 + 600;
 
 fn cx(m: &FixtureMeasure, focus: Option<u32>, ms: u32) -> Cx<'_, GuideHost> {
+    cx_in(m, focus, ms, plx_media::route::idle_session_for_test())
+}
+
+/// [`cx`] with the playback the page is shown (its corner preview, say).
+fn cx_in<'a>(m: &'a FixtureMeasure, focus: Option<u32>, ms: u32, ps: &'a plx_media::route::PlaybackSession) -> Cx<'a, GuideHost> {
     Cx {
-        views: (),
+        views: ps,
         tick: Tick { ms, dt_us: 16_000 },
         measure: m,
         press: PressRead::default(),
@@ -405,6 +416,40 @@ fn account_opens_the_server_page_and_back_leaves_the_app() {
     });
     let out = step(&mut screen, back, Some(seat));
     assert_eq!(loop_req(&out), Some(LoopReq::BackAtRoot));
+}
+
+/// The page's own step, shown the playback `ps`.
+fn step_in(screen: &mut GuideScreen, ev: ScreenEvent<GuideHost>, focus: Option<u32>, ps: &plx_media::route::PlaybackSession)
+    -> Vec<Stamped<GuideHost>> {
+    let m = FixtureMeasure;
+    let mut out = Vec::new();
+    let mut present = Present::new();
+    present.take(0);
+    let mut fx = Effects::from_handle(&mut out, MachineId::Instance(InstanceId(1)), PresentHandle::of(&mut present));
+    screen.step(&ev, &cx_in(&m, focus, 0, ps), &mut fx);
+    out
+}
+
+/// **Back from the player with the channel in the corner, the page seats on that channel** at the
+/// time on air, whatever focus was saved when the playback started: a channel resumed at launch
+/// saved the header's Account button (the 2026-10-25 device run, where OK then left the Guide),
+/// and CH▲/▼ change channel without the page hearing of it. With no preview, the restored focus
+/// stands.
+#[test]
+fn back_with_the_channel_in_the_corner_seats_on_that_channel() {
+    let (mut screen, seat) = landed();
+    let two = neighbour(&screen, seat, Dir::Down).expect("channel 2's row");
+    let out = step(&mut screen, ScreenEvent::Activate(two), Some(two));
+    let tune = tuned(&out).expect("OK tunes channel 2").clone();
+    let mut ps = plx_media::route::PlaybackSession::default();
+    assert!(plx_media::route::request_live(&mut ps, tune, NOW));
+
+    let out = step_in(&mut screen, ScreenEvent::Enter(Enter::Restored), Some(ACCOUNT), &ps);
+    assert_eq!(reseated_on(&out), None, "no corner preview: the restored focus stands");
+
+    ps.preview = true;
+    let out = step_in(&mut screen, ScreenEvent::Enter(Enter::Restored), Some(ACCOUNT), &ps);
+    assert_eq!(reseated_on(&out), Some(two), "the corner's channel, at the programme on air now");
 }
 
 fn tuned(out: &[Stamped<GuideHost>]) -> Option<&LiveTune> {

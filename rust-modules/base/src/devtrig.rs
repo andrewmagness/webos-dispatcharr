@@ -104,14 +104,11 @@ pub fn guard_log_only() -> bool {
 /// **`/tmp/dispatcharrtv-nowan` — refuse every name lookup, as a dead resolver would.**
 ///
 /// The offline-mode reproduction. A household whose internet is down but whose LAN is up resolves
-/// no public name at all: `plex.tv`, `discover.provider.plex.tv` and — the one that matters — the
-/// `plex.direct` hostname the app persisted for its OWN server on the LAN. Nothing on a desk can
+/// no public name at all — any server reached by a hostname that only public DNS answers for. Nothing on a desk can
 /// take the router's uplink away deterministically, so this trigger does it inside the app: while
 /// armed, `net`, `curlio` and `stream` refuse any host that is not a
 /// numeric literal, at the point where they would otherwise hand it to a resolver, and return the
-/// same error a failed resolution returns. A name reaches the wire only when the request carries a
-/// resolve pin (`plex::ResolvePin`) — which is exactly what the fix provides, so the same
-/// trigger shows the defect red and the fix green with no network condition arranged anywhere.
+/// same error a failed resolution returns, with no network condition arranged anywhere.
 ///
 /// Content `slow` first sleeps the connect budget an API call would have spent waiting on a dead
 /// resolver (`net::API`'s `connect_s`), so a worker that would have stalled stalls here

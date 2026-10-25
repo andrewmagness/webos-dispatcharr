@@ -1029,7 +1029,7 @@ APP_FILES = pkg/dispatcharrtv $(APPINFO) $(ICONS) pkg/splash.png \
 # itself (via `print-app-files`/`print-deploy-files`), not just today's four names.
 DEPLOY_FILES = $(filter-out pkg/dispatcharrtv $(FFMPEG_STAGED) $(LAB_FILES),$(APP_FILES))
 # pkg/le-roots.pem is the four public Let's Encrypt roots (ISRG Root X1, X2, YR, YE) that
-# `net::keypin`'s roots mode verifies a `*.plex.direct` host against when the television's own CA
+# `net::roots` verifies an HTTPS server's certificate against when the television's own CA
 # store lacks the issuing root (a 2020 firmware and Let's Encrypt's 2025 roots). It is PAYLOAD
 # for the same reason the fonts are: it is located at run time in the app directory (root-owned
 # and read-only on the set, so a safer trust location than /tmp), and without it a server whose

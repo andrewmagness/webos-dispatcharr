@@ -110,7 +110,5 @@
   "browse.diagnostics.feed_holding": "трымае запас ~1,6 с",
   "browse.diagnostics.feed_empty": "чарга пустая (няма даных)",
   "browse.diagnostics.feed_none": "— яшчэ нічога не пададзена",
-  "browse.diagnostics.fed_rate": "{video} кадр/с · {audio}/с",
-  "browse.clock.notice_year": "Час на тэлевізары, здаецца, няправільны ({year}). Злучэнне па захаваным ключы.",
-  "browse.clock.notice": "Час на тэлевізары, здаецца, няправільны. Злучэнне па захаваным ключы."
+  "browse.diagnostics.fed_rate": "{video} кадр/с · {audio}/с"
 }

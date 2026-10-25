@@ -106,7 +106,5 @@
   "browse.diagnostics.feed_holding": "maintien à ~1,6 s d’avance",
   "browse.diagnostics.feed_empty": "file vide (aucune donnée)",
   "browse.diagnostics.feed_none": "— rien d’alimenté pour l’instant",
-  "browse.diagnostics.fed_rate": "{video} i/s · {audio}/s",
-  "browse.clock.notice_year": "L’horloge de la TV semble incorrecte ({year}). Connecté grâce à la clé mémorisée.",
-  "browse.clock.notice": "L’horloge de la TV semble incorrecte. Connecté grâce à la clé mémorisée."
+  "browse.diagnostics.fed_rate": "{video} i/s · {audio}/s"
 }

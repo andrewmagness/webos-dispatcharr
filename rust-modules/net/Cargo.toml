@@ -18,11 +18,10 @@ crate-type = ["rlib"]
 [features]
 default = []
 # Forwarded from the application crate, which is the only one that sets them. Each is named here
-# only because some code in this crate has a `cfg` on it (`net::post_pinned`, the `keypin` readers
-# of the `tls-selftest` dev trigger).
+# only because some code in this crate has a `cfg` on it (`net::post_pinned`).
 devtriggers = ["plx_base/devtriggers"]
 lab-diagnostics = ["plx_base/lab-diagnostics"]
-# The `cfg(test)` seams other crates' tests use (`net::keypin`'s and `net::resolve`'s test hooks,
+# The `cfg(test)` seams other crates' tests use (`net::roots`'s test hooks,
 # the loopback PMS fixtures, the canned-response helpers) plus the test-only CA-bundle override of
 # `net::request_result`. The fixtures mint certificates and run a TLS server, so this feature is
 # also what pulls in `rcgen`, `rustls` and `serde_json` (the HTTP/2 reset fixture reads its startup line). Enabled from the dependents' `[dev-dependencies]`; never

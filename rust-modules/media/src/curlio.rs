@@ -74,41 +74,16 @@
 //!    `getaddrinfo`, where no byte in our pipe can reach it. The dev set reports `AsynchDNS = YES`
 //!    (c-ares), so the window is much smaller than feared there, but that is ONE firmware.
 //!
-//! ## `CURLOPT_RESOLVE` — built on 2026-09-05, for a different reason than this doc once gave
-//!
-//! This section used to describe our own `getaddrinfo` plus `CURLOPT_RESOLVE` as the "designed
-//! fallback for DNS cancellation, deliberately NOT built": with `CURLOPT_NOSIGNAL=1` and a
-//! synchronous resolver libcurl cannot honour a timeout during name resolution, and pre-resolving
-//! would have sidestepped that. Nothing measured that as needed, and it still has not been.
-//!
-//! What DID need it is offline play. plex.tv advertises the household's own server as an
-//! `https://…plex.direct` name that only public DNS resolves, so a LAN with its uplink down could
-//! not reach a server one hop away. `CurlSource::open*` now asks `net::resolve` for a pin by the
-//! URL's host and port — recorded by the registry from the address plex.tv advertised beside the
-//! name, validated in `plex::origin::ResolvePin` — and applies it as ONE `CURLOPT_RESOLVE` entry
-//! on every easy handle it attaches, each handle dialling one URL: a redirect's target is looked up
-//! by its own host and port, so a hop to another `*.plex.direct` name is as offline-safe as the
-//! first request. The hostname stays in the URL, so SNI and certificate
-//! identity are untouched; libcurl simply never resolves it. There is no `getaddrinfo` here: the
-//! address comes from plex.tv, never from a resolver of ours, so the second-resolution-path
-//! objection above does not arise. The list is owned by the easy handle it was set on (see
-//! `stop`), and a libcurl that answers `CURLE_UNKNOWN_OPTION` keeps resolving names itself.
-//!
-//! **TLS is strict, with two bounded exceptions.** An open, reopen or seek whose strict
-//! handshake failed with a date verify result (a television with no battery clock, issue #378) is
-//! repeated once on a fresh easy handle, recognising the server by the key `net::keypin` remembers
-//! for that exact host and port, name check still on. One that failed with a missing-issuer verify
-//! result, for a `*.plex.direct` host, is repeated once against the bundled public roots
-//! (`net::keypin::Mode::Roots`), verification fully on; and a roots attempt that then fails on the
-//! DATE (an old trust store behind a wrong clock) goes on to the remembered key, while a latched
-//! roots start the bundle now refuses goes strict once. Same decision (`keypin::after_failure`) and
-//! option code as the control plane; see `run_hop`. **Redirects:** this module follows them itself,
-//! one hop at a time (`CURLOPT_FOLLOWLOCATION` is 0; `start_range_until`, [`next_hop`]), because the CA
-//! file, the key pin and the resolve pin are per easy handle, not per hop: a hop libcurl followed
-//! would have been verified by whatever its server's handle was given, and its failure written into
-//! its server's facts. Each hop is a request of its own, to its own host, with its own ladder above;
-//! at most five are followed, a TLS request is never redirected to plaintext, and the original's
-//! query (where its token is) is never copied onto a hop.
+//! **TLS is strict, with one bounded exception.** An open, reopen or seek whose strict handshake
+//! failed with a missing-issuer verify result is repeated once against the bundled public roots
+//! (`net::roots::Mode::Roots`), verification fully on; a latched roots start the bundle now refuses
+//! goes strict once. Same decision (`roots::after_failure`) and option code as the control plane;
+//! see `run_hop`. **Redirects:** this module follows them itself, one hop at a time
+//! (`CURLOPT_FOLLOWLOCATION` is 0; `start_range_until`, [`next_hop`]), because the CA file is per
+//! easy handle, not per hop: a hop libcurl followed would have been verified by whatever its
+//! server's handle was given. Each hop is a request of its own, to its own host, with its own ladder
+//! above; at most five are followed, a TLS request is never redirected to plaintext, and the
+//! original's query (where a token may be) is never copied onto a hop.
 //!
 //! # Why the abort handle lives in a module-global REGISTRY
 //!
@@ -198,7 +173,7 @@ const CURLE_OPERATION_TIMEDOUT: c_int = 28;
 /// the same thing they always did.
 const CURLE_UNSUPPORTED_PROTOCOL: c_int = 1;
 const CURLE_TOO_MANY_REDIRECTS: c_int = 47;
-use plx_net::net::keypin::TLS_VERIFY_FAILED;
+use plx_net::net::roots::TLS_VERIFY_FAILED;
 
 // curl.h option ids. STRINGPOINT/OBJECTPOINT/CBPOINT/SLISTPOINT = 10000, FUNCTIONPOINT = 20000,
 // LONG = 0 — read off `curl/curl.h` rather than remembered.
@@ -225,9 +200,6 @@ const CURLOPT_TIMEOUT_MS: c_int = 155;
 /// The numeric protocol options are the compatibility surface for this project's curl floor.
 /// Their `_STR` replacements are newer than webOS 4.5's libcurl 7.53.1.
 const CURLOPT_PROTOCOLS: c_int = 181;
-/// `host:port:address` DNS pre-population — the media plane's half of the offline fix. The option
-/// id and its non-fatal polarity are documented on `net::CURLOPT_RESOLVE` / `net::resolve`.
-const CURLOPT_RESOLVE: c_int = 10203;
 const CURLPROTO_HTTP: c_long = 1 << 0;
 const CURLPROTO_HTTPS: c_long = 1 << 1;
 
@@ -615,26 +587,11 @@ pub struct CurlSource {
     hop_url: CString,
     ua: CString,
     range: Option<CString>,
-    /// The key pin (`net::keypin`) the CURRENT attempt's easy handle was given, held for the life
-    /// of that attempt like `range`: `keypin::apply`'s contract is that the string outlives the
+    /// The roots bundle path (`net::roots::Mode::Roots`) the CURRENT attempt's easy handle was
+    /// given, held for the life of that attempt like `range`: libcurl reads the string during the
     /// transfer. Replaced by the next attempt, and not cleared by `stop`, so it can never be freed
     /// under a handle libcurl may still reference.
-    key_pin: Option<CString>,
-    /// The roots bundle path (`net::keypin::Mode::Roots`) the CURRENT attempt's easy handle was
-    /// given, held for the life of that attempt for the same reason as [`key_pin`](Self::key_pin).
     roots_path: Option<CString>,
-    /// The `CURLOPT_RESOLVE` entry for [`url`](Self::url)'s host, when `net::resolve` holds a pin for
-    /// it — computed at open and reopen, applied to the first hop of every chain this source runs (a
-    /// seek is a fresh handle). The pinned name is a pure function of the host, so it cannot go stale
-    /// mid-stream. A later hop's host has its own entry, looked up for that hop ([`Hop::of`]).
-    resolve_entry: Option<CString>,
-    /// The `curl_slist` built from the current hop's resolve entry (`Hop`'s field of that name; the
-    /// `resolve_entry` field above is the first hop's only) for the CURRENT easy handle. **Owned by that
-    /// handle**: libcurl keeps the pointer for the transfer's life, so it is freed only after the
-    /// handle has been removed and cleaned, and it is abandoned together with the handles on
-    /// `stop`'s catastrophic path (freeing it under a handle libcurl may still reference would be
-    /// a use-after-free, which is the one thing that path exists to avoid).
-    resolve: *mut plx_net::net::curl_slist,
     xfer: Box<Xfer>,
     abort: Arc<Abort>,
     /// Byte offset of the next byte [`CurlSource::read`] will deliver.
@@ -786,11 +743,6 @@ impl CurlSource {
         deadline: Option<std::time::Instant>,
         checkpoint: &mut dyn Checkpoint,
     ) -> Result<Box<CurlSource>, OpenErr> {
-        // The resolve pin, by this URL's host and port — see `net::resolve` for why the media
-        // plane consults a table rather than carrying the pin. Looked up here for the first hop; a
-        // seek reuses it, and each later hop looks up its own.
-        let (origin, _) = plx_net::net::origin::split(url);
-        let resolve_entry = resolve_entry_for(&origin)?;
         let url_c = CString::new(url).map_err(|_| OpenErr::Local)?;
         let ua = CString::new(plx_base::identity::user_agent()).map_err(|_| OpenErr::Local)?;
         let multi = unsafe { curl_multi_init() };
@@ -805,10 +757,7 @@ impl CurlSource {
             url: url_c,
             ua,
             range: None,
-            key_pin: None,
             roots_path: None,
-            resolve_entry,
-            resolve: std::ptr::null_mut(),
             xfer: Box::new(Xfer::new()),
             abort: Arc::clone(&abort),
             off: 0,
@@ -840,8 +789,6 @@ impl CurlSource {
         if self.abort.is_set() {
             return Err(OpenErr::Aborted);
         }
-        let (origin, _) = plx_net::net::origin::split(url);
-        self.resolve_entry = resolve_entry_for(&origin)?;
         self.url = CString::new(url).map_err(|_| OpenErr::Local)?;
         self.off = 0;
         self.size = -1;
@@ -887,7 +834,7 @@ impl CurlSource {
         checkpoint: &mut dyn Checkpoint,
     ) -> Result<(), OpenErr> {
         let original = self.url.to_str().map_err(|_| OpenErr::Local)?.to_owned();
-        let mut hop = Hop::first(&self.url, self.resolve_entry.clone());
+        let mut hop = Hop::first(&self.url)?;
         loop {
             match self.run_hop(at, range_end, deadline, checkpoint, &original, &hop)? {
                 None => return Ok(()),
@@ -900,20 +847,18 @@ impl CurlSource {
     /// takes. `Ok(None)` is a response whose headers are validated, the source readable;
     /// `Ok(Some(target))` is a redirect to follow, the transfer already retired.
     ///
-    /// **Key mode (issue #378) and roots mode live here.** An attempt is one fresh easy handle
-    /// ([`start_attempt`](Self::start_attempt)); a strict attempt that failed with a date verify
-    /// result, for a host `net::keypin` holds a key for, is followed by one more attempt recognising
-    /// the server by that key; a roots-mode attempt that failed on the date is too, and a latched
-    /// roots start that the bundle refuses is followed by one strict attempt
-    /// (`net::keypin::after_failure` decides every rung; at most three attempts PER HOP). A failed
-    /// handshake delivered nothing, and the next attempt begins by detaching the first's handle and
-    /// resetting the transfer state, so nothing carries over. The shared decision and the option
-    /// setting are `net::keypin`'s, the same ones the control plane uses.
+    /// **Roots mode lives here.** An attempt is one fresh easy handle
+    /// ([`start_attempt`](Self::start_attempt)); a strict attempt that failed with a missing-issuer
+    /// verify result is followed by one more attempt against the bundled roots, and a latched roots
+    /// start that the bundle refuses is followed by one strict attempt (`net::roots::after_failure`
+    /// decides every rung; at most two attempts PER HOP). A failed handshake delivered nothing, and
+    /// the next attempt begins by detaching the first's handle and resetting the transfer state, so
+    /// nothing carries over. The shared decision and the option setting are `net::roots`'s, the same
+    /// ones the control plane uses.
     ///
     /// **All of the ladder's state is this call's**, so nothing one hop learns about its host can
-    /// reach the next hop's: which host's key the tables are asked for, the mode it starts in, whether
-    /// the bundle has been tried (it is offered once per hop, not once per open), and the failed
-    /// attempt's log phrase.
+    /// reach the next hop's: the mode it starts in, whether the bundle has been tried (it is offered
+    /// once per hop, not once per open), and the failed attempt's log phrase.
     fn run_hop(
         &mut self,
         at: i64,
@@ -923,17 +868,17 @@ impl CurlSource {
         original: &str,
         hop: &Hop,
     ) -> Result<Option<Target>, OpenErr> {
-        use plx_net::net::keypin;
+        use plx_net::net::roots;
         let key = hop.key.as_deref();
-        let mut mode = key.map_or(keypin::Mode::Strict, keypin::begin);
+        let mut mode = key.map_or(roots::Mode::Strict, roots::begin);
         // The failed attempt's log phrase, kept in case libcurl cannot be put in the mode that
         // follows it.
         let mut held: Option<String> = None;
         // Whether an attempt of this hop has already run against the bundled roots: the bundle is
-        // never offered twice ([`keypin::after_failure`]).
+        // never offered twice ([`roots::after_failure`]).
         let mut roots_tried = false;
         loop {
-            roots_tried |= matches!(mode, keypin::Mode::Roots { .. });
+            roots_tried |= matches!(mode, roots::Mode::Roots { .. });
             match self.start_attempt(at, range_end, deadline, checkpoint, original, hop, &mode, roots_tried)? {
                 Attempt::Done => return Ok(None),
                 Attempt::Redirect(next) => return Ok(Some(next)),
@@ -941,7 +886,7 @@ impl CurlSource {
                     held = Some(why);
                     mode = next;
                 }
-                Attempt::KeyRefused => {
+                Attempt::ModeRefused => {
                     // Nothing was relaxed. The fallback mode was either the latched start (drop the
                     // latch and go strict) or the retry (the request fails as it would have).
                     match held.take() {
@@ -953,9 +898,9 @@ impl CurlSource {
                         }
                         None => {
                             if let Some(key) = key {
-                                keypin::unlatch(key);
+                                roots::unlatch(key);
                             }
-                            mode = keypin::Mode::Strict;
+                            mode = roots::Mode::Strict;
                         }
                     }
                 }
@@ -967,7 +912,7 @@ impl CurlSource {
     /// pumped until the response headers are in. `original` is the URL the chain began on, which
     /// decides what a redirect may be to ([`next_hop`]). `roots_tried` is whether this hop has
     /// already run an attempt against the bundled roots (this one included), for
-    /// [`keypin::after_failure`].
+    /// [`roots::after_failure`].
     fn start_attempt(
         &mut self,
         at: i64,
@@ -976,12 +921,12 @@ impl CurlSource {
         checkpoint: &mut dyn Checkpoint,
         original: &str,
         hop: &Hop,
-        mode: &plx_net::net::keypin::Mode,
+        mode: &plx_net::net::roots::Mode,
         roots_tried: bool,
     ) -> Result<Attempt, OpenErr> {
-        use plx_net::net::keypin;
-        // `hop.key` is the hop URL's `host:port` in `net::keypin`'s tables, or `None` when the URL can
-        // never use them.
+        use plx_net::net::roots;
+        // `hop.key` is the hop URL's `host:port` in `net::roots`'s latch, or `None` when the URL can
+        // never use it.
         let key = hop.key.as_deref();
         self.stop();
         if self.multi_failed {
@@ -1033,7 +978,6 @@ impl CurlSource {
                         ));
                         plx_net::net::curl_easy_cleanup(easy);
                         self.easy = std::ptr::null_mut();
-                        self.free_resolve_list();
                         return Err(OpenErr::Local);
                     }
                 }};
@@ -1060,32 +1004,10 @@ impl CurlSource {
             if let Some(r) = &self.range {
                 plx_net::net::curl_easy_setopt_ptr(easy, CURLOPT_RANGE, r.as_ptr() as *const c_void);
             }
-            // The resolve pin, one list entry, owned by THIS easy handle (`stop` frees it after the
-            // handle, or abandons both). It is the pin of THIS hop's host: a handle dials one URL.
-            // Not `require_setopt!`: a libcurl without the option keeps resolving the name itself,
-            // and that is a logged fact rather than a cancelled stream.
-            if let Some(r) = &hop.resolve_entry {
-                let l = plx_net::net::curl_slist_append(std::ptr::null_mut(), r.as_ptr());
-                if l.is_null() {
-                    plx_net::net::curl_easy_cleanup(easy);
-                    self.easy = std::ptr::null_mut();
-                    return Err(OpenErr::Local);
-                }
-                self.resolve = l;
-                let rc = plx_net::net::curl_easy_setopt_ptr(easy, CURLOPT_RESOLVE, l as *const c_void);
-                if plx_net::net::resolve::note_setopt(rc).is_err() {
-                    plx_net::net::curl_easy_cleanup(easy);
-                    self.easy = std::ptr::null_mut();
-                    self.free_resolve_list();
-                    return Err(OpenErr::Local);
-                }
-            }
-            // TLS verification ON, both halves, by default — the certificate is issued for the
-            // `plex.direct` NAME, which is the entire reason an Origin is parsed from a URL and
-            // never rebuilt from an address (`net/origin.rs`). Turning either of these off would
-            // make an https URL "work" against the wrong server. Only the key-mode block below
-            // may lower `VERIFYPEER`, and only behind a key pin libcurl accepted
-            // (`keypin::apply`); `VERIFYHOST` is never lowered.
+            // TLS verification ON, both halves, always — the certificate is issued for the server's
+            // NAME, which is the entire reason an Origin is parsed from a URL and never rebuilt from
+            // an address (`net/origin.rs`). Turning either of these off would make an https URL
+            // "work" against the wrong server.
             require_setopt!(
                 plx_net::net::curl_easy_setopt_long(easy, CURLOPT_SSL_VERIFYPEER, 1),
                 "CURLOPT_SSL_VERIFYPEER"
@@ -1103,43 +1025,23 @@ impl CurlSource {
                     plx_net::net::curl_easy_setopt_ptr(easy, plx_net::net::CURLOPT_CAINFO, c.as_ptr() as *const c_void);
                 }
             }
-            // **Key mode** (`net::keypin`, issue #378): the remembered key in place of the
-            // certificate's dates. `apply` sets the pin FIRST and relaxes `VERIFYPEER` only once
-            // libcurl accepted it; a refusal leaves this handle exactly as strict as it was.
-            // The pin string is held in `self` for the life of the attempt, as `range` is.
-            self.key_pin = match mode {
-                keypin::Mode::Key { pin, .. } => Some(CString::new(pin.as_str()).map_err(|_| OpenErr::Local)?),
-                keypin::Mode::Strict | keypin::Mode::Roots { .. } => None,
-            };
-            if let Some(pin) = &self.key_pin {
-                if let Err(rc) = keypin::apply(easy, pin) {
-                    crate::player::log(&format!(
-                        "curlio: this libcurl refuses the key-mode options (rc={rc}) — the stream stays strict"
-                    ));
-                    plx_net::net::curl_easy_cleanup(easy);
-                    self.easy = std::ptr::null_mut();
-                    self.free_resolve_list();
-                    return Ok(Attempt::KeyRefused);
-                }
-            }
-            // **Roots mode** (`net::keypin`): the bundled public roots in place of this firmware's CA
+            // **Roots mode** (`net::roots`): the bundled public roots in place of this firmware's CA
             // store, `VERIFYPEER`/`VERIFYHOST` still 1 and 2 (`apply_roots` states them again).
             // After the test CA override above so it replaces that too. A libcurl that refuses
             // `CURLOPT_CAINFO` is refused outright: nothing is sent against a trust store we did
             // not select, and the open reports the strict failure it already had.
             self.roots_path = match mode {
-                keypin::Mode::Roots { path, .. } => Some(CString::new(path.as_str()).map_err(|_| OpenErr::Local)?),
-                keypin::Mode::Strict | keypin::Mode::Key { .. } => None,
+                roots::Mode::Roots { path, .. } => Some(CString::new(path.as_str()).map_err(|_| OpenErr::Local)?),
+                roots::Mode::Strict => None,
             };
             if let Some(path) = &self.roots_path {
-                if let Err(rc) = keypin::apply_roots(easy, path) {
+                if let Err(rc) = roots::apply_roots(easy, path) {
                     crate::player::log(&format!(
                         "curlio: this libcurl refuses CURLOPT_CAINFO (rc={rc}) — refusing to send against an unknown trust store"
                     ));
                     plx_net::net::curl_easy_cleanup(easy);
                     self.easy = std::ptr::null_mut();
-                    self.free_resolve_list();
-                    return Ok(Attempt::KeyRefused);
+                    return Ok(Attempt::ModeRefused);
                 }
             }
             // We are on a worker thread; curl must not install signal handlers. This is also what
@@ -1236,67 +1138,40 @@ impl CurlSource {
                 _ => {}
             }
         }
-        // Key mode's verdict on this handshake, BEFORE `validate` grades the response: a strict
-        // attempt that failed with a date verify result retries in key mode, and what the attempt that
-        // decides the open says about the host's mode is recorded. A handshake is established once
-        // a response line arrived, whatever the HTTP status is.
+        // Roots mode's verdict on this handshake, BEFORE `validate` grades the response: a strict
+        // attempt that failed on a missing issuer retries against the bundle, and what the attempt
+        // that decides the open says about the host's latch is recorded. A handshake is established
+        // once a response line arrived, whatever the HTTP status is.
         if let Some(key) = key {
-            let mut established = self.xfer.headers_done || self.xfer.status != 0;
-            if let keypin::Mode::Key { pin, .. } = mode {
-                // libcurl was asked to enforce the pin; look at the key the peer really presented
-                // too, so a backend that accepted the option and never enforced it fails closed.
-                if established && !keypin::confirm(self.easy, pin) {
-                    self.failed = true;
-                    self.done = true;
-                    self.rc = keypin::PIN_MISMATCH;
-                    self.xfer.status = 0;
-                    self.xfer.headers_done = false;
-                    established = false;
-                }
-            }
+            let established = self.xfer.headers_done || self.xfer.status != 0;
             match mode {
-                keypin::Mode::Strict if self.done && self.failed && self.rc == TLS_VERIFY_FAILED => {
+                roots::Mode::Strict if self.done && self.failed && self.rc == TLS_VERIFY_FAILED => {
                     let verify = plx_net::net::verify_result(self.easy);
-                    if let Some(next) = keypin::after_failure(key, mode, self.rc, verify, roots_tried) {
+                    if let Some(next) = roots::after_failure(key, mode, self.rc, verify, roots_tried) {
                         let why = plx_net::net::tls_failure_reason(self.easy, self.rc).unwrap_or_default();
                         self.stop();
                         return Ok(Attempt::Retry(next, why));
                     }
-                    // No rung to retry in: publish a date failure that no key could answer.
-                    keypin::strict_failure(key, self.rc, verify);
                 }
-                keypin::Mode::Strict if established => keypin::strict_established(key),
-                // Any other strict failure is the host's latest outcome too: a refused connection or
-                // a timeout ends a "the clock is why" fact a date failure published earlier.
-                keypin::Mode::Strict if self.done && self.failed => keypin::strict_failure(key, self.rc, None),
-                // A different key: stop serving the host in key mode and publish it. `validate` logs
-                // the one line for it (`curl_why(90)`), so this does not log a second.
-                keypin::Mode::Key { .. } if self.done && self.failed && self.rc == keypin::PIN_MISMATCH => {
-                    keypin::key_changed(key);
-                }
-                keypin::Mode::Key { pin, verify } if established => keypin::key_established(key, pin, *verify),
-                keypin::Mode::Roots { verify, .. } if established => keypin::roots_established(key, *verify),
+                roots::Mode::Strict if established => roots::strict_established(key),
+                roots::Mode::Roots { verify, .. } if established => roots::roots_established(key, *verify),
                 // The bundle did not answer for this host: end its latch. `validate` logs the
-                // request's own failure line, so this adds the one verify-result line only. What
-                // follows is `keypin::after_failure`'s: a date failure goes to the remembered key
-                // (a wrong clock behind an old trust store), and a LATCHED start the bundle now
-                // refuses goes strict once; with no rung left a date failure is published.
-                keypin::Mode::Roots { .. } if self.done && self.failed && keypin::is_roots_refusal(self.rc) => {
+                // request's own failure line, so this adds the one verify-result line only. A LATCHED
+                // start the bundle now refuses goes strict once (`roots::after_failure`).
+                roots::Mode::Roots { .. } if self.done && self.failed && roots::is_roots_refusal(self.rc) => {
                     let verify = plx_net::net::verify_result(self.easy);
-                    keypin::roots_failed(key, self.rc, verify);
-                    if let Some(next) = keypin::after_failure(key, mode, self.rc, verify, roots_tried) {
+                    roots::roots_failed(key, self.rc, verify);
+                    if let Some(next) = roots::after_failure(key, mode, self.rc, verify, roots_tried) {
                         let why = plx_net::net::tls_failure_reason(self.easy, self.rc).unwrap_or_default();
                         self.stop();
                         return Ok(Attempt::Retry(next, why));
                     }
-                    keypin::roots_unanswered(key, self.rc, verify);
                 }
                 _ => {}
             }
         }
         // A redirect is followed from here, after the verdict above has recorded what this hop's
-        // handshake said about ITS host. It is decided from the status, which the verdict zeroes for
-        // a handshake whose pin did not confirm: a response a pin refused is never followed.
+        // handshake said about ITS host.
         if is_redirect(self.xfer.status) && !self.failed && !self.abort.is_set() {
             let status = self.xfer.status;
             let current = hop.url.to_str().unwrap_or_default();
@@ -1482,15 +1357,6 @@ impl CurlSource {
         }
     }
 
-    /// Free the resolve list of a handle that is already gone (cleaned up, or never attached).
-    /// Only ever AFTER the easy handle: libcurl holds the pointer for the handle's life.
-    fn free_resolve_list(&mut self) {
-        if !self.resolve.is_null() {
-            unsafe { plx_net::net::curl_slist_free_all(self.resolve) };
-            self.resolve = std::ptr::null_mut();
-        }
-    }
-
     /// Detach and free the current easy handle. Idempotent.
     ///
     /// If libcurl refuses the detach, ownership is no longer provable. Its documented cleanup
@@ -1508,18 +1374,14 @@ impl CurlSource {
                     self.multi_failed = true;
                     // Neither cleanup is contractually safe while attachment is uncertain.
                     // Forget both values; `start` sees `multi_failed` and builds a fresh owner.
-                    // The resolve list goes with them: libcurl may still hold its pointer.
                     self.multi = std::ptr::null_mut();
                     self.easy = std::ptr::null_mut();
-                    self.resolve = std::ptr::null_mut();
                     self.range = None;
                     return;
                 }
                 plx_net::net::curl_easy_cleanup(self.easy);
             }
             self.easy = std::ptr::null_mut();
-            // After the handle, never before: the list must outlive the transfer.
-            self.free_resolve_list();
         }
         self.range = None;
     }
@@ -1818,53 +1680,44 @@ impl CurlSource {
     }
 }
 
-/// The `CURLOPT_RESOLVE` entry for a request to `origin`: its pin in `net::resolve`, when that holds
-/// one. `Local` when the offline reproduction (`/tmp/dispatcharrtv-nowan`) refuses a name no pin covers.
-fn resolve_entry_for(origin: &Origin) -> Result<Option<CString>, OpenErr> {
-    let entry = plx_net::net::resolve::entry_for(origin.host(), origin.port());
-    if entry.is_none() && plx_net::net::refuse_name(origin.host(), plx_net::net::API.connect_s) {
+/// The offline reproduction (`/tmp/dispatcharrtv-nowan`): `Local` for a request to a NAME it refuses,
+/// as the control plane's funnel refuses one.
+fn refused_offline(host: &str) -> Result<(), OpenErr> {
+    if plx_net::net::refuse_name(host, plx_net::net::API.connect_s) {
         return Err(OpenErr::Local);
     }
-    entry.map(CString::new).transpose().map_err(|_| OpenErr::Local)
+    Ok(())
 }
 
-/// One request of a redirect chain, and what is looked up by the host it dials. Built afresh for
-/// every hop ([`CurlSource::start_range_until`]): what `net::keypin` knows and what `net::resolve`
-/// holds are facts about a host, and a hop is a different host from the one that sent it there.
+/// One request of a redirect chain. Built afresh for every hop ([`CurlSource::start_range_until`]):
+/// the roots latch is a fact about a host, and a hop is a different host from the one that sent it
+/// there.
 struct Hop {
     /// Redirects followed to get here: 0 for the open's own URL.
     n: u32,
     url: CString,
-    /// The `CURLOPT_RESOLVE` entry for this URL's host and port, when `net::resolve` holds a pin.
-    resolve_entry: Option<CString>,
-    /// The URL's `host:port` in `net::keypin`'s tables, or `None` when it can never use them (not
-    /// https, or an authority that is not a plain `host[:port]`: see `keypin::key_of_url`).
+    /// The URL's `host:port` in `net::roots`'s latch, or `None` when it can never use it (not https,
+    /// or an authority that is not a plain `host[:port]`: see `roots::key_of_url`).
     key: Option<String>,
 }
 
 impl Hop {
-    /// The chain's first request: the URL the source was opened on, and the resolve entry open and
-    /// reopen already looked up (and, for the offline reproduction, already refused a name for).
-    fn first(url: &CString, resolve_entry: Option<CString>) -> Hop {
-        Hop {
-            n: 0,
-            key: plx_net::net::keypin::key_of_url(url.to_str().unwrap_or_default()),
-            url: url.clone(),
-            resolve_entry,
-        }
+    /// The chain's first request: the URL the source was opened on.
+    fn first(url: &CString) -> Result<Hop, OpenErr> {
+        let text = url.to_str().unwrap_or_default();
+        refused_offline(plx_net::net::origin::split(text).0.host())?;
+        Ok(Hop { n: 0, key: plx_net::net::roots::key_of_url(text), url: url.clone() })
     }
 
-    /// The request a redirect leads to, asked what every request to an origin is asked: may the
-    /// media plane send it there, and what is that host's pin. The URL is what `Location` spelled
-    /// ([`next_hop`]), so it carries none of the original's query.
+    /// The request a redirect leads to. The URL is what `Location` spelled ([`next_hop`]), so it
+    /// carries none of the original's query.
     fn of(target: &Target, n: u32) -> Result<Hop, OpenErr> {
         let url = target.url();
-        let resolve_entry = resolve_entry_for(&target.origin)?;
+        refused_offline(target.origin.host())?;
         Ok(Hop {
             n,
-            key: plx_net::net::keypin::key_of_url(&url),
+            key: plx_net::net::roots::key_of_url(&url),
             url: CString::new(url).map_err(|_| OpenErr::Local)?,
-            resolve_entry,
         })
     }
 }
@@ -2185,45 +2038,30 @@ fn curl_why(rc: c_int) -> &'static str {
 enum Attempt {
     /// Headers are in and validated; the source is readable.
     Done,
-    /// An attempt failed in a way `net::keypin::after_failure` has a next rung for (a date, with a
-    /// key held for the host; a missing issuer, for a `*.plex.direct` host with the roots bundle on
-    /// disk; a latched bundle start the bundle now refuses): try again in the given mode. Carries
-    /// the failed attempt's log phrase, to report with `OpenErr::Transport(TLS_VERIFY_FAILED)`
-    /// should libcurl turn out not to support the mode.
-    Retry(plx_net::net::keypin::Mode, String),
-    /// libcurl refused the fallback mode's options; the handle was discarded unrelaxed.
-    KeyRefused,
+    /// An attempt failed in a way `net::roots::after_failure` has a next rung for (a missing issuer,
+    /// with the roots bundle on disk; a latched bundle start the bundle now refuses): try again in
+    /// the given mode. Carries the failed attempt's log phrase, to report with
+    /// `OpenErr::Transport(TLS_VERIFY_FAILED)` should libcurl turn out not to support the mode.
+    Retry(plx_net::net::roots::Mode, String),
+    /// libcurl refused the roots mode's option; the handle was discarded unrelaxed.
+    ModeRefused,
     /// The response is a redirect to follow ([`next_hop`] chose the target), and the transfer is
-    /// retired. Returned after the attempt's verdict on its own host was recorded, and never for a
-    /// response whose pin did not confirm.
+    /// retired. Returned after the attempt's verdict on its own host was recorded.
     Redirect(Target),
 }
 
-/// What the `curlio_*_tests.rs` files share: one body, one fixture host name and the pin that
-/// sends it to loopback.
+/// What the `curlio_*_tests.rs` files share: one body, and the name every TLS double is reached by.
 #[cfg(test)]
 mod test_fixtures {
-    use plx_net::net::origin::ResolvePin;
-    use plx_net::net::resolve;
-
     pub(super) fn media_body() -> Vec<u8> {
         (0..5000u32).map(|i| (i % 253) as u8).collect()
     }
 
-    pub(super) const PLEX_DIRECT: &str = "127-0-0-1.0123456789abcdef0123456789abcdef.plex.direct";
-
-    pub(super) fn pin_to_loopback(host: &str, port: u16) {
-        resolve::add(&ResolvePin::for_test(host, i32::from(port), std::net::IpAddr::from([127, 0, 0, 1])));
-    }
+    pub(super) const HOST: &str = "localhost";
 }
 
-/// Issue #378's media-plane half: key mode through a real `CurlSource` handshake.
-#[cfg(test)]
-#[path = "curlio_keymode_tests.rs"]
-mod keymode_tests;
-
 /// The bundled public roots fallback, media plane: the same open/reopen/seek paths through the
-/// shared decision in `net::keypin`.
+/// shared decision in `net::roots`.
 #[cfg(test)]
 #[path = "curlio_roots_tests.rs"]
 mod roots_tests;
@@ -2311,45 +2149,6 @@ mod tests {
 
     /// How much of [`BODY`] the truncating modes deliver before they cut the connection.
     const TRUNCATED_AT: usize = 3;
-
-    /// **The offline fix's media half.** A `.invalid` host is opened through the resolve TABLE —
-    /// the pin was recorded the way the registry records one, and the source found it by the
-    /// URL's host and port with no parameter threaded through `ff::demux`. The bytes arrive, the
-    /// listener saw exactly one connection, and the same URL without an entry opens nothing.
-    #[test]
-    fn a_pinned_host_streams_through_the_resolve_table_without_dns() {
-        let Some(_g) = curl_gate() else { return };
-        plx_net::net::resolve::clear();
-        with_server(RangeMode::Honour, |port, accepts, _requests| {
-            let url = format!("http://no-such-host.invalid:{port}/f.mkv");
-            assert!(
-                CurlSource::open_gated(&url, 0, true).is_err(),
-                "unpinned, the name resolves to nothing"
-            );
-            assert_eq!(accepts.load(Ordering::Acquire), 0);
-            let pin = plx_net::net::origin::ResolvePin::for_test(
-                "no-such-host.invalid",
-                port as i32,
-                "127.0.0.1".parse().unwrap(),
-            );
-            assert!(plx_net::net::resolve::add(&pin));
-            let mut src = CurlSource::open_gated(&url, 0, true).expect("opens through the pin");
-            let mut buf = [0u8; 16];
-            let n = src.read(&mut buf);
-            assert!(n > 0, "read returned {n}");
-            assert_eq!(&buf[..n as usize], &BODY[..n as usize]);
-            assert_eq!(accepts.load(Ordering::Acquire), 1);
-            // a seek is a fresh easy handle: the entry is applied again and, the connection
-            // being reused, the listener still counts one accept
-            assert!(src.seek(2), "the seek re-applies the pin");
-            let n = src.read(&mut buf);
-            assert!(n > 0, "read after seek returned {n}");
-            assert_eq!(&buf[..n as usize], &BODY[2..2 + n as usize]);
-            assert_eq!(accepts.load(Ordering::Acquire), 1);
-            drop(src);
-        });
-        plx_net::net::resolve::clear();
-    }
 
     fn with_server(mode: RangeMode, body: impl FnOnce(u16, &AtomicUsize, &AtomicUsize)) {
         let srv = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");

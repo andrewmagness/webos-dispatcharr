@@ -613,7 +613,7 @@ struct DirectFetch {
 fn fetch_direct(url: &str, bw: u32, bh: u32) -> DirectFetch {
     FETCHES.fetch_add(1, Ordering::Relaxed);
     let direct = ServerId::from_raw(tex::DIRECT);
-    let resp = plx_net::net::request(url, &[], "GET", None, plx_net::net::BULK, true, Some(DIRECT_MAX_BYTES), None);
+    let resp = plx_net::net::request(url, &[], "GET", None, plx_net::net::BULK, true, Some(DIRECT_MAX_BYTES));
     match resp {
         Some(r) if (200..300).contains(&r.status) && !r.body.is_empty() => {
             let art = img::img_decode_fit(&r.body, bw, bh);

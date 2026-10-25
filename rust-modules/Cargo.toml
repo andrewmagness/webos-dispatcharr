@@ -269,7 +269,7 @@ plx_machine = { path = "machine", features = ["test-support"] }
 plx_platform = { path = "platform", features = ["test-support"] }
 # Likewise the gfx layer's seams (`text`'s prewarm and capture hooks, `gfx::backdrop::commit`, ...).
 plx_gfx = { path = "gfx", features = ["test-support"] }
-# Likewise the net layer's loopback PMS fixtures, `keypin`/`resolve` seams and canned responses.
+# Likewise the net layer's loopback TLS fixtures, `roots` seams and canned responses.
 plx_net = { path = "net", features = ["test-support"] }
 # Likewise the ui layer's seams (`table::assert_no_fit_failures`, `draw_census`, `tex::reset_for_test`, ...).
 plx_ui = { path = "ui", features = ["test-support"] }

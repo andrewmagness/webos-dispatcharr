@@ -6,7 +6,7 @@
 //! (and `platform`, which it does not name today) and nothing else.
 //!
 //! `test-support` exposes the loopback PMS fixtures (`net::mint_cert`, `spawn_dual_protocol`, ...),
-//! the `keypin` and `resolve` test seams and the canned-response helpers that the layers above
+//! the `roots` test seams and the canned-response helpers that the layers above
 //! build their tests on, plus the one test-only CA-bundle override `net::request_result` honours.
 //! The application crate enables it in `[dev-dependencies]` only, so no shipped build sees it.
 

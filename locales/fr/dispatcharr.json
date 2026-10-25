@@ -52,6 +52,7 @@
   "dispatcharr.setup.resume_off": "Démarrer sur la dernière chaîne : Non",
   "dispatcharr.setup.resume_note": "Si activé, l'app s'ouvre sur la dernière chaîne regardée. RETOUR mène au Guide.",
   "dispatcharr.live.up_next": "Ensuite · {time}",
+  "dispatcharr.live.browse_hint": "OK pour regarder",
   "dispatcharr.setup.searching": "Recherche de Dispatcharr sur votre réseau…",
   "dispatcharr.setup.found": "Trouvé sur votre réseau · non chiffré",
   "dispatcharr.live.unsupported_video": "Le format vidéo de cette chaîne ne peut pas être lu sur ce téléviseur",

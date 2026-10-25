@@ -30,7 +30,8 @@ back to all of them; the two combine (your favourites in one group). While watch
 |---|---|
 | CH▲ / CH▼ | the next or previous channel in the list you came from |
 | number keys (the Magic Remote's 123) | that channel, as soon as the number can only mean one |
-| OK, or UP / DOWN | show the banner: what's on now and its progress, with what's up next on the right (OK again hides it) |
+| OK | show the banner: what's on now and its progress, with what's up next on the right (OK again hides it) |
+| UP / DOWN | look through the other channels in the banner, each with its logo and what's on, without leaving the one playing; UP goes toward higher numbers. OK changes to the channel shown, BACK returns to the one playing, and if you leave it alone the banner goes away and you keep watching |
 | hold OK | back to the channel you watched before |
 | BACK | the Guide |
 
@@ -48,7 +49,7 @@ Early and under active development. Nothing here has been released yet; the firs
 | M1 — Dispatcharr client and the Setup screen | done |
 | M2 — live MPEG-TS playback on the television | done — H.264/AAC channels play on the TV's hardware decoder |
 | M3 — the programme guide | done — grid, logos, OK to tune |
-| M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, hold-OK recall, favourites, start on the last channel |
+| M4 — player overlay, channel up/down, favourites, recall | done — channel up/down, number entry, now/next banner, browsing channels in the banner, hold-OK recall, favourites, start on the last channel |
 | M5 — codec coverage, error handling, packaging and release | in progress — dropped or frozen streams reconnect, a busy server is retried, a channel's real codecs are detected and declared (H.264/HEVC video; AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio — the dev C1 (2021) refuses a DTS stream, as many 2020+ LG sets cannot decode DTS); an MPEG-2 video channel says how to fix it in Dispatcharr. The 0.1.0 [release note](docs/release-notes/v0.1.0.md) and [audit](docs/release-audits/v0.1.0.md) are written, the release-candidate pipeline passes end to end, and the stable package installs on the C1. 0.1.0 will be published as a GitHub release; a Homebrew Channel listing comes after a few releases |
 
 ### Tested televisions

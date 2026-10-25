@@ -12,7 +12,7 @@ one-paragraph playback summary.
 In-process is the point: ACB can only bind an app-owned sink, which the earlier URI/out-of-process
 path (`com.webos.media/load`, `start_playback()`) could not provide — that path is kept only as
 dead-ish reference, and `docs/buffer-feed-plan.md` records the pivot (treat it as history, not
-spec). The stream side: `PMS HTTP GET` → demux → per-lane access-unit
+spec). The stream side: the channel's stream `HTTP GET` → demux → per-lane access-unit
 queues with byte-cap backpressure (`aq.rs`) → the pump `Feed()`s each AU to the Starfish pipeline.
 The demuxer is **`ff.rs` — the libavformat the app BUNDLES (not the TV's), over a custom AVIO on
 one of TWO transports** (design record: `docs/ffmpeg-demuxer-plan.md`; the hand-rolled `mkv.rs`
@@ -97,7 +97,7 @@ something.
   declared at 24 or 30 it announces 24 once and holds it — and the sink's displayed-frame counter
   measured the picture: **13.0 fps presented under the 60 declaration, 24.1 under 24**. So H.264
   declares the stream's rate class
-  (`fps_class`), HEVC keeps 60 (4K HEVC under 60 holds 24), and a transcode with no known rate
+  (`fps_class`), HEVC keeps 60 (4K HEVC under 60 holds 24), and a stream with no known rate
   keeps 60. AV1 (only on a set whose codec table lists an AV1 decoder) keeps HEVC's 4K60 rule,
   clamped by `Caps::av1_row`; the clamp is unmeasured (one owner reports AV1 playing on a webOS 10.3.1 set, with no log). `/tmp/dispatcharrtv-sinkmax=WxH@F`
   overrides the envelope for the legs still unrun on 10.3.1.
@@ -153,26 +153,19 @@ something.
   `acb_send_atmos` in `src/starfish.c`. `AcbAPI_setMediaVideoData`/`setState`/
   `setDisplayWindow` take a `long *taskId` out-param as their last arg — the 3-arg ABI is required
   (2-arg calls corrupt memory / segfault).
-- **The Load payload's codecs must come from the `/decision` OUTPUT, not the source file.** A
-  transcode changes the codec/rate; building the Starfish Load config from the *source* metadata gives
-  the decoder the wrong description → **silent audio / glitches**. Read the output codecs from the
-  transcode decision. For ADTS/HE-AAC, use the **CORE** sample rate from the AudioSpecificConfig (SBR
-  doubles it). See `[[audio-payload-codecs]]`.
+- **The Load payload's codecs must describe the stream that ARRIVES, not what anything upstream
+  claims.** A Dispatcharr stream profile can transcode a channel, so the codecs and rates the
+  pipeline is told must be read from the stream itself (the live path probes the TS it receives);
+  a mislabelled Load gives the decoder the wrong description → **silent audio / glitches**. For
+  ADTS/HE-AAC, use the **CORE** sample rate from the AudioSpecificConfig (SBR doubles it).
 - **Subtitles are client-rendered here — the TV's HW subtitle engine is URI-mode only** and
   unreachable in buffer-feed. Plain text and image (PGS/VobSub) subs are decoded and drawn by
   us; styled ASS/SSA uses the bundled libass worker (`ass.rs`, `ass_source.rs`) with original
-  headers, events and attached fonts. Sidecar ASS keeps the complete script rather than requesting
-  a SubRip conversion. Don't expect the pipeline to burn or overlay them. See `[[tv-subtitle-engine]]` and the `plex/`
-  soft-subs note. An image sub's rect coords are in **the subtitle stream's own authoring canvas** —
+  headers, events and attached fonts. Don't expect the pipeline to burn or overlay them. An image sub's rect coords are in **the subtitle stream's own authoring canvas** —
   1920×1080 for Blu-ray PGS but 720×480/576 for a DVD VobSub rip — so `ff::sub_canvas` reads that
   canvas off the decoder (via `avcodec_parameters_from_context`, no raw struct offset; the ABI proof
   is in its doc comment) and `appkit::player_hud::sub_screen_rect` scales the whole display set into the
   video rect. Assuming 1080p unconditionally is what made VobSub render as a corner postage stamp.
-  **An EXTERNAL text subtitle (the `.srt` beside the film) is a third producer, `sidecar.rs`:** the
-  demuxer never sees it, so it is fetched whole from PMS, parsed, and looked up by time from its OWN
-  store — not `SHARED.sub_cues`, which is a window the demuxer refills and a backward seek would
-  empty. It is silent where the server burns the selection (a re-encode, or a remux whose embedded
-  track the app may not read itself); over a plain remux the app draws it.
 - **A seek NEVER interrupts the demuxer.** The pump publishes the target in `seek_to_ns` and the
   demux thread — the only thread that touches the `AVFormatContext` — `av_seek_frame`s on it
   between two reads. Do not reintroduce an interrupt: the pump used to `shutdown(2)` the socket to
@@ -208,7 +201,7 @@ something.
 measured 2026-09-17; do not re-quote that number, `time` it) covers a real
 slice of this pipeline's pure logic: `ff.rs`'s `nal_end` bounds guard and AVCC→Annex-B conversion,
 the AVIO abort guards (a seek after teardown must not open a second connection — graded on an accept
-count), `stream.rs`'s socket lifecycle, `route/plan.rs`'s direct-play-vs-transcode selection, and
+count), `stream.rs`'s socket lifecycle, `route/plan.rs`'s pure stream planning, and
 `task.rs`'s `MainThread` token being genuinely `!Send`. Cheap enough that there is no reason to skip
 it before a deploy.
 
@@ -219,4 +212,4 @@ everything on `dynlib!` those are gone, so a test that actually calls FFmpeg now
 Linux, which is why `tools/sockprobe.c` exists. So anything about *playback behaviour* is only
 observable on device: deploy and read `/tmp/dispatcharrtv-events.log` (feed stats, bind steps,
 seek/rebase, `RECEIVE_GOOD_VIDEO`). The `tests/` harness drives real playback per case — see the root
-`docs/agent-reference.md` testing section (run as GUEST by default; never run two harness jobs at once).
+`docs/agent-reference.md` testing section (it moves the set's account aside for the run; never run two harness jobs at once).

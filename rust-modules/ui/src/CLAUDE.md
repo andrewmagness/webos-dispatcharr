@@ -9,8 +9,16 @@ reason to skip a proper component, leave a bespoke `draw_*` in place, or half-fi
 If a shared piece is missing (a real text-flow view, a chip, a list),
 **build it** — a reusable primitive that pays off across screens is exactly the work worth doing.
 
-This directory is a **design system**, not a pile of per-screen draw code. Home, detail, and the
-player HUD are all *compositions of the same tokens + components*. When you add or change UI,
+This directory is a **design system**, not a pile of per-screen draw code. The Guide, Setup and the
+player HUD are all *compositions of the same tokens + components*.
+
+> **Written for PlxNative, kept because it governs this code.** The framework came with the Plex
+> client this project grew from, and much of this guide was written while its Plex screens (Home,
+> Detail, the Library, Search) were being built. The rules — the four rules, the layer rule,
+> localization and text fit, the architecture, glass and dither, placeholders, the gotchas — apply
+> to every screen here. The sections on card shelves, card marks and the product idiom describe
+> library components and owner verdicts from those screens; the components are still in `ui/` and
+> still tested, but Dispatcharr TV's screens (Guide, Setup, the player) do not draw card shelves. When you add or change UI,
 **reach for the shared pieces and improve them in place** — do not paste a new `draw_*` function
 with hard-coded colors and hand-tuned text offsets. That is exactly the drift this system exists to
 kill. Full design + migration status: `docs/ui-system-migration.md`.
@@ -164,12 +172,12 @@ read-only alert panels retain their dismissal hint. Contribution caption and URL
 on the QR allocation.
 
 **Text fit is a rule about who owns the text, and it is tested, not eyeballed.** App-owned text
-(`i18n::msg`, `plex::languages` names, `Quality::label`) never elides in any shipped language
+(`i18n::msg`) never elides in any shipped language
 (`i18n::SHIPPED`: en, es, be, fr) at the shipped sizes; server- and user-owned text (machine names,
 handles, profile names, titles) may. `ui::table` types that at the call site with
 `Origin { App, Server }` per text slot, defaulting to App; `Row::server_label`/`server_detail`/
 `server_value` and `Section::server_header`/`server_accessory` mark a slot Server. There is no
-string classifier — a fallback the app itself invents ("Plex server") is App and must not be
+string classifier — a fallback the app itself invents ("No information") is App and must not be
 marked. What a row does when its text does not fit is decided by its role:
 
 | role | app text that doesn't fit | server text |
@@ -220,9 +228,8 @@ can follow.
 | layer | may name |
 |---|---|
 | `ui/` — the LIBRARY | `plx_gfx::{gfx,text}` plus `plx_platform::i18n` and `plx_base::{paths,task,tile}` — **never an application type**. Except the `plx_machine` crate (`machine`, `present`, `idle`, `landing`, `motion`; `rust-modules/machine/`), which `ci/module-layers.ini` places BELOW the library (`docs/module-layers.md`): it names only `plx_base` and itself, never `gfx`/`text`/`i18n` or anything in `ui/` |
-| `appkit/` — widgets several screens share (`player_hud`, `track_menu`, `more_menu`, `info_panel`, `up_next`, `chapters_panel`, `timing_capsule`, `skip_pill`, `source_list`) | `ui/`, `stores/`, `plex/` types, `player/`, `route/` — never `screens/` or `app/`. They are compositions of `ui/` components over application types; they cannot live under `screens/` because the `sibling` gate forbids one screen family naming another |
-| `screens/` — the application's screens | `ui/`, `appkit/`, `stores/`, `plex/` types, `player/` — never a sibling screen |
-| `stores/` | data crates and `plx_machine::machine` only — never `screens/` |
+| `appkit/` — widgets several screens share (`player_hud`, `live_banner`) | `ui/`, data crates, `player/`, `route/` — never `screens/` or `app/`. They are compositions of `ui/` components over application types; they cannot live under `screens/` because the `sibling` gate forbids one screen family naming another |
+| `screens/` — the application's screens (Guide, Setup, the player) | `ui/`, `appkit/`, `dispatcharr` types, `player/` — never a sibling screen |
 | `app/` | everything |
 
 `ci/check-module-cycle.py` holds which top-level modules sit on the crate's module cycle, not the
@@ -232,14 +239,15 @@ with `file:line` (see "Module-cycle ratchet" in `docs/agent-reference.md`). A `u
 gate, so `ci/check-module-layers.py`, `ci/check-deps.sh` and review are what stop it; a green `module-cycle: ok` is not permission.
 
 `ui/` is generic over one application bundle and is compiled and tested against `FixtureHost`
-with no Plex type in scope (`fixture.rs`). If you find yourself reaching for `crate::plex` or
-`crate::browse` from a file in this directory, the design says the code belongs in `screens/`.
+with no application type in scope (`fixture.rs`). If you find yourself reaching for an application
+crate (`plx_dispatcharr`, `plx_media`) from a file in this directory, the design says the code
+belongs in `screens/`.
 
 A widget that needs a fact about an application row takes it as a plain value the caller fills, and
 does not name the row. A catalog row reaches the poster and still tiles, their captions and the
 page wash as `ui::tile::TileFacts`, built by the layer that owns the row (any rule about the row
 stays with that layer and arrives already answered); a server is the raw `u16` id `ui::tex` already takes (`ServerId::raw()`); a review score's
-units are `fmt::RatingScale`. Never add an `impl ui::Trait for pms::Type` in a third layer to get
+units are `fmt::RatingScale`. Never add an `impl ui::Trait for data::Type` in a third layer to get
 around this: after the crate split that impl has neither its trait nor its type in its own crate,
 which the orphan rule forbids.
 
@@ -273,7 +281,7 @@ Release builds retain elapsed-time logging once per (label, call site):
 on the frame thread and call `idle::invalidate()` only when visible content changed. Boot's synchronous loads run before the frame scope; a new blocking exception
 must be explicit and justified through `task::allow_blocking`, never added to a tick — and every production
 `allow_blocking(` site is a line in `ci/allow/blocking.txt`, which the `blocking` gate holds exact (a
-new site or a stale line fails; the list only shrinks). Move the work to a worker (`task::spawn_off_frame`; a PMS half takes
+new site or a stale line fails; the list only shrinks). Move the work to a worker (`task::spawn_off_frame`; a network half takes
 `&OffFrame`) instead of adding a line. The ledger holds one site, a refused worker thread's fallback rather than a user
 action: `task::spawn_or_inline` (OS refused a thread; a server-side stop that must not be dropped runs inline).
 To see it fire on the TV, hold the TV lock and, after the first present in a `threadcheck` + `devtriggers` build, run `tools/tv-session.sh key hang:1000` for the guard abort, or `key hang-raw:1000` for the watchdog's unlabeled warning path (both capped at 5000 ms).
@@ -340,15 +348,15 @@ the spike, not dead code to delete.
 
 ## Product idiom (settled owner verdicts)
 
-The reference clients are a checklist of CAPABILITIES, never a mockup. Plex says *what* a screen
+The reference clients are a checklist of CAPABILITIES, never a mockup: they say *what* a screen
 must be able to do; Apple TV is what it should look like; the presentation stays ours. Each rule
 below is a verdict the owner has already given — satisfy the capability, and do not re-open the
 presentation in a design pass.
 
 1. **Menus are popovers, never full-screen sheets.** A new menu — playback settings, a quality
    ladder, an item context menu, the play-queue list — is a `popover.rs` container over the live
-   screen with a `table.rs` `TableView` inside, anchored near its trigger, the way `appkit/track_menu.rs`
-   and the library sort/filter menus already work. Plex's full-screen modals were rejected by name.
+   screen with a `table.rs` `TableView` inside, anchored near its trigger, the way PlxNative's
+   player track menu worked. Full-screen modals were rejected by name.
    A menu never opens with its focus on a destructive action: tag such rows
    `Row::destructive(true)` and open the table with `TableView::open_sections`, whose
    `opening_row` is also the focus fallback when a focused row disappears.
@@ -498,7 +506,7 @@ except on Continue Watching, where it opens the SHOW on the card's season
 Until 2026-09-05 `want_play` was `from_deck || kind == 3` on both Home and the Library, so an
 episode played immediately from ANY shelf and every landscape tile drew the triangle whatever its
 press did. Behaviour and mark both read `is_continue && route::deck_press().press_plays()`
-(`Shelf::is_continue` / `pms::hub_is_continue` alone is no longer the answer to either), so they
+(`Shelf::is_continue` alone is no longer the answer to either), so they
 cannot disagree. A poster wears nothing at all when it has never
 been started — most of a server is unstarted, so a clean shelf is the common case and a mark is
 information.

@@ -10,7 +10,7 @@ LG's Developer Mode and a computer. **No root is required.** If something goes w
 
 You will need:
 
-- an LG TV running **webOS 4.0 or newer**; check the [compatibility notes](../README.md#status) —
+- an LG TV running **webOS 4.0 or newer**; check the [compatibility notes](../README.md#compatibility) —
   playback has been watched on webOS 4.4.3 and 6.5.3, and other versions are expected to work but
   have not been seen to;
 - a **Dispatcharr server** your TV can reach on your network, and a Dispatcharr username and

@@ -4,17 +4,22 @@
 //!
 //! The remote, Magic Remote first (the owner's, 2026-10-14):
 //! - CH▲/CH▼ change channel through the lineup the Guide handed over. Only the channel keys: the
-//!   owner's call (2026-10-15), so a D-pad press meant for the banner never changes channel. UP and
-//!   DOWN show the banner.
+//!   owner's call (2026-10-15), so a D-pad press never changes channel on its own.
+//! - UP and DOWN browse the lineup in the banner without tuning (the owner's ask, 2026-10-24): each
+//!   press (or repeat, while held) shows the next channel up or down, with its logo and what is on.
+//!   UP goes toward higher numbers, as CH▲ does. OK tunes the channel shown; BACK puts the banner
+//!   back on the channel playing; letting the banner time out keeps watching what was playing.
 //! - The number keys type a channel number. It is tuned the moment no longer channel number starts
 //!   with what is typed (`5` at once; `1` waits while there is an `11`), else [`TYPED_COMMIT_MS`]
 //!   after the last digit, or at once on OK. The lineup decides how long a number can be, so no
 //!   channel is out of reach. A number no channel carries says so for a moment.
-//! - OK shows the banner (channel, now/next, progress), or hides it if it is up. Every tune shows
+//! - OK shows the banner (channel, now/next, progress), or hides it if it is up, or, while browsing,
+//!   tunes the channel the banner shows. Every tune shows
 //!   it for [`BANNER_MS`]. A tap acts on its RELEASE, because the same key held is recall.
 //! - Holding OK for [`HOLD_MS`] recalls the channel watched before this one (the owner's choice,
 //!   2026-10-14: the Magic Remote has no recall key). Holding it again goes back.
-//! - BACK, STOP and EXIT are not live keys: they leave the player for the Guide as they always did.
+//! - BACK, STOP and EXIT are not live keys: they leave the player for the Guide as they always did,
+//!   except that BACK while browsing only stops browsing.
 //! - LEFT/RIGHT and the transport keys do nothing on live TV. There is nothing to seek in, and a
 //!   paused live stream would fall behind the broadcast.
 
@@ -40,6 +45,8 @@ pub enum LivePress {
     Digit(u8),
     /// Through the lineup: positive is CH▲.
     Zap(i32),
+    /// Through the lineup in the banner, without tuning: positive is UP, toward higher numbers.
+    Browse(i32),
     Ok,
     /// Pointer motion: show the banner.
     Wake,
@@ -64,7 +71,8 @@ pub fn press_of(key: Key, sym: c_uint, wcode: c_uint) -> Option<LivePress> {
         return Some(LivePress::Zap(-dir));
     }
     match key {
-        Key::Up | Key::Down => Some(LivePress::Wake),
+        Key::Up => Some(LivePress::Browse(1)),
+        Key::Down => Some(LivePress::Browse(-1)),
         Key::Ok => Some(LivePress::Ok),
         Key::Left { .. } | Key::Right { .. } | Key::Play | Key::Pause | Key::PlayPause => Some(LivePress::Swallow),
         _ => None,
@@ -100,11 +108,35 @@ pub struct LiveControls {
     /// The tick OK went down on, while it is down, and whether this hold has already recalled.
     pub ok_down: Option<u32>,
     pub ok_fired: bool,
+    /// The lineup index the banner is browsing, never the channel playing. Lives only as long as
+    /// the banner: [`Self::tick`] drops it when the banner goes or the tune changes.
+    pub browse: Option<usize>,
 }
 
 impl LiveControls {
     pub fn banner_visible(&self, now: u32) -> bool {
         self.seen.is_some() && before(now, self.banner_until)
+    }
+
+    /// The channel being browsed, while the banner shows it.
+    pub fn browsing(&self, now: u32) -> Option<usize> {
+        self.browse.filter(|_| self.banner_visible(now))
+    }
+
+    /// The channel the banner shows: the one browsed, else the one playing.
+    pub fn banner_index(&self, tune: &LiveTune, now: u32) -> usize {
+        self.browsing(now).filter(|&i| tune.lineup.channels.get(i).is_some()).unwrap_or(tune.index)
+    }
+
+    /// BACK: `true` when it stopped a browse (the banner returns to the channel playing), `false`
+    /// when there was none and BACK is the page's as always.
+    pub fn back(&mut self, now: u32) -> bool {
+        if self.browsing(now).is_none() {
+            return false;
+        }
+        self.browse = None;
+        self.banner_until = now.wrapping_add(BANNER_MS);
+        true
     }
 
     pub fn missing_visible(&self, now: u32) -> bool {
@@ -127,6 +159,10 @@ impl LiveControls {
             self.seen = Some(key);
             self.seen_ms = now;
             self.banner_until = now.wrapping_add(BANNER_MS);
+            self.browse = None;
+        }
+        if !self.banner_visible(now) {
+            self.browse = None;
         }
         if self.ok_down.is_some_and(|t0| !before(now, t0.wrapping_add(OK_STALE_MS))) {
             self.ok_down = None;
@@ -141,6 +177,7 @@ impl LiveControls {
     pub fn key(&mut self, tune: &LiveTune, press: LivePress, now: u32) -> LiveAction {
         match press {
             LivePress::Digit(d) => {
+                self.browse = None;
                 self.missing.clear();
                 self.typed.push(char::from(b'0' + d));
                 self.typed_at = now;
@@ -151,12 +188,27 @@ impl LiveControls {
             }
             LivePress::Zap(delta) => {
                 self.typed.clear();
+                self.browse = None;
                 match tune.lineup.step(tune.index, delta) {
                     Some(i) => LiveAction::Tune(tune.to(i)),
                     None => LiveAction::None,
                 }
             }
+            LivePress::Browse(delta) => {
+                self.typed.clear();
+                let from = self.banner_index(tune, now);
+                if let Some(i) = tune.lineup.step(from, delta) {
+                    self.browse = (i != tune.index).then_some(i);
+                }
+                self.banner_until = now.wrapping_add(BANNER_MS);
+                LiveAction::None
+            }
             LivePress::Ok if !self.typed.is_empty() => self.commit(tune, now),
+            LivePress::Ok if self.browsing(now).is_some() => {
+                let i = self.banner_index(tune, now);
+                self.browse = None;
+                if i == tune.index { LiveAction::None } else { LiveAction::Tune(tune.to(i)) }
+            }
             LivePress::Ok => {
                 self.banner_until = if self.banner_visible(now) { now } else { now.wrapping_add(BANNER_MS) };
                 LiveAction::None
@@ -182,6 +234,7 @@ impl LiveControls {
                 Some(t0) if !self.ok_fired && !before(now, t0.wrapping_add(HOLD_MS)) => {
                     self.ok_fired = true;
                     self.typed.clear();
+                    self.browse = None;
                     self.recall(tune, now)
                 }
                 _ => LiveAction::None,
@@ -260,8 +313,8 @@ mod tests {
         assert_eq!(press_of(Key::Other, 0, consts::WCODE_CH_DOWN_KEY), Some(LivePress::Zap(-1)));
         assert_eq!(press_of(Key::Other, 0, consts::WCODE_CH_UP_WEBOS6), Some(LivePress::Zap(1)), "webOS 6's CH▲");
         assert_eq!(press_of(Key::Other, 0, consts::WCODE_CH_DOWN_WEBOS6), Some(LivePress::Zap(-1)));
-        assert_eq!(press_of(Key::Up, 0, 0), Some(LivePress::Wake), "the D-pad does not change channel");
-        assert_eq!(press_of(Key::Down, 0, 0), Some(LivePress::Wake));
+        assert_eq!(press_of(Key::Up, 0, 0), Some(LivePress::Browse(1)), "the D-pad browses, toward higher numbers");
+        assert_eq!(press_of(Key::Down, 0, 0), Some(LivePress::Browse(-1)));
         assert_eq!(press_of(Key::Ok, 0, 0), Some(LivePress::Ok));
         assert_eq!(press_of(Key::Pause, 0, 0), Some(LivePress::Swallow), "no pausing live TV");
         assert_eq!(press_of(Key::Left { alt: false }, 0, 0), Some(LivePress::Swallow), "nothing to seek in");
@@ -397,5 +450,82 @@ mod tests {
         assert!(!c.missing_visible(6_000 + MISSING_MS));
         assert_eq!(c.key(&t, LivePress::Digit(4), 10_000), LiveAction::None, "4 is already playing");
         assert!(c.banner_visible(10_000));
+    }
+
+    #[test]
+    fn up_and_down_browse_the_banner_without_tuning_and_ok_tunes_what_it_shows() {
+        let mut c = LiveControls::default();
+        let t = tune(1);
+        c.tick(Some(&t), 0);
+        assert_eq!(c.key(&t, LivePress::Browse(1), 100), LiveAction::None, "browsing tunes nothing");
+        assert_eq!(c.browsing(100), Some(2));
+        assert_eq!(c.banner_index(&t, 100), 2, "the banner shows the browsed channel");
+        c.key(&t, LivePress::Browse(1), 200);
+        assert_eq!(c.browsing(200), Some(3), "each press steps on from the one shown");
+        c.key(&t, LivePress::Browse(1), 300);
+        assert_eq!(c.browsing(300), Some(0), "wraps past the top");
+        // Within the banner's time a tap of OK tunes it.
+        c.ok(&t, Edge::Down, 400);
+        assert_eq!(tuned_to(c.ok(&t, Edge::Up, 450)), Some(0));
+        assert_eq!(c.browse, None);
+    }
+
+    #[test]
+    fn browsing_back_onto_the_channel_playing_is_not_a_browse() {
+        let mut c = LiveControls::default();
+        let t = tune(1);
+        c.tick(Some(&t), 0);
+        c.key(&t, LivePress::Browse(-1), 100);
+        assert_eq!(c.browsing(100), Some(0));
+        c.key(&t, LivePress::Browse(1), 200);
+        assert_eq!(c.browsing(200), None, "back on the channel playing");
+        assert!(c.banner_visible(200));
+        c.ok(&t, Edge::Down, 300);
+        assert_eq!(c.ok(&t, Edge::Up, 350), LiveAction::None, "so OK hides the banner as ever");
+        assert!(!c.banner_visible(350));
+    }
+
+    #[test]
+    fn a_browse_lasts_as_long_as_the_banner_and_back_ends_it() {
+        let mut c = LiveControls::default();
+        let t = tune(1);
+        c.tick(Some(&t), 0);
+        c.key(&t, LivePress::Browse(1), 1_000);
+        assert_eq!(c.tick(Some(&t), 1_000 + BANNER_MS), LiveAction::None, "timing out tunes nothing");
+        assert_eq!(c.browse, None, "and keeps the channel playing");
+        assert_eq!(c.banner_index(&t, 1_000 + BANNER_MS), 1);
+        assert!(!c.back(9_000), "with no browse BACK is the page's");
+        c.key(&t, LivePress::Browse(1), 10_000);
+        assert!(c.back(10_100), "BACK stops the browse");
+        assert_eq!(c.browse, None);
+        assert!(c.banner_visible(10_100 + BANNER_MS - 1), "and the banner shows the channel playing");
+    }
+
+    #[test]
+    fn a_channel_key_a_digit_or_a_recall_ends_a_browse() {
+        let t = LiveTune { previous: Some(3), ..tune(1) };
+        let mut c = LiveControls::default();
+        c.tick(Some(&t), 0);
+        c.key(&t, LivePress::Browse(1), 100);
+        assert_eq!(tuned_to(c.key(&t, LivePress::Zap(1), 200)), Some(2), "CH steps from the channel playing");
+        assert_eq!(c.browse, None);
+        c.key(&t, LivePress::Browse(1), 300);
+        c.key(&t, LivePress::Digit(1), 400);
+        assert_eq!(c.browse, None, "a typed number wins");
+        c.typed.clear();
+        c.key(&t, LivePress::Browse(1), 500);
+        c.ok(&t, Edge::Down, 600);
+        assert_eq!(tuned_to(c.ok(&t, Edge::Repeat, 600 + HOLD_MS)), Some(3), "a hold still recalls");
+        assert_eq!(c.browse, None);
+    }
+
+    #[test]
+    fn a_new_tune_drops_a_browse() {
+        let mut c = LiveControls::default();
+        let t = tune(1);
+        c.tick(Some(&t), 0);
+        c.key(&t, LivePress::Browse(1), 100);
+        c.tick(Some(&LiveTune { at: 1_010, ..tune(3) }), 200);
+        assert_eq!(c.browse, None);
     }
 }

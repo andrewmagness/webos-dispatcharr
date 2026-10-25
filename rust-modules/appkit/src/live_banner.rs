@@ -1,7 +1,8 @@
 //! **The live-TV banner** — what the player shows over a channel instead of a transport: the
 //! channel's number, logo and name and what is on now with how far through it is, and in a column
 //! on the right what is up next (the owner's ask, 2026-10-15). Shown for a few seconds after every
-//! tune and whenever OK asks for it.
+//! tune and whenever OK asks for it. UP and DOWN browse other channels in it without tuning; a
+//! browsed channel's banner says, at the top of the right-hand column, that OK watches it.
 //!
 //! Plus the typed-number read-out in the top corner, while digits are being entered on the remote.
 //!
@@ -42,8 +43,9 @@ pub fn fit(rect: Rect, w: f32, h: f32) -> Rect {
     Rect::new(rect.x + (rect.w - dw) * 0.5, rect.y + (rect.h - dh) * 0.5, dw, dh)
 }
 
-/// The banner for `channel` at wall-clock second `now`.
-pub fn draw(p: Painter, channel: &LiveChannel, now: i64, measure: &dyn plx_machine::machine::Measure) {
+/// The banner for `channel` at wall-clock second `now`; `browsing` when `channel` is not the one
+/// playing, but one UP or DOWN has brought into the banner.
+pub fn draw(p: Painter, channel: &LiveChannel, now: i64, browsing: bool, measure: &dyn plx_machine::machine::Measure) {
     crate::player_hud::draw_scrim(p);
     let on = channel.on_at(now);
     let next = channel.next_after(now);
@@ -66,8 +68,15 @@ pub fn draw(p: Painter, channel: &LiveChannel, now: i64, measure: &dyn plx_machi
     }
     let x = MARGIN_X + LOGO_W + theme::space::LG;
     let next_x = SCR_W - MARGIN_X - NEXT_W;
-    let w = if next.is_some() { next_x - theme::space::LG - x } else { SCR_W - MARGIN_X - x }.max(0.0);
+    let w = if next.is_some() || browsing { next_x - theme::space::LG - x } else { SCR_W - MARGIN_X - x }.max(0.0);
     let mut y = top;
+
+    // A browsed channel says how to watch it, level with its name, over the up-next column.
+    if browsing {
+        let hint = msg::dispatcharr_live_browse_hint();
+        let t = measure.fit_line(&hint, NEXT_W, caption, true);
+        Label::new(t.as_ptr(), caption, theme::TEXT_PRIMARY).bold().draw(p, Rect::new(next_x, top + (head_h - caption_h) * 0.5, NEXT_W, caption_h));
+    }
 
     // The number, then the name.
     let mut name_x = x;

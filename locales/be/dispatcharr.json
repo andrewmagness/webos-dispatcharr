@@ -53,6 +53,7 @@
   "dispatcharr.setup.resume_off": "Пачынаць з апошняга канала: Не",
   "dispatcharr.setup.resume_note": "Калі ўключана, праграма адкрываецца на апошнім праглядзеным канале. НАЗАД вядзе ў Тэлегід.",
   "dispatcharr.live.up_next": "Далей · {time}",
+  "dispatcharr.live.browse_hint": "OK — глядзець",
   "dispatcharr.setup.searching": "Шукаем Dispatcharr у вашай сетцы…",
   "dispatcharr.setup.found": "Знойдзены ў вашай сетцы · без шыфравання",
   "dispatcharr.live.unsupported_video": "Відэафармат гэтага канала нельга прайграць на гэтым тэлевізары",

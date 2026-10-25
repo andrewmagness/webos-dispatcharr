@@ -225,6 +225,10 @@
     },
     "description": "Live TV banner, right-hand column heading over the next programme's title. {time} is its start, a clock time in the viewer's format"
   },
+  "dispatcharr.live.browse_hint": {
+    "value": "OK to watch",
+    "description": "Live TV banner while UP/DOWN browse another channel without changing to it: pressing OK on the remote changes to the channel shown"
+  },
   "dispatcharr.setup.searching": {
     "value": "Looking for Dispatcharr on your network…",
     "description": "Note under the address field while the TV searches its network for a Dispatcharr server"

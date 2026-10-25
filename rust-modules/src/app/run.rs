@@ -130,9 +130,6 @@ pub(crate) unsafe fn run(app: &mut App) {
         clock_and_press(app, fr);
         plx_base::diag::spans::span("land", || unsafe { land_results(app, fr) });
         app.instr.mark(plx_base::diag::heartbeat::Phase::Results); // results
-        // **Was the player the page on top going INTO this frame?** The publication below is kept
-        // only while something that reads it is mounted.
-        let was_player = super::bridge::player(&app.pages).is_some();
         // **Publish the playback session into the tree** (spec §2.3) before the dispatcher's frame
         // and the draw that follows it, so every owned screen in one frame reads one consistent
         // picture. Only while something that reads it is mounted — see `Bridge::publish_playback`.
@@ -143,7 +140,7 @@ pub(crate) unsafe fn run(app: &mut App) {
         // first frame after its media thread returns (`player::engine::AbandonedLoad`).
         plx_media::player::engine::reap_abandoned_load(&mut app.adapters.player);
         app.player.session.repair_status = app.player.repair.state();
-        app.bridge.publish_playback(&app.player.session, was_player);
+        publish_session(app);
         // The container runs its frame: the pending navigation's commit (at `PageDip`'s floor),
         // then the owned screens' inputs, ticks, timers and effects. `app/bridge.rs` is the seam.
         let tick = plx_machine::machine::Tick { ms: fr.now, dt_us: (fr.dt * 1_000_000.0) as u32 };
@@ -1171,6 +1168,15 @@ fn resume_parked(app: &mut App) {
     }
 }
 
+/// **Publish the playback session into the tree** for this frame, kept only while something that
+/// reads it is mounted going INTO the frame: the player page, or the Guide while its corner shows
+/// the channel (`PlaybackSession::preview`) — without the second, the Guide reads
+/// `PlaybackSession::IDLE` and paints its ground over the picture (first device run, 2026-10-25).
+fn publish_session(app: &mut App) {
+    let reader = super::bridge::player(&app.pages).is_some() || app.player.session.preview;
+    app.bridge.publish_playback(&app.player.session, reader);
+}
+
 /// **Does something own the engine?** The player page, or the Guide's corner preview
 /// (`PlaybackSession::preview`). An engine neither owns is an orphan: nothing will stop it, so the
 /// next Play and the end of its stream stop it (`content::off_route_orphan`).
@@ -2039,6 +2045,7 @@ mod lifecycle_regression_tests {
     fn settle(app: &mut App, fr: &mut Frame) {
         for _ in 0..60 {
             fr.now += 16;
+            publish_session(app);
             frame(app, fr.now);
             loop_requests(app);
             super::super::content::content_requests(app, fr);
@@ -2081,6 +2088,8 @@ mod lifecycle_regression_tests {
         settle(&mut app, &mut fr);
         assert!(matches!(app.route(), AppArg::Guide), "the Guide is back: {}", super::super::words::route_word(&app.route()));
         assert!(app.player.session.preview, "showing the channel in its corner");
+        assert!(app.bridge.published_session().preview,
+            "and the Guide is told so, or it paints its ground over the picture (first device run, 2026-10-25)");
         assert_eq!(load_epoch(&mut app), epoch, "the same stream: not stopped, not tuned again");
         assert_eq!(plx_media::player::video_rect(), super::super::playback::preview_viewport());
 

@@ -175,6 +175,12 @@ impl Bridge {
         self.content_reqs.push((MachineId::Instance(instance), req, ReturnState::default()));
     }
 
+    /// The session the screens are shown this frame ([`Bridge::publish_playback`]).
+    #[cfg(test)]
+    pub(crate) fn published_session(&self) -> &plx_media::route::PlaybackSession {
+        &self.playback
+    }
+
     pub(crate) fn take_reqs(&mut self) -> Vec<LoopReq> {
         std::mem::take(&mut self.reqs)
     }
@@ -261,8 +267,8 @@ impl Bridge {
     ///
     /// Called once per iteration by the loop, BEFORE the dispatcher frame and the tree draw, so
     /// every screen in one frame reads one consistent picture of the playback. The copy is skipped
-    /// entirely when nothing that reads it is mounted: off the player route the publication is
-    /// `PlaybackSession::IDLE` and stays there.
+    /// entirely when nothing that reads it is mounted: with neither the player page up nor the
+    /// Guide's corner preview showing, the publication is `PlaybackSession::IDLE` and stays there.
     pub(crate) fn publish_playback(&mut self, session: &plx_media::route::PlaybackSession, live: bool) {
         if live {
             self.playback = session.publication();

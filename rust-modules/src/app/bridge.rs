@@ -167,6 +167,14 @@ impl Bridge {
         }
     }
 
+    /// A page's `ContentReq`, as the page on top would have raised it from its own instance — for a
+    /// run-loop test that needs the Guide's Play without driving a press through the Guide.
+    #[cfg(test)]
+    pub(crate) fn push_content_for_test(&mut self, pages: &Dispatcher<AppHost>, req: ContentReq) {
+        let instance = pages.top_page().expect("a page is up");
+        self.content_reqs.push((MachineId::Instance(instance), req, ReturnState::default()));
+    }
+
     pub(crate) fn take_reqs(&mut self) -> Vec<LoopReq> {
         std::mem::take(&mut self.reqs)
     }

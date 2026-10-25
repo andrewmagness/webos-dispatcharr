@@ -341,7 +341,7 @@ impl PlayerScreen {
             }
             Key::Stop | Key::Back => {
                 if edge == Edge::Down {
-                    Self::ask(fx, PlayerReq::Exit);
+                    Self::ask(fx, back_request(key, plx_media::route::live_tune(ps).is_some()));
                 }
                 Handled::Yes
             }
@@ -406,6 +406,15 @@ const GROUP_FAILURE: GroupId = GroupId(3);
 const GROUP_REPAIR: GroupId = GroupId(4);
 const REPAIR_CANCEL: u32 = 40_000;
 const REPAIR_CONFIRM: u32 = REPAIR_CANCEL + 1;
+
+/// What a STOP or BACK asks for: BACK off a live channel goes to the Guide still watching (the
+/// corner preview); STOP, and BACK off anything else, leaves the player.
+fn back_request(key: consts::Key, live: bool) -> PlayerReq {
+    match key {
+        consts::Key::Back if live => PlayerReq::ToGuide,
+        _ => PlayerReq::Exit,
+    }
+}
 
 impl<H: PlayerLike> Machine<H> for PlayerScreen {
     type Ev = ScreenEvent<H>;
@@ -715,6 +724,17 @@ mod tests {
             assert_eq!(handled, Handled::Yes);
             assert!(matches!(reqs.as_slice(), [PlayerReq::Exit]), "{wcode}: {reqs:?}");
         }
+    }
+
+    /// BACK off a live channel keeps it playing in the Guide's corner; STOP still stops it, and
+    /// BACK off anything that is not a channel still leaves.
+    #[test]
+    fn back_off_a_live_channel_goes_to_the_guide_still_watching() {
+        use plx_ui::consts::Key;
+        assert!(matches!(super::back_request(Key::Back, true), PlayerReq::ToGuide));
+        assert!(matches!(super::back_request(Key::Stop, true), PlayerReq::Exit));
+        assert!(matches!(super::back_request(Key::Back, false), PlayerReq::Exit));
+        assert!(matches!(super::back_request(Key::Stop, false), PlayerReq::Exit));
     }
 
     #[test]

@@ -7,7 +7,7 @@ use super::engine::{
 use super::shared::{HlsPauseCompletion, HlsPrimeKind, HlsSeekPause, Stage};
 use super::{ACB_OK, SHARED, TX};
 use plx_base::task::MainThread;
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_long};
 use std::sync::atomic::Ordering::{Acquire, Relaxed, Release};
 use std::time::Duration;
 
@@ -102,8 +102,10 @@ fn place_exported(mt: &MainThread, eng: &mut super::engine::Engine) {
     }
     let (w, h) = SHARED.video_raster();
     let src = if w > 0 && h > 0 { (w, h) } else { (1920, 1080) };
-    let rv = unsafe { super::sink().place_window(mt, src.0, src.1, 0, 0, 1920, 1080) };
+    let dst = SHARED.video_dst();
+    let rv = unsafe { super::sink().place_window(mt, src.0, src.1, dst.x, dst.y, dst.width, dst.height) };
     eng.placed_src = src;
+    eng.placed_dst = Some(dst);
     // RECORD it, do not merely log it. These three fields had no writer anywhere in the tree, so
     // `dg_place_rv` sat at its `i32::MIN` "never called" sentinel for the life of the process and
     // the diagnostics read-out rendered `Placed: not placed` in DANGER bold on every webOS 5+ set
@@ -114,9 +116,26 @@ fn place_exported(mt: &MainThread, eng: &mut super::engine::Engine) {
     SHARED.dg_placed_w.store(src.0, Relaxed);
     SHARED.dg_placed_h.store(src.1, Relaxed);
     super::log(&format!(
-        "vplane: exported window placed src={}x{} rv={rv}",
-        src.0, src.1
+        "vplane: exported window placed src={}x{} dst={},{} {}x{} rv={rv}",
+        src.0, src.1, dst.x, dst.y, dst.width, dst.height
     ));
+}
+
+/// **Move a picture that is already showing** to `player::video_rect()`, on whichever path this
+/// set takes: the exported window is re-placed (its source size unchanged), the ACB window gets
+/// `setDisplayWindow` alone. Both were measured moving a playing live stream into a 400x225 corner
+/// and back on the dev set (webOS 6.5.3, exported path) with no frame or audio interruption.
+fn place_window(mt: &MainThread, eng: &mut super::engine::Engine) {
+    if super::sink().window_mode() == super::VP_EXPORTED {
+        place_exported(mt, eng);
+        return;
+    }
+    let dst = SHARED.video_dst();
+    unsafe {
+        super::sink().plane_place(mt, dst.x as c_long, dst.y as c_long, dst.width as c_long, dst.height as c_long)
+    };
+    eng.placed_dst = Some(dst);
+    super::log(&format!("vplane: acb window placed dst={},{} {}x{}", dst.x, dst.y, dst.width, dst.height));
 }
 
 /// Mirror Engine-confined observations into `Shared` for diagnostics and handled-error context.
@@ -619,7 +638,11 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
             if rv != -1 {
                 // -1 = client-side isJsonError reject; else accepted
                 eng.video_info_sent = true;
-                unsafe { super::sink().plane_start(mt, 0, 0, 1920, 1080) };
+                let dst = SHARED.video_dst();
+                unsafe {
+                    super::sink().plane_start(mt, dst.x as c_long, dst.y as c_long, dst.width as c_long, dst.height as c_long)
+                };
+                eng.placed_dst = Some(dst);
                 eng.stage = Stage::Streaming;
                 super::log("setMediaVideoData sent → window+PLAYING");
             }
@@ -636,6 +659,14 @@ pub fn pump(ps: &mut crate::route::PlaybackSession, pa: &mut super::adapter::Pla
         if now.0 > 0 && now.1 > 0 && now != eng.placed_src {
             place_exported(mt, eng);
         }
+    }
+
+    // ---------- the window was MOVED (`player::set_video_rect`: the Guide's corner preview, or
+    // back to the whole canvas): put the picture already showing where it was asked to be. Only
+    // once it has been placed at all; the first placement above already reads the asked-for rect.
+    // ----------
+    if eng.placed_dst.is_some_and(|placed| placed != SHARED.video_dst()) {
+        place_window(mt, eng);
     }
 
     // ---------- feed AUs after the initial Load has reached Playing. The native clock may itself

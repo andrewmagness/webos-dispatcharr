@@ -10,6 +10,23 @@ pub struct Viewport {
     pub height: i32,
 }
 
+impl Viewport {
+    /// The whole 1920x1080 canvas: where the video window sits unless the application moved it.
+    pub const FULL: Self = Self { x: 0, y: 0, width: 1920, height: 1080 };
+
+    /// Four canvas coordinates in one word, so the window can be published atomically. Each is
+    /// clamped into `0..=u16::MAX`; the canvas is 1920x1080, so nothing real is lost.
+    pub fn pack(self) -> u64 {
+        let c = |v: i32| u64::from(v.clamp(0, i32::from(u16::MAX)) as u16);
+        (c(self.x) << 48) | (c(self.y) << 32) | (c(self.width) << 16) | c(self.height)
+    }
+
+    pub fn unpack(value: u64) -> Self {
+        let f = |shift: u32| i32::from((value >> shift) as u16);
+        Self { x: f(48), y: f(32), width: f(16), height: f(0) }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Aspect(u32, u32);
 
@@ -71,6 +88,16 @@ pub(super) fn source_aspect(bytes: &[u8]) -> Option<Aspect> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A window survives its one-word publication, and the shared default IS the whole canvas
+    /// (`Shared::new` spells it as a literal, being `const`).
+    #[test]
+    fn a_window_round_trips_through_its_packed_word() {
+        let corner = Viewport { x: 1419, y: 150, width: 405, height: 228 };
+        assert_eq!(Viewport::unpack(corner.pack()), corner);
+        assert_eq!(Viewport::unpack(Viewport::FULL.pack()), Viewport::FULL);
+        assert_eq!(crate::player::SHARED.video_dst(), Viewport::FULL, "nothing has moved the window");
+    }
 
     #[test]
     fn picture_fit_covers_pillarbox_letterbox_and_anamorphic_sources() {

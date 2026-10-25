@@ -736,6 +736,10 @@ unsafe fn acb_start(_x: c_long, _y: c_long, _w: c_long, _h: c_long) {
     #[cfg(any(test, feature = "test-support"))]
     note_dispatch("acb_start");
 }
+unsafe fn acb_place(_x: c_long, _y: c_long, _w: c_long, _h: c_long) {
+    #[cfg(any(test, feature = "test-support"))]
+    note_dispatch("acb_place");
+}
 unsafe fn acb_unload() {
     #[cfg(any(test, feature = "test-support"))]
     note_dispatch("acb_unload");
@@ -856,6 +860,9 @@ impl VideoSink for HostSink {
     }
     unsafe fn plane_start(&self, _: &MainThread, x: c_long, y: c_long, w: c_long, h: c_long) {
         acb_start(x, y, w, h)
+    }
+    unsafe fn plane_place(&self, _: &MainThread, x: c_long, y: c_long, w: c_long, h: c_long) {
+        acb_place(x, y, w, h)
     }
     unsafe fn plane_unload(&self, _: &MainThread) {
         acb_unload()

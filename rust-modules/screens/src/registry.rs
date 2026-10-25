@@ -127,9 +127,13 @@ pub enum PlayerReq {
     /// A transport key: `true` = the key was PLAY, `false` = PAUSE; a PLAYPAUSE toggle is neither
     /// and is carried as `None`.
     Transport(Option<bool>),
-    /// **Leave the player** — the one ritual the STOP key, a BACK, and the failure read-out's own
-    /// BACK escape all perform (`exit_player`).
+    /// **Leave the player** — the one ritual the STOP key, a BACK off anything but a live
+    /// channel, and the failure read-out's own BACK escape all perform (`exit_player`).
     Exit,
+    /// **Back to the Guide, still watching**: BACK off a live channel. The stream keeps playing in
+    /// the Guide's corner preview (`guide::preview_rect`) until the viewer picks a channel, which
+    /// returns to the full-screen player, or presses BACK again on the Guide (`app::playback`).
+    ToGuide,
 }
 
 /// Application payload on the container's return state. Focus itself remains engine-owned; no

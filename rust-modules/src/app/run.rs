@@ -1165,7 +1165,17 @@ fn resume_parked(app: &mut App) {
     } else {
         plx_media::player::start_bufferfeed(&mut app.player.session, &mut app.adapters.player);
     }
-    super::bridge::show_page(&mut app.pages, AppArg::Player);
+    // A channel parked from the Guide's corner comes back there, with the Guide still up.
+    if !app.player.session.preview {
+        super::bridge::show_page(&mut app.pages, AppArg::Player);
+    }
+}
+
+/// **Does something own the engine?** The player page, or the Guide's corner preview
+/// (`PlaybackSession::preview`). An engine neither owns is an orphan: nothing will stop it, so the
+/// next Play and the end of its stream stop it (`content::off_route_orphan`).
+fn engine_owned(app: &App) -> bool {
+    super::bridge::player(&app.pages).is_some() || app.player.session.preview
 }
 
 /// Permission to advance playback is independent of the retained page stack. WILL foreground
@@ -1207,7 +1217,7 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
         // A live channel refused because its stream is not what was declared (a failover stream
         // in AC-3 where the lineup says AAC): tune it again declaring what it carries, once, and
         // remember that for the channel.
-        if playback_may_run(app) && super::bridge::player(&app.pages).is_some() {
+        if playback_may_run(app) && engine_owned(app) {
             if let Some(found) = plx_media::player::live_codec_correction(&app.player.session) {
                 if let Some(mut tune) = plx_media::route::live_tune(&app.player.session).cloned() {
                     if tune.codecs.as_ref() != Some(&found) {
@@ -1222,7 +1232,7 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             }
         }
         let live_ended = playback_may_run(app)
-            && super::bridge::player(&app.pages).is_some()
+            && engine_owned(app)
             && plx_media::player::ended()
             && plx_media::route::live_tune(&app.player.session).is_some();
         if live_ended && app.live_reconnect.allow(fr.now) {
@@ -1232,6 +1242,11 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             if let Some(tune) = plx_media::route::live_tune(&app.player.session).cloned() {
                 super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune, &mut app.pages, &mut app.bridge);
             }
+        } else if playback_may_run(app) && app.player.session.preview && plx_media::player::ended() {
+            // The corner's channel keeps ending: there is no player page to leave, so the
+            // preview simply stops and the Guide closes its window.
+            log("live: the stream keeps ending; giving up");
+            super::playback::stop_preview(&mut app.player.session, &mut app.adapters.player);
         } else if playback_may_run(app) && super::bridge::player(&app.pages).is_some() && plx_media::player::ended() {
             if live_ended {
                 log("live: the stream keeps ending; giving up");
@@ -1248,15 +1263,20 @@ pub(crate) unsafe fn playback_tick(app: &mut App, fr: &mut Frame) {
             crate::dev::scenarios::maybe_replay_after_eos(app, handed_off_to_up_next);
         } else if playback_may_run(app)
             && plx_media::player::ended()
-            && super::content::off_route_orphan(
-                app.adapters.player.is_live(),
-                super::bridge::player(&app.pages).is_some(),
-            )
+            && super::content::off_route_orphan(app.adapters.player.is_live(), engine_owned(app))
         {
             // The same end with no player page to leave: nothing else would ever stop this
             // engine, and its reporter would keep posting the final position forever.
             log("EOS: stopping an off-route engine nothing owns");
             plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
+        }
+        // A corner preview that failed outright (the channel refused, the stream unreadable) has
+        // no failure read-out to show it in — that is the player page's — so it stops quietly.
+        if app.player.session.preview
+            && plx_media::player::state(&app.player.session) == plx_media::player::PlaybackState::Error
+        {
+            log("live: the corner preview failed");
+            super::playback::stop_preview(&mut app.player.session, &mut app.adapters.player);
         }
         // (The lost-keyup safety net and the CLIENT-SIDE LONG-PRESS REPEAT stood here — the one
         // hold-to-move path for every discrete focus list, driven by `App::held_key` at 110 ms so
@@ -1353,6 +1373,19 @@ pub(super) fn reduce_navigation_request(request: plx_screens::registry::LoopReq,
 
 fn loop_requests(app: &mut App) {
     for req in app.bridge.take_reqs() {
+        use plx_screens::registry::LoopReq;
+        if app.player.session.preview {
+            // BACK on the Guide while its corner plays: the first BACK stops the channel, and only
+            // the next one hands the screen to the television.
+            if req == LoopReq::BackAtRoot {
+                super::playback::stop_preview(&mut app.player.session, &mut app.adapters.player);
+                continue;
+            }
+            // Leaving the Guide for another page: the preview is the Guide's, so it stops too.
+            if matches!(req, LoopReq::DispatcharrSetup | LoopReq::DispatcharrAccount) {
+                super::playback::stop_preview(&mut app.player.session, &mut app.adapters.player);
+            }
+        }
         reduce_navigation_request(req, &mut app.pages);
     }
 }
@@ -1974,6 +2007,127 @@ mod lifecycle_regression_tests {
         assert_eq!(plx_media::route::live_tune(&app.player.session).map(|t| t.index), Some(0));
         plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
         plx_media::player::force_clocksink_for_test(false);
+    }
+
+    /// A channel on the player page over a Guide root, its stream held open and silent (the
+    /// reconnect test's server), so the engine stays live and nothing ends on its own.
+    fn watching_from_the_guide(app: &mut App, fr: &mut Frame, uuids: &[&str]) -> std::net::TcpListener {
+        use plx_media::route::{LiveChannel, LiveLineup, LiveTune};
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/stream.ts", silent.local_addr().unwrap());
+        let channels = uuids.iter().enumerate().map(|(i, uuid)| LiveChannel { id: i as i64 + 1, uuid: (*uuid).into(),
+            number: format!("{}", i + 1), name: String::new(), url: url.clone(), logo: None, programmes: Vec::new() }).collect();
+        let lineup = std::sync::Arc::new(LiveLineup { channels, vcodec: "h264".into(), acodec: "aac".into() });
+        // Signed in to a server that refuses the connection: the Guide's fetch fails and the Guide
+        // stays (a signed-out Guide would hand the test to Setup, which ends a preview).
+        use plx_dispatcharr::dispatcharr::{account, api::Account, Server};
+        let dead = format!("127.0.0.1:{}", std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port());
+        account::save(&account::Record {
+            account: Account { server: Server::parse(&dead).unwrap(), api_key: "k".into() },
+            username: "test".into(),
+        }).unwrap();
+        super::super::bridge::nav_root(&mut app.pages, AppArg::Guide);
+        settle(app, fr);
+        let tune = LiveTune { lineup, index: 0, previous: None, at: 0, codecs: None };
+        super::super::playback::tune_channel(&mut app.player.session, &mut app.adapters.player, tune, &mut app.pages, &mut app.bridge);
+        settle(app, fr);
+        assert!(matches!(app.route(), AppArg::Player), "the channel is on the player page");
+        silent
+    }
+
+    /// Enough frames for a navigation's dip to commit, the loop's requests drained after each.
+    fn settle(app: &mut App, fr: &mut Frame) {
+        for _ in 0..60 {
+            fr.now += 16;
+            frame(app, fr.now);
+            loop_requests(app);
+            super::super::content::content_requests(app, fr);
+            unsafe { playback_tick(app, fr) };
+        }
+    }
+
+    fn ask_player(app: &mut App, req: plx_screens::registry::PlayerReq) {
+        super::super::playback::player_requests(&mut app.player.repair, &mut app.player.session,
+            &mut app.adapters.player, vec![req], &mut app.pages, &mut app.bridge);
+    }
+
+    /// The Load the engine came from: a new one means the channel was tuned again.
+    fn load_epoch(app: &mut App) -> Option<u32> {
+        app.adapters.player.engine().map(|e| e.native_epoch)
+    }
+
+    fn stop_and_reset(app: &mut App) {
+        plx_dispatcharr::dispatcharr::account::clear();
+        plx_media::player::stop_bufferfeed(&mut app.player.session, &mut app.adapters.player);
+        super::super::playback::end_preview(&mut app.player.session);
+        plx_media::player::force_clocksink_for_test(false);
+    }
+
+    /// **BACK off a live channel keeps it playing in the Guide's corner.** The player page goes
+    /// and the Guide comes back, but the engine is the same one — nothing is stopped or tuned
+    /// again — and the video window is asked to sit where the Guide leaves its corner open. The
+    /// next BACK on the Guide stops the channel and stays in the app.
+    #[test]
+    fn back_off_a_channel_keeps_it_playing_in_the_guides_corner() {
+        let _serial = plx_base::testlock::serial();
+        plx_media::player::force_clocksink_for_test(true);
+        let mut app = app();
+        let mut fr = Frame::begin();
+        let _server = watching_from_the_guide(&mut app, &mut fr, &["u-1"]);
+        let epoch = load_epoch(&mut app);
+        assert!(epoch.is_some());
+
+        ask_player(&mut app, plx_screens::registry::PlayerReq::ToGuide);
+        settle(&mut app, &mut fr);
+        assert!(matches!(app.route(), AppArg::Guide), "the Guide is back: {}", super::super::words::route_word(&app.route()));
+        assert!(app.player.session.preview, "showing the channel in its corner");
+        assert_eq!(load_epoch(&mut app), epoch, "the same stream: not stopped, not tuned again");
+        assert_eq!(plx_media::player::video_rect(), super::super::playback::preview_viewport());
+
+        plx_ui::dispatch::Rig::back_at_root(&mut app.bridge);
+        settle(&mut app, &mut fr);
+        assert!(!app.player.session.preview, "the first BACK ends the preview");
+        assert!(!app.adapters.player.is_live(), "and stops its stream");
+        assert_eq!(plx_media::player::video_rect(), plx_media::player::video_geometry::Viewport::FULL);
+        assert!(matches!(app.route(), AppArg::Guide), "still on the Guide");
+        stop_and_reset(&mut app);
+    }
+
+    /// **Picking the corner's own channel returns to it full screen, on the same stream**; picking
+    /// another stops the corner's and starts the new one on the whole canvas.
+    #[test]
+    fn picking_a_channel_on_the_guide_ends_the_corner_preview() {
+        use plx_screens::registry::{ContentReq, PlayIntent};
+        let _serial = plx_base::testlock::serial();
+        plx_media::player::force_clocksink_for_test(true);
+        let mut app = app();
+        let mut fr = Frame::begin();
+        let _server = watching_from_the_guide(&mut app, &mut fr, &["u-1", "u-2"]);
+        let tune = plx_media::route::live_tune(&app.player.session).cloned().unwrap();
+        ask_player(&mut app, plx_screens::registry::PlayerReq::ToGuide);
+        settle(&mut app, &mut fr);
+        assert!(app.player.session.preview);
+
+        let epoch = load_epoch(&mut app);
+        let same = PlayIntent::Live(tune.clone());
+        app.bridge.push_content_for_test(&app.pages, ContentReq::Play { play: same });
+        settle(&mut app, &mut fr);
+        assert!(matches!(app.route(), AppArg::Player), "full screen again");
+        assert!(!app.player.session.preview);
+        assert_eq!(load_epoch(&mut app), epoch, "the same stream, not tuned again");
+        assert_eq!(plx_media::player::video_rect(), plx_media::player::video_geometry::Viewport::FULL);
+
+        ask_player(&mut app, plx_screens::registry::PlayerReq::ToGuide);
+        settle(&mut app, &mut fr);
+        let other = PlayIntent::Live(plx_media::route::LiveTune { index: 1, ..tune });
+        app.bridge.push_content_for_test(&app.pages, ContentReq::Play { play: other });
+        settle(&mut app, &mut fr);
+        assert!(matches!(app.route(), AppArg::Player));
+        assert!(!app.player.session.preview);
+        assert_ne!(load_epoch(&mut app), epoch, "a new stream");
+        assert_eq!(plx_media::route::live_tune(&app.player.session).map(|t| t.index), Some(1), "of the other channel");
+        assert_eq!(plx_media::player::video_rect(), plx_media::player::video_geometry::Viewport::FULL);
+        stop_and_reset(&mut app);
     }
 
     #[cfg(feature = "devtriggers")]

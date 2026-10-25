@@ -428,6 +428,23 @@ pub fn frame_clear_through() {
     frame_clear_alpha(0.0, 0.0, 0.0, 0.0);
 }
 
+/// [`frame_clear_through`] over one rectangle (logical coordinates): a WINDOW in an otherwise
+/// opaque page, through which the hardware video plane shows — the Guide's corner preview. A
+/// scissored clear rather than a quad, because blending cannot lower the alpha a ground already
+/// wrote. Refused wherever the whole-frame clear is (a frozen page, a suppressed pass) and inside a
+/// blur source pass, whose target is a crop of the page rather than the panel.
+pub fn clear_through_rect(x: f32, y: f32, w: f32, h: f32) {
+    if backdrop::discovering() || blur_source_pass() || !frame_clear_allowed() {
+        return;
+    }
+    clip_set(x, y, w, h);
+    unsafe {
+        glClearColor(0.0, 0.0, 0.0, 0.0);
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+    clip_clear();
+}
+
 thread_local! {
     static SUPPRESS_FRAME_CLEAR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }

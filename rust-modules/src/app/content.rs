@@ -79,8 +79,16 @@ pub(crate) fn content_requests(app: &mut App, _fr: &Frame) {
         if app.pages.nav.input_owner() != Some(InputOwner::Entry(entry)) { continue; }
         match request {
             ContentReq::Play { play } => {
+                // The channel already playing in the Guide's corner: the same stream, full screen.
+                if super::playback::plays_in_preview(&app.player.session, &play) {
+                    super::playback::resume_from_preview(&mut app.player.session, &mut app.pages, &mut app.bridge, Some(ret));
+                    continue;
+                }
                 let mounted = bridge::player(&app.pages).is_some();
+                // Any other channel: the corner's stream is an engine no page owns, so the clearance
+                // below stops it, and the new one starts on the whole canvas.
                 clear_engine_for_play(&mut app.player.session, &mut app.adapters.player, mounted);
+                super::playback::end_preview(&mut app.player.session);
                 // The PAGE decided what to play; the LOOP performs the request, because starting
                 // playback takes the playback session's `&mut` and a screen is only ever shown the
                 // frame's publication (§2.2). A refusal leaves the page exactly where it was.

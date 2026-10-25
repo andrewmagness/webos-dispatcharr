@@ -65,6 +65,7 @@ long acb_create(const char *appId, int playerType);        /* create+initialize;
 void acb_bind(const char *mediaId);                        /* setSinkType(MAIN)+setMediaId+setState(LOADED) */
 int  acb_send_video_data(const char *sourceInfo);  /* setMediaVideoData; the pipeline's own envelope (vp9_hdr may have added HDR keys); -1 = rejected */
 void acb_start(long x, long y, long w, long h);            /* setDisplayWindow + setState(PLAYING) */
+void acb_place(long x, long y, long w, long h);            /* setDisplayWindow alone: move a playing picture */
 void acb_unload(void);                                     /* setState(UNLOADED) */
 
 /* ---- library-thread callbacks the seam forwards to (consumer-defined) ---- */

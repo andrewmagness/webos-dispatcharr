@@ -395,6 +395,17 @@ pub fn video_raster() -> (i32, i32) {
     SHARED.video_raster()
 }
 
+/// **Move the video window**: [`video_geometry::Viewport::FULL`], or the Guide's corner preview.
+/// Takes effect on the picture already showing (the pump re-places it on its next pass) and on
+/// every Load after this, until it is set again.
+pub fn set_video_rect(r: video_geometry::Viewport) {
+    SHARED.set_video_dst(r);
+}
+/// Where the video window is asked to be ([`set_video_rect`]).
+pub fn video_rect() -> video_geometry::Viewport {
+    SHARED.video_dst()
+}
+
 /// The picture inside the full-screen video window, including non-square pixels.
 pub fn video_viewport(width: i32, height: i32) -> video_geometry::Viewport {
     let (w, h) = SHARED.video_raster();

@@ -617,6 +617,16 @@ impl Painter {
             self.rgb,
         );
     }
+    /// **A window through the page to the video plane**: `r` becomes transparent, whatever was
+    /// painted there before, so the hardware picture placed under it shows (the Guide's corner
+    /// preview). Paint it AFTER the ground and before anything meant to sit on the picture. It is
+    /// a clear, not a colour, so alpha and tint do not apply.
+    pub fn clear_through(self, r: Rect) {
+        if self.declare(r, 24, |_| {}) { return; }
+        if self.records() { return; }
+        let m = self.place(r);
+        plx_gfx::gfx::clear_through_rect(m.x, m.y, m.w, m.h);
+    }
     pub fn rrect(self, r: Rect, rl: f32, rr: f32, col: [f32; 4]) {
         if self.declare(r, 2, |data| {
             use frame::backdrop::Value;

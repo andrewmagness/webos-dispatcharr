@@ -54,6 +54,12 @@ pub struct PlaybackSession {
     pub native_start_refused: bool,
     /// Read-only publication of Player.repair for the HUD. Never authorizes a resource effect.
     pub repair_status: plx_platform::tv::sandbox::State,
+    /// **The live channel is playing in the Guide's corner preview**, not on the player page: BACK
+    /// off a channel put it there (`app::playback::to_guide`), and picking a channel or BACK on
+    /// the Guide takes it out. While it is set the app owns the engine for the Guide — reconnects
+    /// and failures are handled without pushing the player page — and the Guide leaves its corner
+    /// transparent for the picture. Published to the screens.
+    pub preview: bool,
     /// The stream URL for this playback (empty = nothing resolved, or torn down).
     url: String,
     /// The URL is a LIVE stream (a Dispatcharr channel): endless, unseekable, and timestamped
@@ -134,6 +140,7 @@ impl PlaybackSession {
         jail_load_blocked: false,
         native_start_refused: false,
         repair_status: plx_platform::tv::sandbox::State::Idle,
+        preview: false,
         url: String::new(),
         live: false,
         tune: None,
@@ -174,6 +181,7 @@ impl PlaybackSession {
             jail_load_blocked,
             native_start_refused,
             repair_status,
+            preview,
             url,
             live,
             tune,
@@ -195,6 +203,7 @@ impl PlaybackSession {
             jail_load_blocked: *jail_load_blocked,
             native_start_refused: *native_start_refused,
             repair_status: *repair_status,
+            preview: *preview,
             url: url.clone(),
             live: *live,
             tune: tune.clone(),

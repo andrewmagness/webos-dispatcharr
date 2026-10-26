@@ -69,7 +69,7 @@ including its known issues, is in its release notes.
 | Television | webOS | Notes |
 |---|---|---|
 | LG OLED C1 (2021, OLED65C1PUB) | 6.5.3 | the development set: every feature is verified here against a real Dispatcharr server |
-| LG OLED B8 (2018, OLED55B8PUA) | 4.4.3 | Setup found the Dispatcharr server on the network on its own; the guide and live playback perform well |
+| LG OLED B8 (2018, OLED55B8PUA) | 4.4.3 | Setup found the Dispatcharr server on the network on its own; the guide and live playback perform well (0.1.0; the guide's corner picture has not been tried here yet) |
 
 The app starts on every firmware from webOS 3.4.0 up (checked against each firmware image's
 libraries, which says nothing about video), and does not start on webOS 2 or older. Video has been

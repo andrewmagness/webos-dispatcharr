@@ -6,7 +6,7 @@
 #
 # WHEN IT IS TIME:
 #   1. Re-read every claim below against the release being listed (versions, televisions watched,
-#      known issues) — it describes v0.1.0.
+#      known issues) — it describes v0.2.0.
 #   2. Set the repository variable HOMEBREW_LISTING=true, so the release workflow generates and
 #      publishes the manifest `manifestUrl` points at (.github/workflows/release.yml, its header),
 #      and cut a release so the URL resolves.
@@ -61,6 +61,7 @@ description: |
     channel groups, and a favourites list of your own
   * Changing channel the way a remote does it: CH▲/CH▼, number entry, a now/next banner, and
     hold-OK back to the channel you watched before
+  * BACK while watching keeps the channel playing in the guide's corner while you browse
   * Starts on the last channel you watched, tunes it again when you come back from another app,
     and reconnects on its own when a stream drops or freezes
   * H.264 and HEVC video with AAC, AC-3, E-AC-3, DTS and MP2/MP3 audio, on the hardware decoder
@@ -69,8 +70,8 @@ description: |
 
   * **You need a Dispatcharr server.** This app has no channels of its own.
   * **Watched on two televisions.** An LG OLED C1 on webOS 6.5.3 and an LG OLED B8 on webOS 4.4.3.
-    Other sets from webOS 4 up are expected to work but have not been watched; a report either
-    way is welcome.
+    The guide's corner picture has been watched only on the C1. Other sets from webOS 4 up are
+    expected to work but have not been watched; a report either way is welcome.
   * **MPEG-2 video channels do not play** — set an H.264 stream profile for them in Dispatcharr.
     Some televisions cannot decode DTS audio; use an AC-3 or AAC profile for those channels.
 

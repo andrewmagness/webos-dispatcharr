@@ -53,6 +53,18 @@ def verdict(text, done):
     return None
 
 
+def signal_group(pgid, sig):
+    """Signal the subscriber's process group; a group with nothing left to signal is not an error.
+
+    Linux returns ESRCH for a group that is gone. macOS returns EPERM when the group's only member
+    is the subscriber itself, exited but not yet reaped — the case where it closed on its own.
+    """
+    try:
+        os.killpg(pgid, sig)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--done", action="append", required=True, help="a state that ends it successfully")
@@ -107,14 +119,11 @@ def main():
                 code, why = 1, ended
                 break
     finally:
-        try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        signal_group(proc.pid, signal.SIGTERM)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
+            signal_group(proc.pid, signal.SIGKILL)
             proc.wait()
     if why:
         print("luna-sub: %s" % why, file=sys.stderr)

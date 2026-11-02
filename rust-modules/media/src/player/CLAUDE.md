@@ -68,8 +68,10 @@ something.
   addresses are never reused or freed: a late firmware callback carries only that address, so a
   retired slot stays in the registry until process exit. Call the destructor only through the
   gated teardown path and **never** hand the object to C++ `new`/`delete` (its real size is unknown).
-  Methods returning a `std::string` use a hidden sret first-arg; read the `char*` at offset 0 (SSO)
-  for short replies like `"Ok"`/`"BufferFull"`.
+  Methods returning a `std::string` use a hidden sret first-arg; read the `char*` at offset 0, then
+  RELEASE the string through the firmware's own destructor. Feed's reply is JSON
+  (`{"returnValue":"Ok"}`), too long for the cxx11 inline buffer, so a reply left unreleased is a
+  heap leak on every AU — the 0.2.0 memory growth (`sf_feed` in `src/starfish.c`).
 - **Dolby Vision and Dolby Atmos have their own document: `docs/dolby-vision.md`.** A DV node is
   emitted only after the boot-time configd probe definitely confirms hardware support. The route
   freezes that capability + presentation decision, and every Load/reload/recovery consumes the

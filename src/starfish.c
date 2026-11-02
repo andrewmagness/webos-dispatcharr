@@ -202,33 +202,53 @@ typedef int (*SMP_LoadWithContextFn)(
     void *ctx);
 /* Feed returns std::string, so its mangled name carries the library's string ABI: `B5cxx11` on
  * the 4.x inventories and later (4.4.2 is the oldest graded with it), the pre-C++11
- * copy-on-write string on 3.9.2 and earlier (`_ZN17StarfishMediaAPIs4FeedEPKc`). Either way the hidden sret slot starts with the char
- * pointer, so the reply reads the same; only the COW string must be released through the
- * firmware's own destructor (`_ZNSsD1Ev`), because its buffer is a refcounted heap rep. Both are
- * resolved at runtime: a strong reference to the cxx11 name is a lazily-bound PLT slot that kills
- * the process at the first Feed on 3.4.0 (tools/fwcompat.py --release 3.4.0). */
+ * copy-on-write string on 3.9.2 and earlier (`_ZN17StarfishMediaAPIs4FeedEPKc`). Either way the
+ * hidden sret slot starts with the char pointer, so the reply reads the same.
+ *
+ * EVERY reply must be released through the firmware's own std::string destructor, whichever ABI.
+ * The COW string's buffer is a refcounted heap rep (`_ZNSsD1Ev`). The cxx11 string keeps up to 15
+ * characters inline, and for years this seam assumed the reply ("Ok"/"BufferFull") fit there and
+ * released nothing. It does not: the reply is JSON, `{"returnValue":"Ok"}` (20 characters) on
+ * webOS 6.5.3, so libplayerAPIs heap-allocated it on every AU and the app leaked one string per
+ * Feed — about 10-14 MB of main-arena heap per hour of 60 fps playback, measured 2026-11-02 on
+ * the dev C1 with a scope-tagged allocation tracker (every growing block was `operator new` called
+ * from inside Feed, ~83 per second). The cxx11 destructor
+ * (`_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED1Ev`) is exported by the libstdc++ of
+ * every inventoried firmware whose libplayerAPIs has the cxx11 Feed. Should one ever lack it, the
+ * fallback does what that destructor does: free the buffer through `operator delete` unless it
+ * is the inline one. All of it is resolved at runtime: a strong reference to the cxx11 name is a
+ * lazily-bound PLT slot that kills the process at the first Feed on 3.4.0
+ * (tools/fwcompat.py --release 3.4.0). */
 typedef void (*SMP_FeedFn)(void *sret, void *self, const char *payload);
-typedef void (*CowStringDtorFn)(void *str);
+typedef void (*StringDtorFn)(void *str);
+typedef void (*OperatorDeleteFn)(void *p);
 static SMP_FeedFn g_feed;
-static CowStringDtorFn g_feed_reply_dtor;
+static StringDtorFn g_feed_reply_dtor;
+/* cxx11 only, and only when its destructor did not resolve: `operator delete(void *)`. */
+static OperatorDeleteFn g_feed_reply_delete;
 /* Set when the COW name is the one that resolved. Kept apart from g_feed_reply_dtor because that
  * can be NULL on a COW library (`_ZNSsD1Ev` missing), and the ABI is then still COW. */
 static int g_feed_cow;
 static pthread_once_t g_feed_once = PTHREAD_ONCE_INIT;
 static void sf_resolve_feed_once(void) {
     g_feed = (SMP_FeedFn)dlsym(RTLD_DEFAULT, "_ZN17StarfishMediaAPIs4FeedB5cxx11EPKc");
-    if (!g_feed) {
+    if (g_feed) {
+        g_feed_reply_dtor = (StringDtorFn)dlsym(
+            RTLD_DEFAULT, "_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED1Ev");
+        if (!g_feed_reply_dtor)
+            g_feed_reply_delete = (OperatorDeleteFn)dlsym(RTLD_DEFAULT, "_ZdlPv");
+    } else {
         g_feed = (SMP_FeedFn)dlsym(RTLD_DEFAULT, "_ZN17StarfishMediaAPIs4FeedEPKc");
         if (g_feed) {
             g_feed_cow = 1;
-            g_feed_reply_dtor = (CowStringDtorFn)dlsym(RTLD_DEFAULT, "_ZNSsD1Ev");
+            g_feed_reply_dtor = (StringDtorFn)dlsym(RTLD_DEFAULT, "_ZNSsD1Ev");
         }
     }
     if (elogf) {
-        /* cow with dtor=(nil) means every Feed reply leaks its string rep. */
-        fprintf(elogf, "feed abi: %s fn=%p dtor=%p\n",
+        /* dtor=(nil) delete=(nil) means every Feed reply that is not inline leaks. */
+        fprintf(elogf, "feed abi: %s fn=%p dtor=%p delete=%p\n",
                 !g_feed ? "NONE" : g_feed_cow ? "cow" : "cxx11",
-                (void *)g_feed, (void *)g_feed_reply_dtor);
+                (void *)g_feed, (void *)g_feed_reply_dtor, (void *)g_feed_reply_delete);
         fflush(elogf);
     }
 }
@@ -700,7 +720,7 @@ int sf_set_content_info(long long position_ns) {
     return 1;
 }
 
-/* Feed one AU; hides the sret std::string (SSO char* at offset 0). 'O'/'B'/'e'. */
+/* Feed one AU; hides the sret std::string (char* at offset 0) and releases it. 'O'/'B'/'e'. */
 char sf_feed(const unsigned char *p, unsigned size, long long pts, int esData) {
     /* The only verb that used to dispatch with NO readiness check — it relied entirely on
        pump.rs returning early. Guard it here too so the object can never be fed mid-ctor. */
@@ -711,7 +731,9 @@ char sf_feed(const unsigned char *p, unsigned size, long long pts, int esData) {
     char j[160];
     snprintf(j, sizeof j, "{\"bufferAddr\":\"%p\",\"bufferSize\":%u,\"pts\":%lld,\"esData\":%d}",
              (const void *)p, size, pts, esData);
-    unsigned char ret[32];
+    /* Room for either string: cxx11 is {_M_p, _M_string_length, 16-byte inline buffer}, COW is
+       one pointer. Aligned like the std::string the callee constructs into it. */
+    unsigned char ret[32] __attribute__((aligned(8)));
     memset(ret, 0, sizeof ret);
     g_feed(ret, object, j);
     char *s = *(char **)ret;             /* std::string _M_p at offset 0 */
@@ -719,9 +741,14 @@ char sf_feed(const unsigned char *p, unsigned size, long long pts, int esData) {
     if (elogf && logged < 3) { logged++;
         fprintf(elogf, "feed reply=\"%s\"\n", s ? s : "(null)"); fflush(elogf); }
     char verdict = !s ? 'e' : strstr(s, "BufferFull") ? 'B' : strstr(s, "Ok") ? 'O' : 'e';
-    /* The COW destructor reads the rep header just below _M_p, so a NULL _M_p (Feed returned
-       without constructing its result) would fault. */
-    if (s && g_feed_reply_dtor) g_feed_reply_dtor(ret);
+    /* A NULL _M_p means Feed returned without constructing its result: there is nothing to
+       release, and the COW destructor (which reads the rep header just below _M_p) would fault. */
+    if (s) {
+        if (g_feed_reply_dtor)
+            g_feed_reply_dtor(ret);
+        else if (g_feed_reply_delete && s != (char *)(ret + 2 * sizeof(void *)))
+            g_feed_reply_delete(s);   /* cxx11 _M_dispose: heap buffer only, never the inline one */
+    }
     return verdict;
 }
 
